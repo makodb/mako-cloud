@@ -9,6 +9,16 @@ import { buildTeardownPlan } from "./proxmox/public-beta-teardown-lib.js";
 
 const root = resolve(import.meta.dirname, "..");
 const read = (path) => readFile(resolve(root, path), "utf8");
+const readBuiltConsole = async () => {
+  try {
+    return await read("apps/console/web-dist/index.html");
+  } catch {
+    throw new Error(
+      "apps/console/web-dist is missing. It is generated, not committed. " +
+        "Run: npm run build --workspace @mako-cloud/console",
+    );
+  }
+};
 const json = async (path) => JSON.parse(await read(path));
 const digestPattern = /^[0-9a-f]{64}$/u;
 
@@ -68,7 +78,7 @@ const [
   json("docs/evidence/public-beta-admission-stop.json"),
   json("docs/evidence/public-beta-observability.json"),
   json("docs/evidence/public-beta-teardown-plan.json"),
-  read("apps/console/web-dist/index.html"),
+  readBuiltConsole(),
   read("infra/ansible/roles/configuration/tasks/main.yml"),
   read("infra/ansible/roles/runtime/tasks/main.yml"),
   read("infra/ansible/roles/configuration/templates/service-config.json.j2"),

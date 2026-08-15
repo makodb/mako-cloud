@@ -168,7 +168,10 @@ async function collectArtifacts() {
   const consoleFiles = [];
   await walkArtifact(consoleRoot, consoleFiles);
   if (!consoleFiles.includes("index.html")) {
-    throw new Error("console candidate is missing apps/console/web-dist/index.html");
+    throw new Error(
+      "console candidate is missing apps/console/web-dist/index.html. It is generated, " +
+        "not committed. Run: npm run build --workspace @mako-cloud/console",
+    );
   }
   for (const consoleFile of consoleFiles.sort()) {
     const sourcePath = `apps/console/web-dist/${consoleFile}`;

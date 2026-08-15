@@ -55,6 +55,16 @@ cargo run --bin mako-local-bootstrap
 
 It refuses to run outside a local environment, and it prints the public project key you need to call the data plane. See [end-to-end smoke verification](e2e-smoke.md) for the full flow and for the test that exercises it.
 
+## Build the console
+
+`apps/console/web-dist` is Vite build output and is not committed. The public-beta infrastructure validators inspect that bundle for its same-origin configuration and hosted authentication, and the release build packages it, so build it before running either:
+
+```bash
+npm run build --workspace @mako-cloud/console
+```
+
+Both report exactly this command if the directory is missing.
+
 ## Start dependencies
 
 ```bash
