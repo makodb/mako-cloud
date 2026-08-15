@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+table='bridge mako_vm124_admission_stop'
+configuration=/etc/nftables.d/mako-vm124-admission-stop.nft
+
+if /usr/sbin/nft list table $table >/dev/null 2>&1; then
+  /usr/sbin/nft delete table $table
+fi
+/usr/sbin/nft --file "$configuration"
+/usr/sbin/nft list table $table >/dev/null

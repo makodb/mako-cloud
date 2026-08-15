@@ -1,0 +1,114 @@
+{
+  "schemaVersion": 1,
+  "appliedAt": "2026-08-08T03:19:18.865Z",
+  "planHash": "d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073",
+  "mode": "external-apply",
+  "sshTarget": "root@localhost",
+  "actions": [
+    {
+      "id": "resize-os-disk",
+      "command": "qm disk resize 124 scsi0 64G",
+      "result": "completed",
+      "output": "Size of logical volume qnas-lun-1/vm-124-disk-1 changed from 3.50 GiB to 64.00 GiB; resize completed successfully."
+    },
+    {
+      "id": "configure-os-disk",
+      "command": "qm set 124 --scsi0 qnas-lun-lvm:vm-124-disk-1,discard=on,iothread=1,ssd=1",
+      "result": "completed",
+      "output": "update VM 124: -scsi0 qnas-lun-lvm:vm-124-disk-1,discard=on,iothread=1,ssd=1"
+    },
+    {
+      "id": "create-data-disk",
+      "command": "qm set 124 --scsi1 qnas-lun-lvm:256,discard=on,iothread=1,ssd=1",
+      "result": "completed",
+      "output": "update VM 124: -scsi1 qnas-lun-lvm:256,discard=on,iothread=1,ssd=1   Logical volume \"vm-124-disk-2\" created. scsi1: successfully created disk 'qnas-lun-lvm:vm-124-disk-2,discard=on,iothread=1,size=256G,ssd=1'"
+    },
+    {
+      "id": "attach-cloud-init-seed",
+      "command": "qm set 124 --ide2 local:iso/mako-cloud-public-beta-seed-d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073-85b085504a641768.iso,media=cdrom",
+      "result": "completed",
+      "output": "update VM 124: -ide2 local:iso/mako-cloud-public-beta-seed-d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073-85b085504a641768.iso,media=cdrom"
+    },
+    {
+      "id": "set-boot-order",
+      "command": "qm set 124 --boot order=scsi0",
+      "result": "completed",
+      "output": "update VM 124: -boot order=scsi0"
+    },
+    {
+      "id": "protect-vm",
+      "command": "qm set 124 --protection 1",
+      "result": "completed",
+      "output": "update VM 124: -protection 1"
+    },
+    {
+      "id": "start-vm",
+      "command": "qm start 124",
+      "result": "completed",
+      "output": ""
+    }
+  ],
+  "proxmoxTasks": [
+    {
+      "type": "qmcreate",
+      "vmId": 124,
+      "node": "zoo-005",
+      "status": "OK",
+      "startTime": 1786158533,
+      "endTime": 1786158533,
+      "upid": "UPID:zoo-005:000FD855:061C7A06:6A769DC5:qmcreate:124:root@pam:"
+    },
+    {
+      "type": "resize",
+      "vmId": 124,
+      "node": "zoo-005",
+      "status": "OK",
+      "startTime": 1786158912,
+      "endTime": 1786158914,
+      "upid": "UPID:zoo-005:000FF047:061D0E2C:6A769F40:resize:124:root@pam:"
+    },
+    {
+      "type": "qmstart",
+      "vmId": 124,
+      "node": "zoo-005",
+      "status": "OK",
+      "startTime": 1786159078,
+      "endTime": 1786159098,
+      "upid": "UPID:zoo-005:000FFE3F:061D4F14:6A769FE6:qmstart:124:root@pam:"
+    }
+  ],
+  "desiredState": {
+    "schemaVersion": 1,
+    "capturedAt": "2026-08-08T03:19:18.866Z",
+    "planHash": "d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073",
+    "node": "zoo-005",
+    "vmId": 124,
+    "status": "running",
+    "identity": {
+      "name": "mako-cloud-public-beta",
+      "descriptionMarker": "mako-plan-hash=d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073"
+    },
+    "hardware": {
+      "bios": "ovmf",
+      "machine": "q35",
+      "cpu": "host",
+      "cores": 8,
+      "sockets": 1,
+      "memoryMiB": 16384,
+      "scsihw": "virtio-scsi-single",
+      "agent": "enabled=1,freeze-fs=1,fstrim_cloned_disks=1"
+    },
+    "disks": {
+      "efidisk0": "qnas-lun-lvm:vm-124-disk-0,efitype=4m,ms-cert=2023k,pre-enrolled-keys=1,size=4M",
+      "scsi0": "qnas-lun-lvm:vm-124-disk-1,discard=on,iothread=1,size=64G,ssd=1",
+      "scsi1": "qnas-lun-lvm:vm-124-disk-2,discard=on,iothread=1,size=256G,ssd=1",
+      "ide2": "local:iso/mako-cloud-public-beta-seed-d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073-85b085504a641768.iso,media=cdrom,size=368K"
+    },
+    "network": {
+      "net0": "virtio=02:3b:12:f8:ec:76,bridge=vmbr0,firewall=1",
+      "ipconfig0": "ip=130.245.173.11/24,gw=130.245.173.1"
+    },
+    "seedSha256": "6fbe52637ea344a2796f134d64e552e7add4ad99e19b6f3ef2f68ca00490e700",
+    "configDigest": "c41bafd43b2ff3dba2714c2d57c7ed3f973b92c29ac3652029830633031c1159"
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "qualification": "public-beta-independent-operator-developer-lifecycle",
+  "completedAt": "2026-08-13T02:11:04.436Z",
+  "releaseDigest": "26160a4ed332218c863707e24f48e155e3713d0bee9a3ced32667124071f0903",
+  "identityDigest": "72d43434d0a28102cdf560dbb12bba51450ae764b46f161d12fd3db5b1fdfa90",
+  "mailDeliveryDigest": "341f0460c3e590007bcf98a1865716f1cc8fcef3e9e36298ff7c6716abd70619",
+  "assertions": {
+    "ordinaryRegistrationAndVerification": true,
+    "waitlistedDeveloperCanHoldOperatorEntitlement": true,
+    "operatorSignInIgnoresDeveloperWaitlistState": true,
+    "operatorAccessIsLeastPrivilege": true,
+    "separateStatusPresentation": true,
+    "selfApprovalWithoutReason": true,
+    "selfApprovalChangesOnlyDeveloperRole": true,
+    "selfApprovalPreservesOperatorSession": true,
+    "developerEpochRevokesPriorWaitlistSession": true,
+    "operatorRevocationPreservesActiveDeveloperSession": true,
+    "operatorEpochRevokesPriorOperatorSession": true,
+    "exactReleaseRemainedSelected": true
+  },
+  "retainedSensitiveValues": false
+}

@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-11T21:14:28.813Z",
+  "environment": "public-beta",
+  "releaseDigest": "590af2298d6fbe0bbb931df9257b6b2dd9af3e8d8738dd3aca2f7453ba7b1be0",
+  "status": "passed",
+  "provider": {
+    "name": "resend",
+    "transport": "authenticated-smtp",
+    "host": "smtp.resend.com",
+    "port": 587,
+    "tlsMode": "starttls"
+  },
+  "configurationChecks": {
+    "credentialStoredOutsideRenderedConfiguration": true,
+    "credentialMode": "0600",
+    "credentialOwner": "root:root",
+    "alertmanagerUsesSystemdCredentialFile": true,
+    "alertmanagerConfigurationValidated": true,
+    "firewallRestrictsExternalSmtpToTlsPorts": true,
+    "controllerAndGuestCredentialCopiesMatch": true,
+    "plaintextFallbackAvailable": false
+  },
+  "transactionalMail": {
+    "verification": {
+      "delivered": true,
+      "providerDeliveryId": "c8078b40-7824-4daa-8496-8958a7c18e73"
+    },
+    "recovery": {
+      "delivered": true,
+      "providerDeliveryId": "a5b4f35c-d122-4df5-bd5d-9c1e734d82f7"
+    },
+    "duplicateRegistrationSuppressed": true,
+    "verificationAndRecoveryTokensConsumedOnce": true,
+    "recoveryPreservedWaitlist": true
+  },
+  "retryQualification": {
+    "controlledTransientFailureRecorded": true,
+    "eventualDeliveryRecorded": true,
+    "providerDeliveryId": "7fadca64-588b-469c-91a1-c04942c1f083",
+    "temporaryFirewallRuleRemoved": true,
+    "finalRetryMetricAtLeast": 1,
+    "finalDeliveryMetricAtLeast": 1,
+    "secretsOrPersonalDataRetained": false
+  },
+  "operatorAlertDelivery": {
+    "authenticatedSmtp": true,
+    "loopbackOnlyAlertmanager": true,
+    "checkedAlertRules": 37,
+    "operatorAuthenticationAlertRules": 5,
+    "certificateExpiryFixtureDelivered": true,
+    "providerDeliveryId": "8d82b0de-f432-4485-b448-36fbfadd143c",
+    "fixtureResolved": true,
+    "notificationFailures": 0
+  },
+  "targetedTests": [
+    "developer_workflow::tests::hosted_registration_waitlist_approval_and_recovery_are_isolated",
+    "developer_workflow::tests::durable_worker_claims_and_delivers_each_outbox_record_once",
+    "developer_registration::tests::credentials_and_mail_records_redact_and_enforce_bounds",
+    "smtp::tests::configuration_requires_credentials_tls_and_redacts_secrets",
+    "smtp::tests::message_builder_binds_a_deterministic_delivery_identifier",
+    "mako_config::tests::developer_registration_is_deny_by_default_and_requires_protected_mail"
+  ],
+  "developerRegistrationEnabled": true,
+  "developerMailReady": true,
+  "secretsOrApplicantValuesRetained": false
+}

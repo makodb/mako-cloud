@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-09T03:55:14.785Z",
+  "environment": "public-beta",
+  "vmId": 124,
+  "publicOrigin": "https://cloud-test.makodb.com",
+  "planHash": "d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073",
+  "releaseDigest": "9429e76a4f24960683215c3dd5d6273526b13fc2bcf97b8788c07d4f60690385",
+  "publicAdmissionEnabled": false,
+  "privateLoopbackRouteLoad": {
+    "sequentialSamplesPerRoute": 30,
+    "concurrentWorkers": 16,
+    "concurrentRequests": 600,
+    "statusIntegrityPassed": true,
+    "sequentialP95Milliseconds": {
+      "authInputGate": 0.648309,
+      "rxdbPullInputGate": 0.62263,
+      "rxdbPushInputGate": 0.676951,
+      "rxdbLiveRouteGate": 0.688192,
+      "controlInputGate": 0.624613,
+      "functionRoutingUnavailable": 0.656163
+    },
+    "concurrentP95Milliseconds": {
+      "authInputGate": 12.852065,
+      "rxdbPullInputGate": 11.326279,
+      "rxdbPushInputGate": 14.475515,
+      "rxdbLiveRouteGate": 11.227523,
+      "controlInputGate": 11.451594,
+      "functionRoutingUnavailable": 11.305459
+    }
+  },
+  "acknowledgedWriteLoss": null,
+  "integrityFailures": null,
+  "capacityHeadroomAtTargetLoadPercent": null,
+  "endToEndHttpsLatency": null,
+  "warmFunctionSuccessLatency": null,
+  "coldFunctionSuccessLatency": null,
+  "gateQualified": false,
+  "blockers": [
+    "trusted HTTPS admission is not approved, so end-to-end public-origin latency is unmeasured",
+    "no qualification tenant credentials or successful RxDB/function workload were admitted",
+    "the beta target load and saturation point have not been established"
+  ]
+}

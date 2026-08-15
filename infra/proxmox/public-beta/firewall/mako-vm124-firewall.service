@@ -1,0 +1,14 @@
+[Unit]
+Description=Mako Cloud VM 124 Proxmox bridge firewall
+After=network-online.target pve-firewall.service proxmox-firewall.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStartPre=-/usr/sbin/nft delete table bridge mako_vm124
+ExecStart=/usr/sbin/nft --file /etc/nftables.d/mako-vm124.nft
+ExecStop=-/usr/sbin/nft delete table bridge mako_vm124
+
+[Install]
+WantedBy=multi-user.target

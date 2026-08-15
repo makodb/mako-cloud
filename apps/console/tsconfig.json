@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "jsx": "react-jsx",
+    "rootDir": "src",
+    "outDir": "dist",
+    "tsBuildInfoFile": "dist/.tsbuildinfo",
+    "types": ["vite/client"]
+  },
+  "references": [
+    { "path": "../../packages/api-types" },
+    { "path": "../../packages/management-sdk" },
+    { "path": "../../packages/rxdb-client/tsconfig.browser.json" }
+  ],
+  "include": ["src/**/*.ts", "src/**/*.tsx"]
+}

@@ -1,0 +1,19 @@
+---
+base_packages:
+  - btrfs-progs
+  - caddy
+  - chrony
+  - curl
+  - fuse-overlayfs
+  - jq
+  - nftables
+  - openssl
+  - parted
+  - podman
+  - prometheus-node-exporter
+  - prometheus-alertmanager
+  - qemu-guest-agent
+  - rsync
+  - slirp4netns
+  - uidmap
+  - unattended-upgrades

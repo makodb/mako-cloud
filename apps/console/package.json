@@ -1,0 +1,27 @@
+{
+  "name": "@mako-cloud/console",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -b && vite build",
+    "dev": "vite --host 127.0.0.1",
+    "preview": "vite preview --host 127.0.0.1",
+    "test:e2e": "playwright test",
+    "test:unit": "npm run build && node --test test/*.test.mjs",
+    "typecheck": "tsc -b --pretty false && tsc -p tsconfig.e2e.json --pretty false"
+  },
+  "dependencies": {
+    "@mako-cloud/api-types": "*",
+    "@mako-cloud/management-sdk": "*",
+    "@mako-cloud/rxdb": "*",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.62.1",
+    "@types/react": "^19.1.9",
+    "@types/react-dom": "^19.1.7",
+    "vite": "^7.3.6"
+  }
+}

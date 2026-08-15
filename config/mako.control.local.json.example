@@ -1,0 +1,47 @@
+{
+  "deployment": {
+    "environment": "local",
+    "region": "local"
+  },
+  "server": {
+    "bind_address": "127.0.0.1:8081",
+    "public_url": "http://127.0.0.1:8081"
+  },
+  "control_storage": {
+    "database_path": ".local/data/mako-control-plane/control.sqlite3",
+    "lock_path": ".local/data/mako-control-plane/control.sqlite3.lock",
+    "database_identity": "mako-control-local",
+    "migration_workspace": ".local/migrations/mako-control-plane",
+    "backup_staging": ".local/backups/mako-control-plane/staging",
+    "backup_publish": ".local/backups/mako-control-plane/published",
+    "restore_workspace": ".local/restores/mako-control-plane",
+    "reserve_path": ".local/reserve/mako-control-plane",
+    "maximum_batch_operations": 10000,
+    "maximum_scan_items": 10000,
+    "busy_timeout_seconds": 2,
+    "transaction_expiration_seconds": 30,
+    "shutdown_timeout_seconds": 10,
+    "wal_autocheckpoint_pages": 1000,
+    "maximum_wal_bytes": 268435456,
+    "integrity_interval_seconds": 900,
+    "backup_retention_count": 14,
+    "disk_warning_free_bytes": 536870912,
+    "disk_critical_free_bytes": 268435456
+  },
+  "dependencies": {
+    "smtp_address": "127.0.0.1:1025",
+    "object_store_endpoint": "http://127.0.0.1:8333",
+    "runtime_supervisor_address": "127.0.0.1:9001",
+    "telemetry_query_address": "127.0.0.1:9465",
+    "otlp_address": "127.0.0.1:4317"
+  },
+  "limits": {
+    "max_request_bytes": 1048576,
+    "shutdown_grace_seconds": 30
+  },
+  "secrets": {
+    "internal_auth": "file:.local/secrets/internal-auth",
+    "object_store_access_key": "file:.local/secrets/object-store-access-key",
+    "object_store_secret_key": "file:.local/secrets/object-store-secret-key"
+  }
+}

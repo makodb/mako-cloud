@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-13T21:49:00.000Z",
+  "status": "passed",
+  "environment": "public-beta",
+  "vmId": 124,
+  "planHash": "d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073",
+  "selectedReleaseDigest": "a5ccdaabff7d6ef30da512330dab38b60e32ae034f621ee4d4eed2b49e976000",
+  "migration": {
+    "sourceCheckpointId": "20260813T161118Z-control-plane",
+    "sourceCheckpointSha256": "537098d1fb03ac359738b98246436db10f5091f8a42ba52276ecf499ce6eacf2",
+    "receiptSha256": "7a35254b4fe3af67194494fbda9c7625c4c943b6ed1b5d08be910c1930a1b441",
+    "recordCount": 6406,
+    "framedBlake3": "e4080ae355accc582ccb7a2d624e643b623b73c448ede26d977f5391da8d34e2",
+    "sourceFenced": true,
+    "sourceRetainedImmutable": true,
+    "targetPublishedAtomically": true,
+    "inventoryAndDomainInvariantsVerified": true
+  },
+  "currentMixedStorage": {
+    "controlPlane": "sqlite-format-1",
+    "dataPlane": "rocksdb-format-1",
+    "edgeGateway": "rocksdb-format-1",
+    "telemetryQuery": "rocksdb-format-1",
+    "allServiceListenersLoopbackOnly": true,
+    "singleVmAndDiskFailureDomain": true
+  },
+  "latestControlBackup": {
+    "backupId": "20260814T005221Z-control-plane",
+    "releaseDigest": "a5ccdaabff7d6ef30da512330dab38b60e32ae034f621ee4d4eed2b49e976000",
+    "recordCount": 7616,
+    "durableHighWater": 7616,
+    "framedBlake3": "d95f4444436dd60c6ab5bb4501422529dcd22c91787c07a1c7cb4649da082ed9",
+    "authenticatedAndRemotelyReverified": true,
+    "emptyTargetRestorePromotable": true,
+    "onlineBackupKeptControlServicePid": true
+  },
+  "failureIsolation": {
+    "controlAuthenticationAvailableDuringDataPlaneOutage": true,
+    "dataDependentOperationsFailedScoped": true,
+    "guestRebootPersistenceVerified": true
+  },
+  "rollback": {
+    "compatibleReleaseDigest": "5cc8599aca5651b2f217110d904d95282f4387d5b9c033f8d0b412c821277e2f",
+    "compatibleRollbackAndRollForwardReady": true,
+    "preSqliteReleaseRefused": true,
+    "oldRocksDbAuthorityReopened": false
+  },
+  "passed": true
+}

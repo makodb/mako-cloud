@@ -1,0 +1,7 @@
+table bridge mako_vm124_admission_stop {
+  chain forward {
+    type filter hook forward priority -20; policy accept;
+
+    oifname "tap124i0" ether type ip ip daddr 130.245.173.11 tcp dport { 80, 443 } drop
+  }
+}

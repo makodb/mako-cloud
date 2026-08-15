@@ -1,0 +1,195 @@
+---
+- name: Create the journald drop-in directory
+  ansible.builtin.file:
+    path: /etc/systemd/journald.conf.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Bound and persist journal storage
+  ansible.builtin.copy:
+    dest: /etc/systemd/journald.conf.d/90-mako-cloud.conf
+    content: |
+      [Journal]
+      Storage=persistent
+      SystemMaxUse=2G
+      RuntimeMaxUse=256M
+      MaxRetentionSec=30day
+      Compress=yes
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart journald
+
+- name: Create the sanitized node-exporter textfile directory
+  ansible.builtin.file:
+    path: /var/lib/mako-backup
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Bind node exporter to loopback only
+  ansible.builtin.template:
+    src: prometheus-node-exporter
+    dest: /etc/default/prometheus-node-exporter
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart node exporter
+
+- name: Enable the loopback-only node exporter
+  ansible.builtin.systemd_service:
+    name: prometheus-node-exporter.service
+    enabled: true
+    state: started
+  when: not ansible_check_mode
+
+- name: Inspect the protected operator-alert SMTP credential source
+  ansible.builtin.stat:
+    path: "{{ mako_alert_smtp_password_source }}"
+  delegate_to: localhost
+  become: false
+  register: observability_alert_smtp_secret_source
+  no_log: true
+  when: mako_alert_delivery_enabled | bool
+
+- name: Require the protected operator-alert SMTP credential source
+  ansible.builtin.assert:
+    that:
+      - observability_alert_smtp_secret_source.stat.isreg | default(false)
+      - observability_alert_smtp_secret_source.stat.mode == "0600"
+      - observability_alert_smtp_secret_source.stat.size >= 17
+      - observability_alert_smtp_secret_source.stat.size <= 4097
+    fail_msg: Operator alerts require a protected authenticated SMTP credential.
+  no_log: true
+  when: mako_alert_delivery_enabled | bool
+
+- name: Install the protected operator-alert SMTP credential
+  ansible.builtin.copy:
+    src: "{{ mako_alert_smtp_password_source }}"
+    dest: /etc/mako/credentials/alert-smtp-password
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  when: mako_alert_delivery_enabled | bool
+  notify: Restart Alertmanager
+
+- name: Validate the operator alert destination and authenticated SMTP relay
+  ansible.builtin.assert:
+    that:
+      - mako_alert_email is match('^[^@ ]+@[^@ ]+$')
+      - mako_alert_smtp_host == "smtp.resend.com"
+      - mako_alert_smtp_port | int == 587
+      - mako_alert_smtp_username == "resend"
+      - mako_alert_smtp_sender is match('^[^@ ]+@mail\\.makodb\\.com$')
+    fail_msg: Refusing to enable public-beta alerts without the authenticated Resend SMTP boundary.
+
+- name: Create the private Alertmanager state and override directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: /var/lib/prometheus/alertmanager, owner: prometheus, group: prometheus, mode: "0750" }
+    - { path: /etc/systemd/system/prometheus-alertmanager.service.d, owner: root, group: root, mode: "0755" }
+
+- name: Install the operator email alert route
+  ansible.builtin.template:
+    src: alertmanager.yml.j2
+    dest: /etc/prometheus/alertmanager.yml
+    owner: root
+    group: prometheus
+    mode: "0640"
+    validate: /usr/bin/amtool check-config %s
+  notify: Restart Alertmanager
+
+- name: Bind Alertmanager to loopback and its private state path
+  ansible.builtin.template:
+    src: prometheus-alertmanager
+    dest: /etc/default/prometheus-alertmanager
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart Alertmanager
+
+- name: Harden the Alertmanager system service
+  ansible.builtin.copy:
+    src: prometheus-alertmanager-hardening.conf
+    dest: /etc/systemd/system/prometheus-alertmanager.service.d/90-mako-hardening.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - Reload systemd
+    - Restart Alertmanager
+
+- name: Inspect the installed operator-alert SMTP credential
+  ansible.builtin.stat:
+    path: /etc/mako/credentials/alert-smtp-password
+  register: observability_installed_alert_smtp_secret
+  no_log: true
+  when: mako_alert_delivery_enabled | bool
+
+- name: Require protected operator-alert SMTP credential ownership
+  ansible.builtin.assert:
+    that:
+      - observability_installed_alert_smtp_secret.stat.isreg | default(false)
+      - observability_installed_alert_smtp_secret.stat.pw_name == "root"
+      - observability_installed_alert_smtp_secret.stat.gr_name == "root"
+      - observability_installed_alert_smtp_secret.stat.mode == "0600"
+    fail_msg: The installed operator-alert SMTP credential is not protected.
+  no_log: true
+  when: mako_alert_delivery_enabled | bool
+
+- name: Apply Alertmanager unit and configuration changes
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable the loopback-only operator alert route
+  ansible.builtin.systemd_service:
+    name: prometheus-alertmanager.service
+    enabled: "{{ mako_alert_delivery_enabled | bool }}"
+    state: "{{ 'started' if mako_alert_delivery_enabled | bool else 'stopped' }}"
+  when: not ansible_check_mode
+
+- name: Create the non-login health collection identity
+  ansible.builtin.user:
+    name: mako-health
+    system: true
+    create_home: false
+    shell: /usr/sbin/nologin
+    password_lock: true
+
+- name: Install the sanitized health collector
+  ansible.builtin.template:
+    src: mako-health-collect
+    dest: /usr/local/sbin/mako-health-collect
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install hardened health collection units
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "/etc/systemd/system/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - mako-health-collect.service
+    - mako-health-collect.timer
+  notify: Reload systemd
+
+- name: Reload systemd before controlling health collection
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable sanitized local health collection
+  ansible.builtin.systemd_service:
+    name: mako-health-collect.timer
+    enabled: "{{ mako_health_collection_enabled | bool }}"
+    state: "{{ 'started' if mako_health_collection_enabled | bool else 'stopped' }}"
+  when: not ansible_check_mode

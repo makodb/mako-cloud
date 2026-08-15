@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-09T04:02:00Z",
+  "environment": "public-beta",
+  "vmId": 124,
+  "planHash": "d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073",
+  "releaseDigest": "9429e76a4f24960683215c3dd5d6273526b13fc2bcf97b8788c07d4f60690385",
+  "sourceDigest": "192b8081ff5a22bff8383cdd135890dd741cdacf7e8c6d1823baa8cccfbfd6eb",
+  "runtimeDigest": "b0e4ea7b66166492c3c29910858dc5d1b7f9786df81aed7057d80f34a1ad2abd",
+  "dependencyDigest": "c8d4c0a54de90adc57e31a9149cfd42d8ebde85230cb457efa86013c98b5b12d",
+  "artifactDigest": "62871f9c5f54c88937a65f1586f73047afb4f029c25df1162a6d81e44c8baba7",
+  "passed": [
+    "strict-openspec",
+    "rust-format",
+    "rust-clippy-all-targets-all-features",
+    "rust-workspace-unit-integration-and-doc-tests",
+    "typescript-format-lint-typecheck-unit-integration-build",
+    "openapi-generation",
+    "documentation",
+    "auth-policy-rxdb-tenant-edge-and-production-rocksdb-security",
+    "rollback",
+    "production-release-and-storage",
+    "requirements-traceability",
+    "public-beta-offline-infrastructure",
+    "npm-high-severity-audit",
+    "rustsec-audit"
+  ],
+  "auditEnvironmentNote": "The user Cargo cache is on NFS and cannot lock the advisory database; the passing cargo-audit 0.22.2 run used a fresh lock-capable /var/tmp CARGO_HOME, loaded 1190 advisories, and scanned 241 locked dependencies.",
+  "hostedEvidence": "docs/evidence/public-beta-hosted-qualification.json",
+  "publicAdmissionEnabled": false,
+  "remainingEnvironmentBlockers": [
+    "operator ACME contact and explicit restricted pre-gate approval are absent, so certificate issuance and HTTPS/renewal verification remain incomplete",
+    "successful trusted-HTTPS target-load, function, RxDB, recovery, saturation, and 30-percent-headroom benchmarking remains incomplete",
+    "the 30-day observation and provider/facility cost window is in progress until 2026-09-08T03:56:55.303Z"
+  ]
+}

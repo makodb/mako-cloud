@@ -1,0 +1,142 @@
+#!/usr/bin/env bash
+set -euo pipefail
+umask 077
+
+output=/var/lib/mako-health/health.json
+metrics=/var/lib/mako-health/health.prom
+temporary=$(/usr/bin/mktemp /var/lib/mako-health/.health.json.XXXXXX)
+temporary_metrics=$(/usr/bin/mktemp /var/lib/mako-health/.health.prom.XXXXXX)
+trap '/usr/bin/rm -f "$temporary" "$temporary_metrics"' EXIT
+
+service_state() {
+  /usr/bin/systemctl is-active "$1" 2>/dev/null || true
+}
+
+service_metric() {
+  local service=$1 port=$2 active=0 ready=0 restarts=0 code
+  [[ "$(service_state "$service.service")" == active ]] && active=1
+  restarts=$(/usr/bin/systemctl show "$service.service" --property=NRestarts --value 2>/dev/null || true)
+  [[ "$restarts" =~ ^[0-9]+$ ]] || restarts=0
+  code=$(/usr/bin/curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
+    --max-time 2 "http://127.0.0.1:${port}/readyz" 2>/dev/null || true)
+  [[ "$code" == 200 ]] && ready=1
+  printf 'mako_service_active{service="%s"} %s\n' "$service" "$active"
+  printf 'mako_service_readiness{service="%s"} %s\n' "$service" "$ready"
+  printf 'mako_service_restart_count{service="%s"} %s\n' "$service" "$restarts"
+}
+
+podman_metric() {
+  local service=$1 events populated=0
+  events="/sys/fs/cgroup/user.slice/user-1001.slice/user@1001.service/app.slice/${service}.service/cgroup.events"
+  if [[ -r "$events" ]] && /usr/bin/grep --fixed-strings --quiet 'populated 1' "$events"; then
+    populated=1
+  fi
+  printf 'mako_podman_dependency_active{service="%s"} %s\n' "$service" "$populated"
+}
+
+certificate_expiry_metric() {
+  local certificate_not_after expiry_unixtime
+  certificate_not_after=$(
+    /usr/bin/timeout 5 /usr/bin/openssl s_client \
+      -connect 127.0.0.1:443 \
+      -servername "{{ mako_public_fqdn }}" </dev/null 2>/dev/null |
+      /usr/bin/openssl x509 -noout -enddate 2>/dev/null || true
+  )
+  if [[ "$certificate_not_after" == notAfter=* ]]; then
+    expiry_unixtime=$(
+      /usr/bin/date --date "${certificate_not_after#notAfter=}" +%s 2>/dev/null || true
+    )
+    if [[ "$expiry_unixtime" =~ ^[0-9]+$ ]]; then
+      printf '# HELP mako_certificate_expiry_unixtime_seconds Public TLS certificate expiry as a Unix timestamp.\n'
+      printf '# TYPE mako_certificate_expiry_unixtime_seconds gauge\n'
+      printf 'mako_certificate_expiry_unixtime_seconds %s\n' "$expiry_unixtime"
+    fi
+  fi
+}
+
+release=$(/usr/bin/readlink --canonicalize /opt/mako/current 2>/dev/null || true)
+mount_source=$(/usr/bin/findmnt --noheadings --output SOURCE --target /srv/mako-data 2>/dev/null || true)
+mount_type=$(/usr/bin/findmnt --noheadings --output FSTYPE --target /srv/mako-data 2>/dev/null || true)
+available_bytes=$(/usr/bin/df --block-size=1 --output=avail /srv/mako-data 2>/dev/null | /usr/bin/tail --lines=1 | /usr/bin/tr --delete ' ')
+available_bytes=${available_bytes:-0}
+
+/usr/bin/jq --null-input \
+  --arg generatedAt "$(/usr/bin/date --utc +%Y-%m-%dT%H:%M:%SZ)" \
+  --arg release "$release" \
+  --arg mountSource "$mount_source" \
+  --arg mountType "$mount_type" \
+  --arg dataPlane "$(service_state mako-data-plane.service)" \
+  --arg controlPlane "$(service_state mako-control-plane.service)" \
+  --arg edgeGateway "$(service_state mako-edge-gateway.service)" \
+  --arg telemetryQuery "$(service_state mako-telemetry-query.service)" \
+  --argjson availableBytes "$available_bytes" \
+  '{
+    schemaVersion: 1,
+    generatedAt: $generatedAt,
+    release: $release,
+    storage: {
+      source: $mountSource,
+      filesystem: $mountType,
+      availableBytes: $availableBytes
+    },
+    services: {
+      dataPlane: $dataPlane,
+      controlPlane: $controlPlane,
+      edgeGateway: $edgeGateway,
+      telemetryQuery: $telemetryQuery
+    }
+  }' >"$temporary"
+
+/usr/bin/chmod 0640 "$temporary"
+/usr/bin/mv --force "$temporary" "$output"
+
+{
+  printf '# HELP mako_service_active Whether the supervised system service is active.\n'
+  printf '# TYPE mako_service_active gauge\n'
+  printf '# HELP mako_service_readiness Whether the private readiness endpoint returned HTTP 200.\n'
+  printf '# TYPE mako_service_readiness gauge\n'
+  printf '# HELP mako_service_restart_count Systemd restart count for the current service activation.\n'
+  printf '# TYPE mako_service_restart_count gauge\n'
+  service_metric mako-data-plane 8080
+  service_metric mako-control-plane 8081
+  service_metric mako-edge-gateway 8082
+  service_metric mako-telemetry-query 9465
+  printf '# HELP mako_podman_dependency_active Whether the rootless dependency cgroup is populated.\n'
+  printf '# TYPE mako_podman_dependency_active gauge\n'
+  podman_metric mako-mailpit
+  podman_metric mako-object-store
+  podman_metric mako-otel-collector
+  podman_metric mako-prometheus
+  podman_metric mako-grafana
+  podman_metric mako-edge-runtime
+  printf '# HELP mako_storage_available_bytes Available bytes on the production data filesystem.\n'
+  printf '# TYPE mako_storage_available_bytes gauge\n'
+  printf 'mako_storage_available_bytes{volume="/srv/mako-data"} %s\n' "$available_bytes"
+  printf '# HELP mako_storage_disk_warning_free_bytes Configured warning reserve.\n'
+  printf '# TYPE mako_storage_disk_warning_free_bytes gauge\n'
+  printf 'mako_storage_disk_warning_free_bytes{volume="/srv/mako-data"} {{ mako_disk_warning_free_bytes }}\n'
+  printf '# HELP mako_storage_disk_critical_free_bytes Configured critical reserve.\n'
+  printf '# TYPE mako_storage_disk_critical_free_bytes gauge\n'
+  printf 'mako_storage_disk_critical_free_bytes{volume="/srv/mako-data"} {{ mako_disk_critical_free_bytes }}\n'
+  printf '# HELP mako_public_admission_enabled Whether Caddy public admission is active.\n'
+  printf '# TYPE mako_public_admission_enabled gauge\n'
+  if [[ "$(service_state caddy.service)" == active ]]; then
+    printf 'mako_public_admission_enabled 1\n'
+  else
+    printf 'mako_public_admission_enabled 0\n'
+  fi
+  certificate_expiry_metric
+  backup_metadata_written=false
+  for backup_metrics in /var/lib/mako-backup/*.prom; do
+    [[ -r "$backup_metrics" ]] || continue
+    if [[ "$backup_metadata_written" == false ]]; then
+      /usr/bin/cat "$backup_metrics"
+      backup_metadata_written=true
+    else
+      /usr/bin/grep --extended-regexp --invert-match '^# (HELP|TYPE) ' "$backup_metrics"
+    fi
+  done
+} >"$temporary_metrics"
+/usr/bin/chmod 0644 "$temporary_metrics"
+/usr/bin/mv --force "$temporary_metrics" "$metrics"
+trap - EXIT

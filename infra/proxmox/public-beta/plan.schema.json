@@ -1,0 +1,270 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://makodb.com/schemas/proxmox-public-beta-plan-v1.json",
+  "title": "Mako Cloud Proxmox public beta plan",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "generatedAt",
+    "mode",
+    "identity",
+    "proxmox",
+    "resources",
+    "image",
+    "network",
+    "storage",
+    "security",
+    "checks",
+    "changes",
+    "planHash"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "mode": { "const": "read-only-plan" },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fqdn", "ipv4Address", "guestType", "vmName"],
+      "properties": {
+        "fqdn": { "const": "cloud-test.makodb.com" },
+        "ipv4Address": { "const": "130.245.173.11" },
+        "guestType": { "const": "qemu" },
+        "vmName": { "const": "mako-cloud-public-beta" }
+      }
+    },
+    "proxmox": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cluster", "node", "vmId", "existingGuest"],
+      "properties": {
+        "cluster": { "type": "string", "minLength": 1 },
+        "node": { "type": "string", "minLength": 1 },
+        "vmId": { "type": "integer", "minimum": 100, "maximum": 999999999 },
+        "existingGuest": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["node", "status", "configDigest"],
+              "properties": {
+                "node": { "type": "string", "minLength": 1 },
+                "status": { "enum": ["running", "stopped", "unknown"] },
+                "configDigest": { "$ref": "#/$defs/sha256" }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "resources": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["vcpus", "sockets", "cpuType", "memoryMiB", "osDiskGiB", "dataDiskGiB"],
+      "properties": {
+        "vcpus": { "type": "integer", "minimum": 1 },
+        "sockets": { "type": "integer", "minimum": 1 },
+        "cpuType": { "type": "string", "minLength": 1 },
+        "memoryMiB": { "type": "integer", "minimum": 2048 },
+        "osDiskGiB": { "type": "integer", "minimum": 16 },
+        "dataDiskGiB": { "type": "integer", "minimum": 32 }
+      }
+    },
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "distribution",
+        "release",
+        "architecture",
+        "source",
+        "sha256",
+        "availableLocally"
+      ],
+      "properties": {
+        "distribution": { "const": "ubuntu" },
+        "release": { "const": "24.04" },
+        "architecture": { "const": "amd64" },
+        "source": { "type": "string", "format": "uri", "pattern": "^https://" },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "availableLocally": { "type": "boolean" }
+      }
+    },
+    "network": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bridge",
+        "prefixLength",
+        "gateway",
+        "dnsServers",
+        "macAddress",
+        "ipv6Mode",
+        "onLink"
+      ],
+      "properties": {
+        "bridge": { "type": "string", "minLength": 1 },
+        "prefixLength": { "type": "integer", "minimum": 1, "maximum": 32 },
+        "gateway": { "$ref": "#/$defs/ipAddress" },
+        "dnsServers": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/ipAddress" }
+        },
+        "macAddress": { "type": "string", "pattern": "^(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$" },
+        "ipv6Mode": { "enum": ["disabled", "configured"] },
+        "onLink": { "const": true }
+      }
+    },
+    "storage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["os", "data", "backup"],
+      "properties": {
+        "os": { "$ref": "#/$defs/storageTarget" },
+        "data": { "$ref": "#/$defs/storageTarget" },
+        "backup": {
+          "allOf": [
+            { "$ref": "#/$defs/storageTarget" },
+            {
+              "type": "object",
+              "properties": { "offVm": { "const": true } },
+              "required": ["offVm"]
+            }
+          ]
+        }
+      }
+    },
+    "security": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["managementCidrs", "sshPublicKeyFingerprint", "passwordLogin", "rootLogin"],
+      "properties": {
+        "managementCidrs": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[0-9a-fA-F:.]+/[0-9]{1,3}$" }
+        },
+        "sshPublicKeyFingerprint": { "type": "string", "minLength": 8 },
+        "passwordLogin": { "const": false },
+        "rootLogin": { "const": false }
+      }
+    },
+    "checks": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["dns", "inventory", "address", "capacity", "ambiguities", "conflictFree"],
+      "properties": {
+        "dns": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["localA", "publicA", "publicAaaa"],
+          "properties": {
+            "localA": { "type": "array", "items": { "$ref": "#/$defs/ipAddress" } },
+            "publicA": { "type": "array", "items": { "$ref": "#/$defs/ipAddress" } },
+            "publicAaaa": { "type": "array", "items": { "$ref": "#/$defs/ipAddress" } }
+          }
+        },
+        "inventory": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["vmNameMatches", "addressMatches", "vmIdAvailable"],
+          "properties": {
+            "vmNameMatches": { "type": "array", "items": { "type": "integer" } },
+            "addressMatches": { "type": "array", "items": { "type": "integer" } },
+            "vmIdAvailable": { "type": "boolean" }
+          }
+        },
+        "address": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["routeDevice", "neighborState", "activeOwnerDetected"],
+          "properties": {
+            "routeDevice": { "type": "string", "minLength": 1 },
+            "neighborState": {
+              "enum": [
+                "absent",
+                "failed",
+                "incomplete",
+                "reachable",
+                "stale",
+                "delay",
+                "probe",
+                "permanent",
+                "unknown"
+              ]
+            },
+            "activeOwnerDetected": { "type": "boolean" }
+          }
+        },
+        "capacity": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["memoryPass", "osStoragePass", "dataStoragePass", "backupStoragePass"],
+          "properties": {
+            "memoryPass": { "type": "boolean" },
+            "osStoragePass": { "type": "boolean" },
+            "dataStoragePass": { "type": "boolean" },
+            "backupStoragePass": { "type": "boolean" }
+          }
+        },
+        "ambiguities": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "conflictFree": { "type": "boolean" }
+      }
+    },
+    "changes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["classification", "items", "requiresDestructiveConfirmation"],
+      "properties": {
+        "classification": { "enum": ["create", "noop", "repair", "destructive"] },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "action", "destructive"],
+            "properties": {
+              "path": { "type": "string", "minLength": 1 },
+              "action": { "enum": ["create", "preserve", "update", "replace", "delete"] },
+              "destructive": { "type": "boolean" }
+            }
+          }
+        },
+        "requiresDestructiveConfirmation": { "type": "boolean" }
+      }
+    },
+    "planHash": { "$ref": "#/$defs/sha256" }
+  },
+  "$defs": {
+    "ipAddress": {
+      "type": "string",
+      "anyOf": [{ "format": "ipv4" }, { "format": "ipv6" }]
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "storageTarget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "content", "availableBytes", "requiredBytes", "headroomPercent", "offVm"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "content": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "availableBytes": { "type": "integer", "minimum": 0 },
+        "requiredBytes": { "type": "integer", "minimum": 1 },
+        "headroomPercent": { "type": "number", "minimum": 0, "maximum": 100 },
+        "offVm": { "type": "boolean" }
+      }
+    }
+  }
+}

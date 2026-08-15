@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "environment": "public-beta",
+  "policyState": "staged-for-deployment-qualification",
+  "resources": {
+    "replication_requests": {
+      "hard": { "limit": 100000, "windowMilliseconds": 86400000 },
+      "rate": { "limit": 120, "windowMilliseconds": 60000 }
+    },
+    "replication_bytes": {
+      "hard": { "limit": 10737418240, "windowMilliseconds": 86400000 },
+      "rate": { "limit": 67108864, "windowMilliseconds": 60000 }
+    },
+    "function_invocations": {
+      "hard": { "limit": 10000, "windowMilliseconds": 86400000 },
+      "rate": { "limit": 60, "windowMilliseconds": 60000 }
+    },
+    "public_function_invocations": {
+      "hard": { "limit": 1000, "windowMilliseconds": 86400000 },
+      "rate": { "limit": 10, "windowMilliseconds": 60000 }
+    },
+    "function_request_bytes": {
+      "hard": { "limit": 1073741824, "windowMilliseconds": 86400000 },
+      "rate": { "limit": 16777216, "windowMilliseconds": 60000 }
+    },
+    "egress_requests": {
+      "hard": { "limit": 10000, "windowMilliseconds": 86400000 },
+      "rate": { "limit": 60, "windowMilliseconds": 60000 }
+    },
+    "egress_bytes": {
+      "hard": { "limit": 1073741824, "windowMilliseconds": 86400000 },
+      "rate": { "limit": 16777216, "windowMilliseconds": 60000 }
+    }
+  }
+}

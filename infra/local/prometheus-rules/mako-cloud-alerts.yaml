@@ -1,0 +1,489 @@
+groups:
+  - name: mako-operator-control-center
+    interval: 15s
+    rules:
+      - alert: MakoOperatorControlCenterSourceUnavailable
+        expr: increase(mako_operator_control_center_unavailable_total[5m]) > 0
+        for: 2m
+        labels:
+          severity: warning
+          subsystem: operator-control-center
+        annotations:
+          summary: An operator control-center source or request is unavailable
+          runbook: docs/runbooks/operator-control-center.md
+
+      - alert: MakoOperatorControlCenterFailureRatioHigh
+        expr: increase(mako_operator_control_center_failures_total[10m]) / clamp_min(increase(mako_operator_control_center_requests_total[10m]), 1) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          subsystem: operator-control-center
+        annotations:
+          summary: Operator control-center request failures exceed five percent
+          runbook: docs/runbooks/operator-control-center.md
+
+      - alert: MakoOperatorControlCenterLatencyHigh
+        expr: increase(mako_operator_control_center_latency_milliseconds_total[5m]) / clamp_min(increase(mako_operator_control_center_requests_total[5m]), 1) > 2000
+        for: 5m
+        labels:
+          severity: warning
+          subsystem: operator-control-center
+        annotations:
+          summary: Mean operator control-center request latency exceeds two seconds
+          runbook: docs/runbooks/operator-control-center.md
+
+  - name: mako-operator-authentication
+    interval: 15s
+    rules:
+      - alert: MakoOperatorBreakGlassEnabled
+        expr: mako_operator_break_glass_bearer_enabled == 1
+        for: 5m
+        labels:
+          severity: warning
+          subsystem: operator-authentication
+        annotations:
+          summary: Operator break-glass bearer acceptance remains enabled
+          runbook: docs/runbooks/operator-password-authentication.md
+
+      - alert: MakoOperatorAuthenticationThrottlingHigh
+        expr: increase(mako_operator_throttles_total[5m]) > 20
+        for: 5m
+        labels:
+          severity: warning
+          subsystem: operator-authentication
+        annotations:
+          summary: Operator password authentication is throttling repeated attempts
+          runbook: docs/runbooks/operator-password-authentication.md
+
+      - alert: MakoOperatorAuthenticationFailuresHigh
+        expr: increase(mako_operator_sign_in_failures_total[10m]) > 20
+        for: 5m
+        labels:
+          severity: warning
+          subsystem: operator-authentication
+        annotations:
+          summary: Operator password sign-in failures are elevated
+          runbook: docs/runbooks/operator-password-authentication.md
+
+      - alert: MakoOperatorBootstrapFailure
+        expr: increase(mako_operator_bootstrap_failures_total[15m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          subsystem: operator-authentication
+        annotations:
+          summary: A protected operator bootstrap apply failed
+          runbook: docs/runbooks/operator-password-authentication.md
+
+      - alert: MakoDeveloperRoleRepairFailure
+        expr: increase(mako_developer_role_repair_failures_total[15m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          subsystem: operator-authentication
+        annotations:
+          summary: A protected developer-role repair apply failed
+          runbook: docs/runbooks/operator-password-authentication.md
+
+      - alert: MakoOperatorSessionGrowth
+        expr: mako_operator_active_sessions > 100
+        for: 10m
+        labels:
+          severity: warning
+          subsystem: operator-authentication
+        annotations:
+          summary: Active privileged operator sessions exceed the beta bound
+          runbook: docs/runbooks/operator-password-authentication.md
+
+  - name: mako-developer-registration
+    interval: 15s
+    rules:
+      - alert: MakoDeveloperMailNotReady
+        expr: mako_developer_registration_enabled == 1 and mako_developer_mail_ready == 0
+        for: 1m
+        labels:
+          severity: critical
+          subsystem: developer-identity
+        annotations:
+          summary: Developer registration is enabled while authenticated mail is unready
+          runbook: docs/runbooks/developer-registration-and-mail.md
+
+      - alert: MakoDeveloperOutboxBacklog
+        expr: mako_developer_outbox_pending > 4000 or mako_developer_outbox_oldest_age_seconds > 900
+        for: 5m
+        labels:
+          severity: warning
+          subsystem: developer-identity
+        annotations:
+          summary: Developer registration mail outbox is near its bound or delayed
+          runbook: docs/runbooks/developer-registration-and-mail.md
+
+      - alert: MakoDeveloperMailDeadLetter
+        expr: mako_developer_outbox_dead_letters > 0 or increase(mako_developer_mail_dead_lettered_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          subsystem: developer-identity
+        annotations:
+          summary: Developer registration mail reached terminal dead-letter state
+          runbook: docs/runbooks/developer-registration-and-mail.md
+
+      - alert: MakoDeveloperMailWorkerFailure
+        expr: increase(mako_developer_mail_worker_failures_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          subsystem: developer-identity
+        annotations:
+          summary: Developer registration mail worker cannot complete a pass
+          runbook: docs/runbooks/developer-registration-and-mail.md
+
+      - alert: MakoDeveloperAuthenticationThrottlingHigh
+        expr: increase(mako_developer_throttles_total[5m]) > 100
+        for: 5m
+        labels:
+          severity: warning
+          subsystem: developer-identity
+        annotations:
+          summary: Hosted developer authentication is shedding abusive or excessive traffic
+          runbook: docs/runbooks/developer-registration-and-mail.md
+
+      - alert: MakoDeveloperWaitlistReviewStale
+        expr: mako_developer_waitlist_oldest_age_seconds > 604800
+        for: 30m
+        labels:
+          severity: warning
+          subsystem: developer-identity
+        annotations:
+          summary: The oldest verified developer applicant has waited more than seven days
+          runbook: docs/runbooks/developer-registration-and-mail.md
+
+  - name: mako-production-rocksdb
+    interval: 15s
+    rules:
+      - alert: MakoRocksDbUnavailable
+        expr: min by (service, volume) (mako_storage_rocksdb_ready) < 1 or min by (service, volume) (mako_storage_lock_held) < 1
+        for: 1m
+        labels:
+          severity: critical
+          subsystem: storage
+        annotations:
+          summary: Production RocksDB is not ready or has lost its exclusive lock
+          runbook: docs/runbooks/production-rocksdb.md
+
+      - alert: MakoRocksDbDiskCritical
+        expr: mako_storage_available_bytes < mako_storage_disk_critical_free_bytes
+        for: 2m
+        labels:
+          severity: critical
+          subsystem: storage
+        annotations:
+          summary: Production RocksDB is below its critical disk reserve
+          runbook: docs/runbooks/production-rocksdb.md
+
+      - alert: MakoRocksDbWriteStalled
+        expr: mako_storage_write_stopped > 0 or mako_storage_pending_compaction_bytes > 10737418240
+        for: 5m
+        labels:
+          severity: warning
+          subsystem: storage
+        annotations:
+          summary: Production RocksDB writes are stalled or compaction pressure is high
+          runbook: docs/runbooks/production-rocksdb.md
+
+      - alert: MakoRocksDbCorruptionSignal
+        expr: increase(mako_storage_corruption_signals_total[5m]) > 0 or increase(mako_storage_io_errors_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          subsystem: storage
+        annotations:
+          summary: Production RocksDB reported an I/O or corruption signal
+          runbook: docs/runbooks/production-rocksdb.md
+
+      - alert: MakoRocksDbBackupStale
+        expr: mako_storage_backup_age_seconds > 900 or increase(mako_storage_backup_failures_total[15m]) > 0 or mako_storage_backup_remote_verified < 1
+        for: 5m
+        labels:
+          severity: critical
+          subsystem: storage
+        annotations:
+          summary: No recent verified production RocksDB backup exists
+          runbook: docs/runbooks/production-rocksdb.md
+
+      - alert: MakoRocksDbRestoreFailed
+        expr: mako_storage_restore_verification_success < 1
+        for: 1m
+        labels:
+          severity: critical
+          subsystem: storage
+        annotations:
+          summary: Production RocksDB restore verification failed
+          runbook: docs/runbooks/production-rocksdb.md
+
+      - alert: MakoRocksDbRecoverySlow
+        expr: mako_storage_recovery_duration_seconds > 300
+        for: 1m
+        labels:
+          severity: warning
+          subsystem: storage
+        annotations:
+          summary: Production RocksDB recovery exceeded the five-minute objective
+          runbook: docs/runbooks/production-rocksdb.md
+
+  - name: mako-control-sqlite
+    interval: 15s
+    rules:
+      - alert: MakoControlSqliteUnavailable
+        expr: mako_control_sqlite_ready < 1 or mako_control_sqlite_integrity_verified < 1
+        for: 1m
+        labels:
+          severity: critical
+          subsystem: control-storage
+        annotations:
+          summary: Control SQLite readiness or integrity verification failed
+          runbook: docs/runbooks/control-plane-sqlite.md
+
+      - alert: MakoControlSqliteContentionHigh
+        expr: increase(mako_control_sqlite_busy_total[5m]) > 20 or mako_control_sqlite_transaction_oldest_seconds > 25
+        for: 5m
+        labels:
+          severity: warning
+          subsystem: control-storage
+        annotations:
+          summary: Control SQLite has sustained write contention or a long transaction
+          runbook: docs/runbooks/control-plane-sqlite.md
+
+      - alert: MakoControlSqliteWalPressure
+        expr: mako_control_sqlite_wal_bytes > 268435456 or increase(mako_control_sqlite_checkpoint_failures_total[10m]) > 0
+        for: 2m
+        labels:
+          severity: critical
+          subsystem: control-storage
+        annotations:
+          summary: Control SQLite WAL or checkpoint policy is under pressure
+          runbook: docs/runbooks/control-plane-sqlite.md
+
+      - alert: MakoControlSqliteCapacityCritical
+        expr: mako_control_sqlite_available_bytes < mako_control_sqlite_disk_critical_free_bytes
+        for: 2m
+        labels:
+          severity: critical
+          subsystem: control-storage
+        annotations:
+          summary: Control SQLite is below its critical disk reserve
+          runbook: docs/runbooks/control-plane-sqlite.md
+
+      - alert: MakoControlSqliteBackupOrRestoreFailure
+        expr: mako_control_sqlite_backup_age_seconds > 900 or mako_control_sqlite_backup_remote_verified < 1 or increase(mako_control_sqlite_backup_failures_total[15m]) > 0 or increase(mako_control_sqlite_restore_failures_total[15m]) > 0
+        for: 2m
+        labels:
+          severity: critical
+          subsystem: control-storage
+        annotations:
+          summary: Control SQLite backup or restore verification is stale or failing
+          runbook: docs/runbooks/control-plane-sqlite.md
+
+  - name: mako-cloud-release-blockers
+    interval: 15s
+    rules:
+      - alert: MakoStorageContractFailed
+        expr: max by (service, region) (mako_storage_contract_ready) == 0
+        for: 1m
+        labels:
+          severity: critical
+          subsystem: storage
+        annotations:
+          summary: Storage adapter contract is not ready
+          description: A service cannot prove required KV semantics or configured durability and must remain out of data-plane readiness.
+          runbook: docs/runbooks/storage-contract-failure.md
+
+      - alert: MakoSequencerGapBlocking
+        expr: max by (project_id, environment_id) (mako_sequencer_oldest_unresolved_gap_age_seconds) > 60
+        for: 2m
+        labels:
+          severity: critical
+          subsystem: sequencer
+        annotations:
+          summary: An unresolved commit gap is blocking visibility
+          description: The committed high-water mark has been blocked by a gap for more than one minute.
+          runbook: docs/runbooks/unresolved-commit-gaps.md
+
+      - alert: MakoPolicyEvaluationFailureRatioHigh
+        expr: |
+          sum by (service, region) (rate(mako_policy_evaluations_total{outcome=~"timeout|error|unavailable"}[5m]))
+            / clamp_min(sum by (service, region) (rate(mako_policy_evaluations_total[5m])), 0.000001) > 0.01
+        for: 5m
+        labels:
+          severity: warning
+          subsystem: policy
+        annotations:
+          summary: Policy evaluations are failing closed
+          description: More than one percent of policy evaluations have timed out or failed during the last five minutes.
+          runbook: docs/runbooks/policy-evaluation-failures.md
+
+      - alert: MakoAuthRefreshReplayDetected
+        expr: sum by (project_id, environment_id) (increase(mako_auth_refresh_replay_total[5m])) > 0
+        for: 0m
+        labels:
+          severity: critical
+          subsystem: identity
+        annotations:
+          summary: Refresh credential replay was detected
+          description: Identity detected reuse of an invalidated rotating refresh credential and revoked its token family.
+          runbook: docs/runbooks/auth-refresh-replay.md
+
+      - alert: MakoTenantIsolationSignal
+        expr: sum by (service, region) (increase(mako_tenant_isolation_violation_total[5m])) > 0
+        for: 0m
+        labels:
+          severity: critical
+          subsystem: security
+        annotations:
+          summary: A tenant-boundary invariant was violated
+          description: A service observed an impossible cross-project or cross-environment scope condition; treat this as a security incident.
+          runbook: docs/runbooks/tenant-isolation-signal.md
+
+      - alert: MakoEdgeSandboxIncident
+        expr: sum by (region, reason) (increase(mako_function_sandbox_incidents_total[5m])) > 0
+        for: 0m
+        labels:
+          severity: critical
+          subsystem: edge-runtime
+        annotations:
+          summary: An edge worker triggered a sandbox security control
+          description: The runtime terminated or denied a worker for an isolation, secret, egress, or post-invocation-lifetime violation.
+          runbook: docs/runbooks/edge-sandbox-incident.md
+
+  - name: mako-public-beta-operations
+    interval: 15s
+    rules:
+      - alert: MakoServiceUnavailable
+        expr: min by (service) (mako_service_active) < 1 or min by (service) (mako_service_readiness) < 1
+        for: 1m
+        labels:
+          severity: critical
+          subsystem: service
+        annotations:
+          summary: A Mako service is stopped or not ready
+          runbook: docs/runbooks/public-beta-operations.md
+
+      - alert: MakoCertificateMetricMissing
+        expr: (mako_public_admission_enabled == 1) unless on() mako_certificate_expiry_unixtime_seconds
+        for: 2m
+        labels:
+          severity: critical
+          subsystem: certificate
+        annotations:
+          summary: Public admission is active without certificate expiry telemetry
+          runbook: docs/runbooks/public-beta-operations.md
+
+      - alert: MakoCertificateExpiringSoon
+        expr: (mako_certificate_expiry_unixtime_seconds - time()) < 1209600 and on() mako_public_admission_enabled == 1
+        for: 5m
+        labels:
+          severity: warning
+          subsystem: certificate
+        annotations:
+          summary: The public beta certificate expires within fourteen days
+          runbook: docs/runbooks/public-beta-operations.md
+
+      - alert: MakoFilesystemReserveLow
+        expr: mako_storage_available_bytes < mako_storage_disk_warning_free_bytes
+        for: 5m
+        labels:
+          severity: warning
+          subsystem: filesystem
+        annotations:
+          summary: The production filesystem is below its warning reserve
+          runbook: docs/runbooks/public-beta-operations.md
+
+      - alert: MakoRecoveryEvidenceMissing
+        expr: (mako_public_admission_enabled == 1) unless on() mako_storage_restore_verification_success
+        for: 5m
+        labels:
+          severity: critical
+          subsystem: recovery
+        annotations:
+          summary: Public admission is active without verified restore evidence
+          runbook: docs/runbooks/public-beta-operations.md
+
+      - alert: MakoRequestLatencyHigh
+        expr: histogram_quantile(0.99, sum by (le, service) (rate(mako_request_duration_milliseconds_bucket[5m]))) > 500
+        for: 10m
+        labels:
+          severity: warning
+          subsystem: latency
+        annotations:
+          summary: Mako request p99 latency exceeds 500 milliseconds
+          runbook: docs/runbooks/public-beta-operations.md
+
+      - alert: MakoHttpErrorRateHigh
+        expr: sum by (service) (rate(mako_http_requests_total{status_code=~"5.."}[5m])) / clamp_min(sum by (service) (rate(mako_http_requests_total[5m])), 0.000001) > 0.01
+        for: 5m
+        labels:
+          severity: warning
+          subsystem: errors
+        annotations:
+          summary: Mako HTTP 5xx responses exceed one percent
+          runbook: docs/runbooks/public-beta-operations.md
+
+      - alert: MakoAuditWriteFailure
+        expr: sum by (service) (increase(mako_audit_write_failures_total[5m])) > 0
+        for: 0m
+        labels:
+          severity: critical
+          subsystem: audit
+        annotations:
+          summary: A durable audit write failed
+          runbook: docs/runbooks/public-beta-operations.md
+
+      - alert: MakoServiceRestartLoop
+        expr: changes(mako_service_restart_count[10m]) > 3
+        for: 1m
+        labels:
+          severity: critical
+          subsystem: process
+        annotations:
+          summary: A Mako service is repeatedly restarting
+          runbook: docs/runbooks/public-beta-operations.md
+
+      - alert: MakoPodmanDependencyDown
+        expr: min by (service) (mako_podman_dependency_active) < 1
+        for: 2m
+        labels:
+          severity: critical
+          subsystem: podman
+        annotations:
+          summary: A rootless Podman dependency is not running
+          runbook: docs/runbooks/public-beta-operations.md
+
+      - alert: MakoHostCpuSaturation
+        expr: 1 - avg(rate(node_cpu_seconds_total{mode="idle"}[5m])) > 0.9
+        for: 10m
+        labels:
+          severity: warning
+          subsystem: host
+        annotations:
+          summary: Host CPU utilization exceeds ninety percent
+          runbook: docs/runbooks/public-beta-operations.md
+
+      - alert: MakoHostMemoryLow
+        expr: node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes < 0.1
+        for: 5m
+        labels:
+          severity: critical
+          subsystem: host
+        annotations:
+          summary: Host available memory is below ten percent
+          runbook: docs/runbooks/public-beta-operations.md
+
+      - alert: MakoHostNetworkErrors
+        expr: sum(rate(node_network_receive_errs_total[5m]) + rate(node_network_transmit_errs_total[5m])) > 0
+        for: 5m
+        labels:
+          severity: warning
+          subsystem: host
+        annotations:
+          summary: The beta host is reporting network interface errors
+          runbook: docs/runbooks/public-beta-operations.md

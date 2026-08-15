@@ -1,0 +1,180 @@
+//! Multi-tenant management and operator control-plane domain.
+
+#![forbid(unsafe_code)]
+
+mod application_user;
+mod automation;
+mod collection;
+mod credentials;
+mod data_job;
+mod deletion;
+mod developer_identity;
+mod developer_registration;
+mod developer_workflow;
+mod explorer;
+mod function;
+mod function_bundle;
+mod keyspace;
+mod management_access;
+mod model;
+mod observability;
+mod operator;
+mod operator_authentication;
+mod operator_control_center;
+mod organization;
+mod policy;
+mod production_observability;
+mod project;
+mod retention_job;
+mod runtime_backend;
+mod workspace;
+
+pub use developer_identity::{
+    ControlPlaneAuthenticator, DeveloperAuthenticationError, DeveloperIdentityProvider,
+    DeveloperPrincipal, DeveloperSessionClaims, DeveloperSessionToken, IdentityProviderError,
+};
+pub use developer_registration::{
+    AuthenticationIdentityRecord, AuthenticationSecurityStatus, DeveloperAccessAudience,
+    DeveloperAccount, DeveloperAuthToken, DeveloperAuthTokenId, DeveloperAuthTokenPurpose,
+    DeveloperAuthTokenRecord, DeveloperCleanupReport, DeveloperDecisionKind,
+    DeveloperDecisionRecord, DeveloperLookupKey, DeveloperMailKind, DeveloperMailOutboxId,
+    DeveloperMailOutboxRecord, DeveloperMailOutboxState, DeveloperMigrationReport,
+    DeveloperRateLimitRecord, DeveloperRefreshCredential, DeveloperRefreshSessionId,
+    DeveloperRefreshSessionRecord, DeveloperRegistrationError, DeveloperRegistrationHealthSnapshot,
+    DeveloperRegistrationStore, DeveloperReviewPage, DeveloperRoleRecord, EncryptedDeveloperMail,
+};
+pub use developer_workflow::{
+    DeveloperAccessClaims, DeveloperGenericOutcome, DeveloperMailCipher,
+    DeveloperMailEncryptionKey, DeveloperMailEnvelope, DeveloperMailFailureKind,
+    DeveloperMailOutboxWorker, DeveloperMailTransport, DeveloperMailTransportError,
+    DeveloperOutboxWorkerReport, DeveloperRecoveryOutcome, DeveloperRegistrationConfig,
+    DeveloperRegistrationService, DeveloperSessionGrant, DeveloperVerificationOutcome,
+    DeveloperWaitlistStatus, DeveloperWorkflowError,
+};
+pub use explorer::{ExplorerGrantError, ExplorerGrantService};
+pub use keyspace::{ControlKeyspace, ControlKeyspaceError};
+pub use management_access::{
+    AuthorizedManagementActor, ManagementAccessError, ManagementAction, ManagementActor,
+    ManagementAuthorizer,
+};
+pub use model::{
+    ControlModelError, DeveloperIdentity, DeveloperIdentityId, DeveloperIdentityStatus,
+    EnvironmentRecord, InvitationId, InvitationInput, InvitationRecord, InvitationStatus,
+    LifecycleState, MembershipRecord, OrganizationId, OrganizationRecord, OrganizationRole,
+    ProjectDataPermission, ProjectRecord, QuotaResource, QuotaSet,
+};
+pub use observability::{
+    EventOutcome, HealthState, ObservabilityBackend, ObservabilityBackendError, ObservabilityError,
+    ObservabilityPage, ObservabilityPayload, ObservabilityQuery, ObservabilityRecord,
+    ObservabilityService, ObservabilitySignal, RetentionWindow,
+};
+pub use operator::{
+    AbuseResponseId, AbuseResponseRecord, AbuseTarget, NewAbuseResponse, NewQuotaOverride,
+    NewSupportSession, OperatorAuditAction, OperatorAuditEvent, OperatorAuditOutcome,
+    OperatorAuditSink, OperatorAuthenticationError, OperatorAuthenticator, OperatorError,
+    OperatorId, OperatorIdentityProvider, OperatorIdentityProviderError, OperatorPermission,
+    OperatorPrincipal, OperatorProjectView, OperatorRecordEvent, OperatorRecordState, OperatorRole,
+    OperatorService, OperatorSessionClaims, OperatorSessionToken, QuotaOverrideId,
+    QuotaOverrideRecord, SupportPermission, SupportSessionId, SupportSessionRecord,
+    SupportSessionState, VerifiedSupportAccess,
+};
+pub use operator_authentication::{
+    AuthenticatedOperatorSession, BootstrapDeveloperAdmissionRepairInput,
+    BootstrapDeveloperAdmissionRepairPlan, BootstrapDeveloperAdmissionRepairResult,
+    BootstrapDeveloperAdmissionRepairService, OperatorAttemptClass, OperatorAttemptRecord,
+    OperatorAuthenticationAuditAction, OperatorAuthenticationAuditEvent,
+    OperatorAuthenticationAuditOutcome, OperatorAuthenticationAuditSink,
+    OperatorAuthenticationCleanupReport, OperatorAuthenticationConfig,
+    OperatorAuthenticationHealthSnapshot, OperatorAuthenticationKey,
+    OperatorAuthenticationMigrationReport, OperatorAuthenticationService,
+    OperatorAuthenticationStore, OperatorAuthenticationStoreError, OperatorBootstrapInput,
+    OperatorBootstrapPlan, OperatorBootstrapResult, OperatorBootstrapService,
+    OperatorEntitlementAdminInput, OperatorEntitlementAdminPlan, OperatorEntitlementAdminResult,
+    OperatorEntitlementAdminService, OperatorEntitlementChangeKind,
+    OperatorEntitlementChangeResult, OperatorEntitlementRecord, OperatorEntitlementService,
+    OperatorIdempotencyRecord, OperatorPasswordAuthenticationError, OperatorSessionCredential,
+    OperatorSessionGrant, OperatorSessionProfile, OperatorSessionRecord,
+};
+pub use operator_control_center::{
+    ActivityExportRecord, ActivityExportState, ActivityRecord, AlertSummary, BackupSummary,
+    FleetSummary, Freshness, GuardedMutation, IncidentEvent, IncidentRecord, IncidentSearch,
+    IncidentState, InventoryKind, OperatorBackupEvidenceProvider, OperatorControlCenterConfig,
+    OperatorControlCenterError, OperatorControlCenterService, OperatorCurrentAlertProvider,
+    OperatorCursorPage, OperatorDiagnosticLinkProvider, OperatorFleetHealthProvider,
+    OperatorOverview, OperatorProvider, OperatorProviderError, OperatorReadSection,
+    OperatorReleaseStateProvider, OperatorSecuritySummary, OperatorTelemetrySummaryProvider,
+    ProjectionEvidence, RecoveryExecutor, RecoveryExecutorError, RecoveryJobRecord,
+    RecoveryJobState, RecoveryRequest, SafeDiagnosticLink, Tenant360, TenantSearch, TenantSummary,
+};
+pub use organization::{
+    ControlAuditAction, ControlAuditEvent, ControlAuditOutcome, ControlAuditSink, InvitationToken,
+    IssuedInvitation, NewInvitation, OrganizationService, OrganizationServiceError,
+    OrganizationStore, OrganizationStoreError,
+};
+pub use policy::{
+    ActivePolicyView, NewPolicyDraft, PolicyAdminError, PolicyAdminService, PolicyExampleResult,
+    PolicyValidationView,
+};
+pub use production_observability::{
+    ProductionObservabilityBackend, ProductionObservabilityConfig, ProductionObservabilityError,
+    TELEMETRY_AUTHORIZATION_HEADER, TELEMETRY_HEALTH_PATH, TELEMETRY_INGEST_PATH,
+    TELEMETRY_PROTOCOL_VERSION, TELEMETRY_QUERY_PATH, TELEMETRY_REQUEST_ID_HEADER,
+    TELEMETRY_VERSION_HEADER, TelemetryHealth, TelemetryIngestRequest, TelemetryIngestResponse,
+    TelemetryQueryCredential, TelemetryQueryRequest, TelemetryQueryResponse,
+};
+pub use project::{
+    NewEnvironment, NewProject, ProjectEnvironmentService, ProjectStore, ProjectStoreError,
+};
+pub use retention_job::{
+    CollectionRetentionReport, CollectionRetentionTarget, RetentionJob, RetentionJobError,
+    RetentionJobReport,
+};
+pub use runtime_backend::{
+    RuntimeClientError, RuntimeDeploymentClient, RuntimeDeploymentClientConfig,
+    RuntimeSupervisorCredential,
+};
+pub use workspace::{
+    DeveloperRestoreService, DeveloperStepUpGrant, DeveloperWorkspaceError,
+    DeveloperWorkspaceSecurity,
+};
+
+/// Identifies this workspace component in diagnostics.
+pub const COMPONENT: &str = "control-plane";
+pub use application_user::{
+    ApplicationUserAccess, ApplicationUserAccessError, PolicyMetadataInvalidation,
+};
+pub use automation::{
+    AutomationPermission, AutomationPrincipal, AutomationScope, AutomationTokenId,
+    AutomationTokenIssue, AutomationTokenRecord, AutomationTokenSecret, AutomationTokenService,
+    AutomationTokenStatus, ManagementResourceScope, TokenServiceError,
+};
+pub use collection::{
+    CollectionAdminError, CollectionAdminService, CollectionCompatibilityReport, IndexBuildStatus,
+    NewCollection, NewIndex, NewSchemaMigration, PublishSchema, SchemaMigrationId,
+    SchemaMigrationRecord, SchemaMigrationState, SchemaPublicationOutcome,
+};
+pub use credentials::{
+    CredentialAdminError, CredentialAdminService, FunctionSecretEncryptionKey, FunctionSecretIssue,
+    FunctionSecretMetadata, FunctionSecretName, FunctionSecretResolver, FunctionSecretState,
+    FunctionSecretValue, ResolvedFunctionSecret, SigningKeyView,
+};
+pub use data_job::{
+    ArtifactMethod, DataJobError, DataJobMetricsSnapshot, DataJobService, DataJobWorkerReport,
+};
+pub use deletion::{
+    DeletionAuditAction, DeletionAuditEvent, DeletionAuditSink, DeletionBackend,
+    DeletionBackendError, DeletionError, DeletionLifecycleService, DeletionScope, DeletionWorkflow,
+    DeletionWorkflowState,
+};
+pub use function::{
+    FunctionAdminError, FunctionAdminService, FunctionBackendError, FunctionConfiguration,
+    FunctionDeploymentBackend, FunctionDeploymentResult, FunctionDeploymentSecret,
+    FunctionDeploymentSpec, FunctionLimits, FunctionLogEntry, FunctionLogPage, FunctionLogQuery,
+    FunctionName, FunctionRecord, FunctionSecretVersionReference, FunctionState,
+    FunctionTestRequest, FunctionTestResponse, FunctionVersionRecord, FunctionVersionState,
+    NewFunction, NewFunctionVersion,
+};
+pub use function_bundle::{
+    FunctionBundleDiagnostic, FunctionBundleDiagnosticSeverity, FunctionBundleFormat,
+    FunctionBundleRecord, FunctionBundleUpload, FunctionBundleUploadOutcome, FunctionSourceFile,
+};

@@ -1,0 +1,64 @@
+{
+  "annotations": { "list": [] },
+  "editable": false,
+  "graphTooltip": 1,
+  "panels": [
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "max": 1, "min": 0, "unit": "percentunit" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "id": 1,
+      "targets": [
+        {
+          "expr": "max by (service, region) (mako_service_active_work{project_id=~\"$project\",environment_id=~\"$environment\"} / clamp_min(mako_service_work_capacity{project_id=~\"$project\",environment_id=~\"$environment\"}, 1))",
+          "legendFormat": "{{service}} / {{region}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Concurrency saturation",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "id": 2,
+      "targets": [
+        {
+          "expr": "max by (service, region) (mako_service_queue_depth{project_id=~\"$project\",environment_id=~\"$environment\"})",
+          "legendFormat": "{{service}} / {{region}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Admission and work queues",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 41,
+  "tags": ["mako-cloud", "saturation"],
+  "templating": {
+    "list": [
+      {
+        "allValue": ".*",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "includeAll": true,
+        "name": "project",
+        "query": "label_values(mako_service_active_work, project_id)",
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "includeAll": true,
+        "name": "environment",
+        "query": "label_values(mako_service_active_work{project_id=~\"$project\"}, environment_id)",
+        "type": "query"
+      }
+    ]
+  },
+  "time": { "from": "now-6h", "to": "now" },
+  "title": "Mako Cloud — Saturation",
+  "uid": "mako-saturation",
+  "version": 1
+}

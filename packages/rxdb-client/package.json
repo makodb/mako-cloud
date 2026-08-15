@@ -1,0 +1,44 @@
+{
+  "name": "@mako-cloud/rxdb",
+  "version": "0.1.0",
+  "private": false,
+  "description": "Supported RxDB replication and project-auth client for Mako Cloud",
+  "license": "Apache-2.0",
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/browser/index.d.ts",
+      "browser": "./dist/browser/index.js",
+      "node": "./dist/node/index.js",
+      "default": "./dist/browser/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "types": "./dist/browser/index.d.ts",
+  "module": "./dist/browser/index.js",
+  "main": "./dist/node/index.js",
+  "scripts": {
+    "build": "tsc -b tsconfig.browser.json tsconfig.node.json",
+    "clean": "tsc -b tsconfig.browser.json tsconfig.node.json --clean",
+    "test:unit": "npm run build && node --test test/*.test.mjs",
+    "typecheck": "tsc -b tsconfig.browser.json tsconfig.node.json --pretty false"
+  },
+  "dependencies": {
+    "@mako-cloud/api-types": "*"
+  },
+  "peerDependencies": {
+    "rxdb": ">=17.0.0 <18.0.0",
+    "rxjs": ">=7.8.0 <8.0.0"
+  },
+  "devDependencies": {
+    "rxdb": "17.4.0",
+    "rxjs": "7.8.2"
+  },
+  "engines": {
+    "node": ">=20.19.0"
+  }
+}

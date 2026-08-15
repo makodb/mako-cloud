@@ -1,0 +1,287 @@
+---
+- name: Load the checksummed public-beta container image inventory
+  ansible.builtin.include_vars:
+    file: "{{ playbook_dir }}/../../../infra/public-beta/container-images.json"
+    name: dependencies_container_pins
+
+- name: Require immutable, architecture-bound container image pins
+  ansible.builtin.assert:
+    that:
+      - dependencies_container_pins.schemaVersion == 1
+      - dependencies_container_pins.environment == "public-beta"
+      - dependencies_container_pins.architecture == "linux/amd64"
+      - dependencies_container_pins.images | length == 6
+      - item.image is match('^docker\.io/.+@sha256:[0-9a-f]{64}$')
+      - item.platformImageId is match('^sha256:[0-9a-f]{64}$')
+    fail_msg: Refusing a mutable or malformed public-beta container image.
+  loop: "{{ dependencies_container_pins.images }}"
+  loop_control:
+    label: "{{ item.component }}"
+
+- name: Resolve the rootless runtime account
+  ansible.builtin.getent:
+    database: passwd
+    key: mako-runtime
+
+- name: Record the rootless user-manager environment
+  ansible.builtin.set_fact:
+    dependencies_runtime_uid: "{{ ansible_facts.getent_passwd['mako-runtime'][1] }}"
+    dependencies_runtime_environment:
+      HOME: /home/mako-runtime
+      XDG_RUNTIME_DIR: "/run/user/{{ ansible_facts.getent_passwd['mako-runtime'][1] }}"
+      DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/{{ ansible_facts.getent_passwd['mako-runtime'][1] }}/bus"
+
+- name: Create protected rootless Quadlet and dependency configuration directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: mako-runtime
+    group: mako-runtime
+    mode: "{{ '0755' if item == '/home/mako-runtime/.config/mako-cloud/prometheus-rules' else '0700' }}"
+  loop:
+    - /home/mako-runtime/.config/containers/systemd
+    - /home/mako-runtime/.config/systemd/user
+    - /home/mako-runtime/.config/mako-cloud
+    - /home/mako-runtime/.config/mako-cloud/prometheus-rules
+    - /home/mako-runtime/.config/mako-cloud/grafana-provisioning
+    - /home/mako-runtime/.config/mako-cloud/grafana-dashboards
+    - /home/mako-runtime/.config/mako-cloud/edge-runtime
+    - /home/mako-runtime/.config/mako-cloud/edge-runtime/main
+    - /home/mako-runtime/.config/mako-cloud/edge-runtime/canary
+
+- name: Create the optional rootless system Quadlet search directory
+  ansible.builtin.file:
+    path: "/etc/containers/systemd/users/{{ dependencies_runtime_uid }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Inspect protected dependency credential sources
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  delegate_to: localhost
+  become: false
+  register: dependencies_object_store_secret_source
+  no_log: true
+  loop:
+    - "{{ mako_internal_auth_secret_source }}"
+    - "{{ mako_runtime_state_key_source }}"
+    - "{{ mako_object_store_access_key_source }}"
+    - "{{ mako_object_store_secret_key_source }}"
+
+- name: Require protected dependency credential sources
+  ansible.builtin.assert:
+    that:
+      - item.stat.isreg | default(false)
+      - item.stat.mode == "0600"
+      - item.stat.size == 65
+    fail_msg: Generate the protected public-beta dependency credentials before convergence.
+  no_log: true
+  loop: "{{ dependencies_object_store_secret_source.results }}"
+
+- name: Install the protected rootless object-store environment
+  ansible.builtin.copy:
+    dest: /home/mako-runtime/.config/mako-cloud/object-store.env
+    owner: mako-runtime
+    group: mako-runtime
+    mode: "0600"
+    content: |
+      AWS_ACCESS_KEY_ID={{ lookup('ansible.builtin.file', mako_object_store_access_key_source) | trim }}
+      AWS_SECRET_ACCESS_KEY={{ lookup('ansible.builtin.file', mako_object_store_secret_key_source) | trim }}
+      S3_BUCKET=mako-function-bundles-v1
+  no_log: true
+  notify: Restart qualified rootless dependencies
+
+- name: Install the protected runtime-supervisor environment
+  ansible.builtin.copy:
+    dest: /home/mako-runtime/.config/mako-cloud/runtime-supervisor.env
+    owner: mako-runtime
+    group: mako-runtime
+    mode: "0600"
+    content: |
+      MAKO_RUNTIME_AUTHORIZATION={{ lookup('ansible.builtin.file', mako_internal_auth_secret_source) | trim }}
+      MAKO_RUNTIME_STATE_KEY={{ lookup('ansible.builtin.file', mako_runtime_state_key_source) | trim }}
+  no_log: true
+  notify: Restart qualified rootless dependencies
+
+- name: Install non-secret dependency configuration
+  ansible.builtin.copy:
+    src: "{{ item.source }}"
+    dest: "{{ item.destination }}"
+    owner: mako-runtime
+    group: mako-runtime
+    mode: "{{ item.mode | default('0640') }}"
+    directory_mode: "{{ item.directory_mode | default('0700') }}"
+  loop:
+    - source: "{{ playbook_dir }}/../../../infra/local/otel-collector.yaml"
+      destination: /home/mako-runtime/.config/mako-cloud/otel-collector.yaml
+      mode: "0644"
+    - source: "{{ playbook_dir }}/../../../infra/local/prometheus.yaml"
+      destination: /home/mako-runtime/.config/mako-cloud/prometheus.yaml
+      mode: "0644"
+    - source: "{{ playbook_dir }}/../../../infra/local/prometheus-rules/"
+      destination: /home/mako-runtime/.config/mako-cloud/prometheus-rules/
+      mode: "0644"
+      directory_mode: "0755"
+    - source: "{{ playbook_dir }}/../../../infra/local/grafana/provisioning/"
+      destination: /home/mako-runtime/.config/mako-cloud/grafana-provisioning/
+    - source: "{{ playbook_dir }}/../../../infra/local/grafana/dashboards/"
+      destination: /home/mako-runtime/.config/mako-cloud/grafana-dashboards/
+    - source: "{{ playbook_dir }}/../../../packages/cli/runtime/main/"
+      destination: /home/mako-runtime/.config/mako-cloud/edge-runtime/main/
+    - source: "{{ playbook_dir }}/../../../infra/public-beta/edge-runtime/canary/"
+      destination: /home/mako-runtime/.config/mako-cloud/edge-runtime/canary/
+    - source: "{{ playbook_dir }}/../../../infra/public-beta/container-images.json"
+      destination: /home/mako-runtime/.config/mako-cloud/container-images.json
+  loop_control:
+    label: "{{ item.destination }}"
+  notify: Restart qualified rootless dependencies
+
+- name: Install the rootless Quadlet definitions
+  ansible.builtin.copy:
+    src: quadlet/
+    dest: /home/mako-runtime/.config/containers/systemd/
+    owner: mako-runtime
+    group: mako-runtime
+    mode: "0644"
+    directory_mode: "0700"
+  notify: Restart qualified rootless dependencies
+
+- name: Install the gated rootless dependency target
+  ansible.builtin.copy:
+    src: mako-dependencies.target
+    dest: /home/mako-runtime/.config/systemd/user/mako-dependencies.target
+    owner: mako-runtime
+    group: mako-runtime
+    mode: "0644"
+  notify: Restart qualified rootless dependencies
+
+- name: Inspect exact rootless container images
+  ansible.builtin.command:
+    argv: [/usr/bin/podman, image, exists, "{{ item.image }}"]
+  become: true
+  become_user: mako-runtime
+  environment: "{{ dependencies_runtime_environment }}"
+  register: dependencies_image_presence
+  changed_when: false
+  failed_when: false
+  loop: "{{ dependencies_container_pins.images }}"
+  loop_control:
+    label: "{{ item.component }}"
+
+- name: Pull only missing immutable container images
+  ansible.builtin.command:
+    argv: [/usr/bin/podman, pull, "{{ item.item.image }}"]
+  become: true
+  become_user: mako-runtime
+  environment: "{{ dependencies_runtime_environment }}"
+  changed_when: true
+  loop: "{{ dependencies_image_presence.results }}"
+  loop_control:
+    label: "{{ item.item.component }}"
+  when:
+    - not ansible_check_mode
+    - item.rc != 0
+
+- name: Inspect cached platform image identities
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/podman
+      - image
+      - inspect
+      - "--format={{ '{{.Id}}' }}"
+      - "{{ item.image }}"
+  become: true
+  become_user: mako-runtime
+  environment: "{{ dependencies_runtime_environment }}"
+  register: dependencies_image_identity
+  changed_when: false
+  check_mode: false
+  loop: "{{ dependencies_container_pins.images }}"
+  loop_control:
+    label: "{{ item.component }}"
+
+- name: Require cached content to match every architecture-bound pin
+  ansible.builtin.assert:
+    that:
+      - "'sha256:' + item.stdout == item.item.platformImageId"
+    fail_msg: A cached public-beta container does not match its pinned platform image.
+  loop: "{{ dependencies_image_identity.results }}"
+  loop_control:
+    label: "{{ item.item.component }}"
+
+- name: Regenerate rootless Quadlet services
+  ansible.builtin.command:
+    argv: [/usr/bin/systemctl, --user, daemon-reload]
+  become: true
+  become_user: mako-runtime
+  environment: "{{ dependencies_runtime_environment }}"
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: Inspect generated rootless dependency units
+  ansible.builtin.command:
+    argv: [/usr/bin/systemctl, --user, show, --property=LoadState, --value, "{{ item }}"]
+  become: true
+  become_user: mako-runtime
+  environment: "{{ dependencies_runtime_environment }}"
+  register: dependencies_quadlet_load_state
+  changed_when: false
+  check_mode: false
+  loop:
+    - mako-cloud-network.service
+    - mako-mailpit.service
+    - mako-object-store.service
+    - mako-otel-collector.service
+    - mako-prometheus.service
+    - mako-grafana.service
+    - mako-edge-runtime.service
+    - mako-dependencies.target
+
+- name: Require every rootless dependency unit to load
+  ansible.builtin.assert:
+    that:
+      - item.stdout == "loaded"
+    fail_msg: "Rootless Quadlet generation failed for {{ item.item }}."
+  loop: "{{ dependencies_quadlet_load_state.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Preserve the pre-qualification dependency admission gate
+  ansible.builtin.systemd_service:
+    name: mako-dependencies.target
+    scope: user
+    enabled: "{{ mako_dependencies_enabled | bool }}"
+    state: "{{ 'started' if mako_dependencies_enabled | bool else 'stopped' }}"
+  become: true
+  become_user: mako-runtime
+  environment: "{{ dependencies_runtime_environment }}"
+  when: not ansible_check_mode
+
+- name: Inspect pre-qualification dependency service states
+  ansible.builtin.command:
+    argv: [/usr/bin/systemctl, --user, is-active, "{{ item }}"]
+  become: true
+  become_user: mako-runtime
+  environment: "{{ dependencies_runtime_environment }}"
+  register: dependencies_service_state
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  loop:
+    - mako-mailpit.service
+    - mako-object-store.service
+    - mako-otel-collector.service
+    - mako-prometheus.service
+    - mako-grafana.service
+    - mako-edge-runtime.service
+
+- name: Require dependencies to remain stopped before qualification
+  ansible.builtin.assert:
+    that:
+      - mako_dependencies_enabled | bool or item.stdout == "inactive"
+    fail_msg: "{{ item.item }} escaped the pre-qualification admission gate."
+  loop: "{{ dependencies_service_state.results }}"
+  loop_control:
+    label: "{{ item.item }}"

@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-13T07:44:56Z",
+  "environment": "public-beta",
+  "deploymentReleaseDigest": "26160a4ed332218c863707e24f48e155e3713d0bee9a3ced32667124071f0903",
+  "snapshot": {
+    "id": "public-beta-control-plane-20260813T074156Z",
+    "manifestEnvelopeSha256": "62f7687b20b14b162a73c82acb79b84cf0a1474bfb9865835ccbd6858e1f0d74",
+    "source": "verified control-plane checkpoint copied from the deployed VM",
+    "liveDatabaseOpened": false
+  },
+  "command": {
+    "binary": "mako-operator-projection",
+    "pageSize": 100,
+    "maximumRecords": 100000,
+    "idempotentSnapshotWrites": true
+  },
+  "tenantSearch": {
+    "sourceCount": 1,
+    "projectedCount": 1,
+    "sourceChecksum": "998c684028e3127d2636bdcecf5fc6f0f7d73e8da606c1d1a8e99471e6f1a4fc",
+    "projectedChecksum": "492e7baec2f8ab58222b91bd2d5d6d196c14b8e2fa515171713296c1b7131122",
+    "complete": true
+  },
+  "activity": {
+    "projectedCount": 0,
+    "checksum": "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262",
+    "integrityGaps": 0,
+    "complete": true,
+    "note": "The selected pre-control-center release had no unified activity records; an empty, integrity-valid projection is expected for this snapshot."
+  },
+  "result": "passed"
+}

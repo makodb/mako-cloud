@@ -1,0 +1,810 @@
+use std::sync::Arc;
+
+use mako_api::{CollectionId, TenantScope};
+use mako_control_plane::{
+    CollectionAdminError, CollectionAdminService, CollectionCompatibilityReport, IndexBuildStatus,
+    NewCollection, NewIndex, NewSchemaMigration, PublishSchema, SchemaMigrationId,
+    SchemaMigrationRecord, SchemaMigrationState, SchemaPublicationOutcome,
+};
+use mako_documents::{
+    CollectionMetadata, IndexDirection, IndexError, IndexField, IndexKind, IndexName, IndexVersion,
+    PrimaryKeyDefinition,
+};
+use mako_internal_rpc::IdentityAdminOperation;
+use mako_service_runtime::{
+    HttpApiError, HttpMethod, HttpRequest, HttpResponse, HttpRouter, RouteRegistrationError,
+};
+use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
+
+use crate::{
+    ControlPlaneGraph, explorer_invalidation,
+    identity_admin_http::administer,
+    management_http::{
+        conflict, forbidden, format_timestamp, invalid, json, limit, no_payload, no_query,
+        not_found, parse_json, require_idempotency, require_json, stable_id, unavailable,
+        with_developer,
+    },
+};
+
+pub(crate) fn add_collection_routes(
+    router: &mut HttpRouter,
+    graph: Arc<ControlPlaneGraph>,
+) -> Result<(), RouteRegistrationError> {
+    for (method, path, handler) in [
+        (
+            HttpMethod::Get,
+            "/v1/projects/{projectId}/environments/{environmentId}/collections",
+            handle_list_collections as Handler,
+        ),
+        (
+            HttpMethod::Post,
+            "/v1/projects/{projectId}/environments/{environmentId}/collections",
+            handle_create_collection,
+        ),
+        (
+            HttpMethod::Get,
+            "/v1/projects/{projectId}/environments/{environmentId}/collections/{collectionId}",
+            handle_get_collection,
+        ),
+        (
+            HttpMethod::Post,
+            "/v1/projects/{projectId}/environments/{environmentId}/collections/{collectionId}/schemas",
+            handle_publish_schema,
+        ),
+        (
+            HttpMethod::Post,
+            "/v1/projects/{projectId}/environments/{environmentId}/collections/{collectionId}/migrations",
+            handle_create_migration,
+        ),
+        (
+            HttpMethod::Get,
+            "/v1/projects/{projectId}/environments/{environmentId}/collections/{collectionId}/migrations/{migrationId}",
+            handle_get_migration,
+        ),
+        (
+            HttpMethod::Patch,
+            "/v1/projects/{projectId}/environments/{environmentId}/collections/{collectionId}/migrations/{migrationId}",
+            handle_update_migration,
+        ),
+        (
+            HttpMethod::Get,
+            "/v1/projects/{projectId}/environments/{environmentId}/collections/{collectionId}/indexes",
+            handle_list_indexes,
+        ),
+        (
+            HttpMethod::Post,
+            "/v1/projects/{projectId}/environments/{environmentId}/collections/{collectionId}/indexes",
+            handle_create_index,
+        ),
+        (
+            HttpMethod::Get,
+            "/v1/projects/{projectId}/environments/{environmentId}/collections/{collectionId}/indexes/{indexName}/{indexVersion}",
+            handle_get_index,
+        ),
+        (
+            HttpMethod::Delete,
+            "/v1/projects/{projectId}/environments/{environmentId}/collections/{collectionId}/indexes/{indexName}/{indexVersion}",
+            handle_delete_index,
+        ),
+    ] {
+        let graph = Arc::clone(&graph);
+        router.add_route(method, path, move |request| handler(&graph, &request))?;
+    }
+    Ok(())
+}
+
+type Handler = fn(&Arc<ControlPlaneGraph>, &HttpRequest) -> Result<HttpResponse, HttpApiError>;
+
+fn handle_list_collections(
+    graph: &Arc<ControlPlaneGraph>,
+    request: &HttpRequest,
+) -> Result<HttpResponse, HttpApiError> {
+    no_payload(request)?;
+    let tenant = tenant(request)?;
+    with_developer(graph, request, |actor, now| async move {
+        let records = graph
+            .collection_service()
+            .list_collections(&actor, &tenant, limit(), now)
+            .await
+            .map_err(|error| collection_error(request, error))?;
+        let items = records.iter().map(collection_wire).collect();
+        json(request, 200, &ItemsWire { items })
+    })
+}
+
+fn handle_create_collection(
+    graph: &Arc<ControlPlaneGraph>,
+    request: &HttpRequest,
+) -> Result<HttpResponse, HttpApiError> {
+    no_query(request)?;
+    require_json(request)?;
+    require_idempotency(request)?;
+    let tenant = tenant(request)?;
+    let body: CreateCollectionWire = parse_json(request)?;
+    with_developer(graph, request, |actor, now| async move {
+        let input = NewCollection {
+            tenant: tenant.clone(),
+            collection_id: body.id.clone(),
+            schema_version: body.schema_version,
+            json_schema: body.json_schema.clone(),
+            primary_key: body.primary_key.clone(),
+            now_unix_seconds: now,
+        };
+        let record = match graph
+            .collection_service()
+            .create_collection(&actor, input)
+            .await
+        {
+            Ok(record) => record,
+            Err(CollectionAdminError::Conflict) => {
+                let existing = graph
+                    .collection_service()
+                    .get_collection(&actor, &tenant, &body.id, now)
+                    .await
+                    .map_err(|error| collection_error(request, error))?;
+                if collection_matches(&existing, &body) {
+                    existing
+                } else {
+                    return Err(conflict(request, "collection idempotency conflict"));
+                }
+            }
+            Err(error) => return Err(collection_error(request, error)),
+        };
+
+        // The control plane owns the collection record, but document traffic is
+        // served from the data plane's own store. Install the metadata there
+        // before reporting the collection active; a failure here leaves the
+        // record in its Creating state with a retryable diagnostic rather than
+        // advertising a collection that document operations would reject.
+        let servable = CollectionAdminService::servable_metadata(&record)
+            .map_err(|error| collection_error(request, error))?;
+        let encoded = servable
+            .encode()
+            .map_err(|_| unavailable(request, "collection metadata could not be encoded"))?;
+        let metadata: Value = serde_json::from_slice(&encoded)
+            .map_err(|_| unavailable(request, "collection metadata could not be encoded"))?;
+        let _: Value = administer(
+            graph,
+            request,
+            &actor,
+            &tenant,
+            IdentityAdminOperation::InstallCollection,
+            json!({"collectionId": record.collection_id().as_str(), "metadata": metadata}),
+            true,
+        )
+        .await?;
+
+        let activated = graph
+            .collection_service()
+            .activate_collection(&tenant, record.collection_id(), now)
+            .await
+            .map_err(|error| collection_error(request, error))?;
+        json(request, 201, &collection_wire(&activated))
+    })
+}
+
+fn handle_get_collection(
+    graph: &Arc<ControlPlaneGraph>,
+    request: &HttpRequest,
+) -> Result<HttpResponse, HttpApiError> {
+    no_payload(request)?;
+    let tenant = tenant(request)?;
+    let collection_id = collection_id(request)?;
+    with_developer(graph, request, |actor, now| async move {
+        let record = graph
+            .collection_service()
+            .get_collection(&actor, &tenant, &collection_id, now)
+            .await
+            .map_err(|error| collection_error(request, error))?;
+        json(request, 200, &collection_wire(&record))
+    })
+}
+
+fn handle_publish_schema(
+    graph: &Arc<ControlPlaneGraph>,
+    request: &HttpRequest,
+) -> Result<HttpResponse, HttpApiError> {
+    no_query(request)?;
+    require_json(request)?;
+    require_idempotency(request)?;
+    let tenant = tenant(request)?;
+    let collection_id = collection_id(request)?;
+    let body: PublishSchemaWire = parse_json(request)?;
+    with_developer(graph, request, |actor, now| async move {
+        let input = PublishSchema {
+            tenant: tenant.clone(),
+            collection_id: collection_id.clone(),
+            schema_version: body.schema_version,
+            json_schema: body.json_schema.clone(),
+            primary_key: body.primary_key.clone(),
+            now_unix_seconds: now,
+        };
+        let outcome = match graph
+            .collection_service()
+            .publish_schema(&actor, input)
+            .await
+        {
+            Ok(outcome) => outcome,
+            Err(CollectionAdminError::SchemaVersionMustIncrease) => {
+                let current = graph
+                    .collection_service()
+                    .get_collection(&actor, &tenant, &collection_id, now)
+                    .await
+                    .map_err(|error| collection_error(request, error))?;
+                if current.schema_version().get() == body.schema_version
+                    && Value::Object(current.json_schema().clone()) == body.json_schema
+                    && current.primary_key() == &body.primary_key
+                {
+                    SchemaPublicationOutcome::Published(current)
+                } else {
+                    return Err(conflict(request, "schema publication idempotency conflict"));
+                }
+            }
+            Err(error) => return Err(collection_error(request, error)),
+        };
+        explorer_invalidation::advance_tenant(
+            graph,
+            request,
+            &tenant,
+            actor.identity_id().as_str(),
+            "schema-publish",
+        )?;
+        json(request, 200, &publication_wire(&outcome))
+    })
+}
+
+fn handle_create_migration(
+    graph: &Arc<ControlPlaneGraph>,
+    request: &HttpRequest,
+) -> Result<HttpResponse, HttpApiError> {
+    no_query(request)?;
+    require_json(request)?;
+    let idempotency = require_idempotency(request)?;
+    let tenant = tenant(request)?;
+    let collection_id = collection_id(request)?;
+    let migration_id = SchemaMigrationId::parse(stable_id(
+        "mig",
+        &[
+            tenant.project_id().as_str(),
+            tenant.environment_id().as_str(),
+            collection_id.as_str(),
+            idempotency,
+        ],
+    ))
+    .map_err(|_| invalid(request, "migration identifier is invalid"))?;
+    let body: CreateMigrationWire = parse_json(request)?;
+    with_developer(graph, request, |actor, now| async move {
+        let input = NewSchemaMigration {
+            id: migration_id.clone(),
+            tenant: tenant.clone(),
+            collection_id: collection_id.clone(),
+            target_schema_version: body.target_schema_version,
+            target_json_schema: body.target_json_schema.clone(),
+            target_primary_key: body.target_primary_key.clone(),
+            reason: body.reason.clone(),
+            now_unix_seconds: now,
+        };
+        let record = match graph
+            .collection_service()
+            .create_migration(&actor, input)
+            .await
+        {
+            Ok(record) => record,
+            Err(CollectionAdminError::Conflict) => {
+                let existing = graph
+                    .collection_service()
+                    .get_migration(&actor, &tenant, &collection_id, &migration_id, now)
+                    .await
+                    .map_err(|error| collection_error(request, error))?;
+                if existing.matches_request(
+                    body.target_schema_version,
+                    &body.target_json_schema,
+                    &body.target_primary_key,
+                    &body.reason,
+                ) {
+                    existing
+                } else {
+                    return Err(conflict(request, "migration idempotency conflict"));
+                }
+            }
+            Err(error) => return Err(collection_error(request, error)),
+        };
+        json(request, 202, &migration_wire(request, &record)?)
+    })
+}
+
+fn handle_get_migration(
+    graph: &Arc<ControlPlaneGraph>,
+    request: &HttpRequest,
+) -> Result<HttpResponse, HttpApiError> {
+    no_payload(request)?;
+    let tenant = tenant(request)?;
+    let collection_id = collection_id(request)?;
+    let migration_id = migration_id(request)?;
+    with_developer(graph, request, |actor, now| async move {
+        let record = graph
+            .collection_service()
+            .get_migration(&actor, &tenant, &collection_id, &migration_id, now)
+            .await
+            .map_err(|error| collection_error(request, error))?;
+        json(request, 200, &migration_wire(request, &record)?)
+    })
+}
+
+fn handle_update_migration(
+    graph: &Arc<ControlPlaneGraph>,
+    request: &HttpRequest,
+) -> Result<HttpResponse, HttpApiError> {
+    no_query(request)?;
+    require_json(request)?;
+    let tenant = tenant(request)?;
+    let collection_id = collection_id(request)?;
+    let migration_id = migration_id(request)?;
+    let body: MigrationStateWire = parse_json(request)?;
+    with_developer(graph, request, |actor, now| async move {
+        let record = graph
+            .collection_service()
+            .transition_migration(
+                &actor,
+                &tenant,
+                &collection_id,
+                &migration_id,
+                body.state,
+                now,
+            )
+            .await
+            .map_err(|error| collection_error(request, error))?;
+        explorer_invalidation::advance_tenant(
+            graph,
+            request,
+            &tenant,
+            actor.identity_id().as_str(),
+            "schema-migration",
+        )?;
+        json(request, 200, &migration_wire(request, &record)?)
+    })
+}
+
+fn handle_list_indexes(
+    graph: &Arc<ControlPlaneGraph>,
+    request: &HttpRequest,
+) -> Result<HttpResponse, HttpApiError> {
+    no_payload(request)?;
+    let tenant = tenant(request)?;
+    let collection_id = collection_id(request)?;
+    with_developer(graph, request, |actor, now| async move {
+        let records = graph
+            .collection_service()
+            .list_indexes(&actor, &tenant, &collection_id, now)
+            .await
+            .map_err(|error| collection_error(request, error))?;
+        let items = records.iter().map(index_wire).collect();
+        json(request, 200, &ItemsWire { items })
+    })
+}
+
+fn handle_create_index(
+    graph: &Arc<ControlPlaneGraph>,
+    request: &HttpRequest,
+) -> Result<HttpResponse, HttpApiError> {
+    no_query(request)?;
+    require_json(request)?;
+    require_idempotency(request)?;
+    let tenant = tenant(request)?;
+    let collection_id = collection_id(request)?;
+    let body: CreateIndexWire = parse_json(request)?;
+    let name = IndexName::parse(body.name.clone())
+        .map_err(|_| invalid(request, "index name is invalid"))?;
+    let version = IndexVersion::new(body.version)
+        .map_err(|_| invalid(request, "index version is invalid"))?;
+    let fields = body
+        .fields
+        .iter()
+        .map(|field| IndexField::new(field.path.clone(), field.direction))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| invalid(request, "index fields are invalid"))?;
+    with_developer(graph, request, |actor, now| async move {
+        let input = NewIndex {
+            tenant: tenant.clone(),
+            collection_id: collection_id.clone(),
+            name: name.clone(),
+            version: body.version,
+            kind: body.kind,
+            fields: fields.clone(),
+            now_unix_seconds: now,
+        };
+        let record = match graph.collection_service().create_index(&actor, input).await {
+            Ok(record) => record,
+            Err(CollectionAdminError::Index(IndexError::DefinitionAlreadyExists)) => {
+                let existing = graph
+                    .collection_service()
+                    .get_index(&actor, &tenant, &collection_id, &name, version, now)
+                    .await
+                    .map_err(|error| collection_error(request, error))?;
+                if existing.definition.kind() == body.kind && existing.definition.fields() == fields
+                {
+                    existing
+                } else {
+                    return Err(conflict(request, "index idempotency conflict"));
+                }
+            }
+            Err(error) => return Err(collection_error(request, error)),
+        };
+        explorer_invalidation::advance_tenant(
+            graph,
+            request,
+            &tenant,
+            actor.identity_id().as_str(),
+            "index-create",
+        )?;
+        json(request, 202, &index_wire(&record))
+    })
+}
+
+fn handle_get_index(
+    graph: &Arc<ControlPlaneGraph>,
+    request: &HttpRequest,
+) -> Result<HttpResponse, HttpApiError> {
+    no_payload(request)?;
+    let tenant = tenant(request)?;
+    let collection_id = collection_id(request)?;
+    let (name, version) = index_identity(request)?;
+    with_developer(graph, request, |actor, now| async move {
+        let record = graph
+            .collection_service()
+            .get_index(&actor, &tenant, &collection_id, &name, version, now)
+            .await
+            .map_err(|error| collection_error(request, error))?;
+        json(request, 200, &index_wire(&record))
+    })
+}
+
+fn handle_delete_index(
+    graph: &Arc<ControlPlaneGraph>,
+    request: &HttpRequest,
+) -> Result<HttpResponse, HttpApiError> {
+    no_payload(request)?;
+    let tenant = tenant(request)?;
+    let collection_id = collection_id(request)?;
+    let (name, version) = index_identity(request)?;
+    with_developer(graph, request, |actor, now| async move {
+        graph
+            .collection_service()
+            .delete_index(&actor, &tenant, &collection_id, &name, version, now)
+            .await
+            .map_err(|error| collection_error(request, error))?;
+        let record = graph
+            .collection_service()
+            .get_index(&actor, &tenant, &collection_id, &name, version, now)
+            .await
+            .map_err(|error| collection_error(request, error))?;
+        explorer_invalidation::advance_tenant(
+            graph,
+            request,
+            &tenant,
+            actor.identity_id().as_str(),
+            "index-delete",
+        )?;
+        json(request, 202, &index_wire(&record))
+    })
+}
+
+fn tenant(request: &HttpRequest) -> Result<TenantScope, HttpApiError> {
+    TenantScope::require(
+        request.path_parameter("projectId"),
+        request.path_parameter("environmentId"),
+    )
+    .map_err(|_| invalid(request, "tenant path is invalid"))
+}
+
+fn collection_id(request: &HttpRequest) -> Result<CollectionId, HttpApiError> {
+    CollectionId::parse(request.path_parameter("collectionId").unwrap_or_default())
+        .map_err(|_| invalid(request, "collection path is invalid"))
+}
+
+fn migration_id(request: &HttpRequest) -> Result<SchemaMigrationId, HttpApiError> {
+    SchemaMigrationId::parse(request.path_parameter("migrationId").unwrap_or_default())
+        .map_err(|_| invalid(request, "migration path is invalid"))
+}
+
+fn index_identity(request: &HttpRequest) -> Result<(IndexName, IndexVersion), HttpApiError> {
+    let name = IndexName::parse(request.path_parameter("indexName").unwrap_or_default())
+        .map_err(|_| invalid(request, "index name path is invalid"))?;
+    let version = request
+        .path_parameter("indexVersion")
+        .and_then(|value| value.parse().ok())
+        .and_then(|value| IndexVersion::new(value).ok())
+        .ok_or_else(|| invalid(request, "index version path is invalid"))?;
+    Ok((name, version))
+}
+
+fn collection_matches(record: &CollectionMetadata, body: &CreateCollectionWire) -> bool {
+    record.schema_version().get() == body.schema_version
+        && Value::Object(record.json_schema().clone()) == body.json_schema
+        && record.primary_key() == &body.primary_key
+}
+
+fn collection_error(request: &HttpRequest, error: CollectionAdminError) -> HttpApiError {
+    match error {
+        CollectionAdminError::NotFound
+        | CollectionAdminError::Index(IndexError::DefinitionNotFound) => {
+            not_found(request, "collection resource was not found")
+        }
+        CollectionAdminError::Forbidden => forbidden(request, "collection action is forbidden"),
+        CollectionAdminError::Conflict
+        | CollectionAdminError::InvalidMigrationTransition
+        | CollectionAdminError::MigrationNotRequired
+        | CollectionAdminError::SchemaVersionMustIncrease
+        | CollectionAdminError::Index(IndexError::DefinitionAlreadyExists) => {
+            conflict(request, "collection lifecycle or version conflict")
+        }
+        CollectionAdminError::InvalidMigrationId
+        | CollectionAdminError::InvalidMigrationReason
+        | CollectionAdminError::Scope(_)
+        | CollectionAdminError::EngineScope(_)
+        | CollectionAdminError::Metadata(_)
+        | CollectionAdminError::Validation(_)
+        | CollectionAdminError::Index(IndexError::InvalidDefinition { .. }) => {
+            invalid(request, "collection input is invalid")
+        }
+        _ => unavailable(request, "collection administration is unavailable"),
+    }
+}
+
+fn collection_wire(record: &CollectionMetadata) -> CollectionWire {
+    CollectionWire {
+        id: record.collection_id().as_str().to_owned(),
+        metadata_version: record.metadata_version().get(),
+        schema_version: record.schema_version().get(),
+        json_schema: Value::Object(record.json_schema().clone()),
+        primary_key: record.primary_key().clone(),
+        compatibility: record.compatibility(),
+        state: record.lifecycle(),
+    }
+}
+
+fn publication_wire(outcome: &SchemaPublicationOutcome) -> PublicationWire {
+    match outcome {
+        SchemaPublicationOutcome::Published(record) => PublicationWire {
+            status: "published",
+            collection: Some(collection_wire(record)),
+            compatibility: None,
+        },
+        SchemaPublicationOutcome::MigrationRequired(report) => PublicationWire {
+            status: "migration_required",
+            collection: None,
+            compatibility: Some(compatibility_wire(report)),
+        },
+    }
+}
+
+fn compatibility_wire(report: &CollectionCompatibilityReport) -> CompatibilityWire {
+    CompatibilityWire {
+        compatible: report.is_compatible(),
+        documents_checked: report.documents_checked(),
+        issues: report.issues().to_vec(),
+    }
+}
+
+fn migration_wire(
+    request: &HttpRequest,
+    record: &SchemaMigrationRecord,
+) -> Result<MigrationWire, HttpApiError> {
+    Ok(MigrationWire {
+        id: record.id().as_str().to_owned(),
+        project_id: record.project_id().as_str().to_owned(),
+        environment_id: record.environment_id().as_str().to_owned(),
+        collection_id: record.collection_id().as_str().to_owned(),
+        from_schema_version: record.from_schema_version(),
+        to_schema_version: record.to_schema_version(),
+        state: record.state(),
+        reason: record.reason().to_owned(),
+        compatibility_issues: record.compatibility_issues().to_vec(),
+        created_at: format_timestamp(request, record.created_at_unix_seconds())?,
+        updated_at: format_timestamp(request, record.updated_at_unix_seconds())?,
+    })
+}
+
+fn index_wire(record: &IndexBuildStatus) -> IndexWire {
+    let definition = &record.definition;
+    IndexWire {
+        collection_id: definition.collection_id().as_str().to_owned(),
+        name: definition.name().as_str().to_owned(),
+        version: definition.version().get(),
+        kind: definition.kind(),
+        fields: definition.fields().to_vec(),
+        state: definition.state(),
+        activation_fenced: definition.activation_fenced(),
+        failure: definition.failure().map(|failure| IndexFailureWire {
+            code: failure.code(),
+            affected_values: failure.affected_values(),
+            message: failure.safe_message().to_owned(),
+        }),
+        progress: record.progress.as_ref().map(|progress| IndexProgressWire {
+            captured_position: progress.captured_position(),
+            last_document_id: progress.last_document_id().map(|id| id.as_str().to_owned()),
+            backfill_complete: progress.backfill_complete(),
+            caught_up_position: progress.caught_up_position(),
+        }),
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct CreateCollectionWire {
+    id: CollectionId,
+    schema_version: u64,
+    json_schema: Value,
+    primary_key: PrimaryKeyDefinition,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct PublishSchemaWire {
+    schema_version: u64,
+    json_schema: Value,
+    primary_key: PrimaryKeyDefinition,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct CreateMigrationWire {
+    target_schema_version: u64,
+    target_json_schema: Value,
+    target_primary_key: PrimaryKeyDefinition,
+    reason: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct MigrationStateWire {
+    state: SchemaMigrationState,
+}
+
+#[derive(Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct IndexFieldWire {
+    path: String,
+    direction: IndexDirection,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CreateIndexWire {
+    name: String,
+    version: u64,
+    kind: IndexKind,
+    fields: Vec<IndexFieldWire>,
+}
+
+#[derive(Serialize)]
+struct ItemsWire<T> {
+    items: Vec<T>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CollectionWire {
+    id: String,
+    metadata_version: u64,
+    schema_version: u64,
+    json_schema: Value,
+    primary_key: PrimaryKeyDefinition,
+    compatibility: mako_documents::SchemaCompatibility,
+    state: mako_documents::CollectionLifecycle,
+}
+
+#[derive(Serialize)]
+struct PublicationWire {
+    status: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    collection: Option<CollectionWire>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    compatibility: Option<CompatibilityWire>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CompatibilityWire {
+    compatible: bool,
+    documents_checked: u64,
+    issues: Vec<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MigrationWire {
+    id: String,
+    project_id: String,
+    environment_id: String,
+    collection_id: String,
+    from_schema_version: u64,
+    to_schema_version: u64,
+    state: SchemaMigrationState,
+    reason: String,
+    compatibility_issues: Vec<String>,
+    created_at: String,
+    updated_at: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct IndexWire {
+    collection_id: String,
+    name: String,
+    version: u64,
+    kind: IndexKind,
+    fields: Vec<IndexField>,
+    state: mako_documents::IndexState,
+    activation_fenced: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    failure: Option<IndexFailureWire>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    progress: Option<IndexProgressWire>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct IndexFailureWire {
+    code: mako_documents::IndexFailureCode,
+    affected_values: u64,
+    message: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct IndexProgressWire {
+    captured_position: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    last_document_id: Option<String>,
+    backfill_complete: bool,
+    caught_up_position: u64,
+}
+
+#[cfg(test)]
+mod tests {
+    use mako_documents::{
+        CollectionLifecycle, CollectionMetadataVersion, IndexDefinition, SchemaCompatibility,
+        SchemaVersion,
+    };
+    use serde_json::json;
+
+    use super::*;
+
+    #[test]
+    fn collection_and_index_wires_match_the_public_contract() {
+        let collection = CollectionMetadata::new(
+            CollectionId::parse("todos").expect("collection"),
+            CollectionMetadataVersion::new(1).expect("metadata version"),
+            SchemaVersion::new(2).expect("schema version"),
+            json!({"type": "object"}),
+            PrimaryKeyDefinition::field("id").expect("primary key"),
+            SchemaCompatibility::Compatible,
+            CollectionLifecycle::Active,
+        )
+        .expect("metadata");
+        let collection_json =
+            serde_json::to_value(collection_wire(&collection)).expect("collection wire");
+        assert_eq!(collection_json["metadataVersion"], 1);
+        assert_eq!(collection_json["schemaVersion"], 2);
+        assert_eq!(collection_json["compatibility"], "compatible");
+
+        let definition = IndexDefinition::new_building(
+            CollectionId::parse("todos").expect("collection"),
+            IndexName::parse("by_owner").expect("index name"),
+            IndexVersion::new(1).expect("index version"),
+            IndexKind::NonUnique,
+            [IndexField::ascending("ownerId").expect("index field")],
+        )
+        .expect("index definition");
+        let index_json = serde_json::to_value(index_wire(&IndexBuildStatus {
+            definition,
+            progress: None,
+        }))
+        .expect("index wire");
+        assert_eq!(index_json["activationFenced"], false);
+        assert_eq!(index_json["state"], "building");
+        assert_eq!(index_json["fields"][0]["direction"], "ascending");
+    }
+}

@@ -1,0 +1,92 @@
+{
+  "discovery": {
+    "cluster": "fixture-cluster",
+    "localNode": "zoo-005",
+    "selectedNode": {
+      "name": "zoo-005",
+      "status": "online",
+      "cpuCount": 32,
+      "memoryBytes": 68719476736,
+      "memoryUsedBytes": 8589934592
+    },
+    "nextVmId": 140,
+    "nodes": [
+      {
+        "name": "zoo-005",
+        "status": "online",
+        "cpuCount": 32,
+        "memoryBytes": 68719476736,
+        "memoryUsedBytes": 8589934592
+      }
+    ],
+    "networks": [
+      {
+        "bridge": "vmbr0",
+        "address": "130.245.173.105",
+        "prefixLength": 24,
+        "gateway": "130.245.173.1",
+        "bridgePorts": ["enp5s0"]
+      }
+    ],
+    "dns": {
+      "servers": ["8.8.8.8"],
+      "search": "lan"
+    },
+    "storage": [
+      {
+        "id": "vm-zfs",
+        "type": "zfspool",
+        "content": ["images"],
+        "availableBytes": 966367641600,
+        "totalBytes": 1099511627776,
+        "shared": false,
+        "nodes": []
+      },
+      {
+        "id": "backup-nfs",
+        "type": "nfs",
+        "content": ["backup"],
+        "availableBytes": 966367641600,
+        "totalBytes": 1099511627776,
+        "shared": true,
+        "nodes": []
+      }
+    ],
+    "guests": [],
+    "approvedImageCandidates": []
+  },
+  "conflictEvidence": {
+    "dns": {
+      "localA": ["130.245.173.11"],
+      "publicAnswers": [
+        {
+          "server": "1.1.1.1",
+          "a": ["130.245.173.11"],
+          "aaaa": []
+        },
+        {
+          "server": "8.8.8.8",
+          "a": ["130.245.173.11"],
+          "aaaa": []
+        }
+      ],
+      "errors": []
+    },
+    "address": {
+      "neighborState": "incomplete",
+      "neighborMac": null,
+      "activeOwnerDetected": false,
+      "probeConclusive": true,
+      "routeDevice": "vmbr0",
+      "onLink": true
+    }
+  },
+  "imagePin": {
+    "distribution": "ubuntu",
+    "release": "24.04",
+    "architecture": "amd64",
+    "source": "https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img",
+    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "localVolume": null
+  }
+}

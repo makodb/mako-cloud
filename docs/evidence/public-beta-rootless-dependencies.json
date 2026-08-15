@@ -1,0 +1,99 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-08T06:21:46.000Z",
+  "planHash": "d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073",
+  "releaseDigest": "b6498ee71722d76d67ee5c77f99c29afa65660f7024a7a588fb76b9dec4d7be3",
+  "imageInventory": {
+    "path": "infra/public-beta/container-images.json",
+    "sha256": "74a3ed1c41a49987b63689d7c29c30b00267f861429dd20f176a6957e7dd2bd4",
+    "architecture": "linux/amd64",
+    "immutableImages": 6,
+    "cachedPlatformIdentitiesVerified": 6,
+    "movingTagsUsedByDeployment": false,
+    "pullPolicy": "never"
+  },
+  "rootlessRuntime": {
+    "user": "mako-runtime",
+    "uid": 1001,
+    "rootless": true,
+    "linger": true,
+    "userManagerState": "lingering",
+    "cgroupVersion": "v2",
+    "graphDriver": "overlay",
+    "seccompEnabled": true
+  },
+  "quadlet": {
+    "target": "mako-dependencies.target",
+    "network": "mako-cloud-internal",
+    "networkInternal": true,
+    "generatedUnitsLoaded": 8,
+    "generatorDryRunPassed": true,
+    "containerServices": [
+      "mako-mailpit.service",
+      "mako-object-store.service",
+      "mako-otel-collector.service",
+      "mako-prometheus.service",
+      "mako-grafana.service",
+      "mako-edge-runtime.service"
+    ],
+    "readOnlyRootFilesystems": true,
+    "allCapabilitiesDropped": true,
+    "noNewPrivileges": true,
+    "boundedResources": true
+  },
+  "listeners": {
+    "hostBinding": "127.0.0.1 only",
+    "mailpitSmtp": "127.0.0.1:1025",
+    "mailpitUi": "127.0.0.1:8025",
+    "objectStoreS3": "127.0.0.1:8333",
+    "objectStoreFiler": "127.0.0.1:8888",
+    "objectStoreMaster": "127.0.0.1:9333",
+    "otlpGrpc": "127.0.0.1:4317",
+    "otlpHttp": "127.0.0.1:4318",
+    "otelMetrics": "127.0.0.1:9464",
+    "prometheus": "127.0.0.1:9090",
+    "grafana": "127.0.0.1:3000",
+    "edgeRuntime": "127.0.0.1:9000",
+    "publicDependencyListeners": 0
+  },
+  "observabilityAccess": {
+    "grafanaAnonymousEnabled": false,
+    "grafanaLoginFormDisabled": false,
+    "grafanaUserSignupEnabled": false,
+    "grafanaCredentialFileRequired": true,
+    "prometheusLifecycleApiEnabled": false
+  },
+  "edgeRuntime": {
+    "release": "v1.74.3",
+    "sourceCommit": "47d04fdd22e33ea3fd904576cf3248d963d903a9",
+    "imageDigest": "sha256:c52405002a890ca9fcf77978671c57f3a988e03174afb277f84ac65bc917013c",
+    "protocolVersion": 1,
+    "privateCanaryStaged": true,
+    "outboundNetworkMode": "internal-deny-all"
+  },
+  "verification": {
+    "imageResolutionLog": ".local/ansible/rootless-image-resolution.log",
+    "firstConvergenceLog": ".local/ansible/rootless-dependencies-convergence.log",
+    "quadletVerificationLog": ".local/ansible/rootless-quadlet-final-verification.log",
+    "secondConvergenceLog": ".local/ansible/rootless-dependencies-second-convergence.log",
+    "repositoryValidator": "npm run validate:public-beta-containers",
+    "repositoryValidatorPassed": true,
+    "ansibleLintProfile": "production",
+    "secondRun": {
+      "ok": 32,
+      "changed": 0,
+      "unreachable": 0,
+      "failed": 0,
+      "skipped": 1
+    }
+  },
+  "admission": {
+    "dependencyTargetEnabled": false,
+    "dependencyTargetActive": false,
+    "runningRootlessContainers": 0,
+    "caddyActive": false,
+    "makoServicesStarted": false,
+    "publicApplicationRoutesEnabled": false,
+    "reason": "Production secrets and service configuration are installed in the next gated task; startup occurs only during deployment qualification."
+  }
+}

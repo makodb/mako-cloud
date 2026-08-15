@@ -1,0 +1,144 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-08T06:39:30.000Z",
+  "planHash": "d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073",
+  "releaseDigest": "b6498ee71722d76d67ee5c77f99c29afa65660f7024a7a588fb76b9dec4d7be3",
+  "serviceConfiguration": {
+    "environment": "production",
+    "region": "us-east-1-beta",
+    "publicOrigin": "https://cloud-test.makodb.com",
+    "listeners": {
+      "mako-data-plane": "127.0.0.1:8080",
+      "mako-control-plane": "127.0.0.1:8081",
+      "mako-edge-gateway": "127.0.0.1:8082"
+    },
+    "storage": {
+      "dataPlane": "/srv/mako-data/rocksdb/data-plane",
+      "controlPlane": "/srv/mako-data/rocksdb/control-plane",
+      "dataPlaneBackup": "/srv/mako-data/backup-staging/data-plane",
+      "controlPlaneBackup": "/srv/mako-data/backup-staging/control-plane",
+      "durability": "synchronous-fsync",
+      "memoryFallbackConfigured": false,
+      "emptyPathFallbackConfigured": false
+    },
+    "dependencies": {
+      "smtp": "127.0.0.1:1025",
+      "objectStore": "http://127.0.0.1:8333",
+      "otlp": "127.0.0.1:4317"
+    },
+    "limits": {
+      "maximumRequestBytes": 16777216,
+      "shutdownGraceSeconds": 30,
+      "maximumBatchOperations": 10000,
+      "maximumScanItems": 10000,
+      "diskWarningFreeBytes": 17179869184,
+      "diskCriticalFreeBytes": 8589934592
+    }
+  },
+  "quotaPolicy": {
+    "path": "/etc/mako/quota-policy.json",
+    "state": "staged-for-deployment-qualification",
+    "resources": [
+      "egress_bytes",
+      "egress_requests",
+      "function_invocations",
+      "function_request_bytes",
+      "public_function_invocations",
+      "replication_bytes",
+      "replication_requests"
+    ],
+    "allHardLimitsBounded": true,
+    "allRateLimitsBounded": true
+  },
+  "secretProtection": {
+    "sourceDirectoryIgnoredByGit": true,
+    "controllerSourceModes": "0600",
+    "controllerSourceLengthsBytes": 65,
+    "installedFiles": [
+      {
+        "path": "/etc/mako/credentials/internal-auth",
+        "owner": "root:root",
+        "mode": "0600",
+        "delivery": "systemd credential"
+      },
+      {
+        "path": "/etc/mako/credentials/backup-signing-key",
+        "owner": "root:root",
+        "mode": "0600",
+        "delivery": "systemd credential"
+      },
+      {
+        "path": "/home/mako-runtime/.config/mako-cloud/grafana.env",
+        "owner": "mako-runtime:mako-runtime",
+        "mode": "0600",
+        "delivery": "protected rootless-container environment file"
+      }
+    ],
+    "serviceConfigurationUsesReferencesOnly": true,
+    "sanitizedPlanDeclaresSecretValuesPresent": false,
+    "generatedConfigurationSecretScanPassed": true,
+    "firstDeploymentLogSecretScanPassed": true,
+    "idempotenceLogSecretScanPassed": true,
+    "secretValuesRecordedInEvidence": false
+  },
+  "configurationFiles": [
+    {
+      "path": "/etc/mako/services/mako-data-plane.json",
+      "owner": "root:mako",
+      "mode": "0640"
+    },
+    {
+      "path": "/etc/mako/services/mako-control-plane.json",
+      "owner": "root:mako",
+      "mode": "0640"
+    },
+    {
+      "path": "/etc/mako/services/mako-edge-gateway.json",
+      "owner": "root:mako",
+      "mode": "0640"
+    },
+    {
+      "path": "/etc/mako/quota-policy.json",
+      "owner": "root:mako",
+      "mode": "0640"
+    },
+    {
+      "path": "/etc/mako/configuration-plan.json",
+      "owner": "root:root",
+      "mode": "0644"
+    }
+  ],
+  "verification": {
+    "secretGenerator": "scripts/generate-public-beta-secrets.sh",
+    "redactionVerifier": "scripts/verify-public-beta-secret-redaction.sh",
+    "firstConvergenceLog": ".local/ansible/production-configuration-convergence.log",
+    "idempotenceLog": ".local/ansible/production-configuration-idempotence.log",
+    "firstRun": {
+      "ok": 30,
+      "changed": 6,
+      "unreachable": 0,
+      "failed": 0,
+      "skipped": 0
+    },
+    "secondRun": {
+      "ok": 30,
+      "changed": 0,
+      "unreachable": 0,
+      "failed": 0,
+      "skipped": 0
+    },
+    "ansibleLintProfile": "production",
+    "ansibleLintPassed": true,
+    "rootlessContainerValidatorPassed": true
+  },
+  "admission": {
+    "makoServicesEnabled": false,
+    "makoServicesActive": false,
+    "dependencyTargetEnabled": false,
+    "dependencyTargetActive": false,
+    "caddyEnabled": false,
+    "caddyActive": false,
+    "publicApplicationRoutesEnabled": false,
+    "reason": "Startup, semantic recovery, tenant isolation, and policy qualification are the next gated task."
+  }
+}

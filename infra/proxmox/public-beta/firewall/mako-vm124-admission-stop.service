@@ -1,0 +1,23 @@
+[Unit]
+Description=Emergency stop for Mako Cloud public-beta application ingress
+After=network-online.target mako-vm124-firewall.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/mako-public-beta-admission-stop
+RemainAfterExit=yes
+User=root
+Group=root
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadOnlyPaths=/etc/nftables.d/mako-vm124-admission-stop.nft
+CapabilityBoundingSet=CAP_NET_ADMIN
+AmbientCapabilities=CAP_NET_ADMIN
+RestrictAddressFamilies=AF_UNIX AF_NETLINK
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

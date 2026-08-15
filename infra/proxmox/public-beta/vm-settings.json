@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "guestType": "qemu",
+  "machine": "q35",
+  "firmware": "ovmf",
+  "efiDisk": {
+    "storagePlanPath": "storage.os.id",
+    "preEnrolledKeys": true
+  },
+  "cpu": {
+    "type": "host",
+    "sockets": 1,
+    "cores": 8
+  },
+  "memoryMiB": 16384,
+  "agent": {
+    "enabled": true,
+    "freezeFileSystems": true,
+    "trimClonedDisks": true
+  },
+  "scsiController": "virtio-scsi-single",
+  "disks": [
+    {
+      "name": "os",
+      "bus": "scsi0",
+      "storagePlanPath": "storage.os.id",
+      "sizeGiB": 64,
+      "discard": true,
+      "iothread": true,
+      "ssd": true
+    },
+    {
+      "name": "data",
+      "bus": "scsi1",
+      "storagePlanPath": "storage.data.id",
+      "sizeGiB": 256,
+      "discard": true,
+      "iothread": true,
+      "ssd": true
+    }
+  ],
+  "cloudInit": {
+    "bus": "ide2",
+    "mode": "nocloud-seed-iso",
+    "storagePlanPath": "storage.backup.id",
+    "volumeLabel": "cidata"
+  },
+  "bootOrder": ["scsi0"],
+  "network": {
+    "model": "virtio",
+    "bridgePlanPath": "network.bridge",
+    "macAddressPlanPath": "network.macAddress",
+    "firewall": true,
+    "ipv4AddressPlanPath": "identity.ipv4Address",
+    "prefixLengthPlanPath": "network.prefixLength",
+    "gatewayPlanPath": "network.gateway"
+  },
+  "backup": {
+    "storagePlanPath": "storage.backup.id",
+    "liveDatabasePathsExcluded": true
+  }
+}

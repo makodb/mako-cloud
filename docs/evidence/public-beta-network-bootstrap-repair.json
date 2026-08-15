@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "appliedAt": "2026-08-08T03:29:31.256Z",
+  "planHash": "d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073",
+  "mode": "external-apply",
+  "sshTarget": "root@localhost",
+  "actions": [
+    {
+      "id": "upload-cloud-init-seed",
+      "result": "completed"
+    },
+    {
+      "id": "replace-cloud-init-seed",
+      "command": "qm set 124 --ide2 local:iso/mako-cloud-public-beta-seed-d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073-1822dc2713284d75.iso,media=cdrom",
+      "result": "completed",
+      "output": "update VM 124: -ide2 local:iso/mako-cloud-public-beta-seed-d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073-1822dc2713284d75.iso,media=cdrom"
+    },
+    {
+      "id": "set-boot-order",
+      "command": "qm set 124 --boot order=scsi0",
+      "result": "completed",
+      "output": "update VM 124: -boot order=scsi0"
+    },
+    {
+      "id": "start-vm",
+      "command": "qm start 124",
+      "result": "completed",
+      "output": ""
+    }
+  ],
+  "desiredState": {
+    "schemaVersion": 1,
+    "capturedAt": "2026-08-08T03:29:31.257Z",
+    "planHash": "d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073",
+    "node": "zoo-005",
+    "vmId": 124,
+    "status": "running",
+    "identity": {
+      "name": "mako-cloud-public-beta",
+      "descriptionMarker": "mako-plan-hash=d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073"
+    },
+    "hardware": {
+      "bios": "ovmf",
+      "machine": "q35",
+      "cpu": "host",
+      "cores": 8,
+      "sockets": 1,
+      "memoryMiB": 16384,
+      "scsihw": "virtio-scsi-single",
+      "agent": "enabled=1,freeze-fs=1,fstrim_cloned_disks=1"
+    },
+    "disks": {
+      "efidisk0": "qnas-lun-lvm:vm-124-disk-0,efitype=4m,ms-cert=2023k,pre-enrolled-keys=1,size=4M",
+      "scsi0": "qnas-lun-lvm:vm-124-disk-1,discard=on,iothread=1,size=64G,ssd=1",
+      "scsi1": "qnas-lun-lvm:vm-124-disk-2,discard=on,iothread=1,size=256G,ssd=1",
+      "ide2": "local:iso/mako-cloud-public-beta-seed-d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073-1822dc2713284d75.iso,media=cdrom,size=368K"
+    },
+    "network": {
+      "net0": "virtio=02:3b:12:f8:ec:76,bridge=vmbr0,firewall=1",
+      "ipconfig0": "ip=130.245.173.11/24,gw=130.245.173.1"
+    },
+    "seedSha256": "ca2b974b4a0b695734933f6f55274b53220465c9bda1c9a87b64783f29217075",
+    "configDigest": "56328d5eebe3579523fe8eac361652fce782dafbdeaeb453d3f95b0623dcc96e"
+  }
+}

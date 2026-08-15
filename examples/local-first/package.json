@@ -1,0 +1,21 @@
+{
+  "name": "@mako-cloud/example-local-first",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -b && vite build",
+    "dev": "vite --host 127.0.0.1",
+    "test:browser": "playwright test",
+    "typecheck": "tsc -b --pretty false && tsc -p tsconfig.test.json --pretty false"
+  },
+  "dependencies": {
+    "@mako-cloud/rxdb": "*",
+    "rxdb": "17.4.0",
+    "rxjs": "7.8.2"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.62.1",
+    "vite": "^7.3.6"
+  }
+}

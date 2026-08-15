@@ -1,0 +1,13 @@
+apiVersion: 1
+
+providers:
+  - name: Mako Cloud Operations
+    orgId: 1
+    folder: Mako Cloud
+    type: file
+    disableDeletion: true
+    editable: false
+    updateIntervalSeconds: 30
+    options:
+      path: /etc/grafana/dashboards
+      foldersFromFilesStructure: false

@@ -1,0 +1,87 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-14T01:08:46.000Z",
+  "status": "risk-accepted-public-preview-active",
+  "environment": "public-beta",
+  "vmId": 124,
+  "address": "130.245.173.11",
+  "publicOrigin": "https://cloud-test.makodb.com",
+  "planHash": "d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073",
+  "release": {
+    "digest": "a5ccdaabff7d6ef30da512330dab38b60e32ae034f621ee4d4eed2b49e976000",
+    "sourceDigest": "c05ba9d874f211e6d08ed74b75fec3ccea0fba5e7b90f44785b6539b2f3bf5c9",
+    "runtimeDigest": "b0e4ea7b66166492c3c29910858dc5d1b7f9786df81aed7057d80f34a1ad2abd",
+    "dependencyDigest": "e470026153038551cc39c37afdca492ad6947f75596bb38ccb456ba1b4c5aef0",
+    "artifactDigest": "2629ebf6b726f18213f1adab901d7869570758c44328143b3c5762e2449f2490",
+    "selectedPath": "/opt/mako/releases/a5ccdaabff7d6ef30da512330dab38b60e32ae034f621ee4d4eed2b49e976000",
+    "releaseOperation": {
+      "kind": "ansible-reselection-after-qualified-rollback",
+      "from": "5cc8599aca5651b2f217110d904d95282f4387d5b9c033f8d0b412c821277e2f",
+      "to": "a5ccdaabff7d6ef30da512330dab38b60e32ae034f621ee4d4eed2b49e976000",
+      "durationSeconds": null,
+      "checkpointVerified": true,
+      "storageFormatCompatible": true,
+      "configurationSnapshotBound": true,
+      "storageFencedBeforeSelection": false,
+      "identicalRuntimeArtifacts": true,
+      "allStatefulServicesReady": true,
+      "publicAdmissionEnabled": false,
+      "guestEvidence": null
+    }
+  },
+  "networkAdmission": {
+    "mode": "risk_accepted_preview",
+    "publicHttpListenerPresent": true,
+    "publicHttpsListenerPresent": true,
+    "httpRedirectStatus": 308,
+    "trustedHttpsStatus": 200,
+    "hstsEnabled": true,
+    "unrestrictedPublicAdmissionApproved": false,
+    "riskAcceptedPublicPreviewActive": true,
+    "previewApprovalPersistence": "until-manually-paused",
+    "previewApprovalExpiresAt": null
+  },
+  "qualification": {
+    "privateReadinessEndpoints": 4,
+    "allPrivateReadinessEndpointsHealthy": true,
+    "developerRegistrationEnabled": true,
+    "developerMailReady": true,
+    "ordinaryWaitlistRegistration": "passed",
+    "operatorPasswordAuthenticationEnabled": true,
+    "operatorBreakGlassBearerEnabled": false,
+    "exactReleaseHostedQualification": "passed",
+    "exactReleaseOptionalReasonAndBatchQualification": "passed",
+    "exactReleaseIndependentRoleLifecycleQualification": "passed",
+    "exactReleaseRollbackAndRollForwardQualification": "passed",
+    "initialOperatorLifecycleRepair": {
+      "status": "passed",
+      "developerStatusAfterRepair": "waitlisted",
+      "operatorStatus": "active",
+      "syntheticAddressUsed": false
+    },
+    "initialOperatorManualDeveloperAdmission": {
+      "status": "passed",
+      "developerStatus": "active",
+      "operatorStatus": "active",
+      "reasonProvided": false,
+      "selfReview": true,
+      "operatorSessionPreserved": true
+    },
+    "controlPlaneCheckpointRemoteVerified": true,
+    "controlPlaneOnlineBackupVerified": true,
+    "controlPlaneStayedReadyDuringBackup": true,
+    "isolatedControlPlaneRestoreVerified": true,
+    "mixedStorageTopology": "control-sqlite-and-service-owned-rocksdb",
+    "evidence": [
+      "docs/evidence/public-beta-hosted-qualification.json",
+      "docs/evidence/public-beta-operator-browser-qualification.json",
+      "docs/evidence/public-beta-streaming-qualification.json",
+      "docs/evidence/public-beta-hosted-benchmark.json",
+      "docs/evidence/public-beta-role-lifecycle-qualification.json",
+      "docs/evidence/public-beta-manual-self-approval.json",
+      "docs/evidence/public-beta-initial-operator-lifecycle-repair.json",
+      "docs/evidence/public-beta-mail-qualification.json",
+      "docs/evidence/public-beta-developer-registration-qualification.json"
+    ]
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-13T21:51:00Z",
+  "status": "passed",
+  "releaseDigest": "a5ccdaabff7d6ef30da512330dab38b60e32ae034f621ee4d4eed2b49e976000",
+  "command": "bash scripts/proxmox/public-beta-admission-stop.sh",
+  "guestGate": {
+    "caddyEnabled": false,
+    "caddyActive": false,
+    "dataPlaneActive": true,
+    "controlPlaneActive": true,
+    "edgeGatewayActive": true
+  },
+  "proxmoxGate": {
+    "unit": "mako-vm124-admission-stop.service",
+    "enabled": true,
+    "active": true,
+    "table": "bridge mako_vm124_admission_stop",
+    "blockedDestination": "130.245.173.11",
+    "blockedTcpPorts": [80, 443]
+  },
+  "externalVerification": {
+    "http": {
+      "status": 0,
+      "curlExit": 28,
+      "result": "timed_out_at_edge"
+    },
+    "https": {
+      "status": 0,
+      "curlExit": 28,
+      "result": "timed_out_at_edge"
+    }
+  },
+  "retained": {
+    "vmRunning": true,
+    "sshAvailable": true,
+    "liveControlSqlitePath": true,
+    "liveRocksDbPaths": true,
+    "backupPaths": true,
+    "configurationEvidence": true,
+    "releaseEvidence": true
+  },
+  "destructiveActionsPerformed": false
+}

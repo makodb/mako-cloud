@@ -1,0 +1,159 @@
+#!/usr/bin/env bash
+set -euo pipefail
+umask 022
+
+if [[ "$#" -ne 1 ]]; then
+  echo "usage: mako-checkpoint-backup-orchestrate data-plane|control-plane" >&2
+  exit 64
+fi
+
+case "$1" in
+  data-plane)
+    component=data-plane
+    port=8080
+    ;;
+  control-plane)
+    component=control-plane
+    port=8081
+    ;;
+  *)
+    echo "unsupported backup component" >&2
+    exit 64
+    ;;
+esac
+
+application="mako-${component}.service"
+worker="mako-checkpoint-backup@${component}.service"
+status_root=/var/lib/mako-backup
+last_success_file="${status_root}/${component}.last-success"
+failure_count_file="${status_root}/${component}.failures"
+metrics_file="${status_root}/${component}.prom"
+lock_file="${status_root}/checkpoint-transfer.lock"
+application_stopped=false
+
+read_counter() {
+  local value=0
+  if [[ -f "$1" ]]; then
+    value=$(<"$1")
+  fi
+  [[ "$value" =~ ^[0-9]+$ ]] || value=0
+  printf '%s' "$value"
+}
+
+write_metrics() {
+  local result=$1
+  local now last_success failures age verified temporary
+  now=$(/usr/bin/date +%s)
+  last_success=$(read_counter "$last_success_file")
+  failures=$(read_counter "$failure_count_file")
+  if (( last_success == 0 )); then
+    age=86400
+  else
+    age=$((now - last_success))
+  fi
+  if (( result == 0 )); then
+    verified=1
+  else
+    verified=0
+  fi
+  temporary=$(/usr/bin/mktemp "${status_root}/.${component}.prom.XXXXXX")
+  if [[ "$component" == control-plane ]]; then
+    {
+      printf '# HELP mako_control_sqlite_backup_age_seconds Age of the newest remotely verified SQLite backup.\n'
+      printf '# TYPE mako_control_sqlite_backup_age_seconds gauge\n'
+      printf 'mako_control_sqlite_backup_age_seconds %s\n' "$age"
+      printf '# HELP mako_control_sqlite_backup_failures_total Failed SQLite backup orchestration attempts.\n'
+      printf '# TYPE mako_control_sqlite_backup_failures_total counter\n'
+      printf 'mako_control_sqlite_backup_failures_total %s\n' "$failures"
+      printf '# HELP mako_control_sqlite_backup_remote_verified Whether the latest SQLite backup was read back and verified.\n'
+      printf '# TYPE mako_control_sqlite_backup_remote_verified gauge\n'
+      printf 'mako_control_sqlite_backup_remote_verified %s\n' "$verified"
+      printf '# HELP mako_control_sqlite_backup_last_success_unixtime_seconds Last remotely verified SQLite backup time.\n'
+      printf '# TYPE mako_control_sqlite_backup_last_success_unixtime_seconds gauge\n'
+      printf 'mako_control_sqlite_backup_last_success_unixtime_seconds %s\n' "$last_success"
+      printf '# HELP mako_control_sqlite_restore_failures_total Failed verified SQLite restore attempts.\n'
+      printf '# TYPE mako_control_sqlite_restore_failures_total counter\n'
+      printf 'mako_control_sqlite_restore_failures_total %s\n' "$(read_counter "${status_root}/control-plane.restore-failures")"
+      printf '# HELP mako_control_sqlite_migration_verified Whether the RocksDB-to-SQLite migration receipt is retained.\n'
+      printf '# TYPE mako_control_sqlite_migration_verified gauge\n'
+      if [[ -f /srv/mako-data/sqlite/control-plane/migration/control-plane-receipt.json ]]; then
+        printf 'mako_control_sqlite_migration_verified 1\n'
+      else
+        printf 'mako_control_sqlite_migration_verified 0\n'
+      fi
+    } >"$temporary"
+  else
+    {
+    printf '# HELP mako_storage_backup_age_seconds Age of the newest remotely verified checkpoint.\n'
+    printf '# TYPE mako_storage_backup_age_seconds gauge\n'
+    printf 'mako_storage_backup_age_seconds{service="mako-%s"} %s\n' "$component" "$age"
+    printf '# HELP mako_storage_backup_failures_total Failed checkpoint orchestration attempts.\n'
+    printf '# TYPE mako_storage_backup_failures_total counter\n'
+    printf 'mako_storage_backup_failures_total{service="mako-%s"} %s\n' "$component" "$failures"
+    printf '# HELP mako_storage_backup_remote_verified Whether the latest checkpoint was read back and verified.\n'
+    printf '# TYPE mako_storage_backup_remote_verified gauge\n'
+    printf 'mako_storage_backup_remote_verified{service="mako-%s"} %s\n' "$component" "$verified"
+    printf '# HELP mako_storage_backup_last_success_unixtime_seconds Last remotely verified checkpoint time.\n'
+    printf '# TYPE mako_storage_backup_last_success_unixtime_seconds gauge\n'
+    printf 'mako_storage_backup_last_success_unixtime_seconds{service="mako-%s"} %s\n' "$component" "$last_success"
+    } >"$temporary"
+  fi
+  /usr/bin/chmod 0644 "$temporary"
+  /usr/bin/mv --force "$temporary" "$metrics_file"
+}
+
+finish() {
+  local result=$?
+  trap - EXIT
+  if [[ "$application_stopped" == true ]]; then
+    /usr/bin/systemctl reset-failed "$application" || true
+    if ! /usr/bin/systemctl start "$application"; then
+      result=1
+    else
+      ready=false
+      for _attempt in $(/usr/bin/seq 1 30); do
+        if [[ "$(/usr/bin/curl --silent --show-error --output /dev/null --write-out '%{http_code}' "http://127.0.0.1:${port}/readyz" || true)" == 200 ]]; then
+          ready=true
+          break
+        fi
+        /usr/bin/sleep 1
+      done
+      if [[ "$ready" != true ]]; then
+        echo "application readiness did not recover after checkpoint" >&2
+        result=1
+      fi
+    fi
+  fi
+  if (( result == 0 )); then
+    /usr/bin/date +%s >"$last_success_file"
+  else
+    printf '%s\n' "$(( $(read_counter "$failure_count_file") + 1 ))" >"$failure_count_file"
+  fi
+  write_metrics "$result"
+  exit "$result"
+}
+trap finish EXIT
+
+# The restricted remote rrsync target permits only one writer below its root.
+# Both component timers can become due in the same scheduling window, so hold a
+# shared local lock before either service is stopped or any transfer begins.
+exec 9>"$lock_file"
+if ! /usr/bin/flock --exclusive --wait 240 9; then
+  echo "timed out waiting for the shared checkpoint transfer lock" >&2
+  exit 75
+fi
+
+# SQLite's online backup API provides a transactionally consistent snapshot.
+# Keep the control authority available while the independently verified worker
+# checkpoints, publishes, transfers, and reads the artifact back. RocksDB
+# checkpoints retain their explicit stopped-owner fence below.
+if [[ "$component" == control-plane ]]; then
+  /usr/bin/systemctl reset-failed "$worker" || true
+  /usr/bin/systemctl start --wait "$worker"
+  exit 0
+fi
+
+/usr/bin/systemctl stop "$application"
+application_stopped=true
+/usr/bin/systemctl reset-failed "$worker" || true
+/usr/bin/systemctl start --wait "$worker"

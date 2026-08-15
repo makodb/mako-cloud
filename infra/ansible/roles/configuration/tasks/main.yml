@@ -1,0 +1,294 @@
+---
+- name: Require the exact production origin and fail-closed service gate
+  ansible.builtin.assert:
+    that:
+      - mako_public_fqdn == "cloud-test.makodb.com"
+      - mako_caddy_enabled | bool == false
+    fail_msg: Refusing to generate production configuration after an admission gate changed.
+
+- name: Inspect protected controller-side secret sources
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  delegate_to: localhost
+  become: false
+  register: configuration_secret_source
+  no_log: true
+  loop:
+    - "{{ mako_internal_auth_secret_source }}"
+    - "{{ mako_object_store_access_key_source }}"
+    - "{{ mako_object_store_secret_key_source }}"
+    - "{{ mako_backup_signing_key_source }}"
+    - "{{ mako_grafana_admin_password_source }}"
+
+- name: Require protected controller-side secret sources
+  ansible.builtin.assert:
+    that:
+      - item.stat.isreg | default(false)
+      - item.stat.mode == "0600"
+      - item.stat.size == 65
+    fail_msg: Generate the protected public-beta secret sources before convergence.
+  no_log: true
+  loop: "{{ configuration_secret_source.results }}"
+
+- name: Install the internal service authentication credential
+  ansible.builtin.copy:
+    src: "{{ mako_internal_auth_secret_source }}"
+    dest: /etc/mako/credentials/internal-auth
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  notify: Restart qualified Mako application services
+
+- name: Inspect protected developer registration mail credentials
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  delegate_to: localhost
+  become: false
+  register: configuration_developer_mail_secret_source
+  no_log: true
+  when: mako_developer_registration_enabled | bool
+  loop:
+    - "{{ mako_developer_mail_encryption_secret_source }}"
+    - "{{ mako_developer_smtp_password_source }}"
+
+- name: Require protected developer registration mail credentials
+  ansible.builtin.assert:
+    that:
+      - item.stat.isreg | default(false)
+      - item.stat.mode == "0600"
+      - item.stat.size >= 17
+      - item.stat.size <= 4097
+    fail_msg: Registration requires protected mail-encryption and authenticated SMTP credentials.
+  no_log: true
+  when: mako_developer_registration_enabled | bool
+  loop: "{{ configuration_developer_mail_secret_source.results | default([]) }}"
+
+- name: Install protected developer registration mail credentials
+  ansible.builtin.copy:
+    src: "{{ item.source }}"
+    dest: "{{ item.destination }}"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  when: mako_developer_registration_enabled | bool
+  loop:
+    - source: "{{ mako_developer_mail_encryption_secret_source }}"
+      destination: /etc/mako/credentials/developer-mail-encryption
+    - source: "{{ mako_developer_smtp_password_source }}"
+      destination: /etc/mako/credentials/developer-smtp-password
+  notify: Restart qualified Mako application services
+
+- name: Install the checkpoint manifest signing credential
+  ansible.builtin.copy:
+    src: "{{ mako_backup_signing_key_source }}"
+    dest: /etc/mako/credentials/backup-signing-key
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+
+- name: Install authenticated object-store credentials
+  ansible.builtin.copy:
+    src: "{{ item.source }}"
+    dest: "{{ item.destination }}"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  loop:
+    - source: "{{ mako_object_store_access_key_source }}"
+      destination: /etc/mako/credentials/object-store-access-key
+    - source: "{{ mako_object_store_secret_key_source }}"
+      destination: /etc/mako/credentials/object-store-secret-key
+  notify: Restart qualified Mako application services
+
+- name: Install the protected Grafana administrator environment
+  ansible.builtin.copy:
+    dest: /home/mako-runtime/.config/mako-cloud/grafana.env
+    owner: mako-runtime
+    group: mako-runtime
+    mode: "0600"
+    content: >-
+      GF_SECURITY_ADMIN_PASSWORD={{ lookup('ansible.builtin.file', mako_grafana_admin_password_source) | trim }}
+  no_log: true
+  notify: Restart qualified rootless dependencies
+
+- name: Generate production Mako service configuration
+  ansible.builtin.template:
+    src: service-config.json.j2
+    dest: "/etc/mako/services/{{ item.name }}.json"
+    owner: root
+    group: mako
+    mode: "0640"
+  loop:
+    - name: mako-data-plane
+      port: 8080
+      rocksdb_path: /srv/mako-data/rocksdb/data-plane
+      backup_destination: /srv/mako-data/backup-staging/data-plane
+    - name: mako-control-plane
+      port: 8081
+      sqlite_database_path: /srv/mako-data/sqlite/control-plane/live/control.sqlite3
+      sqlite_lock_path: /srv/mako-data/sqlite/control-plane/lock/control.lock
+      sqlite_migration_workspace: /srv/mako-data/sqlite/control-plane/migration
+      backup_destination: /srv/mako-data/backup-staging/control-plane
+      backup_publish: /srv/mako-data/backup-publish/control-plane
+      restore_workspace: /srv/mako-data/restore/control-plane
+      reserve_path: /srv/mako-data/sqlite/control-plane/reserve
+    - name: mako-edge-gateway
+      port: 8082
+      rocksdb_path: /srv/mako-data/rocksdb/edge-gateway
+      backup_destination: /srv/mako-data/backup-staging/edge-gateway
+  loop_control:
+    label: "{{ item.name }}.json"
+  notify: Restart qualified Mako application services
+
+- name: Generate the bounded public-beta quota policy
+  ansible.builtin.template:
+    src: quota-policy.json.j2
+    dest: /etc/mako/quota-policy.json
+    owner: root
+    group: mako
+    mode: "0640"
+  notify: Restart qualified Mako application services
+
+- name: Generate the sanitized production configuration plan
+  ansible.builtin.template:
+    src: configuration-plan.json.j2
+    dest: /etc/mako/configuration-plan.json
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Read generated non-secret service configuration
+  ansible.builtin.slurp:
+    src: "/etc/mako/services/{{ item.name }}.json"
+  register: configuration_service_document
+  loop:
+    - { name: mako-data-plane, port: 8080, path: /srv/mako-data/rocksdb/data-plane }
+    - { name: mako-control-plane, port: 8081, path: /srv/mako-data/sqlite/control-plane/live/control.sqlite3 }
+    - { name: mako-edge-gateway, port: 8082, path: /srv/mako-data/rocksdb/edge-gateway }
+  loop_control:
+    label: "{{ item.name }}.json"
+
+- name: Require exact safe production service values
+  ansible.builtin.assert:
+    that:
+      - (item.content | b64decode | from_json).deployment.environment == "production"
+      - (item.content | b64decode | from_json).deployment.region == mako_storage_region
+      - (item.content | b64decode | from_json).server.bind_address == "127.0.0.1:" + (item.item.port | string)
+      - (item.content | b64decode | from_json).server.public_url == "https://" + mako_public_fqdn
+      - >-
+        (item.item.name == "mako-control-plane" and
+        (item.content | b64decode | from_json).control_storage.database_path == item.item.path and
+        (item.content | b64decode | from_json).control_storage.database_identity == "mako-control-plane-" + mako_storage_region and
+        (item.content | b64decode | from_json).storage is not defined) or
+        (item.item.name != "mako-control-plane" and
+        (item.content | b64decode | from_json).storage.rocksdb_path == item.item.path and
+        (item.content | b64decode | from_json).control_storage is not defined)
+      - (item.content | b64decode | from_json).dependencies.smtp_address == "127.0.0.1:1025"
+      - (item.content | b64decode | from_json).dependencies.object_store_endpoint == "http://127.0.0.1:8333"
+      - (item.content | b64decode | from_json).dependencies.runtime_supervisor_address == "127.0.0.1:9001"
+      - (item.content | b64decode | from_json).dependencies.telemetry_query_address == "127.0.0.1:9465"
+      - (item.content | b64decode | from_json).dependencies.otlp_address == "127.0.0.1:4317"
+      - (item.content | b64decode | from_json).limits.max_request_bytes == 16777216
+      - (item.content | b64decode | from_json).secrets.internal_auth == "file:/run/credentials/" + item.item.name + ".service/internal-auth"
+      - >-
+        item.item.name != "mako-control-plane" or
+        (item.content | b64decode | from_json).secrets.object_store_access_key ==
+        "file:/run/credentials/mako-control-plane.service/object-store-access-key"
+      - >-
+        item.item.name != "mako-control-plane" or
+        (item.content | b64decode | from_json).secrets.object_store_secret_key ==
+        "file:/run/credentials/mako-control-plane.service/object-store-secret-key"
+      - >-
+        item.item.name != "mako-control-plane" or
+        (item.content | b64decode | from_json).developer_registration.enabled ==
+        (mako_developer_registration_enabled | bool)
+      - >-
+        item.item.name != "mako-control-plane" or
+        (item.content | b64decode | from_json).operator_authentication.enabled ==
+        (mako_operator_password_auth_enabled | bool)
+      - >-
+        item.item.name != "mako-control-plane" or
+        (item.content | b64decode | from_json).operator_authentication.session_lifetime_seconds ==
+        (mako_operator_session_lifetime_seconds | int)
+      - >-
+        item.item.name != "mako-control-plane" or
+        (item.content | b64decode | from_json).operator_authentication.mutation_freshness_seconds ==
+        (mako_operator_mutation_freshness_seconds | int)
+      - >-
+        item.item.name != "mako-control-plane" or
+        (item.content | b64decode | from_json).operator_authentication.break_glass_bearer_enabled ==
+        (mako_operator_break_glass_bearer_enabled | bool)
+    fail_msg: Generated production service configuration does not match the fail-closed plan.
+  loop: "{{ configuration_service_document.results }}"
+  loop_control:
+    label: "{{ item.item.name }}.json"
+
+- name: Inspect installed production credentials
+  ansible.builtin.stat:
+    path: "{{ item.path }}"
+  register: configuration_installed_secret
+  no_log: true
+  loop:
+    - { path: /etc/mako/credentials/internal-auth, owner: root, mode: "0600" }
+    - { path: /etc/mako/credentials/object-store-access-key, owner: root, mode: "0600" }
+    - { path: /etc/mako/credentials/object-store-secret-key, owner: root, mode: "0600" }
+    - { path: /etc/mako/credentials/backup-signing-key, owner: root, mode: "0600" }
+    - { path: /etc/mako/credentials/developer-mail-encryption, owner: root, mode: "0600", registration_only: true }
+    - { path: /etc/mako/credentials/developer-smtp-password, owner: root, mode: "0600", registration_only: true }
+    - { path: /home/mako-runtime/.config/mako-cloud/grafana.env, owner: mako-runtime, mode: "0600" }
+    - { path: /home/mako-runtime/.config/mako-cloud/object-store.env, owner: mako-runtime, mode: "0600" }
+    - { path: /home/mako-runtime/.config/mako-cloud/runtime-supervisor.env, owner: mako-runtime, mode: "0600" }
+
+- name: Require protected production credential ownership
+  ansible.builtin.assert:
+    that:
+      - item.stat.isreg | default(false)
+      - item.stat.pw_name == item.item.owner
+      - item.stat.mode == item.item.mode
+    fail_msg: An installed public-beta credential is not protected.
+  no_log: true
+  loop: "{{ configuration_installed_secret.results }}"
+  when: not (item.item.registration_only | default(false)) or (mako_developer_registration_enabled | bool)
+
+- name: Prove generated plans and configuration omit service credential values
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/grep
+      - --fixed-strings
+      - --quiet
+      - --file
+      - "{{ item }}"
+      - /etc/mako/configuration-plan.json
+      - /etc/mako/quota-policy.json
+      - /etc/mako/services/mako-data-plane.json
+      - /etc/mako/services/mako-control-plane.json
+      - /etc/mako/services/mako-edge-gateway.json
+  register: configuration_secret_scan
+  changed_when: false
+  failed_when: configuration_secret_scan.rc != 1
+  no_log: true
+  loop:
+    - /etc/mako/credentials/internal-auth
+    - /etc/mako/credentials/object-store-access-key
+    - /etc/mako/credentials/object-store-secret-key
+    - /etc/mako/credentials/developer-mail-encryption
+    - /etc/mako/credentials/developer-smtp-password
+  when: >-
+    item is not search('developer-') or (mako_developer_registration_enabled | bool)
+
+- name: Read the sanitized production configuration plan
+  ansible.builtin.slurp:
+    src: /etc/mako/configuration-plan.json
+  register: configuration_plan_document
+
+- name: Require the sanitized plan to keep public application admission disabled
+  ansible.builtin.assert:
+    that:
+      - (configuration_plan_document.content | b64decode | from_json).publicOrigin == "https://cloud-test.makodb.com"
+      - (configuration_plan_document.content | b64decode | from_json).secretValuesPresent == false
+      - (configuration_plan_document.content | b64decode | from_json).publicApplicationRoutesEnabled == false
+    fail_msg: The generated configuration plan is not sanitized or changed the admission gate.

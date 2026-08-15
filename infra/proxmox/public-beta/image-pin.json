@@ -1,0 +1,10 @@
+{
+  "distribution": "ubuntu",
+  "release": "24.04",
+  "architecture": "amd64",
+  "source": "https://cloud-images.ubuntu.com/noble/20260801/noble-server-cloudimg-amd64.img",
+  "sha256": "0533b0655c32e68b31d792ecd6ccfca95abdbc536c4446874fe0513bd4140ffe",
+  "checksumManifest": "https://cloud-images.ubuntu.com/noble/20260801/SHA256SUMS",
+  "localVolume": "local:iso/noble-server-cloudimg-amd64-20260801.img",
+  "hostPath": "/var/lib/vz/template/iso/noble-server-cloudimg-amd64-20260801.img"
+}

@@ -1,0 +1,11 @@
+[Unit]
+Description=Prune retained Mako Cloud public-beta checkpoints daily
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+RandomizedDelaySec=30min
+Unit=mako-public-beta-backup-retention.service
+
+[Install]
+WantedBy=timers.target

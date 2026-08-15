@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "environment": "public-beta",
+  "architecture": "linux/amd64",
+  "images": [
+    {
+      "component": "mailpit",
+      "versionSource": "docker.io/axllent/mailpit:v1.30.0",
+      "image": "docker.io/axllent/mailpit@sha256:0059ef81e492a7192af3816281eed6859eb078bd7bdc58b76757c13e10e53a7d",
+      "platformImageId": "sha256:c66fa46e454b697a1876f3d858add97bcb26c4ea677d93a090ef9bf8bce2fb19"
+    },
+    {
+      "component": "object-store",
+      "versionSource": "docker.io/chrislusf/seaweedfs:4.29",
+      "image": "docker.io/chrislusf/seaweedfs@sha256:d47c7ee99fcb951351d7194915f4e3a5ea604a8e8871183d713907dec4fb9bf5",
+      "platformImageId": "sha256:10b004ca7cc8ee13615dbe670e1be047270ab30a742a5944e82330017d64d8fd"
+    },
+    {
+      "component": "otel-collector",
+      "versionSource": "docker.io/otel/opentelemetry-collector-contrib:0.153.0",
+      "image": "docker.io/otel/opentelemetry-collector-contrib@sha256:388054389612c69d0387ecac256338e4086f6cf072fc8feafb6ce7968dc6946c",
+      "platformImageId": "sha256:971344cab87ed2f0cafc2db1d081e5534cc6ba21b33e8d931be3c87dd84fafef"
+    },
+    {
+      "component": "prometheus",
+      "versionSource": "docker.io/prom/prometheus:v3.13.0",
+      "image": "docker.io/prom/prometheus@sha256:0e698e35e50d1ddc2d11a4a55b089fe62eb71358a5c204dfafd21bdf8ffe04b8",
+      "platformImageId": "sha256:f725874ae0a3aae89925f35c7bcfe01ed90ed1c174af6e84ab2dcf4fcbbc1dc2"
+    },
+    {
+      "component": "grafana",
+      "versionSource": "docker.io/grafana/grafana:13.1.0",
+      "image": "docker.io/grafana/grafana@sha256:121a7a9ece6dc10b969f1f96eed64b4f07dfac0d0b8abc070f7cb83bbde86f63",
+      "platformImageId": "sha256:e76fd1761e3cc1dd6071a53484b72762f8b358bb1ecd89c9e21d57090956998e"
+    },
+    {
+      "component": "edge-runtime",
+      "versionSource": "v1.74.3 at source commit 47d04fdd22e33ea3fd904576cf3248d963d903a9",
+      "image": "docker.io/supabase/edge-runtime@sha256:c52405002a890ca9fcf77978671c57f3a988e03174afb277f84ac65bc917013c",
+      "platformImageId": "sha256:04332d354964b089d81eb872ce1604119a9cf62b54d3556338f3a46d81bfcc8e"
+    }
+  ]
+}

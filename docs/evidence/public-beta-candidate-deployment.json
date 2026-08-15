@@ -1,0 +1,209 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-09T03:56:55Z",
+  "status": "qualified-pre-admission",
+  "planHash": "d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073",
+  "release": {
+    "digest": "9429e76a4f24960683215c3dd5d6273526b13fc2bcf97b8788c07d4f60690385",
+    "sourceDigest": "192b8081ff5a22bff8383cdd135890dd741cdacf7e8c6d1823baa8cccfbfd6eb",
+    "runtimeDigest": "b0e4ea7b66166492c3c29910858dc5d1b7f9786df81aed7057d80f34a1ad2abd",
+    "dependencyDigest": "c8d4c0a54de90adc57e31a9149cfd42d8ebde85230cb457efa86013c98b5b12d",
+    "artifactDigest": "62871f9c5f54c88937a65f1586f73047afb4f029c25df1162a6d81e44c8baba7",
+    "selectedPath": "/opt/mako/releases/9429e76a4f24960683215c3dd5d6273526b13fc2bcf97b8788c07d4f60690385",
+    "integrityVerifiedAfterReboot": true,
+    "manifest": "docs/evidence/public-beta-release-manifest.json",
+    "releaseOperation": {
+      "kind": "upgrade",
+      "from": "4f71ad38d1fa3c6127a04d0a76e0d0bd20dea7529ac42971238956f34b3d5396",
+      "to": "9429e76a4f24960683215c3dd5d6273526b13fc2bcf97b8788c07d4f60690385",
+      "durationSeconds": 11,
+      "checkpointVerified": true,
+      "storageFencedBeforeSelection": true,
+      "allServicesReady": true,
+      "publicAdmissionEnabled": false,
+      "guestEvidence": "/var/lib/mako-release-operations/1786247383-upgrade-9429e76a4f24960683215c3dd5d6273526b13fc2bcf97b8788c07d4f60690385.json"
+    }
+  },
+  "deployment": {
+    "vmId": 124,
+    "address": "130.245.173.11",
+    "fqdn": "cloud-test.makodb.com",
+    "applicationServicesEnabled": true,
+    "applicationServicesActive": true,
+    "dependencyTargetActive": true,
+    "caddyEnabled": false,
+    "caddyActive": false,
+    "publicApplicationRoutesEnabled": false,
+    "ansibleRecap": {
+      "ok": 103,
+      "changed": 10,
+      "unreachable": 0,
+      "failed": 0,
+      "skipped": 10,
+      "log": ".local/ansible/deployment-candidate-b1dd2156.log"
+    }
+  },
+  "privateReadiness": {
+    "dataPlane": {
+      "url": "http://127.0.0.1:8080/readyz",
+      "status": 200,
+      "detail": "storage_identity_documents_policy_gateway_quota_audit_ready"
+    },
+    "controlPlane": {
+      "url": "http://127.0.0.1:8081/readyz",
+      "status": 200,
+      "detail": "storage_auth_rbac_audit_provisioning_management_data_identity_functions_ready"
+    },
+    "edgeGateway": {
+      "url": "http://127.0.0.1:8082/readyz",
+      "status": 200,
+      "detail": "storage_identity_control_runtime_audit_ready"
+    },
+    "telemetryQuery": {
+      "url": "http://127.0.0.1:9465/readyz",
+      "status": 200,
+      "detail": "telemetry_store_ready"
+    },
+    "runtimeSupervisor": {
+      "url": "http://127.0.0.1:9001/_mako/runtime/v1/health",
+      "authenticated": true,
+      "status": 200,
+      "protocolVersion": 1,
+      "runtimeRelease": "v1.74.3",
+      "sourceCommit": "47d04fdd22e33ea3fd904576cf3248d963d903a9",
+      "region": "us-east-1-beta",
+      "ready": true
+    },
+    "rootlessDependenciesHealthy": true
+  },
+  "storage": {
+    "exclusiveOwners": [
+      {
+        "service": "mako-data-plane",
+        "path": "/srv/mako-data/rocksdb/data-plane",
+        "owner": "mako-data-plane:mako-data-plane"
+      },
+      {
+        "service": "mako-control-plane",
+        "path": "/srv/mako-data/rocksdb/control-plane",
+        "owner": "mako-control-plane:mako-control-plane"
+      },
+      {
+        "service": "mako-edge-gateway",
+        "path": "/srv/mako-data/rocksdb/edge-gateway",
+        "owner": "mako-edge-gateway:mako-edge-gateway"
+      },
+      {
+        "service": "mako-telemetry-query",
+        "path": "/srv/mako-data/rocksdb/telemetry-query",
+        "owner": "mako-telemetry-query:mako-telemetry-query"
+      }
+    ],
+    "semanticRecovery": {
+      "dataPlane": {
+        "tenantsRecovered": 1,
+        "acknowledgedHighWater": 1,
+        "durability": "sync"
+      },
+      "controlPlane": {
+        "tenantsRecovered": 1,
+        "acknowledgedHighWater": 1,
+        "durability": "sync"
+      },
+      "reverifiedAfterGuestReboot": true
+    }
+  },
+  "apiRouteReadiness": {
+    "passed": true,
+    "probes": [
+      {
+        "service": "mako-control-plane",
+        "method": "GET",
+        "path": "/v1/projects",
+        "status": 400,
+        "detail": "organizationId query parameter required"
+      },
+      {
+        "service": "mako-data-plane",
+        "method": "POST",
+        "path": "/v1/projects/prj_beta/environments/env_beta/auth/signin",
+        "status": 401,
+        "detail": "public project key required"
+      },
+      {
+        "service": "mako-data-plane",
+        "method": "POST",
+        "path": "/v1/projects/prj_beta/environments/env_beta/collections/col_beta/replication/pull",
+        "status": 400
+      },
+      {
+        "service": "mako-data-plane",
+        "method": "POST",
+        "path": "/v1/projects/prj_beta/environments/env_beta/collections/col_beta/replication/push",
+        "status": 400,
+        "detail": "idempotency key required"
+      },
+      {
+        "service": "mako-edge-gateway",
+        "method": "GET",
+        "path": "/prj_beta_canary/functions/v1/health",
+        "status": 404,
+        "detail": "function not found"
+      }
+    ],
+    "privateRoutesRejectWrongMethods": true,
+    "unknownInternalRoutesReturn404": true
+  },
+  "securityQualification": {
+    "scope": "exact deployed source plus hosted composition probes",
+    "evidence": "docs/evidence/public-beta-hosted-qualification.json",
+    "allSevenFamiliesPassed": true,
+    "tenantIsolationSuite": {
+      "command": "npm run test:tenant-boundaries",
+      "passed": true
+    },
+    "policySecuritySuite": {
+      "command": "npm run test:policy-security",
+      "passed": true
+    },
+    "internalReplay": {
+      "authenticatedHostedProbe": true,
+      "initialInvalidCredentialStatus": 401,
+      "exactNonceReplayStatus": 409,
+      "passed": true
+    }
+  },
+  "rebootRecovery": {
+    "passed": true,
+    "preRebootBootId": "3d8949d9-96b2-48fb-9409-02dc9cce2487",
+    "postRebootBootId": "9694a0a7-70f6-4eeb-ade5-318adc53fad4",
+    "proxmoxStatus": "running",
+    "qemuGuestAgentResponded": true,
+    "selectedReleasePersisted": true,
+    "statefulServicesRecoveredBeforeReadiness": true,
+    "rootlessDependenciesRecovered": true,
+    "runtimeSupervisorRecovered": true,
+    "caddyRemainedDisabled": true
+  },
+  "networkAdmission": {
+    "mode": "disabled",
+    "publicHttpListenerPresent": false,
+    "publicHttpsListenerPresent": false,
+    "externalHttpProbe": {
+      "status": 0,
+      "curlExit": 7,
+      "result": "connection_refused"
+    },
+    "externalHttpsProbe": {
+      "status": 0,
+      "curlExit": 7,
+      "result": "connection_refused"
+    },
+    "allMakoAndDependencyListenersLoopbackOnly": true,
+    "unrestrictedPublicAdmissionApproved": false
+  },
+  "remainingGate": {
+    "code": "trusted_https_target_load_and_observation_window_pending",
+    "summary": "The exact immutable candidate passes security, durability, private composition, and reboot recovery. Public HTTPS, successful target-load saturation, the 30-day observation/cost window, and explicit operator approval remain blocked."
+  }
+}

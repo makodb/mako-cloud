@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-13T21:46:23Z",
+  "status": "passed",
+  "releaseDigest": "a5ccdaabff7d6ef30da512330dab38b60e32ae034f621ee4d4eed2b49e976000",
+  "controlSqlite": {
+    "sourceBackupId": "20260814T005221Z-control-plane",
+    "authenticatedManifest": true,
+    "remotelyReverified": true,
+    "releaseBound": true,
+    "databaseIdentity": "mako-control-plane-us-east-1-beta",
+    "databaseFormatVersion": 1,
+    "recordCount": 7616,
+    "durableHighWater": 7616,
+    "framedBlake3": "d95f4444436dd60c6ab5bb4501422529dcd22c91787c07a1c7cb4649da082ed9",
+    "databaseSha256": "692003b8bc6326236ee1909f30e1e80a424ab1645902a345eb93a5a02776aa0b",
+    "integrityVerified": true,
+    "emptyOfflineTarget": true,
+    "promotable": true,
+    "livePathModified": false,
+    "onlineBackupKeptControlReady": true,
+    "explicitPromotionPreviouslyQualified": true
+  },
+  "sourceBackup": {
+    "id": "20260809T021148Z-data-plane",
+    "service": "mako-data-plane",
+    "databaseId": "mako-data-plane-us-east-1-beta",
+    "authenticatedManifest": true,
+    "databaseFormatVersion": 1,
+    "filesVerified": 13,
+    "tenantsVerified": 3,
+    "minimumAcknowledgedHighWater": 0,
+    "maximumAcknowledgedHighWater": 1,
+    "previouslyReadBackFromOffVmTarget": true
+  },
+  "restore": {
+    "target": "/srv/mako-data/restore/data-plane/qualification-b1dd2156",
+    "targetWasEmpty": true,
+    "targetWasOffline": true,
+    "livePath": "/srv/mako-data/rocksdb/data-plane",
+    "livePathModified": false,
+    "dryRunPassed": true,
+    "confirmedRestorePassed": true,
+    "restoreDurationMilliseconds": 511,
+    "recoveryTimeObjectiveSeconds": 1800,
+    "initialState": "promotable"
+  },
+  "promotion": {
+    "explicitConfirmation": "PROMOTE",
+    "stateAfterPromotion": "active",
+    "semanticRecoveryPassed": true,
+    "qualificationTenantAcknowledgedHighWater": 1,
+    "durability": "sync",
+    "finalOfflineState": "fenced"
+  },
+  "postQualification": {
+    "liveDataPlaneActive": true,
+    "liveDataPlaneReady": true,
+    "liveControlPlaneActive": true,
+    "liveControlPlaneReady": true,
+    "publicAdmissionEnabled": false
+  }
+}

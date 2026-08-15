@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-13T12:25:33.645Z",
+  "status": "passed",
+  "change": "build-operator-control-center",
+  "task": "12.7",
+  "criteria": {
+    "workflowParity": {
+      "passed": true,
+      "workflows": [
+        "provisioning repair",
+        "quota override",
+        "abuse response",
+        "support-session create and revoke",
+        "developer wait-list review"
+      ],
+      "evidence": [
+        "apps/console/test-e2e/operator-control-center.spec.ts",
+        "docs/evidence/public-beta-operator-browser-qualification.json"
+      ]
+    },
+    "successfulUsage": {
+      "passed": true,
+      "hostedControlCenterShell": true,
+      "hostedContextualInventory": true,
+      "hostedStepUpRetry": true,
+      "hostedWaitListMutation": true,
+      "evidence": "docs/evidence/public-beta-operator-browser-qualification.json"
+    },
+    "auditParity": {
+      "passed": true,
+      "evidence": [
+        "docs/evidence/operator-control-center-projection-qualification.json",
+        "docs/operator-control-center.md"
+      ]
+    },
+    "rollback": {
+      "documented": true,
+      "mechanism": "immutable format-compatible release rollback",
+      "runbooks": [
+        "docs/runbooks/operator-control-center.md",
+        "docs/runbooks/public-beta-environment.md"
+      ]
+    }
+  },
+  "retirement": {
+    "htmlFeatureGateRemoved": true,
+    "legacyNavigationRemoved": true,
+    "legacyConsoleRouteRemoved": true,
+    "publicDeepLinkRemoved": true,
+    "unknownRouteFailsClosed": true
+  },
+  "hostedReleaseDigest": "6313befde98b69d3e96f46e93605c2174f6b1ad7ca47e77a6556039a13cfb1da",
+  "hostedQualificationPassed": true
+}

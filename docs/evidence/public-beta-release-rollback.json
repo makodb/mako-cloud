@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-13T21:49:00.000Z",
+  "environment": "public-beta",
+  "vmId": 124,
+  "publicIpv4": "130.245.173.11",
+  "planHash": "d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073",
+  "candidateReleaseDigest": "a5ccdaabff7d6ef30da512330dab38b60e32ae034f621ee4d4eed2b49e976000",
+  "lastKnownGoodReleaseDigest": "5cc8599aca5651b2f217110d904d95282f4387d5b9c033f8d0b412c821277e2f",
+  "operator": "mako-admin",
+  "publicAdmissionEnabled": false,
+  "operations": [
+    {
+      "kind": "rollback",
+      "from": "a5ccdaabff7d6ef30da512330dab38b60e32ae034f621ee4d4eed2b49e976000",
+      "to": "5cc8599aca5651b2f217110d904d95282f4387d5b9c033f8d0b412c821277e2f",
+      "controlStorageCompatibility": "sqlite-format-1",
+      "tenantStorageCompatibility": "rocksdb-format-1",
+      "controlSqliteExclusivelyLocked": true,
+      "rocksDbVolumesFenced": 3,
+      "durationSeconds": 8,
+      "guestEvidence": "/var/lib/mako-release-operations/1786668790-rollback-5cc8599aca5651b2f217110d904d95282f4387d5b9c033f8d0b412c821277e2f.json",
+      "allServicesReady": true
+    }
+  ],
+  "finalReselection": {
+    "from": "5cc8599aca5651b2f217110d904d95282f4387d5b9c033f8d0b412c821277e2f",
+    "to": "a5ccdaabff7d6ef30da512330dab38b60e32ae034f621ee4d4eed2b49e976000",
+    "identicalRuntimeArtifacts": true,
+    "outgoingConfigurationSnapshotRetained": true,
+    "allServicesReady": true
+  },
+  "invariants": {
+    "checkpointVerifiedBeforeEachSelection": true,
+    "storageFormatCompatible": true,
+    "storageFencedBeforeEachSelection": true,
+    "mixedStoragePathsNonempty": true,
+    "controlSqliteIdentityAndSchemaActive": true,
+    "rocksDbMarkersActive": true,
+    "allStoragePathsServiceOwned": true,
+    "allFourServicesReady": true,
+    "backupTimersEnabledAndActive": true,
+    "caddyRestrictedPreGateAfterQualification": true,
+    "proxmoxAdmissionStopEnabledAndActive": true,
+    "emptyPathAndInvalidTransitionRefusalCovered": true,
+    "preSqliteReleaseRefusedAfterCutover": true,
+    "oldControlRocksDbAuthorityNotReopened": true
+  },
+  "retainedGuestEvidence": "/var/lib/mako-release-operations",
+  "localEvidenceLog": ".local/qualification/public-beta-release-operation-evidence.log"
+}

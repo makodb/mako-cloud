@@ -1,0 +1,17 @@
+[Unit]
+Description=Enforce Mako Cloud public-beta off-VM checkpoint retention
+ConditionPathIsDirectory=/var/lib/vz/dump/mako-cloud-public-beta
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/mako-public-beta-backup-retention
+User=mako-beta-backup
+Group=mako-beta-backup
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/vz/dump/mako-cloud-public-beta
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX
+SystemCallArchitectures=native

@@ -1,0 +1,26 @@
+[Unit]
+Description=Mako Cloud public-beta Mailpit
+PartOf=mako-dependencies.target
+Before=mako-dependencies.target
+
+[Container]
+Image=docker.io/axllent/mailpit@sha256:0059ef81e492a7192af3816281eed6859eb078bd7bdc58b76757c13e10e53a7d
+Pull=never
+ContainerName=mako-mailpit
+Network=mako-cloud.network
+PublishPort=127.0.0.1:1025:1025
+PublishPort=127.0.0.1:8025:8025
+ReadOnly=true
+NoNewPrivileges=true
+DropCapability=all
+Tmpfs=/tmp:rw,noexec,nosuid,nodev,size=64m
+LogDriver=journald
+PodmanArgs=--init --pids-limit=128
+Label=io.mako.environment=public-beta
+
+[Service]
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=30s
+MemoryMax=512M
+CPUQuota=100%

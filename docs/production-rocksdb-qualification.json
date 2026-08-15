@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-07T00:38:35-04:00",
+  "topology": "single-node-local-rocksdb",
+  "adapter": "local-rocksdb-optimistic-transactiondb",
+  "durability": "sync",
+  "storage": {
+    "filesystemType": "btrfs",
+    "device": "/dev/sda3",
+    "qualificationRoot": "/var/tmp/mako-cloud-qualification",
+    "persistent": true,
+    "sharedDirectory": false,
+    "availableBytes": 1705979473920
+  },
+  "evidence": {
+    "exactProductionConfiguration": true,
+    "semanticConformance": true,
+    "processCrashRestart": true,
+    "diskAndIoFailure": true,
+    "lockAndEmptyFallback": true,
+    "compactionAndRetention": true,
+    "tenantIsolation": true,
+    "backupCorruption": true,
+    "restoreAndPromotion": true,
+    "previousBinaryRollback": true,
+    "soakIterations": 25,
+    "testsPerIteration": 95,
+    "testExecutions": 2375,
+    "acknowledgedWriteLoss": 0,
+    "integrityFailures": 0
+  },
+  "observed": {
+    "backupAgeSeconds": 50,
+    "recoveryPointExposureSeconds": 0,
+    "sameVolumeRecoverySeconds": 1.43,
+    "replacementRestoreSeconds": 1.72
+  },
+  "thresholds": {
+    "capacityWarningFreeBytes": 2147483648,
+    "capacityCriticalFreeBytes": 1073741824,
+    "maximumBackupAgeSeconds": 900,
+    "maximumRecoveryPointExposureSeconds": 900,
+    "maximumSameVolumeRecoverySeconds": 300,
+    "maximumReplacementRestoreSeconds": 1800,
+    "maximumP95Microseconds": {
+      "write": 50000,
+      "pull": 100000,
+      "hidden-change-scan": 100000,
+      "push-conflict": 100000,
+      "live-fan-out": 100000,
+      "auth": 25000,
+      "policy": 5000,
+      "index-build": 500000,
+      "control-plane": 25000,
+      "edge-cold": 50000,
+      "edge-warm": 25000
+    }
+  },
+  "releaseEligible": true
+}

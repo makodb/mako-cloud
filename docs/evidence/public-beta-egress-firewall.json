@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-08-08T03:59:30Z",
+  "planHash": "d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073",
+  "vmId": 124,
+  "defaultPolicy": "drop",
+  "allowed": {
+    "loopback": true,
+    "establishedRelated": true,
+    "dns": ["8.8.8.8:53/udp", "8.8.8.8:53/tcp"],
+    "ntp": ["udp/123"],
+    "systemAcmeArtifactObjectAndEdgeDependencies": ["tcp/80", "tcp/443"],
+    "authenticatedMail": ["tcp/465", "tcp/587"],
+    "management": ["130.245.173.10:22/tcp"],
+    "loopbackTelemetry": true
+  },
+  "tests": {
+    "externalDns": "passed",
+    "httpsArtifactEndpoint": "passed",
+    "chronySynchronized": "passed",
+    "forbiddenTcp853": "blocked",
+    "rateLimitedKernelLogObserved": true,
+    "secondConvergenceChanged": 0
+  },
+  "result": "passed"
+}

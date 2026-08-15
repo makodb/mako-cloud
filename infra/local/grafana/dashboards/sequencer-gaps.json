@@ -1,0 +1,72 @@
+{
+  "annotations": { "list": [] },
+  "editable": false,
+  "graphTooltip": 1,
+  "panels": [
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "id": 1,
+      "targets": [
+        {
+          "expr": "sum by (project_id, environment_id) (mako_sequencer_unresolved_gaps{project_id=~\"$project\",environment_id=~\"$environment\"})",
+          "legendFormat": "{{project_id}}/{{environment_id}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Unresolved commit gaps",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "id": 2,
+      "targets": [
+        {
+          "expr": "max by (project_id, environment_id) (mako_sequencer_oldest_unresolved_gap_age_seconds{project_id=~\"$project\",environment_id=~\"$environment\"})",
+          "legendFormat": "{{project_id}}/{{environment_id}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Oldest unresolved gap",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "15s",
+  "schemaVersion": 41,
+  "tags": ["mako-cloud", "sequencer", "gaps"],
+  "templating": {
+    "list": [
+      {
+        "allValue": ".*",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "includeAll": true,
+        "name": "project",
+        "query": "label_values(mako_sequencer_unresolved_gaps, project_id)",
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "includeAll": true,
+        "name": "environment",
+        "query": "label_values(mako_sequencer_unresolved_gaps{project_id=~\"$project\"}, environment_id)",
+        "type": "query"
+      }
+    ]
+  },
+  "time": { "from": "now-6h", "to": "now" },
+  "title": "Mako Cloud — Sequencer Gaps",
+  "uid": "mako-sequencer-gaps",
+  "version": 1
+}

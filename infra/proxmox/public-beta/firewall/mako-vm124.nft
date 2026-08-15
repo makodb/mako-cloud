@@ -1,0 +1,31 @@
+#!/usr/sbin/nft -f
+
+table bridge mako_vm124 {
+  set management_ipv4 {
+    type ipv4_addr
+    flags interval
+    elements = { 130.245.173.10, 130.245.173.105 }
+  }
+
+  chain forward {
+    type filter hook forward priority -10; policy accept;
+
+    iifname != "tap124i0" oifname != "tap124i0" accept
+
+    iifname "tap124i0" ether saddr != 02:3b:12:f8:ec:76 drop
+    iifname "tap124i0" ether type arp accept
+    iifname "tap124i0" ether type ip6 limit rate 5/second log prefix "mako-pve-v6-out " level warn drop
+    iifname "tap124i0" ether type ip ip saddr != 130.245.173.11 drop
+    iifname "tap124i0" accept
+
+    oifname "tap124i0" ether type arp accept
+    oifname "tap124i0" ether type ip6 limit rate 5/second log prefix "mako-pve-v6-in " level warn drop
+    oifname "tap124i0" ether type ip ip daddr != 130.245.173.11 drop
+    oifname "tap124i0" ct state invalid drop
+    oifname "tap124i0" ct state established,related accept
+    oifname "tap124i0" ip protocol icmp ip saddr @management_ipv4 limit rate 5/second accept
+    oifname "tap124i0" tcp dport 22 ip saddr @management_ipv4 ct state new limit rate 20/minute accept
+    oifname "tap124i0" tcp dport { 80, 443 } ct state new limit rate 200/second accept
+    oifname "tap124i0" limit rate 10/second log prefix "mako-pve-in " level warn drop
+  }
+}

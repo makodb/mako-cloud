@@ -1,0 +1,51 @@
+#cloud-config
+hostname: mako-cloud-public-beta
+fqdn: cloud-test.makodb.com
+manage_etc_hosts: true
+preserve_hostname: false
+timezone: UTC
+ssh_pwauth: false
+disable_root: true
+users:
+  - name: mako-admin
+    gecos: Mako Cloud beta administrator
+    groups: [adm, sudo]
+    shell: /bin/bash
+    lock_passwd: true
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    ssh_authorized_keys:
+      - @@SSH_PUBLIC_KEY@@
+package_update: true
+package_upgrade: false
+packages:
+  - chrony
+  - qemu-guest-agent
+bootcmd:
+  - [install, -d, -m, "0755", -o, root, -g, root, /var/lib/mako/bootstrap]
+write_files:
+  - path: /etc/ssh/sshd_config.d/90-mako-cloud.conf
+    owner: root:root
+    permissions: "0644"
+    content: |
+      PasswordAuthentication no
+      KbdInteractiveAuthentication no
+      PermitRootLogin no
+      PubkeyAuthentication yes
+  - path: /etc/sysctl.d/90-mako-cloud-ipv6.conf
+    owner: root:root
+    permissions: "0644"
+    content: |
+      net.ipv6.conf.all.disable_ipv6=1
+      net.ipv6.conf.default.disable_ipv6=1
+  - path: /var/lib/mako/bootstrap/plan-hash
+    owner: root:root
+    permissions: "0444"
+    content: |
+      @@PLAN_HASH@@
+runcmd:
+  - [systemctl, enable, --now, chrony.service]
+  - [systemctl, enable, --now, qemu-guest-agent.service]
+  - [sysctl, --system]
+  - [systemctl, reload, ssh.service]
+  - [touch, /var/lib/mako/bootstrap/first-boot-complete]
+final_message: "Mako Cloud beta bootstrap complete for plan @@PLAN_HASH@@"

@@ -1,0 +1,29 @@
+[Unit]
+Description=Mako Cloud public-beta OpenTelemetry Collector
+PartOf=mako-dependencies.target
+Before=mako-dependencies.target
+
+[Container]
+Image=docker.io/otel/opentelemetry-collector-contrib@sha256:388054389612c69d0387ecac256338e4086f6cf072fc8feafb6ce7968dc6946c
+Pull=never
+ContainerName=mako-otel-collector
+Network=mako-cloud.network
+Exec=--config=/etc/otelcol-contrib/config.yaml
+Volume=/home/mako-runtime/.config/mako-cloud/otel-collector.yaml:/etc/otelcol-contrib/config.yaml:ro
+PublishPort=127.0.0.1:4317:4317
+PublishPort=127.0.0.1:4318:4318
+PublishPort=127.0.0.1:9464:9464
+ReadOnly=true
+NoNewPrivileges=true
+DropCapability=all
+Tmpfs=/tmp:rw,noexec,nosuid,nodev,size=64m
+LogDriver=journald
+PodmanArgs=--init --pids-limit=128
+Label=io.mako.environment=public-beta
+
+[Service]
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=30s
+MemoryMax=768M
+CPUQuota=100%

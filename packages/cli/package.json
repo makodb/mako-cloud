@@ -1,0 +1,19 @@
+{
+  "name": "@mako-cloud/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "files": [
+    "dist",
+    "runtime"
+  ],
+  "bin": {
+    "mako": "dist/main.js"
+  },
+  "scripts": {
+    "build": "tsc -b && tsc -p runtime/tsconfig.json --pretty false",
+    "typecheck": "tsc -b --pretty false && tsc -p runtime/tsconfig.json --pretty false",
+    "test:unit": "npm run build && node --test test/*.test.mjs",
+    "test:integration": "npm run build && node --test --test-concurrency=1 test/*.integration.mjs"
+  }
+}

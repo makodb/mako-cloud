@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "qualification": "public-beta-initial-operator-lifecycle-repair",
+  "completedAt": "2026-08-13T00:27:01Z",
+  "releaseDigest": "6e51910f6d384507aa41ad03e16d55c0faacac748fb811b7610cc9fe9f5fdb30",
+  "environmentBinding": "https://cloud-test.makodb.com",
+  "targetEmailDigest": "2a981ed79f2356d4869c7e79313078da04e400d7c2b30760da72aa8da88dc692",
+  "developerIdentityId": "dev__UtXi0Ic37Y9m0euCtqkKwiv",
+  "developerStatusBefore": "active",
+  "developerStatusAfter": "waitlisted",
+  "operatorStatusBefore": "active",
+  "operatorStatusAfter": "active",
+  "operatorEpochAfter": 1,
+  "backup": {
+    "checkpointId": "20260813T002556Z-control-plane",
+    "publishedOffVm": true,
+    "remoteReadbackVerified": true
+  },
+  "assertions": {
+    "provenanceBoundPlanApplied": true,
+    "exactRequestedEmailMatched": true,
+    "syntheticAddressUsed": false,
+    "developerRoleOnlyTransitioned": true,
+    "operatorEntitlementPreserved": true,
+    "idempotentReplayReturnedCommittedResult": true,
+    "exactReleaseRemainedSelected": true,
+    "persistentPublicPreviewGuardHealthy": true,
+    "operatorPageReachable": true
+  },
+  "retainedSecrets": false
+}

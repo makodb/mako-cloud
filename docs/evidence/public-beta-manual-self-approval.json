@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "qualification": "public-beta-manual-initial-operator-self-approval",
+  "recordedAt": "2026-08-13T03:54:53.564Z",
+  "decisionAt": "2026-08-13T03:22:29.000Z",
+  "releaseDigest": "26160a4ed332218c863707e24f48e155e3713d0bee9a3ced32667124071f0903",
+  "evidenceWindow": {
+    "preDecisionCheckpoint": "20260813T032022Z-control-plane",
+    "postDecisionCheckpoint": "20260813T035032Z-control-plane",
+    "postDecisionCheckpointRemoteVerified": true
+  },
+  "assertions": {
+    "humanPerformedApprovalThroughOperatorConsole": true,
+    "developerStatusWasWaitlisted": true,
+    "developerStatusIsActive": true,
+    "developerEpochAdvancedExactlyOnce": true,
+    "authenticationSecurityStateUnchanged": true,
+    "credentialEpochUnchanged": true,
+    "operatorEntitlementBytesUnchanged": true,
+    "operatorEpochUnchanged": true,
+    "operatorPermissionSetUnchanged": true,
+    "operatorSessionPredatesDecision": true,
+    "operatorSessionRemainsUnrevoked": true,
+    "operatorSessionEpochsMatchCurrentAuthority": true,
+    "exactlyOneDurableDecisionExistsForIdentity": true,
+    "decisionIsApproval": true,
+    "decisionIsSelfReview": true,
+    "decisionReasonWasNotProvided": true,
+    "decisionReasonIsCanonicalEmpty": true,
+    "exactReleaseRemainedSelected": true,
+    "controlPlaneReadyAfterVerification": true,
+    "publicOperatorRouteReachable": true
+  },
+  "retainedSensitiveValues": false
+}

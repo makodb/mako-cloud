@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-09T02:44:56Z",
+  "scope": "operator-observed-exact-candidate",
+  "candidateReleaseDigest": "081b1a0f8be959f7eabefaa9aa8fc1e1911f5f81a8d0776d73ac1dd2294fbb5b",
+  "sourceDigest": "470fba7857af92f78226308aacb962c7768e88a37d608718d8dd36cedce8c4e7",
+  "artifactDigest": "5eaa56b65730e8c5a2f1f4df78d6de5611697e6c9f52ed0d6dff7d45a6b7e49e",
+  "operator": "mako-admin",
+  "publicAdmissionEnabled": false,
+  "serviceAndStorageDrill": {
+    "status": "pass",
+    "hosted": true,
+    "rollbackDurationSeconds": 9,
+    "forwardRecoveryDurationSeconds": 10,
+    "allServicesReady": true,
+    "tenantStoragePreserved": true,
+    "auditEvidence": "/var/lib/mako-release-operations/1786243485-rollback-2d0d5970f58011efb12e33dbab6d11a384e2cb121e0daa78fed55a13e0f9d96d.json"
+  },
+  "domainMatrix": [
+    { "id": "configuration", "status": "pass", "evidence": "scripts/exercise-service-rollback.js" },
+    {
+      "id": "policy",
+      "status": "pass",
+      "evidence": "crates/mako-control-plane/src/policy.rs::draft_validation_testing_activation_and_rollback_report_epochs"
+    },
+    {
+      "id": "function",
+      "status": "pass",
+      "evidence": "crates/mako-control-plane/src/function.rs::deploy_promote_rollback_test_logs_and_delete_follow_safe_lifecycle"
+    },
+    {
+      "id": "schema",
+      "status": "pass",
+      "evidence": "crates/mako-control-plane/src/collection.rs::compatible_publication_succeeds_and_incompatible_change_requires_migration"
+    },
+    {
+      "id": "signing-key",
+      "status": "pass",
+      "evidence": "crates/mako-identity/src/signing_keys.rs::encrypted_keys_rotate_with_jwks_overlap_and_retirement"
+    },
+    {
+      "id": "storage",
+      "status": "pass",
+      "evidence": "crates/mako-storage/tests/production_startup.rs::format_compatible_previous_binary_rollback_uses_the_same_nonempty_volume"
+    }
+  ],
+  "exactSourceSuites": {
+    "rollback": "pass",
+    "tenantBoundaries": "pass",
+    "policySecurityAndAudit": "pass",
+    "logs": [
+      ".local/qualification/public-beta-081b-tenant-boundaries.log",
+      ".local/qualification/public-beta-081b-policy-security.log"
+    ]
+  }
+}

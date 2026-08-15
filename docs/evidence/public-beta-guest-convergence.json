@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-08-08T03:49:00Z",
+  "planHash": "d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073",
+  "vmId": 124,
+  "ansible": {
+    "coreVersion": "2.21.2",
+    "lintVersion": "26.6.0",
+    "productionProfileLint": "passed",
+    "checkMode": "passed",
+    "secondConvergence": {
+      "ok": 29,
+      "changed": 0,
+      "unreachable": 0,
+      "failed": 0,
+      "skipped": 8
+    }
+  },
+  "access": {
+    "keyAuthenticatedUser": "mako-admin",
+    "passwordAuthentication": false,
+    "keyboardInteractiveAuthentication": false,
+    "directRootLogin": false,
+    "publicKeyAuthentication": true,
+    "serialConsole": "enabled-runtime"
+  },
+  "services": {
+    "chrony": "active",
+    "qemuGuestAgent": "active",
+    "nftables": "active",
+    "nodeExporter": {
+      "state": "active",
+      "listener": "127.0.0.1:9100"
+    },
+    "caddy": "inactive"
+  },
+  "listeners": {
+    "public": ["tcp/22"],
+    "loopbackOnly": ["tcp/9100", "tcp+udp/53", "udp/323"],
+    "applicationPortsActive": false
+  },
+  "result": "passed"
+}

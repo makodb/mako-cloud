@@ -1,0 +1,45 @@
+#!/usr/sbin/nft -f
+
+flush ruleset
+
+table inet mako_filter {
+  set management_ipv4 {
+    type ipv4_addr
+    flags interval
+    elements = { {{ (mako_management_cidrs + mako_proxmox_recovery_cidrs) | map('regex_replace', '/32$', '') | join(', ') }} }
+  }
+
+  chain input {
+    type filter hook input priority filter; policy drop;
+    iifname "lo" accept
+    ct state invalid limit rate 5/second log prefix "mako-fw-invalid " level warn drop
+    ct state established,related accept
+    meta nfproto ipv6 limit rate 5/second log prefix "mako-fw-ipv6 " level warn drop
+    ip protocol icmp ip saddr @management_ipv4 limit rate 5/second accept
+    tcp dport 22 ip saddr @management_ipv4 ct state new limit rate 20/minute accept
+    tcp dport { {{ mako_public_tcp_ports | join(', ') }} } ct state new limit rate 200/second accept
+    limit rate 10/second log prefix "mako-fw-input " level warn drop
+  }
+
+  chain forward {
+    type filter hook forward priority filter; policy drop;
+    limit rate 5/second log prefix "mako-fw-forward " level warn drop
+  }
+
+  chain output {
+    type filter hook output priority filter; policy drop;
+    oifname "lo" accept
+    ct state invalid drop
+    ct state established,related accept
+    meta nfproto ipv6 limit rate 5/second log prefix "mako-fw-v6-out " level warn drop
+    ip daddr {{ mako_backup_remote_host }} tcp dport 22 accept
+    ip daddr { {{ mako_management_cidrs | map('regex_replace', '/32$', '') | join(', ') }} } tcp dport 22 accept
+    ip daddr {{ mako_gateway_ipv4 }} ip protocol icmp accept
+    ip daddr { {{ mako_dns_servers | join(', ') }} } udp dport 53 accept
+    ip daddr { {{ mako_dns_servers | join(', ') }} } tcp dport 53 accept
+    udp dport 123 accept
+    tcp dport { 80, 443 } accept
+    tcp dport { 465, 587 } accept
+    limit rate 10/second log prefix "mako-fw-output " level warn drop
+  }
+}

@@ -1,0 +1,322 @@
+---
+- name: Inspect the dedicated data disk
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/lsblk
+      - --bytes
+      - --json
+      - --output
+      - NAME,SIZE,TYPE,FSTYPE,MOUNTPOINTS,SERIAL
+      - "{{ mako_data_device }}"
+  register: storage_data_lsblk
+  changed_when: false
+  check_mode: false
+
+- name: Require the exact persistent data disk identity and minimum size
+  ansible.builtin.assert:
+    that:
+      - (storage_data_lsblk.stdout | from_json).blockdevices | length == 1
+      - (storage_data_lsblk.stdout | from_json).blockdevices[0].type == "disk"
+      - (storage_data_lsblk.stdout | from_json).blockdevices[0].size | int == 274877906944
+      - (storage_data_lsblk.stdout | from_json).blockdevices[0].serial == "drive-scsi1"
+    fail_msg: Refusing to prepare an ambiguous or resized data device.
+
+- name: Check for the Mako data filesystem label
+  ansible.builtin.command:
+    argv: [/usr/sbin/blkid, -L, MAKO_DATA]
+  register: storage_data_label
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Prepare the empty dedicated Btrfs data disk when explicitly enabled
+  when:
+    - mako_prepare_data_filesystem | bool
+    - storage_data_label.rc != 0
+  block:
+    - name: Require the data disk to contain no filesystem or partitions
+      ansible.builtin.assert:
+        that:
+          - (storage_data_lsblk.stdout | from_json).blockdevices[0].fstype in [none, ""]
+          - (storage_data_lsblk.stdout | from_json).blockdevices[0].children | default([]) | length == 0
+        fail_msg: Refusing to format a non-empty data disk.
+
+    - name: Create one GPT data partition
+      ansible.builtin.command:
+        argv: [/usr/sbin/parted, --script, "{{ mako_data_device }}", mklabel, gpt, mkpart, primary, 1MiB, 100%]
+      changed_when: true
+
+    - name: Wait for the partition device
+      ansible.builtin.command: /usr/bin/udevadm settle
+      changed_when: false
+
+    - name: Create the labeled Btrfs filesystem
+      ansible.builtin.command:
+        argv: [/usr/sbin/mkfs.btrfs, --force, --label, MAKO_DATA, "{{ mako_data_device }}-part1"]
+      changed_when: true
+
+- name: Create the data mountpoint
+  ansible.builtin.file:
+    path: "{{ mako_data_mount }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Persist the data mount only after the filesystem exists
+  ansible.builtin.lineinfile:
+    path: /etc/fstab
+    regexp: '^LABEL=MAKO_DATA\s+'
+    line: "LABEL=MAKO_DATA {{ mako_data_mount }} btrfs defaults,noatime,compress=zstd:3,discard=async 0 2"
+    state: "{{ 'present' if storage_data_label.rc == 0 or mako_prepare_data_filesystem | bool else 'absent' }}"
+  register: storage_data_fstab
+
+- name: Mount the prepared data filesystem
+  ansible.builtin.command:
+    argv: [/usr/bin/mount, "{{ mako_data_mount }}"]
+  when:
+    - storage_data_label.rc == 0 or mako_prepare_data_filesystem | bool
+    - ansible_facts.mounts | selectattr('mount', 'equalto', mako_data_mount) | list | length == 0
+  changed_when: true
+
+- name: Inspect the mounted production data filesystem
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/findmnt
+      - --json
+      - --target
+      - "{{ mako_data_mount }}"
+      - --output
+      - TARGET,SOURCE,FSTYPE,OPTIONS
+  register: storage_data_mount
+  changed_when: false
+  check_mode: false
+  when: storage_data_label.rc == 0 or mako_prepare_data_filesystem | bool
+
+- name: Resolve the exact production data device
+  ansible.builtin.command:
+    argv: [/usr/bin/readlink, --canonicalize, "{{ mako_data_device }}"]
+  register: storage_data_device_path
+  changed_when: false
+  check_mode: false
+  when: storage_data_label.rc == 0 or mako_prepare_data_filesystem | bool
+
+- name: Require the labeled Btrfs filesystem at the exact production mount
+  ansible.builtin.assert:
+    that:
+      - (storage_data_mount.stdout | from_json).filesystems | length == 1
+      - (storage_data_mount.stdout | from_json).filesystems[0].target == mako_data_mount
+      - (storage_data_mount.stdout | from_json).filesystems[0].fstype == "btrfs"
+      - (storage_data_mount.stdout | from_json).filesystems[0].source == storage_data_device_path.stdout + "1"
+      - "'noatime' in (storage_data_mount.stdout | from_json).filesystems[0].options"
+    fail_msg: Refusing to provision storage paths outside the labeled Btrfs data filesystem.
+  when: storage_data_label.rc == 0 or mako_prepare_data_filesystem | bool
+
+- name: Create non-login stateful service identities
+  ansible.builtin.user:
+    name: "{{ item }}"
+    system: true
+    create_home: false
+    shell: /usr/sbin/nologin
+    password_lock: true
+  loop:
+    - mako-data-plane
+    - mako-control-plane
+    - mako-edge-gateway
+    - mako-telemetry-query
+  when: storage_data_label.rc == 0 or mako_prepare_data_filesystem | bool
+
+- name: Create protected production storage parents
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0711"
+  loop:
+    - "{{ mako_data_mount }}/rocksdb"
+    - "{{ mako_data_mount }}/sqlite"
+    - "{{ mako_data_mount }}/backup-staging"
+    - "{{ mako_data_mount }}/backup-publish"
+    - "{{ mako_data_mount }}/restore"
+    - "{{ mako_data_mount }}/.reserve"
+  when: storage_data_label.rc == 0 or mako_prepare_data_filesystem | bool
+
+- name: Create service-owned offline restore workspaces
+  ansible.builtin.file:
+    path: "{{ mako_data_mount }}/restore/{{ item }}"
+    state: directory
+    owner: "mako-{{ item }}"
+    group: "mako-{{ item }}"
+    mode: "0700"
+  loop:
+    - data-plane
+    - control-plane
+  when: storage_data_label.rc == 0 or mako_prepare_data_filesystem | bool
+
+- name: Inspect distinct service Btrfs subvolumes
+  ansible.builtin.command:
+    argv: [/usr/bin/btrfs, subvolume, show, "{{ item.path }}"]
+  register: storage_subvolume_inspection
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  loop:
+    - { path: "{{ mako_data_mount }}/rocksdb/data-plane", owner: mako-data-plane }
+    - { path: "{{ mako_data_mount }}/sqlite/control-plane", owner: mako-control-plane }
+    - { path: "{{ mako_data_mount }}/rocksdb/edge-gateway", owner: mako-edge-gateway }
+    - { path: "{{ mako_data_mount }}/rocksdb/telemetry-query", owner: mako-telemetry-query }
+    - { path: "{{ mako_data_mount }}/backup-staging/data-plane", owner: mako-data-plane }
+    - { path: "{{ mako_data_mount }}/backup-staging/control-plane", owner: mako-control-plane }
+    - { path: "{{ mako_data_mount }}/backup-staging/edge-gateway", owner: mako-edge-gateway }
+    - { path: "{{ mako_data_mount }}/backup-publish/data-plane", owner: mako-data-plane }
+    - { path: "{{ mako_data_mount }}/backup-publish/control-plane", owner: mako-control-plane }
+    - { path: "{{ mako_data_mount }}/backup-publish/edge-gateway", owner: mako-edge-gateway }
+  loop_control:
+    label: "{{ item.path }}"
+  when: storage_data_label.rc == 0 or mako_prepare_data_filesystem | bool
+
+- name: Create missing distinct service Btrfs subvolumes
+  ansible.builtin.command:
+    argv: [/usr/bin/btrfs, subvolume, create, "{{ item.item.path }}"]
+  loop: "{{ storage_subvolume_inspection.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.path }}"
+  when:
+    - not ansible_check_mode
+    - item.rc != 0
+  changed_when: true
+
+- name: Create dedicated control SQLite lifecycle directories
+  ansible.builtin.file:
+    path: "{{ mako_data_mount }}/sqlite/control-plane/{{ item }}"
+    state: directory
+    owner: mako-control-plane
+    group: mako-control-plane
+    mode: "0700"
+  loop:
+    - live
+    - lock
+    - migration
+    - reserve
+  when:
+    - not ansible_check_mode
+    - storage_data_label.rc == 0 or mako_prepare_data_filesystem | bool
+
+- name: Enforce exclusive service ownership on persistent paths
+  ansible.builtin.file:
+    path: "{{ item.item.path }}"
+    state: directory
+    owner: "{{ item.item.owner }}"
+    group: "{{ item.item.owner }}"
+    mode: "0700"
+  loop: "{{ storage_subvolume_inspection.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.path }}"
+  when:
+    - not ansible_check_mode
+    - storage_data_label.rc == 0 or mako_prepare_data_filesystem | bool
+
+- name: Disable copy-on-write for the emergency disk reserve directory
+  ansible.builtin.command:
+    argv: [/usr/bin/chattr, +C, "{{ mako_data_mount }}/.reserve"]
+  changed_when: false
+  when:
+    - not ansible_check_mode
+    - storage_data_label.rc == 0 or mako_prepare_data_filesystem | bool
+
+- name: Allocate the root-only emergency disk reserve
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/fallocate
+      - --length
+      - "{{ mako_emergency_reserve_bytes }}"
+      - "{{ mako_data_mount }}/.reserve/emergency-space"
+    creates: "{{ mako_data_mount }}/.reserve/emergency-space"
+  when:
+    - not ansible_check_mode
+    - storage_data_label.rc == 0 or mako_prepare_data_filesystem | bool
+
+- name: Protect the emergency disk reserve
+  ansible.builtin.file:
+    path: "{{ mako_data_mount }}/.reserve/emergency-space"
+    state: file
+    owner: root
+    group: root
+    mode: "0400"
+  when:
+    - not ansible_check_mode
+    - storage_data_label.rc == 0 or mako_prepare_data_filesystem | bool
+
+- name: Provision and validate stateful RocksDB ownership markers
+  ansible.builtin.command:
+    argv:
+      - /opt/mako/current/bin/mako-storage-ops
+      - provision
+      - "--database-path={{ item.path }}"
+      - "--service={{ item.service }}"
+      - "--database-id={{ item.database_id }}"
+      - --accept-matching-marker
+      - --confirm=PROVISION
+  register: storage_volume_marker
+  changed_when: "'provisioned volume' in storage_volume_marker.stdout"
+  loop:
+    - path: "{{ mako_data_mount }}/rocksdb/data-plane"
+      service: mako-data-plane
+      database_id: "mako-data-plane-{{ mako_storage_region }}"
+    - path: "{{ mako_data_mount }}/rocksdb/edge-gateway"
+      service: mako-edge-gateway
+      database_id: "mako-edge-gateway-{{ mako_storage_region }}"
+    - path: "{{ mako_data_mount }}/rocksdb/telemetry-query"
+      service: mako-telemetry-query
+      database_id: "mako-telemetry-query-{{ mako_storage_region }}"
+  when:
+    - not ansible_check_mode
+    - storage_data_label.rc == 0 or mako_prepare_data_filesystem | bool
+
+- name: Install the authenticated off-VM backup identity
+  ansible.builtin.copy:
+    src: "{{ mako_backup_private_key_source }}"
+    dest: /etc/mako/credentials/backup_id_ed25519
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  when: storage_data_label.rc == 0 or mako_prepare_data_filesystem | bool
+
+- name: Pin the off-VM backup host identity
+  ansible.builtin.copy:
+    src: backup-known-hosts
+    dest: /etc/mako/backup-known-hosts
+    owner: root
+    group: root
+    mode: "0644"
+  when: storage_data_label.rc == 0 or mako_prepare_data_filesystem | bool
+
+- name: Record the non-secret production storage layout
+  ansible.builtin.copy:
+    dest: /etc/mako/storage-layout.json
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      {
+        "schemaVersion": 2,
+        "planHash": "{{ mako_plan_hash }}",
+        "filesystemLabel": "MAKO_DATA",
+        "mount": "{{ mako_data_mount }}",
+        "dataPlanePath": "{{ mako_data_mount }}/rocksdb/data-plane",
+        "controlPlaneSqlitePath": "{{ mako_data_mount }}/sqlite/control-plane/live/control.sqlite3",
+        "controlPlaneLockPath": "{{ mako_data_mount }}/sqlite/control-plane/lock/control.lock",
+        "controlPlaneMigrationPath": "{{ mako_data_mount }}/sqlite/control-plane/migration",
+        "controlPlaneRestorePath": "{{ mako_data_mount }}/restore/control-plane",
+        "controlPlaneLegacyRocksCheckpointPath": "{{ mako_data_mount }}/rocksdb/control-plane",
+        "backupStagingRoot": "{{ mako_data_mount }}/backup-staging",
+        "backupPublishRoot": "{{ mako_data_mount }}/backup-publish",
+        "offVmBackup": "{{ mako_backup_remote_user }}@{{ mako_backup_remote_host }}:{{ mako_backup_remote_root }}",
+        "diskWarningFreeBytes": {{ mako_disk_warning_free_bytes }},
+        "diskCriticalFreeBytes": {{ mako_disk_critical_free_bytes }},
+        "emergencyReserveBytes": {{ mako_emergency_reserve_bytes }},
+        "durability": "synchronous-fsync"
+      }
+  when: storage_data_label.rc == 0 or mako_prepare_data_filesystem | bool

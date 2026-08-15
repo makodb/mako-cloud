@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-07",
+  "scope": "local-automated",
+  "externalBetaEligible": false,
+  "runner": "scripts/run-rollback-qualification.sh",
+  "drills": [
+    {
+      "id": "service",
+      "status": "pass",
+      "procedure": "Replace the candidate image with one previous immutable image across each service and init container while preserving the single owner, retained claim, and configured RocksDB path; compensate a failed provisioning workflow before retry.",
+      "evidence": [
+        "scripts/exercise-service-rollback.js",
+        "infra/production/storage-statefulsets.yaml",
+        "crates/mako-provisioning/src/workflow.rs::workflow::tests::retryable_failure_is_compensated_and_can_resume_idempotently"
+      ]
+    },
+    {
+      "id": "policy",
+      "status": "pass",
+      "procedure": "Atomically reactivate a previously validated immutable policy version and advance the authorization epoch so caches cannot retain the superseded decision state.",
+      "evidence": [
+        "crates/mako-control-plane/src/policy.rs::policy::tests::draft_validation_testing_activation_and_rollback_report_epochs"
+      ]
+    },
+    {
+      "id": "function",
+      "status": "pass",
+      "procedure": "Atomically point the function at a prior healthy immutable version; failed and subsequently unhealthy versions remain ineligible for promotion.",
+      "evidence": [
+        "crates/mako-control-plane/src/function.rs::function::tests::deploy_promote_rollback_test_logs_and_delete_follow_safe_lifecycle"
+      ]
+    },
+    {
+      "id": "schema",
+      "status": "pass",
+      "procedure": "Keep the last compatible schema active when an incompatible publication requires a migration; do not destructively downgrade stored documents.",
+      "evidence": [
+        "crates/mako-control-plane/src/collection.rs::collection::tests::compatible_publication_succeeds_and_incompatible_change_requires_migration"
+      ]
+    },
+    {
+      "id": "signing-key",
+      "status": "pass",
+      "procedure": "Recover by rotating forward to a fresh signing key while retaining prior public keys for the token-overlap window; never reactivate retired or suspected-compromised private material.",
+      "evidence": [
+        "crates/mako-identity/src/signing_keys.rs::signing_keys::tests::encrypted_keys_rotate_with_jwks_overlap_and_retirement"
+      ]
+    },
+    {
+      "id": "storage-adapter",
+      "status": "pass",
+      "procedure": "Stop writes, verify format compatibility, and open the same fenced non-empty local RocksDB volume with the previous binary; never fall back to memory or an empty path.",
+      "evidence": [
+        "crates/mako-storage/tests/production_startup.rs::format_compatible_previous_binary_rollback_uses_the_same_nonempty_volume"
+      ]
+    }
+  ]
+}

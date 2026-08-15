@@ -1,0 +1,28 @@
+[package]
+name = "mako-gateway"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+base64.workspace = true
+blake3.workspace = true
+ed25519-dalek.workspace = true
+mako-api = { path = "../mako-api" }
+mako-identity = { path = "../mako-identity" }
+mako-policy = { path = "../mako-policy" }
+mako-sync = { path = "../mako-sync" }
+mako-storage = { path = "../mako-storage" }
+rand_core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+futures.workspace = true
+proptest.workspace = true
+tempfile.workspace = true
+
+[lints]
+workspace = true

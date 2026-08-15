@@ -1,0 +1,217 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: mako-retain-encrypted
+provisioner: example.csi.production.invalid
+reclaimPolicy: Retain
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+parameters:
+  encrypted: "true"
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mako-data-plane
+spec:
+  serviceName: mako-data-plane
+  replicas: 1
+  podManagementPolicy: OrderedReady
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain
+  selector:
+    matchLabels:
+      app: mako-data-plane
+  template:
+    metadata:
+      labels:
+        app: mako-data-plane
+    spec:
+      terminationGracePeriodSeconds: 60
+      initContainers:
+        - name: provision-rocksdb-volume
+          image: ghcr.io/mako-cloud/mako-cloud:0.1.0
+          args:
+            - mako-storage-ops
+            - provision
+            - --database-path=/var/lib/mako/rocksdb
+            - --service=mako-data-plane
+            - --database-id=mako-data-plane-us-east-1
+            - --accept-matching-marker
+            - --confirm=PROVISION
+          volumeMounts:
+            - name: data-plane-rocksdb
+              mountPath: /var/lib/mako/rocksdb
+      containers:
+        - name: service
+          image: ghcr.io/mako-cloud/mako-cloud:0.1.0
+          args: ["mako-data-plane"]
+          env:
+            - name: MAKO_ENVIRONMENT
+              value: production
+            - name: MAKO_REGION
+              value: us-east-1
+            - name: MAKO_ROCKSDB_PATH
+              value: /var/lib/mako/rocksdb
+            - name: MAKO_ROCKSDB_BACKUP_DESTINATION
+              value: /var/lib/mako-backups/data-plane
+          volumeMounts:
+            - name: data-plane-rocksdb
+              mountPath: /var/lib/mako/rocksdb
+            - name: backup-transport
+              mountPath: /var/lib/mako-backups
+      volumes:
+        - name: backup-transport
+          persistentVolumeClaim:
+            claimName: mako-production-backups
+  volumeClaimTemplates:
+    - metadata:
+        name: data-plane-rocksdb
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: mako-retain-encrypted
+        resources:
+          requests:
+            storage: 100Gi
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mako-control-plane
+spec:
+  serviceName: mako-control-plane
+  replicas: 1
+  podManagementPolicy: OrderedReady
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain
+  selector:
+    matchLabels:
+      app: mako-control-plane
+  template:
+    metadata:
+      labels:
+        app: mako-control-plane
+    spec:
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: service
+          image: ghcr.io/mako-cloud/mako-cloud:0.1.0
+          args: ["mako-control-plane"]
+          env:
+            - name: MAKO_ENVIRONMENT
+              value: production
+            - name: MAKO_REGION
+              value: us-east-1
+            - name: MAKO_CONTROL_SQLITE_PATH
+              value: /var/lib/mako/control/live/control.sqlite3
+            - name: MAKO_CONTROL_SQLITE_LOCK_PATH
+              value: /var/lib/mako/control/lock/control.lock
+            - name: MAKO_CONTROL_SQLITE_IDENTITY
+              value: mako-control-plane-us-east-1
+            - name: MAKO_CONTROL_SQLITE_MIGRATION_WORKSPACE
+              value: /var/lib/mako/control/migration
+            - name: MAKO_CONTROL_SQLITE_BACKUP_STAGING
+              value: /var/lib/mako-backups/control-plane
+            - name: MAKO_CONTROL_SQLITE_BACKUP_PUBLISH
+              value: /var/lib/mako-backups/control-plane-published
+            - name: MAKO_CONTROL_SQLITE_RESTORE_WORKSPACE
+              value: /var/lib/mako/control/restore
+            - name: MAKO_CONTROL_SQLITE_RESERVE_PATH
+              value: /var/lib/mako/control/reserve
+          volumeMounts:
+            - name: control-plane-sqlite
+              mountPath: /var/lib/mako/control
+            - name: backup-transport
+              mountPath: /var/lib/mako-backups
+      volumes:
+        - name: backup-transport
+          persistentVolumeClaim:
+            claimName: mako-production-backups
+  volumeClaimTemplates:
+    - metadata:
+        name: control-plane-sqlite
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: mako-retain-encrypted
+        resources:
+          requests:
+            storage: 20Gi
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mako-edge-gateway
+spec:
+  serviceName: mako-edge-gateway
+  replicas: 1
+  podManagementPolicy: OrderedReady
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain
+  selector:
+    matchLabels:
+      app: mako-edge-gateway
+  template:
+    metadata:
+      labels:
+        app: mako-edge-gateway
+    spec:
+      terminationGracePeriodSeconds: 60
+      initContainers:
+        - name: provision-rocksdb-volume
+          image: ghcr.io/mako-cloud/mako-cloud:0.1.0
+          args:
+            - mako-storage-ops
+            - provision
+            - --database-path=/var/lib/mako/rocksdb
+            - --service=mako-edge-gateway
+            - --database-id=mako-edge-gateway-us-east-1
+            - --accept-matching-marker
+            - --confirm=PROVISION
+          volumeMounts:
+            - name: edge-gateway-rocksdb
+              mountPath: /var/lib/mako/rocksdb
+      containers:
+        - name: service
+          image: ghcr.io/mako-cloud/mako-cloud:0.1.0
+          args: ["mako-edge-gateway"]
+          env:
+            - name: MAKO_ENVIRONMENT
+              value: production
+            - name: MAKO_REGION
+              value: us-east-1
+            - name: MAKO_ROCKSDB_PATH
+              value: /var/lib/mako/rocksdb
+            - name: MAKO_ROCKSDB_BACKUP_DESTINATION
+              value: /var/lib/mako-backups/edge-gateway
+          volumeMounts:
+            - name: edge-gateway-rocksdb
+              mountPath: /var/lib/mako/rocksdb
+            - name: backup-transport
+              mountPath: /var/lib/mako-backups
+      volumes:
+        - name: backup-transport
+          persistentVolumeClaim:
+            claimName: mako-production-backups
+  volumeClaimTemplates:
+    - metadata:
+        name: edge-gateway-rocksdb
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: mako-retain-encrypted
+        resources:
+          requests:
+            storage: 20Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mako-production-backups
+spec:
+  accessModes: ["ReadWriteMany"]
+  storageClassName: mako-retain-encrypted
+  resources:
+    requests:
+      storage: 200Gi

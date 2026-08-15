@@ -1,0 +1,71 @@
+:root {
+  color: #15201b;
+  background: #edf4ef;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+}
+
+body {
+  margin: 0;
+}
+
+main {
+  box-sizing: border-box;
+  width: min(42rem, 100%);
+  min-height: 100vh;
+  margin: auto;
+  padding: 4rem 1.5rem;
+}
+
+.eyebrow {
+  color: #267052;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+h1 {
+  margin-bottom: 0.4rem;
+}
+
+.card {
+  margin-top: 2rem;
+  padding: 1.25rem;
+  border: 1px solid #bad0c2;
+  border-radius: 0.8rem;
+  background: white;
+  box-shadow: 0 0.8rem 2rem rgb(29 72 51 / 8%);
+}
+
+form,
+.network {
+  display: flex;
+  gap: 0.6rem;
+}
+
+input,
+button {
+  padding: 0.7rem 0.9rem;
+  border: 1px solid #729982;
+  border-radius: 0.45rem;
+  font: inherit;
+}
+
+input {
+  flex: 1;
+}
+
+button {
+  background: #235f47;
+  color: white;
+  cursor: pointer;
+}
+
+#status {
+  font-weight: 700;
+}
+
+#diagnostics {
+  overflow-wrap: anywhere;
+  color: #52665b;
+  font-size: 0.8rem;
+}

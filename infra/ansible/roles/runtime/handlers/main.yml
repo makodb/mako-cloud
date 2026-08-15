@@ -1,0 +1,33 @@
+---
+- name: Reload Mako runtime systemd
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+
+- name: Restart public-preview admission timer
+  ansible.builtin.systemd_service:
+    name: mako-public-preview-admission.timer
+    state: restarted
+  when:
+    - not ansible_check_mode
+    - mako_public_admission_mode == 'risk_accepted_preview'
+
+- name: Restart qualified Mako application services
+  ansible.builtin.systemd_service:
+    name: "{{ item }}.service"
+    state: restarted
+  loop:
+    - mako-data-plane
+    - mako-control-plane
+    - mako-edge-gateway
+    - mako-telemetry-query
+  when:
+    - not ansible_check_mode
+    - mako_services_enabled | bool
+
+- name: Restart admitted Caddy proxy
+  ansible.builtin.systemd_service:
+    name: caddy.service
+    state: restarted
+  when:
+    - not ansible_check_mode
+    - mako_caddy_enabled | bool

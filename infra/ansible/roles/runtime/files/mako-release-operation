@@ -1,0 +1,362 @@
+#!/usr/bin/env bash
+set -euo pipefail
+umask 027
+
+services=(mako-data-plane mako-control-plane mako-edge-gateway mako-telemetry-query)
+configured_services=(mako-data-plane mako-control-plane mako-edge-gateway)
+timers=(mako-checkpoint-backup@data-plane.timer mako-checkpoint-backup@control-plane.timer)
+rocks_components=(data-plane edge-gateway telemetry-query)
+ports=(8080 8081 8082 9465)
+region=us-east-1-beta
+release_root=/opt/mako
+operation_root=/var/lib/mako-release-operations
+configuration_snapshot_root=/etc/mako/release-configs
+control_database=/srv/mako-data/sqlite/control-plane/live/control.sqlite3
+control_lock=/srv/mako-data/sqlite/control-plane/lock/control.lock
+control_identity=mako-control-plane-us-east-1-beta
+
+usage() {
+  echo "usage: mako-release-operation inspect | snapshot-current | upgrade DIGEST --confirm=UPGRADE_RELEASE:DIGEST | rollback DIGEST --confirm=ROLLBACK_RELEASE:DIGEST" >&2
+  exit 2
+}
+
+[[ $EUID -eq 0 ]] || {
+  echo "release operations require root" >&2
+  exit 1
+}
+
+release_state() {
+  /usr/local/sbin/mako-release inspect
+}
+
+selected_release() {
+  release_state | /usr/bin/jq -r '.current // empty'
+}
+
+last_known_good() {
+  release_state | /usr/bin/jq -r '.lastKnownGood // empty'
+}
+
+storage_path() {
+  printf '/srv/mako-data/rocksdb/%s' "$1"
+}
+
+database_id() {
+  printf 'mako-%s-%s' "$1" "$region"
+}
+
+inspect() {
+  local release_json caddy_active caddy_enabled service_json storage_json control_state control_nonempty
+  release_json=$(release_state)
+  caddy_active=$(/usr/bin/systemctl is-active caddy.service 2>/dev/null || true)
+  caddy_enabled=$(/usr/bin/systemctl is-enabled caddy.service 2>/dev/null || true)
+  service_json=$(
+    for service in "${services[@]}"; do
+      /usr/bin/jq -n --arg name "$service" --arg state "$(/usr/bin/systemctl is-active "$service.service" 2>/dev/null || true)" '{name:$name,state:$state}'
+    done | /usr/bin/jq -s .
+  )
+  storage_json=$(
+    for component in "${rocks_components[@]}"; do
+      local path marker state nonempty
+      path=$(storage_path "$component")
+      marker="$path/mako-volume.json"
+      state=$(/usr/bin/jq -r '.state // "invalid"' "$marker" 2>/dev/null || printf invalid)
+      nonempty=false
+      if [[ -f "$path/CURRENT" && -f "$path/IDENTITY" && ! -L "$path/CURRENT" && ! -L "$path/IDENTITY" ]]; then
+        nonempty=true
+      fi
+      /usr/bin/jq -n --arg service "mako-$component" --arg path "$path" --arg state "$state" --argjson nonempty "$nonempty" '{service:$service,path:$path,state:$state,nonempty:$nonempty}'
+    done
+    control_state=invalid
+    control_nonempty=false
+    if [[ -f "$control_database" && ! -L "$control_database" ]]; then
+      control_nonempty=true
+      if /opt/mako/current/bin/mako-control-storage-ops inspect-sqlite \
+        "--database=$control_database" \
+        "--identity=$control_identity" >/dev/null 2>&1; then
+        control_state=active
+      fi
+    fi
+    /usr/bin/jq -n \
+      --arg service mako-control-plane \
+      --arg path "$control_database" \
+      --arg engine sqlite \
+      --arg state "$control_state" \
+      --argjson nonempty "$control_nonempty" \
+      '{service:$service,path:$path,engine:$engine,state:$state,nonempty:$nonempty}'
+  )
+  storage_json=$(printf '%s\n' "$storage_json" | /usr/bin/jq -s .)
+  /usr/bin/jq -n \
+    --argjson release "$release_json" \
+    --arg caddyActive "$caddy_active" \
+    --arg caddyEnabled "$caddy_enabled" \
+    --argjson services "$service_json" \
+    --argjson storage "$storage_json" \
+    '{release:$release,publicAdmission:{caddyActive:$caddyActive,caddyEnabled:$caddyEnabled},services:$services,storage:$storage}'
+}
+
+require_safe_storage() {
+  local target_binary=$1 target_control_binary=$2 component path marker
+  for component in "${rocks_components[@]}"; do
+    path=$(storage_path "$component")
+    marker="$path/mako-volume.json"
+    [[ -d "$path" && ! -L "$path" && -f "$path/CURRENT" && -f "$path/IDENTITY" && -f "$marker" ]] || {
+      echo "refusing release operation with an empty or incomplete storage path: $path" >&2
+      exit 1
+    }
+    /usr/sbin/runuser --user "mako-$component" -- "$target_binary" provision \
+      "--database-path=$path" \
+      "--service=mako-$component" \
+      "--database-id=$(database_id "$component")" \
+      --accept-matching-marker \
+      --confirm=PROVISION >/dev/null
+  done
+  [[ -f "$control_database" && ! -L "$control_database" ]] || {
+    echo "refusing release operation with an empty or incomplete control SQLite path" >&2
+    exit 1
+  }
+  /usr/sbin/runuser --user mako-control-plane -- "$target_control_binary" inspect-sqlite \
+    "--database=$control_database" \
+    "--identity=$control_identity" >/dev/null
+}
+
+transition_storage() {
+  local binary=$1 operation=$2 confirmation=$3 component path
+  for component in "${rocks_components[@]}"; do
+    path=$(storage_path "$component")
+    /usr/sbin/runuser --user "mako-$component" -- "$binary" "$operation" \
+      "--database-path=$path" \
+      "--service=mako-$component" \
+      "--database-id=$(database_id "$component")" \
+      "--confirm=$confirmation"
+  done
+}
+
+wait_for_readiness() {
+  local index code
+  for index in "${!ports[@]}"; do
+    code=000
+    for _attempt in $(/usr/bin/seq 1 60); do
+      code=$(/usr/bin/curl --silent --show-error --output /dev/null --write-out '%{http_code}' "http://127.0.0.1:${ports[$index]}/readyz" || true)
+      [[ "$code" == 200 ]] && break
+      /usr/bin/sleep 1
+    done
+    [[ "$code" == 200 ]] || {
+      echo "${services[$index]} did not recover readiness" >&2
+      return 1
+    }
+  done
+}
+
+validate_configuration_snapshot() {
+  local release snapshot service
+  release=$1
+  snapshot="$configuration_snapshot_root/$release"
+  [[ -d "$snapshot" && ! -L "$snapshot" ]] || {
+    echo "release configuration snapshot is unavailable: $release" >&2
+    return 1
+  }
+  for service in "${configured_services[@]}"; do
+    [[ -f "$snapshot/$service.json" && ! -L "$snapshot/$service.json" ]] || {
+      echo "release configuration snapshot is incomplete: $release" >&2
+      return 1
+    }
+  done
+  [[ $(/usr/bin/find "$snapshot" -mindepth 1 -maxdepth 1 -type f -name '*.json' | /usr/bin/wc -l) -eq ${#configured_services[@]} ]] || {
+    echo "release configuration snapshot has an unexpected inventory: $release" >&2
+    return 1
+  }
+}
+
+snapshot_current_configuration() {
+  local release destination temporary service source
+  release=$1
+  destination="$configuration_snapshot_root/$release"
+  /usr/bin/install -d -o root -g mako -m 0750 "$configuration_snapshot_root"
+  [[ ! -L "$configuration_snapshot_root" ]] || {
+    echo "release configuration snapshot root must not be a symlink" >&2
+    return 1
+  }
+  if [[ -e "$destination" ]]; then
+    validate_configuration_snapshot "$release"
+    return
+  fi
+  for service in "${configured_services[@]}"; do
+    source="/etc/mako/services/$service.json"
+    [[ -f "$source" && ! -L "$source" ]] || {
+      echo "active service configuration is unavailable: $service" >&2
+      return 1
+    }
+  done
+  temporary=$(/usr/bin/mktemp -d "$configuration_snapshot_root/.snapshot.$release.XXXXXX")
+  /usr/bin/chown root:mako "$temporary"
+  /usr/bin/chmod 0750 "$temporary"
+  for service in "${configured_services[@]}"; do
+    source="/etc/mako/services/$service.json"
+    /usr/bin/install -o root -g mako -m 0440 "$source" "$temporary/$service.json"
+  done
+  /usr/bin/chmod 0550 "$temporary"
+  /usr/bin/mv "$temporary" "$destination"
+  validate_configuration_snapshot "$release"
+}
+
+snapshot_selected_configuration() {
+  local current destination state
+  current=$(selected_release)
+  [[ -n "$current" ]] || {
+    echo "a selected release is required before snapshotting configuration" >&2
+    exit 1
+  }
+  destination="$configuration_snapshot_root/$current"
+  state=created
+  [[ ! -e "$destination" ]] || state=retained
+  snapshot_current_configuration "$current"
+  printf 'configuration snapshot %s: %s\n' "$state" "$current"
+}
+
+restore_release_configuration() {
+  local release snapshot service
+  release=$1
+  snapshot="$configuration_snapshot_root/$release"
+  validate_configuration_snapshot "$release"
+  for service in "${configured_services[@]}"; do
+    /usr/bin/install -o root -g mako -m 0640 \
+      "$snapshot/$service.json" "/etc/mako/services/$service.json"
+  done
+}
+
+record_operation() {
+  local kind=$1 from=$2 to=$3 started=$4 completed=$5 record temporary operator
+  operator=${SUDO_USER:-root}
+  /usr/bin/install -d -o root -g adm -m 0750 "$operation_root"
+  record="$operation_root/${completed}-${kind}-${to}.json"
+  temporary=$(/usr/bin/mktemp "$operation_root/.operation.XXXXXX")
+  /usr/bin/jq -n \
+    --arg kind "$kind" \
+    --arg from "$from" \
+    --arg to "$to" \
+    --arg operator "$operator" \
+    --argjson started "$started" \
+    --argjson completed "$completed" \
+    '{schemaVersion:1,kind:$kind,from:$from,to:$to,operator:$operator,startedAtUnixSeconds:$started,completedAtUnixSeconds:$completed,durationSeconds:($completed-$started),checkpointVerified:true,storageFormatCompatible:true,configurationSnapshotBound:true,storageFencedBeforeSelection:true,allServicesReady:true,publicAdmissionEnabled:false}' >"$temporary"
+  /usr/bin/chown root:adm "$temporary"
+  /usr/bin/chmod 0640 "$temporary"
+  /usr/bin/mv --force "$temporary" "$record"
+  printf 'operation evidence: %s\n' "$record"
+}
+
+switch_release() {
+  local kind=$1 target=$2 confirmation=$3 expected current target_path current_binary target_binary current_control_binary target_control_binary activation_binary started completed
+  [[ "$target" =~ ^[0-9a-f]{64}$ ]] || usage
+  case "$kind" in
+    upgrade) expected="UPGRADE_RELEASE:$target" ;;
+    rollback) expected="ROLLBACK_RELEASE:$target" ;;
+    *) usage ;;
+  esac
+  [[ "$confirmation" == "--confirm=$expected" ]] || {
+    echo "operation requires --confirm=$expected" >&2
+    exit 2
+  }
+  current=$(selected_release)
+  [[ -n "$current" && "$current" != "$target" ]] || {
+    echo "target release must differ from the selected release" >&2
+    exit 1
+  }
+  if [[ "$kind" == rollback && "$target" != "$(last_known_good)" ]]; then
+    echo "rollback target is not the recorded last-known-good release" >&2
+    exit 1
+  fi
+  [[ "$(/usr/bin/systemctl is-active caddy.service 2>/dev/null || true)" == inactive ]] || {
+    echo "public admission must be stopped before a release operation" >&2
+    exit 1
+  }
+  target_path="$release_root/releases/$target"
+  current_binary="$release_root/releases/$current/bin/mako-storage-ops"
+  target_binary="$target_path/bin/mako-storage-ops"
+  current_control_binary="$release_root/releases/$current/bin/mako-control-storage-ops"
+  target_control_binary="$target_path/bin/mako-control-storage-ops"
+  /usr/local/sbin/mako-release verify "$target_path" >/dev/null
+  [[ -x "$current_binary" && -x "$target_binary" && -x "$current_control_binary" && -x "$target_control_binary" ]] || {
+    echo "release storage operation binary is unavailable" >&2
+    exit 1
+  }
+  require_safe_storage "$target_binary" "$target_control_binary"
+  if [[ "$kind" == rollback ]]; then
+    # The outgoing newer release owns the rollback-only activation transition;
+    # an older last-known-good release is not required to know that operation.
+    activation_binary=$current_binary
+  else
+    # During an upgrade the incoming release must own the activation transition;
+    # this allows upgrading from a release created before activation existed.
+    activation_binary=$target_binary
+  fi
+  if [[ "$kind" == rollback ]]; then
+    validate_configuration_snapshot "$target"
+  elif [[ -e "$configuration_snapshot_root/$target" ]]; then
+    validate_configuration_snapshot "$target"
+  fi
+
+  exec 9>/run/mako-release-operation.lock
+  /usr/bin/flock -n 9 || {
+    echo "another release operation is active" >&2
+    exit 1
+  }
+  started=$(/usr/bin/date +%s)
+  snapshot_current_configuration "$current"
+  for timer in "${timers[@]}"; do /usr/bin/systemctl stop "$timer"; done
+  fail_closed() {
+    local result=$?
+    trap - EXIT
+    if (( result != 0 )); then
+      /usr/bin/systemctl disable --now "${timers[@]}" >/dev/null 2>&1 || true
+      echo "release operation failed closed; public admission is disabled and backup timers were stopped for operator inspection" >&2
+    fi
+    exit "$result"
+  }
+  trap fail_closed EXIT
+
+  /usr/bin/systemctl start mako-checkpoint-backup-orchestrator@data-plane.service
+  /usr/bin/systemctl start mako-checkpoint-backup-orchestrator@control-plane.service
+  /usr/bin/systemctl stop "${services[@]/%/.service}"
+  exec 8>>"$control_lock"
+  /usr/bin/flock --exclusive --wait 10 8 || {
+    echo "control SQLite authority could not be fenced after service stop" >&2
+    exit 1
+  }
+  /usr/sbin/runuser --user mako-control-plane -- "$current_control_binary" inspect-sqlite \
+    "--database=$control_database" \
+    "--identity=$control_identity" >/dev/null
+  transition_storage "$current_binary" fence FENCE
+  if [[ "$kind" == rollback || -e "$configuration_snapshot_root/$target" ]]; then
+    restore_release_configuration "$target"
+  fi
+  /usr/local/sbin/mako-release select "$target"
+  transition_storage "$activation_binary" activate ACTIVATE
+  /usr/bin/flock --unlock 8
+  /usr/bin/systemctl reset-failed "${services[@]/%/.service}" || true
+  /usr/bin/systemctl start "${services[@]/%/.service}"
+  wait_for_readiness
+  for timer in "${timers[@]}"; do /usr/bin/systemctl start "$timer"; done
+  completed=$(/usr/bin/date +%s)
+  record_operation "$kind" "$current" "$target" "$started" "$completed"
+  trap - EXIT
+  echo "$kind complete: from=$current to=$target duration_seconds=$((completed-started))"
+}
+
+command_name=${1:-}
+shift || true
+case "$command_name" in
+  inspect)
+    [[ $# -eq 0 ]] || usage
+    inspect
+    ;;
+  snapshot-current)
+    [[ $# -eq 0 ]] || usage
+    snapshot_selected_configuration
+    ;;
+  upgrade|rollback)
+    [[ $# -eq 2 ]] || usage
+    switch_release "$command_name" "$1" "$2"
+    ;;
+  *) usage ;;
+esac

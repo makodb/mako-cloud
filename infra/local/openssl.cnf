@@ -1,0 +1,26 @@
+[req]
+distinguished_name = subject
+prompt = no
+req_extensions = request_extensions
+
+[subject]
+CN = mako-cloud.local
+O = Mako Cloud Local Development
+
+[request_extensions]
+subjectAltName = @alternate_names
+keyUsage = critical, digitalSignature, keyEncipherment
+extendedKeyUsage = serverAuth, clientAuth
+
+[alternate_names]
+DNS.1 = localhost
+DNS.2 = mako-cloud.local
+DNS.3 = mako-data-plane
+DNS.4 = mako-control-plane
+DNS.5 = mako-edge-gateway
+DNS.6 = mailpit
+DNS.7 = object-store
+DNS.8 = otel-collector
+IP.1 = 127.0.0.1
+IP.2 = ::1
+

@@ -1,0 +1,37 @@
+{
+  "deployment": {
+    "environment": "local",
+    "region": "local"
+  },
+  "server": {
+    "bind_address": "127.0.0.1:8080",
+    "public_url": "http://127.0.0.1:8080"
+  },
+  "storage": {
+    "rocksdb_path": ".local/data/mako-data-plane/rocksdb",
+    "maximum_batch_operations": 10000,
+    "maximum_scan_items": 10000,
+    "transaction_lock_timeout_seconds": 2,
+    "transaction_expiration_seconds": 30,
+    "backup_destination": ".local/backups/mako-data-plane",
+    "backup_retention_count": 14,
+    "disk_warning_free_bytes": 536870912,
+    "disk_critical_free_bytes": 268435456
+  },
+  "dependencies": {
+    "smtp_address": "127.0.0.1:1025",
+    "object_store_endpoint": "http://127.0.0.1:8333",
+    "runtime_supervisor_address": "127.0.0.1:9001",
+    "telemetry_query_address": "127.0.0.1:9465",
+    "otlp_address": "127.0.0.1:4317"
+  },
+  "limits": {
+    "max_request_bytes": 1048576,
+    "shutdown_grace_seconds": 30
+  },
+  "secrets": {
+    "internal_auth": "env:MAKO_INTERNAL_AUTH_SECRET",
+    "object_store_access_key": "env:MAKO_OBJECT_STORE_ACCESS_KEY",
+    "object_store_secret_key": "env:MAKO_OBJECT_STORE_SECRET_KEY"
+  }
+}

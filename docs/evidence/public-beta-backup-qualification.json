@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-09T02:13:11Z",
+  "status": "passed",
+  "releaseDigest": "b1dd21560ed8331d5fff0bf1766680d853159a3bc57b4fc38fb814ce86458b73",
+  "schedule": {
+    "services": [
+      "mako-checkpoint-backup@data-plane.timer",
+      "mako-checkpoint-backup@control-plane.timer"
+    ],
+    "enabled": true,
+    "active": true,
+    "intervalMinutes": 5,
+    "maximumRandomizedDelayMinutes": 2,
+    "maximumNominalRecoveryPointMinutes": 7,
+    "requiredRecoveryPointMinutes": 15
+  },
+  "orchestration": {
+    "liveDatabaseLockHandled": true,
+    "rootProcessOnlyCoordinatesSystemd": true,
+    "checkpointWorkersRunAsOwningServiceIdentities": true,
+    "servicesRestartAndReachReadinessAfterCheckpoint": true
+  },
+  "verification": {
+    "signedManifest": true,
+    "localDigestAndInventoryInspection": true,
+    "offVmReadBack": true,
+    "offVmDigestAndManifestReinspection": true,
+    "dataPlane": {
+      "sampleBackup": "20260809T020822Z-data-plane",
+      "files": 13,
+      "tenants": 3,
+      "remoteVerifiedMetric": 1
+    },
+    "controlPlane": {
+      "sampleBackup": "20260809T020834Z-control-plane",
+      "files": 13,
+      "tenants": 3,
+      "remoteVerifiedMetric": 1
+    }
+  },
+  "offVmTarget": {
+    "host": "130.245.173.105",
+    "root": "/var/lib/vz/dump/mako-cloud-public-beta",
+    "outsideGuestFailureDomain": true,
+    "restrictedSshIdentity": true,
+    "overwriteDisabled": true,
+    "deletionByGuestDisabled": true,
+    "retentionCount": 14,
+    "retentionTimer": "mako-public-beta-backup-retention.timer",
+    "retentionTimerActive": true
+  },
+  "alerting": {
+    "metricScrapeTarget": "127.0.0.1:9100",
+    "metricScrapeHealth": "up",
+    "rule": "MakoRocksDbBackupStale",
+    "maximumAgeSeconds": 900,
+    "failureCounterWindowMinutes": 15,
+    "remoteVerificationRequired": true,
+    "digestOrManifestFailureIncrementsFailureMetric": true
+  },
+  "postQualification": {
+    "dataPlaneReady": true,
+    "controlPlaneReady": true,
+    "allApplicationServicesActive": true,
+    "publicAdmissionEnabled": false
+  }
+}

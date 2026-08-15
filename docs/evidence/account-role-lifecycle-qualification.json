@@ -1,0 +1,89 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-12T06:00:38Z",
+  "change": "separate-operator-developer-lifecycle",
+  "scope": "sanitized local pre-deployment qualification",
+  "stateMatrix": [
+    {
+      "developerRole": "absent",
+      "operatorEntitlement": "absent",
+      "represented": true
+    },
+    {
+      "developerRole": "absent",
+      "operatorEntitlement": "active",
+      "operatorSignIn": "allowed"
+    },
+    {
+      "developerRole": "waitlisted",
+      "operatorEntitlement": "active",
+      "operatorSignIn": "allowed"
+    },
+    {
+      "developerRole": "active",
+      "operatorEntitlement": "absent",
+      "operatorSignIn": "denied_generically"
+    },
+    {
+      "developerRole": "active",
+      "operatorEntitlement": "active",
+      "operatorSignIn": "allowed"
+    },
+    {
+      "developerRole": "rejected_or_disabled",
+      "operatorEntitlement": "active",
+      "operatorSignIn": "allowed"
+    }
+  ],
+  "isolation": {
+    "developerDecision": {
+      "developerEpoch": "advanced",
+      "operatorEpoch": "unchanged",
+      "operatorSession": "remained_valid"
+    },
+    "operatorEntitlementChange": {
+      "operatorEpoch": "advanced_as_applicable",
+      "developerStatus": "unchanged",
+      "developerEpoch": "unchanged"
+    },
+    "passwordRecovery": {
+      "credentialEpoch": "advanced",
+      "developerStatus": "unchanged",
+      "operatorPermissions": "unchanged",
+      "priorDeveloperAndOperatorSessions": "invalid"
+    }
+  },
+  "selfReview": {
+    "permissionAndFreshness": "required",
+    "reasonConfirmationIdempotencyAndConcurrency": "required",
+    "relationshipRecorded": true,
+    "operatorSessionAfterDecision": "valid"
+  },
+  "repair": {
+    "requiresCombinedBootstrapProvenance": true,
+    "eligibleTransition": "active_to_waitlisted",
+    "credentialEntitlementOperatorEpochAndSessionBytes": "preserved",
+    "idempotentReplay": "passed",
+    "missingProvenance": "refused",
+    "subsequentlyReviewedDeveloper": "refused"
+  },
+  "tests": [
+    "developer_registration::tests::credential_security_and_developer_role_epochs_are_independent",
+    "developer_registration::tests::authentication_identity_can_exist_without_a_developer_role",
+    "developer_registration::tests::legacy_migration_is_resumable_and_refuses_email_collisions",
+    "developer_workflow::tests::hosted_registration_waitlist_approval_and_recovery_are_isolated",
+    "developer_workflow::tests::operator_only_identity_can_recover_shared_credentials_without_gaining_developer_role",
+    "operator_authentication::tests::operator_access_ignores_every_developer_role_state_and_absent_role",
+    "operator_authentication::tests::developer_transition_preserves_operator_session_but_account_suspension_revokes_it",
+    "operator_authentication::tests::operator_self_rejection_changes_only_developer_state_and_preserves_session",
+    "operator_authentication::tests::provenance_bound_repair_changes_only_developer_role_and_replays_once",
+    "operator_authentication::tests::repair_refuses_missing_provenance_and_subsequently_reviewed_developer"
+  ],
+  "redaction": {
+    "emails": "absent",
+    "passwords": "absent",
+    "rawSessions": "absent",
+    "recoverySecrets": "absent",
+    "privateReasons": "absent"
+  }
+}

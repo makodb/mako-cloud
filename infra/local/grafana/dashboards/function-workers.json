@@ -1,0 +1,79 @@
+{
+  "annotations": { "list": [] },
+  "editable": false,
+  "graphTooltip": 1,
+  "panels": [
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "max": 1, "min": 0, "unit": "percentunit" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 0 },
+      "id": 1,
+      "targets": [
+        {
+          "expr": "max by (region) (mako_function_worker_active{project_id=~\"$project\",environment_id=~\"$environment\"} / clamp_min(mako_function_worker_capacity{project_id=~\"$project\",environment_id=~\"$environment\"}, 1))",
+          "legendFormat": "{{region}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Worker saturation",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 0 },
+      "id": 2,
+      "targets": [
+        {
+          "expr": "sum by (region, reason) (rate(mako_function_worker_recycles_total{project_id=~\"$project\",environment_id=~\"$environment\"}[5m]))",
+          "legendFormat": "{{region}} / {{reason}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Worker recycle rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "percentunit" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 0 },
+      "id": 3,
+      "targets": [
+        {
+          "expr": "sum by (region, outcome) (rate(mako_function_invocations_total{project_id=~\"$project\",environment_id=~\"$environment\",outcome!=\"success\"}[5m])) / clamp_min(sum by (region) (rate(mako_function_invocations_total{project_id=~\"$project\",environment_id=~\"$environment\"}[5m])), 0.000001)",
+          "legendFormat": "{{region}} / {{outcome}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Invocation failure ratio",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "15s",
+  "schemaVersion": 41,
+  "tags": ["mako-cloud", "function", "worker"],
+  "templating": {
+    "list": [
+      {
+        "allValue": ".*",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "includeAll": true,
+        "name": "project",
+        "query": "label_values(mako_function_worker_active, project_id)",
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "includeAll": true,
+        "name": "environment",
+        "query": "label_values(mako_function_worker_active{project_id=~\"$project\"}, environment_id)",
+        "type": "query"
+      }
+    ]
+  },
+  "time": { "from": "now-6h", "to": "now" },
+  "title": "Mako Cloud — Function Workers",
+  "uid": "mako-function-workers",
+  "version": 1
+}

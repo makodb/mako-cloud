@@ -1,0 +1,12 @@
+[Unit]
+Description=Evaluate Mako Cloud public-preview admission every minute
+
+[Timer]
+OnActiveSec=1s
+OnUnitActiveSec=1min
+AccuracySec=1s
+Persistent=true
+Unit=mako-public-preview-admission.service
+
+[Install]
+WantedBy=timers.target

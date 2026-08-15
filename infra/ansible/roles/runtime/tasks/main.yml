@@ -1,0 +1,318 @@
+---
+- name: Create the rootless dependency runtime account
+  ansible.builtin.user:
+    name: mako-runtime
+    create_home: true
+    shell: /bin/bash
+    password_lock: true
+
+- name: Keep the rootless dependency user manager available across reboots
+  ansible.builtin.command:
+    argv: [/usr/bin/loginctl, enable-linger, mako-runtime]
+    creates: /var/lib/systemd/linger/mako-runtime
+
+- name: Create the shared non-secret Mako configuration group
+  ansible.builtin.group:
+    name: mako
+    system: true
+
+- name: Create non-login Mako service identities
+  ansible.builtin.user:
+    name: "{{ item }}"
+    system: true
+    create_home: false
+    shell: /usr/sbin/nologin
+    password_lock: true
+    groups: mako
+    append: true
+  loop:
+    - mako-data-plane
+    - mako-control-plane
+    - mako-edge-gateway
+    - mako-telemetry-query
+
+- name: Configure subordinate IDs for the rootless runtime
+  ansible.builtin.lineinfile:
+    path: "{{ item }}"
+    regexp: '^mako-runtime:'
+    line: mako-runtime:231072:65536
+    create: true
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - /etc/subuid
+    - /etc/subgid
+
+- name: Create immutable release and protected configuration roots
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: /opt/mako/releases, owner: root, group: root, mode: "0755" }
+    - { path: /etc/mako, owner: root, group: mako, mode: "0750" }
+    - { path: /etc/mako/services, owner: root, group: mako, mode: "0750" }
+    - { path: /etc/mako/credentials, owner: root, group: root, mode: "0700" }
+    - { path: /var/log/mako, owner: root, group: adm, mode: "0750" }
+
+- name: Install the offline immutable release manager
+  ansible.builtin.copy:
+    src: mako-release
+    dest: /usr/local/sbin/mako-release
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install the fail-closed release operation manager
+  ansible.builtin.copy:
+    src: mako-release-operation
+    dest: /usr/local/sbin/mako-release-operation
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Inspect the selected public-beta release
+  ansible.builtin.command:
+    argv:
+      - /usr/local/sbin/mako-release
+      - verify
+      - "/opt/mako/releases/{{ mako_release_digest }}"
+  register: runtime_installed_release
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: mako_release_digest | length > 0
+
+- name: Stage and install the exact checksummed public-beta candidate
+  when:
+    - mako_release_digest | length > 0
+    - runtime_installed_release.rc != 0
+    - not ansible_check_mode
+  block:
+    - name: Create a private transient candidate staging directory
+      ansible.builtin.file:
+        path: "/var/tmp/mako-release-candidate-{{ mako_release_digest }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+
+    - name: Copy the exact controller-side candidate to the guest
+      ansible.builtin.copy:
+        src: "{{ mako_release_candidate_path }}/"
+        dest: "/var/tmp/mako-release-candidate-{{ mako_release_digest }}/"
+        owner: root
+        group: root
+        mode: preserve
+
+    - name: Install the candidate without overwriting any release
+      ansible.builtin.command:
+        argv:
+          - /usr/local/sbin/mako-release
+          - install
+          - "/var/tmp/mako-release-candidate-{{ mako_release_digest }}"
+      register: runtime_release_install
+      changed_when: "'installed immutable release:' in runtime_release_install.stdout"
+  always:
+    - name: Remove the private transient candidate staging directory
+      ansible.builtin.file:
+        path: "/var/tmp/mako-release-candidate-{{ mako_release_digest }}"
+        state: absent
+
+- name: Inspect the current immutable release selector
+  ansible.builtin.command:
+    argv:
+      - /usr/local/sbin/mako-release
+      - inspect
+  register: runtime_release_selection
+  changed_when: false
+  check_mode: false
+  when:
+    - mako_release_digest | length > 0
+    - not ansible_check_mode
+
+- name: Preserve the outgoing release configuration before changing selectors
+  ansible.builtin.command:
+    argv:
+      - /usr/local/sbin/mako-release-operation
+      - snapshot-current
+  when:
+    - mako_release_digest | length > 0
+    - not ansible_check_mode
+    - (runtime_release_selection.stdout | default('{"current":null}', true) | from_json).current is not none
+    - (runtime_release_selection.stdout | default('{"current":null}', true) | from_json).current != mako_release_digest
+  register: runtime_release_configuration_snapshot
+  changed_when: "'configuration snapshot created:' in runtime_release_configuration_snapshot.stdout"
+
+- name: Atomically select the installed public-beta candidate
+  ansible.builtin.command:
+    argv:
+      - /usr/local/sbin/mako-release
+      - select
+      - "{{ mako_release_digest }}"
+  when:
+    - mako_release_digest | length > 0
+    - not ansible_check_mode
+    - (runtime_release_selection.stdout | default('{"current":null}', true) | from_json).current != mako_release_digest
+  register: runtime_release_select
+  changed_when: "'selected release:' in runtime_release_select.stdout"
+  notify: Restart qualified Mako application services
+
+- name: Install hardened Mako service units
+  ansible.builtin.template:
+    src: mako-service.service.j2
+    dest: "/etc/systemd/system/{{ item.name }}.service"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - name: mako-data-plane
+      port: 8080
+      database_path: /srv/mako-data/rocksdb/data-plane
+      database_id: mako-data-plane-us-east-1-beta
+      memory_max: 6G
+      cpu_quota: 300%
+    - name: mako-control-plane
+      port: 8081
+      database_path: /srv/mako-data/sqlite/control-plane/live/control.sqlite3
+      database_id: mako-control-plane-us-east-1-beta
+      control_paths:
+        - /srv/mako-data/sqlite/control-plane/live
+        - /srv/mako-data/sqlite/control-plane/lock
+        - /srv/mako-data/sqlite/control-plane/migration
+        - /srv/mako-data/sqlite/control-plane/reserve
+        - /srv/mako-data/backup-staging/control-plane
+        - /srv/mako-data/backup-publish/control-plane
+        - /srv/mako-data/restore/control-plane
+      memory_max: 4G
+      cpu_quota: 200%
+    - name: mako-edge-gateway
+      port: 8082
+      database_path: /srv/mako-data/rocksdb/edge-gateway
+      database_id: mako-edge-gateway-us-east-1-beta
+      memory_max: 2G
+      cpu_quota: 150%
+    - name: mako-telemetry-query
+      port: 9465
+      database_path: /srv/mako-data/rocksdb/telemetry-query
+      database_id: mako-telemetry-query-us-east-1-beta
+      service_config: false
+      memory_max: 2G
+      cpu_quota: 100%
+  loop_control:
+    label: "{{ item.name }}.service"
+  notify:
+    - Reload Mako runtime systemd
+    - Restart qualified Mako application services
+
+- name: Validate the explicit public-admission state
+  ansible.builtin.assert:
+    that:
+      - mako_public_admission_mode in ['disabled', 'pre_gate', 'risk_accepted_preview', 'approved_beta']
+      - not (mako_caddy_enabled | bool) or mako_public_admission_mode != 'disabled'
+      - mako_public_admission_mode != 'pre_gate' or ((mako_management_cidrs + mako_tester_cidrs) | length > 0)
+      - mako_public_admission_mode != 'risk_accepted_preview' or mako_public_preview_approval_source | length > 0
+      - mako_public_admission_mode != 'risk_accepted_preview' or mako_public_preview_blocker_digest is match('^[a-f0-9]{64}$')
+      - mako_public_admission_mode != 'approved_beta' or mako_public_beta_approval == 'APPROVE_PUBLIC_BETA:' + mako_release_digest
+      - not (mako_hsts_enabled | bool) or (mako_caddy_enabled | bool)
+      - not (mako_hsts_enabled | bool) or mako_acme_environment == 'production'
+      - not (mako_caddy_enabled | bool) or mako_acme_contact | length > 3
+      - mako_acme_environment in ['staging', 'production']
+    fail_msg: Refusing an ambiguous, unapproved, or unsafe public-admission configuration.
+
+- name: Install the public-preview admission guard
+  ansible.builtin.copy:
+    src: mako-public-preview-admission
+    dest: /usr/local/sbin/mako-public-preview-admission
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install hardened public-preview admission units
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "/etc/systemd/system/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - mako-public-preview-admission.service
+    - mako-public-preview-admission.timer
+  notify:
+    - Reload Mako runtime systemd
+    - Restart public-preview admission timer
+
+- name: Create the versioned Caddy admission configuration root
+  ansible.builtin.file:
+    path: /etc/caddy/mako-admission
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Render and validate every fail-closed public admission mode
+  ansible.builtin.template:
+    src: Caddyfile.j2
+    dest: "/etc/caddy/mako-admission/Caddyfile.{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+    validate: /usr/bin/caddy validate --config %s --adapter caddyfile
+  vars:
+    mako_render_admission_mode: "{{ item }}"
+  loop:
+    - disabled
+    - pre_gate
+    - risk_accepted_preview
+    - approved_beta
+  notify: Restart admitted Caddy proxy
+
+- name: Render the root-owned public-preview qualification context
+  ansible.builtin.template:
+    src: mako-public-preview-context.json.j2
+    dest: /etc/mako/public-preview-context.json
+    owner: root
+    group: root
+    mode: "0640"
+
+- name: Install the bound public-preview approval
+  ansible.builtin.copy:
+    src: "{{ mako_public_preview_approval_source }}"
+    dest: /etc/mako/public-preview-approval.json
+    owner: root
+    group: root
+    mode: "0640"
+  when: mako_public_admission_mode == 'risk_accepted_preview'
+
+- name: Remove stale public-preview approval outside preview mode
+  ansible.builtin.file:
+    path: /etc/mako/public-preview-approval.json
+    state: absent
+  when: mako_public_admission_mode != 'risk_accepted_preview'
+
+- name: Validate the bound public-preview approval before selection
+  ansible.builtin.command:
+    argv:
+      - /usr/local/sbin/mako-public-preview-admission
+      - verify
+      - --static
+  changed_when: false
+  when:
+    - mako_public_admission_mode == 'risk_accepted_preview'
+    - not ansible_check_mode
+
+- name: Atomically select the requested safe initial admission mode
+  ansible.builtin.file:
+    src: >-
+      /etc/caddy/mako-admission/Caddyfile.{{
+      'pre_gate' if mako_public_admission_mode == 'risk_accepted_preview'
+      else mako_public_admission_mode }}
+    dest: /etc/caddy/Caddyfile
+    state: link
+    force: true
+    owner: root
+    group: root
+  notify: Restart admitted Caddy proxy

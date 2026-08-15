@@ -1,0 +1,423 @@
+{
+  "schemaVersion": 1,
+  "environment": "public-beta",
+  "publicOrigin": "https://cloud-test.makodb.com",
+  "publicIpv4": "130.245.173.11",
+  "vm": {
+    "id": 124,
+    "status": "running",
+    "name": "mako-cloud-public-beta",
+    "node": "pve",
+    "disks": [
+      {
+        "slot": "efidisk0",
+        "value": "qnas-lun-lvm:vm-124-disk-0,efitype=4m,ms-cert=2023k,pre-enrolled-keys=1,size=4M"
+      },
+      {
+        "slot": "ide2",
+        "value": "local:iso/mako-cloud-public-beta-seed-d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073-1822dc2713284d75.iso,media=cdrom,size=368K"
+      },
+      {
+        "slot": "scsi0",
+        "value": "qnas-lun-lvm:vm-124-disk-1,discard=on,iothread=1,size=64G,ssd=1"
+      },
+      {
+        "slot": "scsi1",
+        "value": "qnas-lun-lvm:vm-124-disk-2,discard=on,iothread=1,size=256G,ssd=1"
+      }
+    ]
+  },
+  "admission": {
+    "serviceActive": true,
+    "serviceEnabled": true,
+    "edgeFilterInstalled": true
+  },
+  "backups": [
+    {
+      "path": "control-plane/20260809T020834Z-control-plane/manifest-envelope.json",
+      "sizeBytes": 4379
+    },
+    {
+      "path": "control-plane/20260809T021026Z-control-plane/manifest-envelope.json",
+      "sizeBytes": 4379
+    },
+    {
+      "path": "control-plane/20260809T021607Z-control-plane/manifest-envelope.json",
+      "sizeBytes": 4379
+    },
+    {
+      "path": "control-plane/20260809T022023Z-control-plane/manifest-envelope.json",
+      "sizeBytes": 4379
+    },
+    {
+      "path": "control-plane/20260809T022230Z-control-plane/manifest-envelope.json",
+      "sizeBytes": 4379
+    },
+    {
+      "path": "control-plane/20260809T022915Z-control-plane/manifest-envelope.json",
+      "sizeBytes": 4379
+    },
+    {
+      "path": "control-plane/20260809T023025Z-control-plane/manifest-envelope.json",
+      "sizeBytes": 4379
+    },
+    {
+      "path": "control-plane/20260809T023654Z-control-plane/manifest-envelope.json",
+      "sizeBytes": 4379
+    },
+    {
+      "path": "control-plane/20260809T024416Z-control-plane/manifest-envelope.json",
+      "sizeBytes": 4379
+    },
+    {
+      "path": "control-plane/20260809T024439Z-control-plane/manifest-envelope.json",
+      "sizeBytes": 4379
+    },
+    {
+      "path": "control-plane/20260809T024450Z-control-plane/manifest-envelope.json",
+      "sizeBytes": 4379
+    },
+    {
+      "path": "control-plane/20260809T024608Z-control-plane/manifest-envelope.json",
+      "sizeBytes": 4379
+    },
+    {
+      "path": "control-plane/20260809T025032Z-control-plane/manifest-envelope.json",
+      "sizeBytes": 4379
+    },
+    {
+      "path": "control-plane/20260809T025533Z-control-plane/manifest-envelope.json",
+      "sizeBytes": 4379
+    },
+    {
+      "path": "control-plane/20260809T030259Z-control-plane/manifest-envelope.json",
+      "sizeBytes": 4379
+    },
+    {
+      "path": "control-plane/20260809T030503Z-control-plane/manifest-envelope.json",
+      "sizeBytes": 4379
+    },
+    {
+      "path": "control-plane/20260809T031058Z-control-plane/manifest-envelope.json",
+      "sizeBytes": 4379
+    },
+    {
+      "path": "control-plane/20260809T031600Z-control-plane/manifest-envelope.json",
+      "sizeBytes": 4379
+    },
+    {
+      "path": "control-plane/20260809T032110Z-control-plane/manifest-envelope.json",
+      "sizeBytes": 4379
+    },
+    {
+      "path": "control-plane/20260809T032403Z-control-plane/manifest-envelope.json",
+      "sizeBytes": 4379
+    },
+    {
+      "path": "control-plane/20260809T032708Z-control-plane/manifest-envelope.json",
+      "sizeBytes": 4379
+    },
+    {
+      "path": "control-plane/20260809T032849Z-control-plane/manifest-envelope.json",
+      "sizeBytes": 4379
+    },
+    {
+      "path": "control-plane/20260809T033156Z-control-plane/manifest-envelope.json",
+      "sizeBytes": 4379
+    },
+    {
+      "path": "control-plane/20260809T033416Z-control-plane/manifest-envelope.json",
+      "sizeBytes": 4379
+    },
+    {
+      "path": "control-plane/20260809T033658Z-control-plane/manifest-envelope.json",
+      "sizeBytes": 4379
+    },
+    {
+      "path": "control-plane/20260809T034018Z-control-plane/manifest-envelope.json",
+      "sizeBytes": 4379
+    },
+    {
+      "path": "control-plane/20260809T034521Z-control-plane/manifest-envelope.json",
+      "sizeBytes": 4379
+    },
+    {
+      "path": "control-plane/20260809T034935Z-control-plane/manifest-envelope.json",
+      "sizeBytes": 4379
+    },
+    {
+      "path": "control-plane/20260809T035056Z-control-plane/manifest-envelope.json",
+      "sizeBytes": 4379
+    },
+    {
+      "path": "control-plane/20260809T040141Z-control-plane/manifest-envelope.json",
+      "sizeBytes": 4379
+    },
+    {
+      "path": "data-plane/20260809T020822Z-data-plane/manifest-envelope.json",
+      "sizeBytes": 4324
+    },
+    {
+      "path": "data-plane/20260809T021148Z-data-plane/manifest-envelope.json",
+      "sizeBytes": 4324
+    },
+    {
+      "path": "data-plane/20260809T021604Z-data-plane/manifest-envelope.json",
+      "sizeBytes": 4324
+    },
+    {
+      "path": "data-plane/20260809T022004Z-data-plane/manifest-envelope.json",
+      "sizeBytes": 4324
+    },
+    {
+      "path": "data-plane/20260809T022227Z-data-plane/manifest-envelope.json",
+      "sizeBytes": 4324
+    },
+    {
+      "path": "data-plane/20260809T023022Z-data-plane/manifest-envelope.json",
+      "sizeBytes": 4324
+    },
+    {
+      "path": "data-plane/20260809T023544Z-data-plane/manifest-envelope.json",
+      "sizeBytes": 4324
+    },
+    {
+      "path": "data-plane/20260809T023650Z-data-plane/manifest-envelope.json",
+      "sizeBytes": 4324
+    },
+    {
+      "path": "data-plane/20260809T024227Z-data-plane/manifest-envelope.json",
+      "sizeBytes": 4324
+    },
+    {
+      "path": "data-plane/20260809T024412Z-data-plane/manifest-envelope.json",
+      "sizeBytes": 4324
+    },
+    {
+      "path": "data-plane/20260809T024436Z-data-plane/manifest-envelope.json",
+      "sizeBytes": 4324
+    },
+    {
+      "path": "data-plane/20260809T024446Z-data-plane/manifest-envelope.json",
+      "sizeBytes": 4324
+    },
+    {
+      "path": "data-plane/20260809T024503Z-data-plane/manifest-envelope.json",
+      "sizeBytes": 4324
+    },
+    {
+      "path": "data-plane/20260809T025051Z-data-plane/manifest-envelope.json",
+      "sizeBytes": 4324
+    },
+    {
+      "path": "data-plane/20260809T025619Z-data-plane/manifest-envelope.json",
+      "sizeBytes": 4324
+    },
+    {
+      "path": "data-plane/20260809T025939Z-data-plane/manifest-envelope.json",
+      "sizeBytes": 4324
+    },
+    {
+      "path": "data-plane/20260809T030100Z-data-plane/manifest-envelope.json",
+      "sizeBytes": 4324
+    },
+    {
+      "path": "data-plane/20260809T030255Z-data-plane/manifest-envelope.json",
+      "sizeBytes": 4324
+    },
+    {
+      "path": "data-plane/20260809T030504Z-data-plane/manifest-envelope.json",
+      "sizeBytes": 4324
+    },
+    {
+      "path": "data-plane/20260809T031045Z-data-plane/manifest-envelope.json",
+      "sizeBytes": 4324
+    },
+    {
+      "path": "data-plane/20260809T031639Z-data-plane/manifest-envelope.json",
+      "sizeBytes": 4324
+    },
+    {
+      "path": "data-plane/20260809T032113Z-data-plane/manifest-envelope.json",
+      "sizeBytes": 4324
+    },
+    {
+      "path": "data-plane/20260809T032357Z-data-plane/manifest-envelope.json",
+      "sizeBytes": 4324
+    },
+    {
+      "path": "data-plane/20260809T032634Z-data-plane/manifest-envelope.json",
+      "sizeBytes": 4324
+    },
+    {
+      "path": "data-plane/20260809T032846Z-data-plane/manifest-envelope.json",
+      "sizeBytes": 4324
+    },
+    {
+      "path": "data-plane/20260809T033036Z-data-plane/manifest-envelope.json",
+      "sizeBytes": 4324
+    },
+    {
+      "path": "data-plane/20260809T033412Z-data-plane/manifest-envelope.json",
+      "sizeBytes": 4324
+    },
+    {
+      "path": "data-plane/20260809T033552Z-data-plane/manifest-envelope.json",
+      "sizeBytes": 4324
+    },
+    {
+      "path": "data-plane/20260809T034131Z-data-plane/manifest-envelope.json",
+      "sizeBytes": 4324
+    },
+    {
+      "path": "data-plane/20260809T034632Z-data-plane/manifest-envelope.json",
+      "sizeBytes": 4324
+    },
+    {
+      "path": "data-plane/20260809T034932Z-data-plane/manifest-envelope.json",
+      "sizeBytes": 4324
+    },
+    {
+      "path": "data-plane/20260809T035124Z-data-plane/manifest-envelope.json",
+      "sizeBytes": 4324
+    },
+    {
+      "path": "data-plane/20260809T035705Z-data-plane/manifest-envelope.json",
+      "sizeBytes": 4324
+    },
+    {
+      "path": "data-plane/20260809T040124Z-data-plane/manifest-envelope.json",
+      "sizeBytes": 4324
+    },
+    {
+      "path": "qualification/d8ec0852-storage-target-proof/storage-layout.json",
+      "sizeBytes": 647
+    }
+  ],
+  "guest": {
+    "release": {
+      "releaseRoot": "/opt/mako",
+      "current": "9429e76a4f24960683215c3dd5d6273526b13fc2bcf97b8788c07d4f60690385",
+      "lastKnownGood": "4f71ad38d1fa3c6127a04d0a76e0d0bd20dea7529ac42971238956f34b3d5396"
+    },
+    "blockDevices": [
+      {
+        "name": "sda",
+        "path": "/dev/sda",
+        "fstype": null,
+        "label": null,
+        "uuid": null,
+        "mountpoints": [null],
+        "children": [
+          {
+            "name": "sda1",
+            "path": "/dev/sda1",
+            "fstype": "ext4",
+            "label": "cloudimg-rootfs",
+            "uuid": "db3ea6be-e601-49ba-a56b-7fb2b2bd2812",
+            "mountpoints": ["/"]
+          },
+          {
+            "name": "sda14",
+            "path": "/dev/sda14",
+            "fstype": null,
+            "label": null,
+            "uuid": null,
+            "mountpoints": [null]
+          },
+          {
+            "name": "sda15",
+            "path": "/dev/sda15",
+            "fstype": "vfat",
+            "label": "UEFI",
+            "uuid": "D761-B656",
+            "mountpoints": ["/boot/efi"]
+          },
+          {
+            "name": "sda16",
+            "path": "/dev/sda16",
+            "fstype": "ext4",
+            "label": "BOOT",
+            "uuid": "cb669bb1-a373-4289-a26d-710492262019",
+            "mountpoints": ["/boot"]
+          }
+        ]
+      },
+      {
+        "name": "sdb",
+        "path": "/dev/sdb",
+        "fstype": null,
+        "label": null,
+        "uuid": null,
+        "mountpoints": [null],
+        "children": [
+          {
+            "name": "sdb1",
+            "path": "/dev/sdb1",
+            "fstype": "btrfs",
+            "label": "MAKO_DATA",
+            "uuid": "4ec5409d-b4e7-4b16-a9d1-cb8452681725",
+            "mountpoints": ["/srv/mako-data"]
+          }
+        ]
+      },
+      {
+        "name": "sr0",
+        "path": "/dev/sr0",
+        "fstype": "iso9660",
+        "label": "cidata",
+        "uuid": "2026-08-07-23-24-49-00",
+        "mountpoints": [null]
+      }
+    ],
+    "credentials": [
+      "backup-signing-key",
+      "backup_id_ed25519",
+      "internal-auth",
+      "object-store-access-key",
+      "object-store-secret-key"
+    ],
+    "certificates": [],
+    "releaseOperationEvidence": [
+      "1786243463-upgrade-081b1a0f8be959f7eabefaa9aa8fc1e1911f5f81a8d0776d73ac1dd2294fbb5b.json",
+      "1786243485-rollback-2d0d5970f58011efb12e33dbab6d11a384e2cb121e0daa78fed55a13e0f9d96d.json",
+      "1786243496-upgrade-081b1a0f8be959f7eabefaa9aa8fc1e1911f5f81a8d0776d73ac1dd2294fbb5b.json",
+      "1786245851-upgrade-9bb708f8a245e21a3faadaf52d435bac5e04cdb8500fcc42e1022375f91d7b8d.json",
+      "1786246138-upgrade-3013a17b22680f6fe83a34353f6bcedd11aa7296243668b6f671b3a9330c160b.json",
+      "1786246463-upgrade-4f71ad38d1fa3c6127a04d0a76e0d0bd20dea7529ac42971238956f34b3d5396.json",
+      "1786247383-upgrade-9429e76a4f24960683215c3dd5d6273526b13fc2bcf97b8788c07d4f60690385.json"
+    ]
+  },
+  "dns": {
+    "name": "cloud-test.makodb.com",
+    "a": ["130.245.173.11"],
+    "aaaa": []
+  },
+  "retainedEvidence": [
+    "docs/evidence/public-beta-admission-stop.json",
+    "docs/evidence/public-beta-backup-qualification.json",
+    "docs/evidence/public-beta-observability.json",
+    "docs/evidence/public-beta-release-rollback.json",
+    "docs/evidence/public-beta-restore-qualification.json",
+    "docs/evidence/public-beta-rollback-matrix.json",
+    "docs/evidence/public-beta-teardown-plan.json"
+  ],
+  "consequences": [
+    "VM deletion makes the single-VM beta unavailable.",
+    "Deleting the OS or MAKO_DATA disk is irreversible without a verified retained backup.",
+    "Deleting off-VM checkpoints removes the VM-failure-domain recovery path.",
+    "Revoked service credentials and certificates cannot be reused after teardown.",
+    "The cloud-test.makodb.com A record must be removed or repointed separately by its DNS operator."
+  ],
+  "generatedAt": "2026-08-09T04:02:39.465Z",
+  "planHash": "051ea2f96b6534309aafe86de57e90a72761c77173940c1ae7ede3843c08c7c3",
+  "executionSupported": false,
+  "requiredTypedConfirmations": {
+    "revokeCredentials": "REVOKE_PUBLIC_BETA_CREDENTIALS:051ea2f96b6534309aafe86de57e90a72761c77173940c1ae7ede3843c08c7c3",
+    "handleCertificates": "HANDLE_PUBLIC_BETA_CERTIFICATES:051ea2f96b6534309aafe86de57e90a72761c77173940c1ae7ede3843c08c7c3",
+    "handleDns": "HANDLE_PUBLIC_BETA_DNS:051ea2f96b6534309aafe86de57e90a72761c77173940c1ae7ede3843c08c7c3",
+    "deleteBackups": "DELETE_PUBLIC_BETA_BACKUPS:051ea2f96b6534309aafe86de57e90a72761c77173940c1ae7ede3843c08c7c3",
+    "deleteVmAndDisks": "DELETE_PUBLIC_BETA_VM_AND_DISKS:051ea2f96b6534309aafe86de57e90a72761c77173940c1ae7ede3843c08c7c3"
+  },
+  "nextAction": "Review this plan and use a separately implemented teardown executor; this planner never deletes or revokes anything."
+}

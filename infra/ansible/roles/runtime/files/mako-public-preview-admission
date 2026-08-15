@@ -1,0 +1,345 @@
+#!/usr/bin/env python3
+import argparse
+import datetime
+import hashlib
+import json
+import os
+import re
+import socket
+import ssl
+import subprocess
+import sys
+import tempfile
+import time
+import urllib.parse
+import urllib.request
+from pathlib import Path
+
+SAFEGUARDS = (
+    "trustedHttpsAndHsts",
+    "exactPublicRouteAllowlist",
+    "applicationSecurity",
+    "backupAndRecovery",
+    "zeroAcknowledgedWriteLoss",
+    "zeroIntegrityFailures",
+    "serviceReadiness",
+    "emergencyAdmissionStop",
+)
+WAIVABLE_BLOCKERS = (
+    re.compile(r"authenticated SMTP relay|certificate-expiry alert delivery", re.I),
+    re.compile(r"latency exceed", re.I),
+    re.compile(r"30-day|capacity, availability, and cost window|provider or facility evidence", re.I),
+)
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("command", choices=("verify", "activate", "guard", "pause"))
+    parser.add_argument("--root", default="/")
+    parser.add_argument("--now")
+    parser.add_argument("--static", action="store_true")
+    parser.add_argument("--no-reload", action="store_true")
+    args = parser.parse_args()
+    paths = Paths(Path(args.root))
+    now = parse_time(args.now) if args.now else datetime.datetime.now(datetime.timezone.utc)
+    approval = None
+
+    if args.command == "pause":
+        try:
+            approval = best_effort_approval(paths)
+            changed = select_mode(paths, "pre_gate", args.no_reload)
+            evidence(
+                paths,
+                "pre_gate",
+                ["manual operator pause"],
+                approval,
+                changed,
+                invalidated=True,
+            )
+            result = sanitized(approval, valid=True)
+            result.update({"mode": "pre_gate", "changed": changed, "manuallyPaused": True})
+            print(json.dumps(result, sort_keys=True))
+            return 0
+        except Exception as error:
+            if not args.no_reload:
+                subprocess.run(["/usr/bin/systemctl", "stop", "caddy.service"], check=False)
+            print(
+                json.dumps(
+                    {"valid": False, "mode": "pre_gate", "reason": safe_reason(error)}
+                ),
+                file=sys.stderr,
+            )
+            return 1
+
+    try:
+        approval, context = verify_static(paths, now)
+        if not args.static:
+            verify_dynamic(paths, context)
+        if args.command == "activate":
+            require_fresh_approval(paths, approval)
+            changed = select_mode(paths, "risk_accepted_preview", args.no_reload)
+            evidence(paths, "risk_accepted_preview", [], approval, changed, invalidated=False)
+            result = sanitized(approval, valid=True)
+            result.update({"mode": "risk_accepted_preview", "changed": changed})
+        elif args.command == "guard":
+            mode = current_mode(paths)
+            invalidated = mode == "pre_gate" and prior_invalidated(paths, approval)
+            evidence(paths, mode, [], approval, False, invalidated=invalidated)
+            result = sanitized(approval, valid=True)
+            result.update({"mode": mode, "changed": False, "invalidated": invalidated})
+        else:
+            result = sanitized(approval, valid=True)
+        print(json.dumps(result, sort_keys=True))
+    except Exception as error:
+        reason = safe_reason(error)
+        if args.command in ("activate", "guard"):
+            try:
+                changed = select_mode(paths, "pre_gate", args.no_reload)
+                approval = approval or best_effort_approval(paths)
+                evidence(paths, "pre_gate", [reason], approval, changed, invalidated=True)
+            except Exception as fallback_error:
+                if not args.no_reload:
+                    subprocess.run(["/usr/bin/systemctl", "stop", "caddy.service"], check=False)
+                reason = f"{reason}; fallback failed: {safe_reason(fallback_error)}"
+        print(json.dumps({"valid": False, "mode": "pre_gate", "reason": reason}), file=sys.stderr)
+        return 1
+    return 0
+
+
+class Paths:
+    def __init__(self, root):
+        self.root = root
+        self.approval = self.at("/etc/mako/public-preview-approval.json")
+        self.context = self.at("/etc/mako/public-preview-context.json")
+        self.current_release = self.at("/opt/mako/current")
+        self.config_root = self.at("/etc/caddy/mako-admission")
+        self.active_config = self.at("/etc/caddy/Caddyfile")
+        self.state = self.at("/var/lib/mako-public-preview")
+
+    def at(self, absolute):
+        return self.root / absolute.lstrip("/")
+
+
+def verify_static(paths, now):
+    approval = read_json(paths.approval)
+    context = read_json(paths.context)
+    require(approval.get("schemaVersion") == 2, "approval schema is invalid")
+    require(approval.get("kind") == "risk-accepted-public-preview", "approval kind is invalid")
+    require(
+        approval.get("persistence") == "until-manually-paused",
+        "approval persistence is invalid",
+    )
+    require(approval.get("expiresAt") is None, "persistent approval must not expire")
+    operator = approval.get("operatorIdentity")
+    require(isinstance(operator, str) and 3 <= len(operator) <= 254, "operator identity is invalid")
+    require(not re.search(r"[\r\n\x00]", operator), "operator identity contains control characters")
+    for field in ("planHash", "releaseDigest", "blockerDigest"):
+        require(re.fullmatch(r"[a-f0-9]{64}", approval.get(field, "")), f"approval {field} is invalid")
+        require(approval[field] == context.get(field), f"approval {field} binding changed")
+
+    blockers = sorted(set(str(value).strip() for value in approval.get("blockers", [])))
+    require(blockers and all(blockers), "approval blockers are invalid")
+    require(
+        all(any(pattern.search(blocker) for pattern in WAIVABLE_BLOCKERS) for blocker in blockers),
+        "approval contains a non-waivable blocker",
+    )
+    blocker_digest = hashlib.sha256(
+        json.dumps(blockers, ensure_ascii=False, separators=(",", ":")).encode()
+    ).hexdigest()
+    require(blocker_digest == approval["blockerDigest"], "approval blocker digest is invalid")
+
+    accepted = parse_time(approval.get("acceptedAt"))
+    require(now >= accepted, "approval is not active yet")
+    expected = (
+        f"ACCEPT_PERSISTENT_PUBLIC_PREVIEW_RISK:{approval['releaseDigest']}:"
+        f"{approval['planHash']}:{approval['blockerDigest']}"
+    )
+    require(approval.get("typedConfirmation") == expected, "typed confirmation is invalid")
+    for safeguard in SAFEGUARDS:
+        require(
+            approval.get("nonWaivableSafeguards", {}).get(safeguard) is True,
+            f"approval safeguard failed: {safeguard}",
+        )
+        require(
+            context.get("nonWaivableSafeguards", {}).get(safeguard) is True,
+            f"deployment safeguard failed: {safeguard}",
+        )
+    return approval, context
+
+
+def verify_dynamic(paths, context):
+    selected = Path(os.path.realpath(paths.current_release)).name
+    require(selected == context["releaseDigest"], "selected release changed")
+    for port in (8080, 8081, 8082, 9465):
+        ready = False
+        # Production SQLite performs identity, schema, integrity, capacity, and
+        # migration checks before becoming authoritative. Preserve fail-closed
+        # admission while allowing that bounded startup work after a VM reboot.
+        for _attempt in range(60):
+            try:
+                with urllib.request.urlopen(
+                    f"http://127.0.0.1:{port}/readyz", timeout=2
+                ) as response:
+                    ready = response.status == 200
+            except Exception:
+                ready = False
+            if ready:
+                break
+            time.sleep(1)
+        require(ready, f"service readiness failed on port {port}")
+    require(prometheus_value("min(mako_storage_backup_remote_verified)") == 1, "backup verification failed")
+    require(
+        prometheus_value("max(time() - mako_storage_backup_last_success_unixtime_seconds)") <= 900,
+        "backup age exceeded 15 minutes",
+    )
+    fqdn = context.get("publicFqdn")
+    require(isinstance(fqdn, str) and fqdn, "public FQDN is absent")
+    tls_context = ssl.create_default_context()
+    with socket.create_connection(("127.0.0.1", 443), timeout=5) as connection:
+        with tls_context.wrap_socket(connection, server_hostname=fqdn):
+            pass
+    preview = (paths.config_root / "Caddyfile.risk_accepted_preview").read_text()
+    require("Strict-Transport-Security" in preview and "max-age=" in preview, "preview HSTS is absent")
+
+
+def prometheus_value(query):
+    encoded = urllib.parse.urlencode({"query": query})
+    with urllib.request.urlopen(f"http://127.0.0.1:9090/api/v1/query?{encoded}", timeout=5) as response:
+        payload = json.load(response)
+    results = payload.get("data", {}).get("result", [])
+    require(len(results) == 1, f"Prometheus query has no scalar result: {query}")
+    return float(results[0]["value"][1])
+
+
+def select_mode(paths, mode, no_reload):
+    source = paths.config_root / f"Caddyfile.{mode}"
+    require(source.is_file(), f"Caddy configuration is absent for {mode}")
+    current = os.path.realpath(paths.active_config) if paths.active_config.exists() else ""
+    changed = current != str(source.resolve())
+    if not no_reload:
+        subprocess.run(
+            ["/usr/bin/caddy", "validate", "--config", str(source), "--adapter", "caddyfile"],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    if changed:
+        temporary = paths.active_config.parent / f".Caddyfile.{os.getpid()}"
+        temporary.unlink(missing_ok=True)
+        os.symlink(source, temporary)
+        os.replace(temporary, paths.active_config)
+    if changed and not no_reload:
+        # The hardened Caddyfile disables its admin API, so the distribution
+        # unit's `caddy reload` command cannot work. The symlink replacement is
+        # atomic; restart is the supported way to load that selected config.
+        result = subprocess.run(["/usr/bin/systemctl", "restart", "caddy.service"], check=False)
+        require(result.returncode == 0, "Caddy restart failed")
+    return changed
+
+
+def current_mode(paths):
+    current = os.path.realpath(paths.active_config)
+    if current.endswith("/Caddyfile.risk_accepted_preview"):
+        return "risk_accepted_preview"
+    return "pre_gate"
+
+
+def evidence(paths, mode, reasons, approval, changed, invalidated):
+    paths.state.mkdir(parents=True, exist_ok=True, mode=0o750)
+    payload = {
+        "schemaVersion": 1,
+        "evaluatedAt": datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z"),
+        "mode": mode,
+        "changed": changed,
+        "approvalFingerprint": approval_fingerprint(approval) if approval else None,
+        "approvalInvalidated": invalidated,
+        "reasons": reasons,
+        "approval": sanitized(approval, valid=not reasons) if approval else None,
+    }
+    atomic_json(paths.state / "last-guard.json", payload)
+
+
+def approval_fingerprint(approval):
+    canonical = json.dumps(approval, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
+
+
+def best_effort_approval(paths):
+    try:
+        approval = json.loads(paths.approval.read_text(encoding="utf-8"))
+        return approval if isinstance(approval, dict) else None
+    except Exception:
+        return None
+
+
+def prior_invalidated(paths, approval):
+    try:
+        state = json.loads((paths.state / "last-guard.json").read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return False
+    return bool(
+        state.get("approvalInvalidated")
+        and state.get("approvalFingerprint") == approval_fingerprint(approval)
+    )
+
+
+def require_fresh_approval(paths, approval):
+    require(
+        not prior_invalidated(paths, approval),
+        "approval was invalidated by fail-closed fallback; issue a new approval",
+    )
+
+
+def sanitized(approval, valid):
+    if not approval:
+        return {"valid": valid}
+    return {
+        "valid": valid,
+        "kind": approval.get("kind"),
+        "operatorIdentity": approval.get("operatorIdentity"),
+        "releaseDigest": approval.get("releaseDigest"),
+        "planHash": approval.get("planHash"),
+        "blockerDigest": approval.get("blockerDigest"),
+        "persistence": approval.get("persistence"),
+        "expiresAt": approval.get("expiresAt"),
+    }
+
+
+def atomic_json(path, value):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            json.dump(value, handle, indent=2, sort_keys=True)
+            handle.write("\n")
+        os.chmod(temporary, 0o640)
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def read_json(path):
+    with path.open(encoding="utf-8") as handle:
+        return json.load(handle)
+
+
+def parse_time(value):
+    require(isinstance(value, str) and value.endswith("Z"), "timestamp must be UTC")
+    try:
+        return datetime.datetime.fromisoformat(value[:-1] + "+00:00")
+    except ValueError as error:
+        raise RuntimeError("timestamp is invalid") from error
+
+
+def safe_reason(error):
+    return re.sub(r"[^A-Za-z0-9 .:_/-]", "?", str(error))[:300]
+
+
+def require(condition, message):
+    if not condition:
+        raise RuntimeError(message)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

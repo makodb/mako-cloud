@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-13T22:21:11.085Z",
+  "environment": "public-beta",
+  "vmId": 124,
+  "publicOrigin": "https://cloud-test.makodb.com",
+  "releaseDigest": "a5ccdaabff7d6ef30da512330dab38b60e32ae034f621ee4d4eed2b49e976000",
+  "qualificationReleaseDigest": "fc7811e24f02cca05da42df109c129e77ffd2303eba2cf0fc571e0d2cda4570e",
+  "carriedForwardByIdenticalConsoleAndServiceArtifacts": true,
+  "planHash": "d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073",
+  "qualificationMode": "existing-isolated-fixture",
+  "tenant": {
+    "organizationId": "org_74d122b2a75fbf4f9fe389f62156f0e9",
+    "projectId": "prj_d2b2dcc3f5acbcc2105200bafbde2134",
+    "environmentId": "env_4cfece7ecdaeba1f83064208c1cd84d6",
+    "collectionId": "qualification_documents",
+    "applicationUserId": "usr_8c4c7ec8d2f8ce2d37252f8eed4886df92fe1b5ae166d63ad5beda788df02dc0",
+    "publicCredentialId": "qualification_public_1786253810695",
+    "secretsRetainedIn": ".local/qualification/public-beta-fixture.json"
+  },
+  "function": {
+    "name": "qualification-stream",
+    "existingFixture": true,
+    "verifiedByExternalInvocation": true
+  },
+  "external": {
+    "httpRedirect": {
+      "status": 308,
+      "location": "https://cloud-test.makodb.com/"
+    },
+    "https": {
+      "status": 200,
+      "tlsVerified": true,
+      "hsts": "max-age=31536000; includeSubDomains"
+    },
+    "internalRouteStatus": 404,
+    "unknownRouteStatus": 404,
+    "sse": {
+      "status": 200,
+      "contentType": "text/event-stream; charset=utf-8",
+      "bufferingDisabled": true,
+      "firstEvent": "heartbeat",
+      "firstFrameBytes": 1240,
+      "firstFrameMilliseconds": 412.5597130000001
+    },
+    "function": {
+      "status": 200,
+      "contentType": "text/plain; charset=utf-8",
+      "bodyBytes": 130304,
+      "bodySha256": "938a62d95c067364f1f94944f3a613dc69cc995699e47f4b018a3ed38c8e59d6",
+      "elapsedMilliseconds": 367.80517999999984,
+      "requestIdPresent": true
+    }
+  },
+  "passed": true
+}

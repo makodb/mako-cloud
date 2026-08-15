@@ -1,0 +1,12 @@
+---
+- name: Restart qualified rootless dependencies
+  ansible.builtin.systemd_service:
+    name: mako-dependencies.target
+    scope: user
+    state: restarted
+  become: true
+  become_user: mako-runtime
+  environment: "{{ dependencies_runtime_environment }}"
+  when:
+    - not ansible_check_mode
+    - mako_dependencies_enabled | bool

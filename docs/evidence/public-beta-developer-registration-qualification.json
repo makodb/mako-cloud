@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-11T21:13:25.661Z",
+  "environment": "public-beta",
+  "releaseDigest": "590af2298d6fbe0bbb931df9257b6b2dd9af3e8d8738dd3aca2f7453ba7b1be0",
+  "status": "passed",
+  "identityEvidence": {
+    "registrationEvidenceDigest": "219034c402abdcad580e5b0871e39e4dc0644104246ed98ed70a708f57a092a3",
+    "ordinarySelfServiceIdentity": true,
+    "emailSpecificBypassUsed": false,
+    "operatorPrivilegeUsedForLivePublicLifecycle": false,
+    "personalDataRetained": false
+  },
+  "livePublicWorkflowChecks": {
+    "registration": true,
+    "duplicateRegistrationGenericAndSuppressed": true,
+    "verificationDeliveredAndConsumedOnce": true,
+    "pendingSignIn": true,
+    "pendingProductRouteDenied": true,
+    "passwordRecoveryDeliveredAndConsumedOnce": true,
+    "staleAuthorityRevoked": true,
+    "recoveryPreservedWaitlist": true,
+    "sameIdentitySignInAfterControlPlaneRestart": true
+  },
+  "operatorDecisionChecks": {
+    "qualificationMode": "controlled-exact-release-fixtures",
+    "queueReview": true,
+    "approval": true,
+    "rejection": true,
+    "freshActiveSignIn": true,
+    "onboardingHasNoAutomaticMembership": true,
+    "evidence": [
+      "docs/evidence/public-beta-hosted-qualification.json",
+      "docs/evidence/public-beta-operator-browser-qualification.json"
+    ]
+  },
+  "durabilityChecks": {
+    "restartPersistence": true,
+    "productionRocksDbSuite": true,
+    "remoteBackupVerified": true,
+    "isolatedEmptyTargetRestore": true,
+    "liveRocksDbPathUntouchedByRestore": true,
+    "rollbackCompatibilityEvidence": "docs/evidence/public-beta-hosted-qualification.json"
+  },
+  "mailQualificationEvidence": "docs/evidence/public-beta-mail-qualification.json",
+  "secretsOrApplicantValuesRetained": false
+}

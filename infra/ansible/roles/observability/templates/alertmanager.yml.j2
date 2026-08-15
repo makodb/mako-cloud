@@ -1,0 +1,21 @@
+---
+global:
+  smtp_smarthost: "{{ mako_alert_smtp_host }}:{{ mako_alert_smtp_port }}"
+  smtp_from: "{{ mako_alert_smtp_sender }}"
+  smtp_hello: "{{ mako_public_fqdn }}"
+  smtp_auth_username: "{{ mako_alert_smtp_username }}"
+  smtp_auth_password_file: /run/credentials/prometheus-alertmanager.service/alert-smtp-password
+  smtp_require_tls: true
+
+route:
+  receiver: operator-email
+  group_by: [alertname, subsystem, severity]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+
+receivers:
+  - name: operator-email
+    email_configs:
+      - to: "{{ mako_alert_email }}"
+        send_resolved: true

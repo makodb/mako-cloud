@@ -1,0 +1,203 @@
+{
+  "annotations": { "list": [] },
+  "editable": false,
+  "graphTooltip": 1,
+  "panels": [
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 0 },
+      "id": 1,
+      "targets": [
+        {
+          "expr": "min by (service) (mako_service_readiness)",
+          "legendFormat": "{{service}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Service readiness",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 0 },
+      "id": 2,
+      "targets": [
+        { "expr": "mako_service_restart_count", "legendFormat": "{{service}}", "refId": "A" }
+      ],
+      "title": "Process restarts",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 0 },
+      "id": 3,
+      "targets": [
+        {
+          "expr": "min by (service) (mako_podman_dependency_active)",
+          "legendFormat": "{{service}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Rootless Podman dependencies",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] },
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 6 },
+      "id": 4,
+      "targets": [
+        { "expr": "mako_storage_available_bytes", "legendFormat": "available", "refId": "A" },
+        {
+          "expr": "mako_storage_disk_warning_free_bytes",
+          "legendFormat": "warning reserve",
+          "refId": "B"
+        },
+        {
+          "expr": "mako_storage_disk_critical_free_bytes",
+          "legendFormat": "critical reserve",
+          "refId": "C"
+        }
+      ],
+      "title": "Filesystem reserves",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 6 },
+      "id": 5,
+      "targets": [
+        { "expr": "mako_storage_backup_age_seconds", "legendFormat": "{{service}}", "refId": "A" }
+      ],
+      "title": "Verified backup age",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 6 },
+      "id": 6,
+      "targets": [
+        {
+          "expr": "mako_storage_restore_verification_success",
+          "legendFormat": "restore verified",
+          "refId": "A"
+        },
+        {
+          "expr": "mako_storage_recovery_duration_seconds",
+          "legendFormat": "recovery seconds",
+          "refId": "B"
+        }
+      ],
+      "title": "Recovery evidence",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "ms" }, "overrides": [] },
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 12 },
+      "id": 7,
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum by (le, service) (rate(mako_request_duration_milliseconds_bucket[5m])))",
+          "legendFormat": "{{service}} p99",
+          "refId": "A"
+        }
+      ],
+      "title": "Request latency",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "percentunit" }, "overrides": [] },
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 12 },
+      "id": 8,
+      "targets": [
+        {
+          "expr": "sum by (service) (rate(mako_http_requests_total{status_code=~\"5..\"}[5m])) / clamp_min(sum by (service) (rate(mako_http_requests_total[5m])), 0.000001)",
+          "legendFormat": "{{service}}",
+          "refId": "A"
+        }
+      ],
+      "title": "HTTP error ratio",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 12 },
+      "id": 9,
+      "targets": [
+        {
+          "expr": "increase(mako_audit_write_failures_total[5m])",
+          "legendFormat": "{{service}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Audit write failures",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 18 },
+      "id": 10,
+      "targets": [
+        {
+          "expr": "mako_certificate_expiry_unixtime_seconds - time()",
+          "legendFormat": "certificate lifetime",
+          "refId": "A"
+        }
+      ],
+      "title": "Certificate lifetime",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "percentunit" }, "overrides": [] },
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 18 },
+      "id": 11,
+      "targets": [
+        {
+          "expr": "1 - avg(rate(node_cpu_seconds_total{mode=\"idle\"}[5m]))",
+          "legendFormat": "CPU",
+          "refId": "A"
+        },
+        {
+          "expr": "1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes",
+          "legendFormat": "memory",
+          "refId": "B"
+        }
+      ],
+      "title": "Host saturation",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 18 },
+      "id": 12,
+      "targets": [
+        {
+          "expr": "sum(rate(node_network_receive_errs_total[5m]) + rate(node_network_transmit_errs_total[5m]))",
+          "legendFormat": "network errors/s",
+          "refId": "A"
+        }
+      ],
+      "title": "Host network errors",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 41,
+  "tags": ["mako-cloud", "public-beta", "operations"],
+  "templating": { "list": [] },
+  "time": { "from": "now-6h", "to": "now" },
+  "title": "Mako Cloud — Public Beta Operations",
+  "uid": "mako-public-beta-operations",
+  "version": 1
+}

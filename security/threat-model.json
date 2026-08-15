@@ -1,0 +1,903 @@
+{
+  "version": 1,
+  "review": {
+    "owners": ["security", "data-platform", "identity", "edge-runtime"],
+    "cadence": "before each production release and after material architecture changes"
+  },
+  "trust_boundaries": [
+    {
+      "id": "TB-01",
+      "name": "Untrusted clients to public gateways",
+      "entry_controls": [
+        "TLS",
+        "request limits",
+        "authentication",
+        "rate limits",
+        "schema validation"
+      ]
+    },
+    {
+      "id": "TB-02",
+      "name": "Gateway to control and data planes",
+      "entry_controls": [
+        "service identity",
+        "project and environment scope",
+        "least-privilege routes"
+      ]
+    },
+    {
+      "id": "TB-03",
+      "name": "Data services to ordered transactional KV storage",
+      "entry_controls": [
+        "capability handshake",
+        "tenant key prefixes",
+        "bounded scans",
+        "transaction conformance"
+      ]
+    },
+    {
+      "id": "TB-04",
+      "name": "Services to email, object storage, and telemetry dependencies",
+      "entry_controls": ["scoped credentials", "allowlisted endpoints", "redaction", "timeouts"]
+    },
+    {
+      "id": "TB-05",
+      "name": "Edge supervisor to tenant function isolates",
+      "entry_controls": [
+        "fresh isolate",
+        "resource quotas",
+        "capability-based secrets",
+        "network policy"
+      ]
+    },
+    {
+      "id": "TB-06",
+      "name": "Organization members and operators to privileged management paths",
+      "entry_controls": [
+        "RBAC",
+        "step-up authentication",
+        "reason and case binding",
+        "immutable audit"
+      ]
+    },
+    {
+      "id": "TB-07",
+      "name": "Source and dependencies to release artifacts",
+      "entry_controls": [
+        "protected CI",
+        "lockfile audit",
+        "reproducible build metadata",
+        "artifact signing"
+      ]
+    },
+    {
+      "id": "TB-08",
+      "name": "Control-plane configuration to regional runtime state",
+      "entry_controls": [
+        "versioning",
+        "idempotent provisioning",
+        "authorized promotion",
+        "rollback"
+      ]
+    },
+    {
+      "id": "TB-09",
+      "name": "Developer console through explorer capability to customer document data",
+      "entry_controls": [
+        "short-lived signed capability",
+        "tenant collection mode and operation binding",
+        "current authorization epoch and revocation",
+        "policy-preview or audited administrative authorization"
+      ]
+    },
+    {
+      "id": "TB-10",
+      "name": "Control-plane process and offline recovery tools to local SQLite authority",
+      "entry_controls": [
+        "exclusive process lock and database identity",
+        "private service-owned paths",
+        "authenticated migration and backup manifests",
+        "schema integrity and capacity gates"
+      ]
+    }
+  ],
+  "privileged_identities": [
+    {
+      "id": "PI-01",
+      "name": "Provisioning controller",
+      "least_privilege": "May reconcile only the project and environment named by a durable workflow step",
+      "credential": "short-lived workload identity"
+    },
+    {
+      "id": "PI-02",
+      "name": "Public gateway service",
+      "least_privilege": "May authenticate and route requests but cannot bypass data-plane policy evaluation",
+      "credential": "short-lived workload identity"
+    },
+    {
+      "id": "PI-03",
+      "name": "Data-plane service",
+      "least_privilege": "May access only assigned environment key ranges and may not mint operator credentials",
+      "credential": "short-lived workload identity plus storage grant"
+    },
+    {
+      "id": "PI-04",
+      "name": "Control-plane service",
+      "least_privilege": "May mutate management state but cannot directly read customer document bodies",
+      "credential": "short-lived workload identity"
+    },
+    {
+      "id": "PI-05",
+      "name": "Edge runtime supervisor",
+      "least_privilege": "May create constrained isolates and inject only the selected project function secret set",
+      "credential": "short-lived workload identity"
+    },
+    {
+      "id": "PI-06",
+      "name": "Break-glass support operator",
+      "least_privilege": "Time-bound, approved, case-bound access with impersonation banners and enhanced audit",
+      "credential": "phishing-resistant MFA and just-in-time grant"
+    },
+    {
+      "id": "PI-07",
+      "name": "Release automation",
+      "least_privilege": "May publish signed artifacts from protected commits but has no production data access",
+      "credential": "federated CI identity"
+    },
+    {
+      "id": "PI-08",
+      "name": "Explorer administrative capability",
+      "least_privilege": "May perform only named operations against one tenant collection for at most five minutes after current role revalidation",
+      "credential": "in-memory signed nonce and authorization-epoch-bound capability"
+    },
+    {
+      "id": "PI-09",
+      "name": "Control storage migration and recovery operator",
+      "least_privilege": "May inspect fenced artifacts and publish only verified empty SQLite migration or restore targets",
+      "credential": "root-readable manifest authentication material and explicit offline operation confirmation"
+    }
+  ],
+  "sensitive_data_classes": [
+    {
+      "id": "SD-01",
+      "name": "Credentials and secret values",
+      "handling": "envelope-encrypted, referenced rather than embedded, always redacted",
+      "retention": "delete on revocation subject to encrypted backup expiry"
+    },
+    {
+      "id": "SD-02",
+      "name": "Passwords, sessions, tokens, and identity links",
+      "handling": "modern password hashing, hashed refresh state, audience and project binding",
+      "retention": "minimum required for active sessions and abuse investigation"
+    },
+    {
+      "id": "SD-03",
+      "name": "Customer documents, revisions, indexes, and change records",
+      "handling": "project/environment isolation and uniform document-policy enforcement",
+      "retention": "project policy plus replication tombstone safety window"
+    },
+    {
+      "id": "SD-04",
+      "name": "Schemas, policies, and project configuration",
+      "handling": "versioned, authorized, validated, and atomically activated",
+      "retention": "retain versions needed for audit and rollback"
+    },
+    {
+      "id": "SD-05",
+      "name": "Audit and security events",
+      "handling": "append-only, integrity protected, access restricted, body redacted",
+      "retention": "security and contractual retention policy"
+    },
+    {
+      "id": "SD-06",
+      "name": "Function source, bundles, secrets, and invocation logs",
+      "handling": "digest-bound artifacts, isolated execution, redacted logs",
+      "retention": "deployed versions plus configured rollback and log windows"
+    },
+    {
+      "id": "SD-07",
+      "name": "Organization membership, billing, and support records",
+      "handling": "management RBAC, purpose limitation, operator audit",
+      "retention": "business and legal requirements"
+    },
+    {
+      "id": "SD-08",
+      "name": "Metrics, traces, IP addresses, and operational metadata",
+      "handling": "bounded labels, pseudonymous identifiers, no document or secret payloads",
+      "retention": "short operational window unless attached to a security case"
+    },
+    {
+      "id": "SD-09",
+      "name": "Operator incidents, recovery jobs, projections, and activity exports",
+      "handling": "metadata-only, reason and case bound, integrity protected, no document bodies or secrets",
+      "retention": "incident and audit policy; exports expire within one hour"
+    },
+    {
+      "id": "SD-10",
+      "name": "Explorer grants, data jobs, import uploads, and export artifacts",
+      "handling": "tenant-bound, digest-verified, bounded, encrypted, expiring, and never persisted in browser storage",
+      "retention": "capabilities at most five minutes; artifacts and job detail only for their declared bounded retention"
+    },
+    {
+      "id": "SD-11",
+      "name": "SQLite control database migration receipts and backup manifests",
+      "handling": "private files, authenticated manifests, byte-exact inventories, integrity checks, and no customer values in evidence",
+      "retention": "control database by account policy; receipts and verified backups by migration and recovery policy"
+    }
+  ],
+  "abuse_cases": [
+    {
+      "id": "AC-01",
+      "title": "Cross-tenant key or range access",
+      "owner": "data-platform",
+      "assets": ["SD-03", "SD-04"],
+      "boundaries": ["TB-02", "TB-03"],
+      "privileged_identities": ["PI-02", "PI-03"],
+      "prevent": [
+        "typed project/environment scope",
+        "non-escapable encoded key prefixes",
+        "bounded range scans"
+      ],
+      "detect": ["scope mismatch counters", "storage access audit sampling"],
+      "respond": ["deny request", "revoke workload grant", "isolate affected environment"],
+      "verify": ["SEC-SCOPE-001", "SEC-STORAGE-BOUNDARY-001"]
+    },
+    {
+      "id": "AC-02",
+      "title": "Document-policy bypass through sync, conflicts, indexes, or diagnostics",
+      "owner": "security",
+      "assets": ["SD-03", "SD-04"],
+      "boundaries": ["TB-01", "TB-02"],
+      "privileged_identities": ["PI-02", "PI-03"],
+      "prevent": [
+        "one active policy engine for every read/write path",
+        "default deny",
+        "pre-image and post-image checks"
+      ],
+      "detect": ["policy decision metrics without bodies", "authorization regression suite"],
+      "respond": [
+        "disable affected route",
+        "roll back policy version",
+        "invalidate unsafe checkpoints"
+      ],
+      "verify": ["SEC-POLICY-PATHS-001", "SEC-ERROR-REDACTION-001"]
+    },
+    {
+      "id": "AC-03",
+      "title": "Credential stuffing and account enumeration",
+      "owner": "identity",
+      "assets": ["SD-02", "SD-08"],
+      "boundaries": ["TB-01"],
+      "privileged_identities": ["PI-02"],
+      "prevent": ["Argon2id", "generic public responses", "per-IP and per-account rate limits"],
+      "detect": ["failed-attempt anomaly signals", "breached-password and spray indicators"],
+      "respond": ["progressive throttling", "session revocation", "user notification"],
+      "verify": ["SEC-AUTH-ENUMERATION-001", "SEC-AUTH-RATE-001"]
+    },
+    {
+      "id": "AC-04",
+      "title": "Session replay or token theft",
+      "owner": "identity",
+      "assets": ["SD-01", "SD-02"],
+      "boundaries": ["TB-01", "TB-02"],
+      "privileged_identities": ["PI-02", "PI-03"],
+      "prevent": [
+        "short-lived access tokens",
+        "rotating refresh families",
+        "project and audience binding"
+      ],
+      "detect": ["refresh reuse detection", "impossible-travel and device-change signals"],
+      "respond": ["revoke token family", "rotate signing material", "force reauthentication"],
+      "verify": ["SEC-SESSION-ROTATION-001", "SEC-TOKEN-SCOPE-001"]
+    },
+    {
+      "id": "AC-05",
+      "title": "Management or support privilege escalation",
+      "owner": "security",
+      "assets": ["SD-03", "SD-04", "SD-07"],
+      "boundaries": ["TB-06"],
+      "privileged_identities": ["PI-04", "PI-06"],
+      "prevent": [
+        "organization RBAC",
+        "step-up authentication",
+        "just-in-time grants",
+        "no implicit support bypass"
+      ],
+      "detect": ["immutable privileged audit", "grant and impersonation alerts"],
+      "respond": ["terminate grant", "lock operator identity", "review affected project events"],
+      "verify": ["SEC-MANAGEMENT-RBAC-001", "SEC-SUPPORT-ACCESS-001"]
+    },
+    {
+      "id": "AC-06",
+      "title": "Edge isolate escape or cross-project state reuse",
+      "owner": "edge-runtime",
+      "assets": ["SD-01", "SD-03", "SD-06"],
+      "boundaries": ["TB-05"],
+      "privileged_identities": ["PI-05"],
+      "prevent": [
+        "fresh or proven-clean isolates",
+        "no host filesystem",
+        "resource ceilings",
+        "project-bound capabilities"
+      ],
+      "detect": ["sandbox violation telemetry", "canary secrets", "runtime integrity checks"],
+      "respond": ["terminate isolate", "quarantine runtime node", "rotate exposed project secrets"],
+      "verify": ["SEC-EDGE-ISOLATION-001", "SEC-EDGE-CLEANUP-001"]
+    },
+    {
+      "id": "AC-07",
+      "title": "SSRF or unauthorized edge egress",
+      "owner": "edge-runtime",
+      "assets": ["SD-01", "SD-03", "SD-06"],
+      "boundaries": ["TB-04", "TB-05"],
+      "privileged_identities": ["PI-05"],
+      "prevent": [
+        "default-deny egress",
+        "DNS and redirect revalidation",
+        "metadata endpoint blocking"
+      ],
+      "detect": ["destination-class metrics", "denied-egress security events"],
+      "respond": ["terminate invocation", "disable function version", "block destination"],
+      "verify": ["SEC-EGRESS-001", "SEC-SSRF-001"]
+    },
+    {
+      "id": "AC-08",
+      "title": "Resource exhaustion through API, sync, query, or function workloads",
+      "owner": "platform",
+      "assets": ["SD-03", "SD-08"],
+      "boundaries": ["TB-01", "TB-05"],
+      "privileged_identities": ["PI-02", "PI-03", "PI-05"],
+      "prevent": [
+        "bounded payloads and batches",
+        "query cost limits",
+        "CPU, memory, wall-time, and concurrency quotas"
+      ],
+      "detect": ["tenant-attributed saturation metrics", "quota violation events"],
+      "respond": ["shed offending load", "throttle tenant", "preserve unrelated tenant capacity"],
+      "verify": ["SEC-LIMITS-001", "SEC-NOISY-NEIGHBOR-001"]
+    },
+    {
+      "id": "AC-09",
+      "title": "Storage adapter claims semantics it does not provide",
+      "owner": "data-platform",
+      "assets": ["SD-03", "SD-04"],
+      "boundaries": ["TB-03"],
+      "privileged_identities": ["PI-03"],
+      "prevent": [
+        "capability proof",
+        "mandatory conformance suite",
+        "refuse readiness on missing semantics"
+      ],
+      "detect": ["snapshot and transaction probes", "consistency canaries"],
+      "respond": ["fail readiness", "stop writes", "operator-visible release block"],
+      "verify": ["SEC-STORAGE-CONFORMANCE-001"]
+    },
+    {
+      "id": "AC-10",
+      "title": "Replay, rollback, or partial activation of security configuration",
+      "owner": "control-plane",
+      "assets": ["SD-04", "SD-05"],
+      "boundaries": ["TB-08"],
+      "privileged_identities": ["PI-01", "PI-04"],
+      "prevent": [
+        "monotonic versions",
+        "atomic activation",
+        "idempotency keys",
+        "authorized rollback records"
+      ],
+      "detect": ["version divergence alerts", "reconciliation audit"],
+      "respond": ["halt rollout", "restore last known good version", "repair workflow state"],
+      "verify": ["SEC-CONFIG-VERSION-001", "SEC-PROVISION-IDEMPOTENCY-001"]
+    },
+    {
+      "id": "AC-11",
+      "title": "Audit deletion, forgery, or sensitive payload injection",
+      "owner": "security",
+      "assets": ["SD-05", "SD-08"],
+      "boundaries": ["TB-02", "TB-04", "TB-06"],
+      "privileged_identities": ["PI-03", "PI-04", "PI-06"],
+      "prevent": [
+        "append-only writes",
+        "integrity chaining",
+        "structured allowlisted fields",
+        "payload redaction"
+      ],
+      "detect": ["continuity verification", "sink delivery monitoring"],
+      "respond": ["preserve evidence", "switch to protected fallback sink", "open incident"],
+      "verify": ["SEC-AUDIT-INTEGRITY-001", "SEC-AUDIT-REDACTION-001"]
+    },
+    {
+      "id": "AC-12",
+      "title": "Compromised dependency or tampered release artifact",
+      "owner": "release-engineering",
+      "assets": ["SD-01", "SD-03", "SD-06"],
+      "boundaries": ["TB-07"],
+      "privileged_identities": ["PI-07"],
+      "prevent": [
+        "locked dependencies",
+        "advisory audits",
+        "protected reviews",
+        "isolated release identity"
+      ],
+      "detect": ["SBOM and provenance verification", "artifact signature checks"],
+      "respond": ["revoke signer", "block artifact digest", "rebuild from trusted commit"],
+      "verify": ["SEC-SUPPLY-CHAIN-001"]
+    },
+    {
+      "id": "AC-13",
+      "title": "Secret or protected document leakage through logs and errors",
+      "owner": "security",
+      "assets": ["SD-01", "SD-02", "SD-03", "SD-06", "SD-08"],
+      "boundaries": ["TB-01", "TB-04", "TB-06"],
+      "privileged_identities": ["PI-02", "PI-03", "PI-04", "PI-05"],
+      "prevent": [
+        "safe typed errors",
+        "redacted secret wrappers",
+        "bounded telemetry labels",
+        "no document bodies in diagnostics"
+      ],
+      "detect": ["secret canary scanning", "log schema tests"],
+      "respond": [
+        "purge accessible logs where possible",
+        "rotate material",
+        "notify affected projects"
+      ],
+      "verify": ["SEC-ERROR-REDACTION-001", "SEC-CONFIG-SECRET-001"]
+    },
+    {
+      "id": "AC-14",
+      "title": "Stale offline client resurrects deleted or unauthorized state",
+      "owner": "sync",
+      "assets": ["SD-03", "SD-04"],
+      "boundaries": ["TB-01", "TB-02"],
+      "privileged_identities": ["PI-02", "PI-03"],
+      "prevent": [
+        "revisioned tombstones",
+        "retention-aware checkpoints",
+        "authorization-generation invalidation"
+      ],
+      "detect": ["stale checkpoint and policy-generation metrics", "conflict telemetry"],
+      "respond": [
+        "require full resync",
+        "return only readable conflict state",
+        "reject stale write"
+      ],
+      "verify": ["SEC-SYNC-STALE-001", "SEC-SYNC-AUTH-RESET-001"]
+    },
+    {
+      "id": "AC-15",
+      "title": "Duplicate delivery creates repeated writes or side effects",
+      "owner": "data-platform",
+      "assets": ["SD-03", "SD-05", "SD-06"],
+      "boundaries": ["TB-01", "TB-08"],
+      "privileged_identities": ["PI-01", "PI-03", "PI-05"],
+      "prevent": ["scoped idempotency keys", "atomic outcome storage", "replay-safe workflows"],
+      "detect": ["duplicate-key metrics", "workflow invariant checks"],
+      "respond": [
+        "return stored outcome",
+        "compensate incomplete side effect",
+        "quarantine corrupt workflow"
+      ],
+      "verify": ["SEC-IDEMPOTENCY-001"]
+    },
+    {
+      "id": "AC-16",
+      "title": "Authentication email abuse and redirect phishing",
+      "owner": "identity",
+      "assets": ["SD-02", "SD-07", "SD-08"],
+      "boundaries": ["TB-01", "TB-04"],
+      "privileged_identities": ["PI-02"],
+      "prevent": [
+        "redirect allowlist",
+        "single-use expirations",
+        "per-recipient quotas",
+        "generic responses"
+      ],
+      "detect": ["send-volume and redirect-denial alerts", "delivery complaint signals"],
+      "respond": [
+        "suspend abusive project mail",
+        "revoke outstanding links",
+        "block redirect target"
+      ],
+      "verify": ["SEC-AUTH-LINK-001", "SEC-EMAIL-ABUSE-001"]
+    },
+    {
+      "id": "AC-17",
+      "title": "Global operator inventory leaks tenant data or triggers unbounded work",
+      "owner": "control-plane",
+      "assets": ["SD-03", "SD-07", "SD-08"],
+      "boundaries": ["TB-03", "TB-06"],
+      "privileged_identities": ["PI-04", "PI-06"],
+      "prevent": [
+        "metadata-only schemas",
+        "signed scope-bound cursors",
+        "bounded pages and scan multipliers",
+        "server-side response redaction"
+      ],
+      "detect": [
+        "examined-record counters",
+        "provider latency and error signals",
+        "denied-read audit"
+      ],
+      "respond": [
+        "disable new console feature gate",
+        "retain legacy exact-project lookup",
+        "review affected operator activity"
+      ],
+      "verify": ["SEC-OPERATOR-BOUNDS-001", "SEC-OPERATOR-REDACTION-001"]
+    },
+    {
+      "id": "AC-18",
+      "title": "Stale or forged operator action executes against changed state",
+      "owner": "security",
+      "assets": ["SD-04", "SD-05", "SD-09"],
+      "boundaries": ["TB-06", "TB-08"],
+      "privileged_identities": ["PI-04", "PI-06"],
+      "prevent": [
+        "five-minute password step-up",
+        "action and target binding",
+        "reviewed resource version",
+        "confirmation and idempotency key"
+      ],
+      "detect": ["stale-version conflicts", "step-up-required counters", "durable denied audit"],
+      "respond": [
+        "reject and require fresh review",
+        "revoke operator session",
+        "open security incident"
+      ],
+      "verify": ["SEC-OPERATOR-STEP-UP-001", "SEC-OPERATOR-IDEMPOTENCY-001"]
+    },
+    {
+      "id": "AC-19",
+      "title": "Observability deep link exfiltrates credentials or opens an unsafe origin",
+      "owner": "platform",
+      "assets": ["SD-01", "SD-02", "SD-08"],
+      "boundaries": ["TB-04", "TB-06"],
+      "privileged_identities": ["PI-04", "PI-06"],
+      "prevent": [
+        "HTTPS origin allowlist",
+        "safe identifier interpolation",
+        "bounded time filters",
+        "reject userinfo and traversal"
+      ],
+      "detect": ["unsafe provider-response rejection", "diagnostic-link contract tests"],
+      "respond": [
+        "remove origin from allowlist",
+        "rotate exposed credential",
+        "preserve activity evidence"
+      ],
+      "verify": ["SEC-OPERATOR-LINKS-001"]
+    },
+    {
+      "id": "AC-20",
+      "title": "Recovery workflow restores or promotes unverified state",
+      "owner": "data-platform",
+      "assets": ["SD-03", "SD-04", "SD-09"],
+      "boundaries": ["TB-03", "TB-06", "TB-08"],
+      "privileged_identities": ["PI-04", "PI-06"],
+      "prevent": [
+        "verified backup evidence",
+        "reviewed target and impact preview",
+        "durable state machine",
+        "independent creation and promotion gates",
+        "successful post-restore verification"
+      ],
+      "detect": [
+        "invalid transition counters",
+        "recovery activity projection",
+        "verification failure alerts"
+      ],
+      "respond": ["cancel or fail job", "preserve original target", "disable promotion gate"],
+      "verify": ["SEC-RECOVERY-STATE-001", "SEC-RECOVERY-PROMOTION-001"]
+    },
+    {
+      "id": "AC-21",
+      "title": "Operator entitlement change removes the last recoverable administrator",
+      "owner": "identity",
+      "assets": ["SD-02", "SD-05", "SD-09"],
+      "boundaries": ["TB-06"],
+      "privileged_identities": ["PI-04", "PI-06"],
+      "prevent": [
+        "separate security read and mutation permissions",
+        "step-up",
+        "last-recoverable-administrator invariant",
+        "optimistic entitlement epoch"
+      ],
+      "detect": [
+        "entitlement race conflicts",
+        "session revocation evidence",
+        "authentication failure inventory"
+      ],
+      "respond": [
+        "reject unsafe change",
+        "use controlled bootstrap repair",
+        "rotate compromised operator credentials"
+      ],
+      "verify": ["SEC-OPERATOR-ADMIN-RECOVERY-001"]
+    },
+    {
+      "id": "AC-22",
+      "title": "Activity export or projection exposes sensitive payloads or hides event gaps",
+      "owner": "security",
+      "assets": ["SD-01", "SD-03", "SD-05", "SD-09"],
+      "boundaries": ["TB-04", "TB-06"],
+      "privileged_identities": ["PI-04", "PI-06"],
+      "prevent": [
+        "distinct export permission",
+        "preserved bounded filters",
+        "one-hour expiry",
+        "source event integrity",
+        "server-side redaction"
+      ],
+      "detect": [
+        "source/projected count and checksum comparison",
+        "duplicate and gap detection",
+        "export access audit"
+      ],
+      "respond": [
+        "expire export",
+        "rebuild projection from source events",
+        "open integrity incident"
+      ],
+      "verify": ["SEC-OPERATOR-ACTIVITY-INTEGRITY-001", "SEC-OPERATOR-EXPORT-001"]
+    },
+    {
+      "id": "AC-23",
+      "title": "Forged, replayed, stale, or mode-confused explorer grant bypasses project data permissions",
+      "owner": "security",
+      "assets": ["SD-02", "SD-03", "SD-05", "SD-10"],
+      "boundaries": ["TB-02", "TB-06", "TB-09"],
+      "privileged_identities": ["PI-03", "PI-04", "PI-08"],
+      "prevent": [
+        "signed issuer and audience binding",
+        "tenant collection mode and operation binding",
+        "five-minute maximum lifetime",
+        "persistent nonce revocation and authorization epoch",
+        "active developer membership project environment collection and application-user revalidation"
+      ],
+      "detect": [
+        "grant failure metrics",
+        "denied explorer audit",
+        "epoch and nonce validation tests"
+      ],
+      "respond": [
+        "revoke nonce",
+        "advance developer explorer epoch",
+        "disable explorer grant issuance"
+      ],
+      "verify": ["SEC-EXPLORER-CAPABILITY-001", "SEC-EXPLORER-MODE-001"]
+    },
+    {
+      "id": "AC-24",
+      "title": "Explorer browse or query leaks hidden rows, counts, tombstones, or cross-scope cursor state",
+      "owner": "data-platform",
+      "assets": ["SD-03", "SD-05"],
+      "boundaries": ["TB-03", "TB-09"],
+      "privileged_identities": ["PI-03", "PI-08"],
+      "prevent": [
+        "snapshot-consistent engine browse",
+        "policy filtering while filling bounded pages",
+        "signed scope schema mode query snapshot and epoch cursor binding",
+        "history permission for retained tombstones",
+        "active-index-only deterministic planning without collection-scan fallback"
+      ],
+      "detect": [
+        "cursor rejection metrics",
+        "query-plan failures",
+        "cross-tenant and hidden-row tests"
+      ],
+      "respond": ["reject cursor", "expire snapshot", "disable affected explorer route"],
+      "verify": ["SEC-EXPLORER-BROWSE-001", "SEC-EXPLORER-CURSOR-001", "SEC-EXPLORER-QUERY-001"]
+    },
+    {
+      "id": "AC-25",
+      "title": "Explorer mutation bypasses schema policy revision idempotency quota or audit semantics",
+      "owner": "data-platform",
+      "assets": ["SD-03", "SD-04", "SD-05"],
+      "boundaries": ["TB-03", "TB-09"],
+      "privileged_identities": ["PI-03", "PI-08"],
+      "prevent": [
+        "policy preview is non-committing",
+        "administrative mode and data-admin permission",
+        "existing sequencer validator index change-log idempotency and conditional mutation path",
+        "explicit conflict response without merge or retry",
+        "body-free enhanced audit"
+      ],
+      "detect": [
+        "conflict and bypass audit metrics",
+        "idempotency replay tests",
+        "audit continuity tests"
+      ],
+      "respond": ["revoke grant", "stop mutations", "preserve audit and change-log evidence"],
+      "verify": ["SEC-EXPLORER-MUTATION-001", "SEC-EXPLORER-AUDIT-001"]
+    },
+    {
+      "id": "AC-26",
+      "title": "Import export or artifact download crosses tenant scope, exposes partial output, or exhausts storage",
+      "owner": "data-platform",
+      "assets": ["SD-03", "SD-10"],
+      "boundaries": ["TB-04", "TB-09"],
+      "privileged_identities": ["PI-03", "PI-04", "PI-08"],
+      "prevent": [
+        "tenant-bound immutable artifact addresses and digest verification",
+        "short-lived reauthorized upload and download grants",
+        "dry run before import confirmation",
+        "per-row conditional idempotent mutations",
+        "consistent export snapshot and no partial downloadable artifact",
+        "row byte duration concurrency and active-job quotas"
+      ],
+      "detect": ["job state metrics", "digest mismatch audit", "orphan and expiry scans"],
+      "respond": [
+        "cancel future work",
+        "expire artifact",
+        "recover or fail orphaned job without publishing partial output"
+      ],
+      "verify": ["SEC-DATA-JOB-SCOPE-001", "SEC-DATA-JOB-ARTIFACT-001"]
+    },
+    {
+      "id": "AC-27",
+      "title": "Developer connection check, sync diagnostics, or restore request exposes secrets or infrastructure and expands authority",
+      "owner": "platform",
+      "assets": ["SD-01", "SD-03", "SD-08", "SD-10"],
+      "boundaries": ["TB-04", "TB-08", "TB-09"],
+      "privileged_identities": ["PI-04", "PI-08"],
+      "prevent": [
+        "non-document connection probes",
+        "public-key-only Connect metadata",
+        "bounded aggregate sync dimensions",
+        "verified tenant-filtered backup manifests",
+        "step-up restore only into a new isolated environment",
+        "no overwrite promotion physical path or service credential fields"
+      ],
+      "detect": [
+        "response redaction tests",
+        "cross-project aggregate tests",
+        "restore state and isolation validation"
+      ],
+      "respond": [
+        "stop probe or restore",
+        "keep recovery environment inaccessible",
+        "rotate any exposed credential"
+      ],
+      "verify": ["SEC-CONNECTION-CHECK-001", "SEC-SYNC-AGGREGATE-001", "SEC-DEVELOPER-RESTORE-001"]
+    },
+    {
+      "id": "AC-28",
+      "title": "Control SQLite file or backup theft exposes credentials and management state",
+      "owner": "security",
+      "assets": ["SD-01", "SD-02", "SD-05", "SD-07", "SD-11"],
+      "boundaries": ["TB-10"],
+      "privileged_identities": ["PI-04", "PI-09"],
+      "prevent": [
+        "private service-owned file permissions",
+        "separate root-readable backup authentication material",
+        "no public or browser storage endpoint",
+        "off-VM destination access control"
+      ],
+      "detect": [
+        "permission drift validation",
+        "backup publication audit",
+        "secret-canary scanning"
+      ],
+      "respond": [
+        "contain the host",
+        "rotate credentials and sessions",
+        "restore from a trusted artifact"
+      ],
+      "verify": ["SEC-CONTROL-SQLITE-PERMISSIONS-001", "SEC-CONTROL-SQLITE-NETWORK-001"]
+    },
+    {
+      "id": "AC-29",
+      "title": "Malicious or corrupt SQLite schema is accepted as control authority",
+      "owner": "data-platform",
+      "assets": ["SD-02", "SD-05", "SD-07", "SD-11"],
+      "boundaries": ["TB-10"],
+      "privileged_identities": ["PI-04"],
+      "prevent": [
+        "fixed application identity and schema version",
+        "trusted schema disabled",
+        "quick integrity verification",
+        "no automatic newer or legacy schema fallback"
+      ],
+      "detect": [
+        "readiness and integrity metrics",
+        "startup schema validation",
+        "corruption qualification"
+      ],
+      "respond": ["fail readiness", "stop mutations", "perform authenticated empty-target restore"],
+      "verify": ["SEC-CONTROL-SQLITE-SCHEMA-001", "SEC-CONTROL-SQLITE-CORRUPTION-001"]
+    },
+    {
+      "id": "AC-30",
+      "title": "Substituted or partial RocksDB-to-SQLite migration becomes authoritative",
+      "owner": "release-engineering",
+      "assets": ["SD-02", "SD-05", "SD-07", "SD-11"],
+      "boundaries": ["TB-07", "TB-08", "TB-10"],
+      "privileged_identities": ["PI-07", "PI-09"],
+      "prevent": [
+        "fenced immutable source checkpoint",
+        "release and configuration bound plan",
+        "framed complete-keyspace checksums and prefix inventory",
+        "atomic verified target publication"
+      ],
+      "detect": [
+        "source target inventory comparison",
+        "authenticated receipt validation",
+        "domain invariant probes"
+      ],
+      "respond": [
+        "refuse cutover",
+        "retain the fenced source",
+        "discard only the unselected temporary target"
+      ],
+      "verify": ["SEC-CONTROL-MIGRATION-BINDING-001", "SEC-CONTROL-MIGRATION-COMPLETE-001"]
+    },
+    {
+      "id": "AC-31",
+      "title": "Rollback resurrects obsolete RocksDB control authority after SQLite writes",
+      "owner": "release-engineering",
+      "assets": ["SD-02", "SD-04", "SD-05", "SD-07", "SD-11"],
+      "boundaries": ["TB-07", "TB-08", "TB-10"],
+      "privileged_identities": ["PI-07", "PI-09"],
+      "prevent": [
+        "release-declared SQLite format compatibility",
+        "selection guard after SQLite exists",
+        "no implicit dual-write or reverse migration",
+        "immutable migration receipt"
+      ],
+      "detect": ["release inspection", "storage topology evidence", "rollback qualification"],
+      "respond": [
+        "refuse release selection",
+        "retain current SQLite authority",
+        "require separately designed reverse migration"
+      ],
+      "verify": ["SEC-CONTROL-SQLITE-ROLLBACK-001"]
+    },
+    {
+      "id": "AC-32",
+      "title": "Browser persistence is mistaken for authoritative portal or control state",
+      "owner": "security",
+      "assets": ["SD-02", "SD-07", "SD-11"],
+      "boundaries": ["TB-01", "TB-09", "TB-10"],
+      "privileged_identities": ["PI-02", "PI-04", "PI-08"],
+      "prevent": [
+        "no browser SQLite IndexedDB Dexie RxDB or local-storage authority",
+        "HttpOnly operator cookies",
+        "short-lived developer sessionStorage token",
+        "server revalidation of persistent role epochs"
+      ],
+      "detect": ["static browser dependency and API regression test", "session boundary tests"],
+      "respond": [
+        "clear browser session",
+        "revoke server session",
+        "remove unauthorized persistence dependency"
+      ],
+      "verify": ["SEC-PORTAL-NO-BROWSER-AUTHORITY-001"]
+    },
+    {
+      "id": "AC-33",
+      "title": "Tenant RocksDB outage is misdiagnosed as control failure or silently bypassed",
+      "owner": "platform",
+      "assets": ["SD-03", "SD-05", "SD-07", "SD-08", "SD-11"],
+      "boundaries": ["TB-02", "TB-03", "TB-10"],
+      "privileged_identities": ["PI-03", "PI-04", "PI-06"],
+      "prevent": [
+        "control readiness depends on SQLite rather than tenant RocksDB",
+        "tenant-data operations retain scoped fail-closed dependencies",
+        "provider sections report unavailable or stale explicitly",
+        "control and data storage metrics use separate ownership labels"
+      ],
+      "detect": [
+        "failure-isolation probes",
+        "separate SQLite and RocksDB alerts",
+        "operator provider status"
+      ],
+      "respond": [
+        "keep control authentication and incident coordination available",
+        "disable only dependent tenant-data actions",
+        "recover RocksDB independently"
+      ],
+      "verify": ["SEC-CONTROL-DATA-OUTAGE-ISOLATION-001"]
+    }
+  ]
+}

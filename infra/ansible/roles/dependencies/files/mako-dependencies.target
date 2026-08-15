@@ -1,0 +1,17 @@
+[Unit]
+Description=Mako Cloud public-beta rootless dependencies and edge runtime
+Wants=mako-mailpit.service
+Wants=mako-object-store.service
+Wants=mako-otel-collector.service
+Wants=mako-prometheus.service
+Wants=mako-grafana.service
+Wants=mako-edge-runtime.service
+After=mako-mailpit.service
+After=mako-object-store.service
+After=mako-otel-collector.service
+After=mako-prometheus.service
+After=mako-grafana.service
+After=mako-edge-runtime.service
+
+[Install]
+WantedBy=default.target

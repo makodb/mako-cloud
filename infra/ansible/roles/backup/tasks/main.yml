@@ -1,0 +1,51 @@
+---
+- name: Install the signed checkpoint backup runner
+  ansible.builtin.template:
+    src: mako-checkpoint-backup.j2
+    dest: /usr/local/sbin/mako-checkpoint-backup
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install the root-only backup availability orchestrator
+  ansible.builtin.copy:
+    src: mako-checkpoint-backup-orchestrate
+    dest: /usr/local/sbin/mako-checkpoint-backup-orchestrate
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install the bounded control SQLite offline restore runner
+  ansible.builtin.template:
+    src: mako-control-sqlite-restore.j2
+    dest: /usr/local/sbin/mako-control-sqlite-restore
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install hardened checkpoint backup template units
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "/etc/systemd/system/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - mako-checkpoint-backup@.service
+    - mako-checkpoint-backup-orchestrator@.service
+    - mako-checkpoint-backup@.timer
+    - mako-control-sqlite-restore@.service
+  notify: Reload systemd
+
+- name: Reload systemd before controlling checkpoint backup timers
+  ansible.builtin.meta: flush_handlers
+
+- name: Keep backup scheduling disabled until backup qualification enables it
+  ansible.builtin.systemd_service:
+    name: "mako-checkpoint-backup@{{ item }}.timer"
+    enabled: "{{ mako_backup_enabled | bool }}"
+    state: "{{ 'started' if mako_backup_enabled | bool else 'stopped' }}"
+  loop:
+    - data-plane
+    - control-plane
+  when: not ansible_check_mode

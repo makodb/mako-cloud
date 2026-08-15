@@ -1,0 +1,139 @@
+{
+  "schemaVersion": 1,
+  "generatedAtUnixSeconds": 1786077495,
+  "profile": "release",
+  "storageAdapter": "local-rocksdb-optimistic-transactiondb",
+  "durability": "sync",
+  "parameters": {
+    "iterations": 25,
+    "datasetDocuments": 100,
+    "liveSubscribers": 25
+  },
+  "host": {
+    "operatingSystem": "linux",
+    "architecture": "x86_64"
+  },
+  "results": [
+    {
+      "path": "write",
+      "samples": 25,
+      "operationsPerSample": 1,
+      "totalOperations": 25,
+      "p50Microseconds": 3249.008,
+      "p95Microseconds": 3777.733,
+      "minMicroseconds": 2498.347,
+      "maxMicroseconds": 4776.29,
+      "operationsPerSecond": 303.6843839780492
+    },
+    {
+      "path": "pull",
+      "samples": 25,
+      "operationsPerSample": 1,
+      "totalOperations": 25,
+      "p50Microseconds": 7158.428,
+      "p95Microseconds": 9750.141,
+      "minMicroseconds": 4557.399,
+      "maxMicroseconds": 12573.959,
+      "operationsPerSecond": 140.44359006803603
+    },
+    {
+      "path": "hidden-change-scan",
+      "samples": 25,
+      "operationsPerSample": 1,
+      "totalOperations": 25,
+      "p50Microseconds": 6781.86,
+      "p95Microseconds": 7798.641,
+      "minMicroseconds": 3093.746,
+      "maxMicroseconds": 7881.618,
+      "operationsPerSecond": 160.0820060416614
+    },
+    {
+      "path": "push-conflict",
+      "samples": 25,
+      "operationsPerSample": 1,
+      "totalOperations": 25,
+      "p50Microseconds": 3822.977,
+      "p95Microseconds": 4861.239,
+      "minMicroseconds": 3421.102,
+      "maxMicroseconds": 4913.307,
+      "operationsPerSecond": 249.28595528113095
+    },
+    {
+      "path": "live-fan-out",
+      "samples": 25,
+      "operationsPerSample": 25,
+      "totalOperations": 625,
+      "p50Microseconds": 8035.668,
+      "p95Microseconds": 13295.897,
+      "minMicroseconds": 6236.995,
+      "maxMicroseconds": 13316.406,
+      "operationsPerSecond": 2936.310982563227
+    },
+    {
+      "path": "auth",
+      "samples": 25,
+      "operationsPerSample": 1,
+      "totalOperations": 25,
+      "p50Microseconds": 90.08,
+      "p95Microseconds": 98.024,
+      "minMicroseconds": 89.628,
+      "maxMicroseconds": 109.986,
+      "operationsPerSecond": 10891.143888129654
+    },
+    {
+      "path": "policy",
+      "samples": 25,
+      "operationsPerSample": 1,
+      "totalOperations": 25,
+      "p50Microseconds": 0.962,
+      "p95Microseconds": 1.423,
+      "minMicroseconds": 0.941,
+      "maxMicroseconds": 4.188,
+      "operationsPerSecond": 888636.1212810578
+    },
+    {
+      "path": "index-build",
+      "samples": 25,
+      "operationsPerSample": 1,
+      "totalOperations": 25,
+      "p50Microseconds": 38659.793,
+      "p95Microseconds": 49452.633,
+      "minMicroseconds": 33849.098,
+      "maxMicroseconds": 55869.057,
+      "operationsPerSecond": 24.853582030761572
+    },
+    {
+      "path": "control-plane",
+      "samples": 25,
+      "operationsPerSample": 1,
+      "totalOperations": 25,
+      "p50Microseconds": 5.18,
+      "p95Microseconds": 15.46,
+      "minMicroseconds": 5.04,
+      "maxMicroseconds": 15.469,
+      "operationsPerSecond": 161591.6127489319
+    },
+    {
+      "path": "edge-cold",
+      "samples": 25,
+      "operationsPerSample": 1,
+      "totalOperations": 25,
+      "p50Microseconds": 4.468,
+      "p95Microseconds": 7.274,
+      "minMicroseconds": 4.248,
+      "maxMicroseconds": 29.736,
+      "operationsPerSecond": 173212.96187236282
+    },
+    {
+      "path": "edge-warm",
+      "samples": 25,
+      "operationsPerSample": 1,
+      "totalOperations": 25,
+      "p50Microseconds": 1.373,
+      "p95Microseconds": 1.523,
+      "minMicroseconds": 1.343,
+      "maxMicroseconds": 1.834,
+      "operationsPerSecond": 710106.2318922911
+    }
+  ]
+}

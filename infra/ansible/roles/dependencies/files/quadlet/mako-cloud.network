@@ -1,0 +1,8 @@
+[Unit]
+Description=Mako Cloud public-beta private container network
+
+[Network]
+NetworkName=mako-cloud-internal
+Driver=bridge
+Internal=true
+DisableDNS=false

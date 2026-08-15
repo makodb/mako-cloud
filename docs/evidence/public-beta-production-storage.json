@@ -1,0 +1,125 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-13T21:46:23.000Z",
+  "planHash": "d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073",
+  "releaseDigest": "a5ccdaabff7d6ef30da512330dab38b60e32ae034f621ee4d4eed2b49e976000",
+  "tenantRocksDbQualificationReleaseDigest": "fc7811e24f02cca05da42df109c129e77ffd2303eba2cf0fc571e0d2cda4570e",
+  "tenantRocksDbCarriedForwardByIdenticalStorageArtifact": true,
+  "filesystem": {
+    "deviceById": "/dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_drive-scsi1",
+    "resolvedPartition": "/dev/sdb1",
+    "sizeBytes": 274877906944,
+    "type": "btrfs",
+    "label": "MAKO_DATA",
+    "uuid": "4ec5409d-b4e7-4b16-a9d1-cb8452681725",
+    "mount": "/srv/mako-data",
+    "mountOptions": ["noatime", "compress=zstd:3", "discard=async"]
+  },
+  "storageContract": {
+    "topology": "mixed-local-sqlite-rocksdb",
+    "durability": "synchronous-fsync",
+    "memoryFallbackConfigured": false,
+    "emptyPathFallbackConfigured": false,
+    "volumeMarkersValidated": true,
+    "dataPlane": {
+      "engine": "rocksdb",
+      "authority": "tenant",
+      "path": "/srv/mako-data/rocksdb/data-plane",
+      "owner": "mako-data-plane:mako-data-plane",
+      "mode": "0700",
+      "databaseId": "mako-data-plane-us-east-1-beta"
+    },
+    "controlPlane": {
+      "engine": "sqlite",
+      "authority": "control",
+      "path": "/srv/mako-data/sqlite/control-plane/live/control.sqlite3",
+      "owner": "mako-control-plane:mako-control-plane",
+      "mode": "0644",
+      "databaseId": "mako-control-plane-us-east-1-beta",
+      "schemaVersion": 1,
+      "recordCountAtLastVerifiedBackup": 7616
+    },
+    "edgeGateway": {
+      "engine": "rocksdb",
+      "authority": "edge-runtime-metadata",
+      "path": "/srv/mako-data/rocksdb/edge-gateway",
+      "owner": "mako-edge-gateway:mako-edge-gateway",
+      "mode": "0700"
+    },
+    "telemetryQuery": {
+      "engine": "rocksdb",
+      "authority": "telemetry",
+      "path": "/srv/mako-data/rocksdb/telemetry-query",
+      "owner": "mako-telemetry-query:mako-telemetry-query",
+      "mode": "0700"
+    }
+  },
+  "capacityProtection": {
+    "warningFreeBytes": 17179869184,
+    "criticalFreeBytes": 8589934592,
+    "emergencyReserveBytes": 8589934592,
+    "reservePath": "/srv/mako-data/.reserve/emergency-space",
+    "reserveOwner": "root:root",
+    "reserveMode": "0400"
+  },
+  "backup": {
+    "stagingPaths": [
+      "/srv/mako-data/backup-staging/data-plane",
+      "/srv/mako-data/backup-staging/control-plane"
+    ],
+    "publishPaths": [
+      "/srv/mako-data/backup-publish/data-plane",
+      "/srv/mako-data/backup-publish/control-plane"
+    ],
+    "remote": "mako-beta-backup@130.245.173.105:/var/lib/vz/dump/mako-cloud-public-beta",
+    "remoteFailureDomain": "Proxmox host local storage, outside VM 124 and its data disk",
+    "remoteAvailableBytes": 1702144761856,
+    "restrictedAccount": true,
+    "pinnedHostIdentity": true,
+    "guestPrivateKeyMode": "0600",
+    "authenticatedWriteVerified": true,
+    "controlSqlite": {
+      "backupId": "20260814T005221Z-control-plane",
+      "releaseDigest": "a5ccdaabff7d6ef30da512330dab38b60e32ae034f621ee4d4eed2b49e976000",
+      "recordCount": 7616,
+      "framedBlake3": "d95f4444436dd60c6ab5bb4501422529dcd22c91787c07a1c7cb4649da082ed9",
+      "integrityVerified": true,
+      "remotelyReverified": true,
+      "controlServiceRestarted": false
+    },
+    "tenantRocksDb": {
+      "remotelyReverified": true,
+      "formatVersion": 1
+    },
+    "proofPath": "qualification/d8ec0852-storage-target-proof/storage-layout.json",
+    "proofDirectoryMode": "0700",
+    "proofFileMode": "0600",
+    "proofSha256": "78c7dc83f65091f4dc1c3279fb9f8ea9727dd2c4cbbc88dcec62ef5251fbec4f"
+  },
+  "network": {
+    "guestEgressPolicy": "default-drop",
+    "backupSshDestination": "130.245.173.105:22",
+    "backupSshExceptionScopedExactly": true
+  },
+  "verification": {
+    "firstConvergenceLog": ".local/ansible/storage-provisioning-convergence.log",
+    "firewallConvergenceLog": ".local/ansible/storage-firewall-convergence.log",
+    "secondConvergenceLog": ".local/ansible/storage-second-convergence.log",
+    "backupGuestLog": ".local/ansible/storage-backup-probe-guest.log",
+    "backupHostLog": ".local/ansible/storage-backup-probe-host.log",
+    "secondRun": {
+      "ok": 28,
+      "changed": 0,
+      "unreachable": 0,
+      "failed": 0,
+      "skipped": 6
+    },
+    "ansibleLintProfile": "production"
+  },
+  "admission": {
+    "mode": "pre_gate",
+    "caddyActive": true,
+    "makoServicesStarted": true,
+    "publicApplicationRoutesEnabled": false
+  }
+}

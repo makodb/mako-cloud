@@ -1,0 +1,13 @@
+[Unit]
+Description=Collect sanitized Mako Cloud host health every minute
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=1min
+AccuracySec=5s
+Persistent=true
+RandomizedDelaySec=10s
+Unit=mako-health-collect.service
+
+[Install]
+WantedBy=timers.target

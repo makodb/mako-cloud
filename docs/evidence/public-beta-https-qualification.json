@@ -1,0 +1,109 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-14T01:08:46.000Z",
+  "environment": "public-beta",
+  "vmId": 124,
+  "address": "130.245.173.11",
+  "publicOrigin": "https://cloud-test.makodb.com",
+  "selectedReleaseDigest": "a5ccdaabff7d6ef30da512330dab38b60e32ae034f621ee4d4eed2b49e976000",
+  "configurationSourceChangedAfterReleaseBuild": false,
+  "admissionMode": "risk_accepted_preview",
+  "dns": {
+    "a": ["130.245.173.11"],
+    "aaaa": [],
+    "passed": true
+  },
+  "acme": {
+    "contact": "msmummy@gmail.com",
+    "automaticCertificateManagement": true,
+    "staging": {
+      "issued": true,
+      "issuer": "(STAGING) Artificial Amaranth YE1",
+      "notBefore": "2026-08-09T03:23:39Z",
+      "notAfter": "2026-11-07T03:23:38Z"
+    },
+    "production": {
+      "issued": true,
+      "issuer": "Let's Encrypt YE2",
+      "serial": "05EFC0A0D6A8B0577C451B635BB6CB734877",
+      "notBefore": "2026-08-09T03:24:16Z",
+      "notAfter": "2026-11-07T03:24:15Z",
+      "expiryUnixtimeSeconds": 1794021855,
+      "sha256Fingerprint": "77:BB:76:E5:A5:15:91:4A:70:35:CD:D1:9C:E3:90:EA:DD:88:54:9C:B4:6A:B1:DB:FE:F7:77:1F:62:CC:EB:9D",
+      "subjectAlternativeNames": ["cloud-test.makodb.com"],
+      "curlSystemTrustVerification": true,
+      "curlSslVerifyResult": 0
+    }
+  },
+  "externalChecks": {
+    "httpStatus": 308,
+    "httpRedirectTarget": "https://cloud-test.makodb.com/",
+    "httpsConsoleStatus": 200,
+    "unknownRouteStatus": 404,
+    "internalRouteStatus": 404,
+    "hstsEnabled": true,
+    "successfulRxdbSseQualified": true,
+    "successfulFunctionStreamingQualified": true,
+    "streamingEvidence": "docs/evidence/public-beta-streaming-qualification.json"
+  },
+  "monitoring": {
+    "certificateExpiryMetricPresent": true,
+    "certificateExpiryMetricValue": 1794021855,
+    "publicAdmissionMetricValue": 1,
+    "certificateExpiryAlertThresholdSeconds": 1209600,
+    "certificateMetricMissingAlertHealth": "ok",
+    "certificateExpiringSoonAlertHealth": "ok",
+    "caddyAutomaticRenewalConfigured": true,
+    "renewalDrillCompleted": true,
+    "alertDestination": "msmummy@gmail.com",
+    "alertmanagerLoopbackOnly": true,
+    "alertmanagerActive": true,
+    "alertmanagerConfigurationReloadSuccessful": true,
+    "emailNotificationsTotal": 67,
+    "emailNotificationClientFailures": 0,
+    "emailNotificationServerFailures": 0,
+    "certificateExpiryFixtureDelivered": true,
+    "certificateExpiryFixtureEvidence": "docs/evidence/public-beta-mail-qualification.json"
+  },
+  "renewalDrill": {
+    "completedAt": "2026-08-13T11:59:45Z",
+    "caddyVersion": "2.6.2",
+    "productionServiceUntouched": true,
+    "isolatedNetworkNamespace": true,
+    "isolatedStorage": true,
+    "operatorAcmeContactPresentInProductionPolicy": true,
+    "forcedNearExpiryCertificate": {
+      "serial": "1000",
+      "notBefore": "2026-08-11T11:59:45Z",
+      "notAfter": "2026-08-13T11:59:55Z"
+    },
+    "automaticRenewal": {
+      "observed": true,
+      "renewalLogObserved": true,
+      "reloadLogObserved": true,
+      "renewedSerial": "6E2A8E358CDAC2BB628D4C0EB03A28DC",
+      "notBefore": "2026-08-13T11:59:45Z",
+      "notAfter": "2026-08-13T23:59:45Z",
+      "httpsHealthyAfterReload": true
+    },
+    "renewalFailure": {
+      "completedAt": "2026-08-13T12:00:22Z",
+      "usedExactProductionCaddyfile": true,
+      "freshCertificateStorage": true,
+      "networkEgressUnavailable": true,
+      "acmeIssuanceFailureObserved": true,
+      "httpStatus": 308,
+      "httpLocation": "https://cloud-test.makodb.com/",
+      "httpsHandshakeExitCode": 35,
+      "plaintextApplicationAvailable": false
+    },
+    "liveServiceAfterDrill": {
+      "caddyActive": true,
+      "caddyEnabled": true,
+      "httpsStatus": 200,
+      "productionCertificateFingerprintUnchanged": true
+    }
+  },
+  "completedTasks": ["5.3", "5.4", "5.5"],
+  "remainingBlockers": []
+}

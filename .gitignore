@@ -1,0 +1,14 @@
+/target/
+/node_modules/
+**/node_modules/
+**/dist/
+**/coverage/
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+/.local/
+**/.local/
+/.playwright-tmp/
+**/test-results/
+**/playwright-report/

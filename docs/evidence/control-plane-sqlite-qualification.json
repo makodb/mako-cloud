@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-13T21:49:00.000Z",
+  "status": "passed",
+  "releaseDigest": "a5ccdaabff7d6ef30da512330dab38b60e32ae034f621ee4d4eed2b49e976000",
+  "qualificationReleaseDigest": "b6c0559f5599505c3af5b74a7034b42171cb0e1ae0f6b0c9cc2e311c5447f128",
+  "carriedForwardByIdenticalControlStorageArtifact": true,
+  "databaseFormatVersion": 1,
+  "adapter": {
+    "conformance": true,
+    "differentialAgainstRocksDb": true,
+    "stableSnapshots": true,
+    "atomicBatchesAndConditions": true,
+    "serializableTransactions": true,
+    "synchronousDurability": true,
+    "sanitizedErrors": true,
+    "gracefulShutdown": true,
+    "productionStorageSoakIterations": 25
+  },
+  "failuresQualified": [
+    "busy-contention",
+    "critical-capacity",
+    "corruption-and-truncation",
+    "corrupt-migration-source",
+    "interrupted-migration-checkpoint",
+    "interrupted-migration-copy",
+    "interrupted-migration-fsync",
+    "interrupted-migration-rename",
+    "interrupted-migration-scan",
+    "interrupted-restore",
+    "inventory-and-checksum-mismatch",
+    "insufficient-backup-high-water",
+    "insufficient-migration-capacity",
+    "exclusive-process-lock",
+    "missing-database",
+    "newer-schema",
+    "overgrown-wal",
+    "read-only-path",
+    "transaction-expiry",
+    "unsupported-migration-format",
+    "wal-recovery",
+    "wrong-identity"
+  ],
+  "benchmark": {
+    "evidence": "docs/evidence/control-plane-sqlite-benchmark.json",
+    "syncWriteP95Microseconds": 356,
+    "contentionApplied": 1,
+    "contentionConflicts": 31,
+    "contentionErrors": 0,
+    "backupMicroseconds": 7303,
+    "restoreMicroseconds": 2680
+  },
+  "production": {
+    "databaseIdentity": "mako-control-plane-us-east-1-beta",
+    "readyDuringDataPlaneOutage": true,
+    "readyDuringOnlineBackup": true,
+    "publicListenerPresent": false,
+    "browserAuthorityPresent": false
+  },
+  "passed": true
+}

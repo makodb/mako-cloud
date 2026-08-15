@@ -1,0 +1,70 @@
+---
+- name: Converge the Mako Cloud public beta guest
+  hosts: public_beta
+  become: true
+  gather_facts: true
+  vars_files:
+    - ../group_vars/public_beta.yml
+  pre_tasks:
+    - name: Require the verified Proxmox console recovery path
+      ansible.builtin.assert:
+        that:
+          - mako_console_recovery_verified | bool
+          - ansible_user == "mako-admin"
+          - ansible_facts.default_ipv4.address == mako_public_ipv4
+          - mako_inventory_plan_hash == mako_plan_hash
+        fail_msg: >-
+          Refusing SSH hardening until the retained guest-bootstrap evidence and
+          key-authenticated management identity match this host.
+  roles:
+    - role: base
+    - role: runtime
+      tags: [runtime]
+    - role: storage
+    - role: dependencies
+    - role: configuration
+      tags: [configuration]
+    - role: observability
+    - role: backup
+    - role: firewall
+  post_tasks:
+    - name: Apply service-unit changes after storage and dependencies exist
+      ansible.builtin.meta: flush_handlers
+
+    - name: Converge the qualified Mako application service gate
+      ansible.builtin.systemd_service:
+        name: "{{ item }}.service"
+        enabled: "{{ mako_services_enabled | bool }}"
+        state: "{{ 'started' if mako_services_enabled | bool else 'stopped' }}"
+      loop:
+        - mako-data-plane
+        - mako-control-plane
+        - mako-edge-gateway
+        - mako-telemetry-query
+      when: not ansible_check_mode
+
+    - name: Converge the explicit public Caddy admission gate
+      ansible.builtin.systemd_service:
+        name: caddy.service
+        enabled: "{{ mako_caddy_enabled | bool }}"
+        state: "{{ 'started' if mako_caddy_enabled | bool else 'stopped' }}"
+      when: not ansible_check_mode
+
+    - name: Activate the dynamically verified risk-accepted public preview
+      ansible.builtin.command:
+        argv:
+          - /usr/local/sbin/mako-public-preview-admission
+          - activate
+      register: public_preview_activation
+      changed_when: "'\"changed\": true' in public_preview_activation.stdout"
+      when:
+        - not ansible_check_mode
+        - mako_caddy_enabled | bool
+        - mako_public_admission_mode == 'risk_accepted_preview'
+
+    - name: Converge the public-preview admission guard timer
+      ansible.builtin.systemd_service:
+        name: mako-public-preview-admission.timer
+        enabled: "{{ mako_public_admission_mode == 'risk_accepted_preview' }}"
+        state: "{{ 'started' if mako_public_admission_mode == 'risk_accepted_preview' else 'stopped' }}"
+      when: not ansible_check_mode

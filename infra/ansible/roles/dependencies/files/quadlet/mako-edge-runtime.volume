@@ -1,0 +1,5 @@
+[Unit]
+Description=Mako Cloud encrypted edge-runtime supervisor state
+
+[Volume]
+VolumeName=mako-edge-runtime-state

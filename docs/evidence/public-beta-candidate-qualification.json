@@ -1,0 +1,88 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-08T04:25:26.846Z",
+  "releaseDigest": "b6498ee71722d76d67ee5c77f99c29afa65660f7024a7a588fb76b9dec4d7be3",
+  "planHash": "d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073",
+  "checks": {
+    "repositoryCi": {
+      "passed": true,
+      "log": ".local/public-beta-candidate-ci-final.log",
+      "families": [
+        "rust-format",
+        "rust-clippy",
+        "rust-unit",
+        "rust-integration",
+        "release-build",
+        "api-generation",
+        "documentation",
+        "release-gates",
+        "rollback-validation",
+        "biome-format",
+        "biome-lint",
+        "typescript-typecheck",
+        "typescript-unit",
+        "typescript-integration",
+        "typescript-build",
+        "npm-audit"
+      ]
+    },
+    "rustsecAudit": {
+      "passed": true,
+      "client": "cargo-audit 0.22.2",
+      "log": ".local/public-beta-cargo-audit.log"
+    },
+    "authSecurity": {
+      "passed": true,
+      "log": ".local/public-beta-qualification-logs/auth.log"
+    },
+    "policySecurity": {
+      "passed": true,
+      "log": ".local/public-beta-qualification-logs/policy.log"
+    },
+    "rxdbChaos": {
+      "passed": true,
+      "log": ".local/public-beta-qualification-logs/rxdb-chaos.log"
+    },
+    "tenantBoundaries": {
+      "passed": true,
+      "log": ".local/public-beta-qualification-logs/tenant-boundaries.log"
+    },
+    "edgeSecurity": {
+      "passed": true,
+      "engine": "rootless-podman-single-uid-overlay",
+      "log": ".local/public-beta-qualification-logs/edge-single-uid-overlay.log"
+    },
+    "storageSoak": {
+      "passed": true,
+      "cycles": 25,
+      "log": ".local/public-beta-qualification-logs/storage-soak.log"
+    },
+    "productionRocksdb": {
+      "passed": true,
+      "cycles": 25,
+      "log": ".local/public-beta-qualification-logs/production-rocksdb-rerun.log"
+    },
+    "rollback": {
+      "passed": true,
+      "log": ".local/public-beta-qualification-logs/rollback.log"
+    },
+    "traceability": {
+      "passed": true,
+      "automatedScenarios": 98,
+      "capabilitySpecs": 6
+    },
+    "proxmoxPlanFixtures": {
+      "passed": true,
+      "tests": 10
+    },
+    "proxmoxApplyFixtures": {
+      "passed": true,
+      "tests": 11
+    }
+  },
+  "environmentNotes": [
+    "The RustSec advisory database was placed on a local lock-capable temporary filesystem because the operator home is on NFS.",
+    "The passing edge qualification used the documented isolated Podman graphroot and ignore_chown_errors overlay option; no user container configuration was changed.",
+    "Public application admission remained disabled throughout qualification."
+  ]
+}

@@ -1,0 +1,182 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-13T22:21:15.513Z",
+  "sources": {
+    "storageQualification": "docs/production-rocksdb-qualification.json",
+    "performanceBaseline": "docs/performance-baseline.json",
+    "traceability": "docs/requirements-traceability.md",
+    "publicBetaPlan": "docs/evidence/public-beta-preflight-plan.json",
+    "publicBetaReleaseManifest": "docs/evidence/public-beta-release-manifest.json",
+    "publicBetaDeployment": "docs/evidence/public-beta-current-deployment.json",
+    "publicBetaStorage": "docs/evidence/public-beta-production-storage.json",
+    "publicBetaRecovery": "docs/evidence/public-beta-restore-qualification.json",
+    "publicBetaRollback": "docs/evidence/public-beta-release-rollback.json",
+    "publicBetaMeasurementWindow": "docs/evidence/public-beta-measurement-window.json",
+    "publicBetaStreamingQualification": "docs/evidence/public-beta-streaming-qualification.json",
+    "publicBetaHostedBenchmark": "docs/evidence/public-beta-hosted-benchmark.json",
+    "publicBetaPreviewAdmission": "docs/evidence/public-beta-public-preview.json",
+    "publicBetaMailQualification": "docs/evidence/public-beta-mail-qualification.json",
+    "publicBetaDeveloperRegistration": "docs/evidence/public-beta-developer-registration-qualification.json"
+  },
+  "stages": [
+    {
+      "id": "internal",
+      "status": "pass",
+      "scope": "existing qualification host; component and real-container security flows",
+      "thresholds": {
+        "acknowledgedWriteLoss": 0,
+        "integrityFailures": 0,
+        "minimumStorageSoakIterations": 25,
+        "requiredSecuritySuites": 5,
+        "maximumBackupAgeSeconds": 900,
+        "maximumRecoveryPointExposureSeconds": 900,
+        "maximumSameVolumeRecoverySeconds": 300,
+        "maximumReplacementRestoreSeconds": 1800,
+        "minimumAvailableStorageBytes": 2147483648,
+        "maximumIncrementalMonthlyCashCostUsd": 50
+      },
+      "observed": {
+        "acknowledgedWriteLoss": 0,
+        "integrityFailures": 0,
+        "storageSoakIterations": 25,
+        "securitySuitesPassed": 5,
+        "backupAgeSeconds": 50,
+        "recoveryPointExposureSeconds": 0,
+        "sameVolumeRecoverySeconds": 1.43,
+        "replacementRestoreSeconds": 1.72,
+        "availableStorageBytes": 1705979473920,
+        "incrementalMonthlyCashCostUsd": 0,
+        "costMeasurementScope": "existing qualification host; incremental cash spend only; excludes allocated shared-host cost"
+      },
+      "securityEvidence": [
+        "docs/auth-security-qualification.md",
+        "docs/policy-security-qualification.md",
+        "docs/rxdb-chaos-qualification.md",
+        "docs/tenant-boundary-qualification.md",
+        "docs/edge-security-qualification.md"
+      ],
+      "blockers": []
+    },
+    {
+      "id": "single-region-beta",
+      "status": "blocked",
+      "scope": "one production region and one stateful owner per RocksDB database",
+      "thresholds": {
+        "acknowledgedWriteLoss": 0,
+        "integrityFailures": 0,
+        "minimumStorageSoakIterations": 25,
+        "requiredSecuritySuites": 5,
+        "maximumBackupAgeSeconds": 900,
+        "maximumRecoveryPointExposureSeconds": 900,
+        "maximumSameVolumeRecoverySeconds": 300,
+        "maximumReplacementRestoreSeconds": 1800,
+        "minimumCapacityHeadroomPercent": 30,
+        "maximumP95Milliseconds": {
+          "auth": 200,
+          "pull": 250,
+          "push": 250,
+          "liveDelivery": 250,
+          "functionWarm": 250,
+          "functionCold": 1500
+        },
+        "maximumMonthlyFixedInfrastructureUsd": 2500,
+        "maximumCostPerMillionReplicationOperationsUsd": 50
+      },
+      "observed": {
+        "deployment": {
+          "vmId": 124,
+          "address": "130.245.173.11",
+          "publicOrigin": "https://cloud-test.makodb.com",
+          "planHash": "d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073",
+          "releaseDigest": "a5ccdaabff7d6ef30da512330dab38b60e32ae034f621ee4d4eed2b49e976000",
+          "runtimeDigest": "b0e4ea7b66166492c3c29910858dc5d1b7f9786df81aed7057d80f34a1ad2abd"
+        },
+        "deploymentStorageQualification": {
+          "passed": true,
+          "topology": "single-vm-control-sqlite-and-service-owned-rocksdb-paths",
+          "synchronousDurability": true,
+          "exclusiveOwnershipVerified": true,
+          "offVmBackupVerified": true
+        },
+        "httpsRoute": {
+          "origin": "https://cloud-test.makodb.com",
+          "trustedCertificateVerified": true,
+          "publicAdmissionEnabled": false,
+          "publicAdmissionMode": "risk_accepted_preview"
+        },
+        "publicPreview": {
+          "label": "risk-accepted-public-preview",
+          "status": "active",
+          "qualifiedBetaStatus": "blocked",
+          "evidence": "docs/evidence/public-beta-public-preview.json"
+        },
+        "measurementWindow": {
+          "status": "in-progress",
+          "startedAt": "2026-08-13T22:21:15.513Z",
+          "expectedCompleteAt": "2026-09-12T22:21:15.513Z",
+          "completedAt": null,
+          "completeDays": 0
+        },
+        "recoveryDrill": {
+          "passed": true,
+          "backupVerified": true,
+          "emptyTargetRestoreVerified": true,
+          "explicitPromotionVerified": true,
+          "releaseRollbackVerified": true
+        },
+        "developerRegistrationAndMail": {
+          "status": "passed",
+          "ordinarySelfServiceLifecycleVerified": true,
+          "authenticatedTransactionalMailVerified": true,
+          "certificateExpiryAlertDelivered": true,
+          "evidence": [
+            "docs/evidence/public-beta-mail-qualification.json",
+            "docs/evidence/public-beta-developer-registration-qualification.json"
+          ]
+        },
+        "endToEndLatency": {
+          "auth": 341.92343000000005,
+          "pull": 5453.2733979999975,
+          "push": 385.49941999999965,
+          "liveDelivery": 52.25101300000006,
+          "functionWarm": 441.0257550000006,
+          "functionCold": 439.4438310000005
+        },
+        "capacityHeadroomPercent": 50,
+        "monthlyFixedInfrastructureUsd": null,
+        "costPerMillionReplicationOperationsUsd": null
+      },
+      "blockers": [
+        "measured auth, RxDB pull, and RxDB push latency exceed their single-region beta p95 budgets",
+        "complete the 30-day resource, capacity, availability, and cost window with provider or facility evidence"
+      ]
+    },
+    {
+      "id": "multi-region",
+      "status": "unsupported",
+      "scope": "public multi-region data-plane release",
+      "thresholds": {
+        "acknowledgedWriteLoss": 0,
+        "integrityFailures": 0,
+        "maximumRegionLossRecoveryPointSeconds": 900,
+        "maximumRegionLossRecoverySeconds": 1800,
+        "maximumCrossRegionP95Milliseconds": 500,
+        "maximumMonthlyFixedInfrastructureUsd": 7500,
+        "maximumCostPerMillionReplicationOperationsUsd": 100
+      },
+      "observed": {
+        "replicatedStorageBackend": null,
+        "regionLossRecoveryPointSeconds": null,
+        "regionLossRecoverySeconds": null,
+        "crossRegionP95Milliseconds": null,
+        "monthlyFixedInfrastructureUsd": null,
+        "costPerMillionReplicationOperationsUsd": null
+      },
+      "blockers": [
+        "production local RocksDB has one owner and no cross-region replication",
+        "a separate OpenSpec change must design and qualify replicated storage",
+        "region-loss, cross-region latency, capacity, and cost measurements do not exist"
+      ]
+    }
+  ]
+}

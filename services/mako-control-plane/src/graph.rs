@@ -1,0 +1,1804 @@
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    error::Error,
+    fmt,
+    net::{IpAddr, Ipv4Addr, SocketAddr},
+    num::NonZeroUsize,
+    sync::Arc,
+};
+
+use futures::executor::block_on;
+use mako_api::{ExplorerCapabilityKey, ExplorerCapabilityKeyRing};
+use mako_audit::{AuditStore, AuditStoreConfig, CursorSigningKey, TelemetryRedactor};
+use mako_config::{DeploymentEnvironment, ServiceConfig, ServiceKind};
+use mako_control_plane::{
+    ApplicationUserAccess, AutomationTokenService, CollectionAdminService, ControlAuditSink,
+    ControlPlaneAuthenticator, CredentialAdminService, DataJobService, DeveloperLookupKey,
+    DeveloperMailCipher, DeveloperMailEncryptionKey, DeveloperMailOutboxWorker,
+    DeveloperMailTransport, DeveloperRegistrationConfig, DeveloperRegistrationService,
+    DeveloperRegistrationStore, DeveloperRestoreService, DeveloperWorkspaceSecurity,
+    ExplorerGrantService, FunctionAdminService, FunctionDeploymentBackend,
+    FunctionSecretEncryptionKey, ManagementAuthorizer, ObservabilityBackend, ObservabilityService,
+    OperatorAuditSink, OperatorAuthenticationAuditSink, OperatorAuthenticationConfig,
+    OperatorAuthenticationKey, OperatorAuthenticationService, OperatorAuthenticationStore,
+    OperatorAuthenticator, OperatorService, OrganizationService, OrganizationStore,
+    PolicyAdminService, ProductionObservabilityBackend, ProductionObservabilityConfig,
+    ProjectEnvironmentService, ProjectStore, RuntimeDeploymentClient,
+    RuntimeDeploymentClientConfig, RuntimeSupervisorCredential, TelemetryQueryCredential,
+};
+use mako_identity::KeyEncryptionKey;
+use mako_internal_rpc::{
+    ControlToDataClient, DeploymentKey, InternalCaller, InternalHttpClient,
+    InternalHttpClientConfig, InternalRequestAuthenticator, RocksInternalReplayGuard,
+};
+use mako_object_store::{ObjectStore, S3Credentials, S3ObjectStore, S3ObjectStoreConfig};
+use mako_policy::PolicyCompiler;
+use mako_provisioning::{
+    KvProvisioningBackend, Provisioner, ProvisioningBackendConfig, ProvisioningStore,
+};
+use mako_service_runtime::{ReadinessProbe, ReadinessSnapshot};
+use mako_storage::{
+    Durability, KvAdapter, SqliteAdapter, SqliteConfig, StorageError, StorageReadiness,
+    check_storage_readiness,
+};
+
+use crate::{
+    audit::{PersistentControlAudit, SharedControlAudit},
+    developer_metrics::DeveloperMetrics,
+    function_resolution::FunctionResolutionService,
+    identity::{
+        DeploymentDeveloperSessionIssuer, DeploymentHostedSessionAuthenticator,
+        deployment_authenticators,
+    },
+    smtp::{ProductionSmtpConfig, ProductionSmtpTransport, SmtpTlsMode},
+};
+
+const AUDIT_RETENTION_MILLISECONDS: u64 = 90 * 24 * 60 * 60 * 1_000;
+const DATA_PLANE_ENDPOINT: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 8080);
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ControlPlaneStorageMode {
+    Sqlite,
+}
+
+enum StorageOwner {
+    Sqlite(SqliteAdapter),
+}
+
+impl StorageOwner {
+    fn open(config: &ServiceConfig) -> Result<Self, StorageError> {
+        let settings = config.control_sqlite.as_ref().ok_or_else(|| {
+            StorageError::invalid(
+                "control_storage",
+                "control-plane SQLite configuration is required",
+            )
+        })?;
+        let mut sqlite =
+            SqliteConfig::new(&settings.database_path, settings.database_identity.clone());
+        sqlite.lock_path = settings.lock_path.clone();
+        sqlite.create_if_missing = config.environment != DeploymentEnvironment::Production;
+        sqlite.minimum_durability = Durability::Sync;
+        sqlite.maximum_batch_operations = settings.maximum_batch_operations;
+        sqlite.maximum_scan_items = settings.maximum_scan_items;
+        sqlite.busy_timeout = settings.busy_timeout;
+        sqlite.transaction_expiration = settings.transaction_expiration;
+        sqlite.shutdown_timeout = settings.shutdown_timeout;
+        sqlite.wal_autocheckpoint_pages = settings.wal_autocheckpoint_pages;
+        sqlite.maximum_wal_bytes = settings.maximum_wal_bytes;
+        sqlite.disk_warning_free_bytes = settings.disk_warning_free_bytes;
+        sqlite.disk_critical_free_bytes = settings.disk_critical_free_bytes;
+        SqliteAdapter::open(sqlite).map(Self::Sqlite)
+    }
+
+    fn adapter(&self) -> SqliteAdapter {
+        match self {
+            Self::Sqlite(adapter) => adapter.clone(),
+        }
+    }
+
+    fn mode(&self) -> ControlPlaneStorageMode {
+        ControlPlaneStorageMode::Sqlite
+    }
+
+    fn initial_readiness(&self) -> StorageReadiness {
+        match self {
+            Self::Sqlite(adapter) => block_on(check_storage_readiness(adapter, Durability::Sync)),
+        }
+    }
+
+    fn health_signals(&self) -> Result<mako_storage::SqliteHealthSignals, StorageError> {
+        match self {
+            Self::Sqlite(adapter) => adapter.health_signals(),
+        }
+    }
+
+    async fn shutdown(self) -> Result<(), StorageError> {
+        match self {
+            Self::Sqlite(adapter) => adapter.shutdown(),
+        }
+    }
+}
+
+struct ControlPlaneComponents {
+    public_origin: String,
+    audit: SharedControlAudit,
+    developer_authenticator: ControlPlaneAuthenticator,
+    developer_session_issuer: DeploymentDeveloperSessionIssuer,
+    hosted_session_authenticator: DeploymentHostedSessionAuthenticator,
+    developer_registration: DeveloperRegistrationStore,
+    developer_registration_service: DeveloperRegistrationService,
+    developer_mail_worker: Option<DeveloperMailOutboxWorker>,
+    developer_metrics: Arc<DeveloperMetrics>,
+    operator_authenticator: OperatorAuthenticator,
+    operator_password_authentication: OperatorAuthenticationService,
+    operator_break_glass_bearer_enabled: bool,
+    organizations: OrganizationStore,
+    projects: ProjectStore,
+    organization_service: OrganizationService,
+    project_service: ProjectEnvironmentService,
+    management_authorizer: ManagementAuthorizer,
+    automation_tokens: AutomationTokenService,
+    collections: CollectionAdminService,
+    policies: PolicyAdminService,
+    application_users: ApplicationUserAccess,
+    explorer_grants: ExplorerGrantService,
+    data_jobs: DataJobService,
+    developer_workspace_security: DeveloperWorkspaceSecurity,
+    developer_restores: DeveloperRestoreService,
+    developer_backups: Arc<crate::operator_provider::ProductionOperatorProvider>,
+    provisioning: Provisioner,
+    provisioning_backend: KvProvisioningBackend,
+    operator_service: OperatorService,
+    operator_control_center: mako_control_plane::OperatorControlCenterService,
+    data_plane_identity_admin: ControlToDataClient,
+    credentials: CredentialAdminService,
+    functions: FunctionAdminService,
+    object_store: Arc<S3ObjectStore>,
+    runtime: Arc<RuntimeDeploymentClient>,
+    observability_backend: Arc<ProductionObservabilityBackend>,
+    observability: ObservabilityService,
+    function_resolution: FunctionResolutionService,
+    internal_deployment_key: DeploymentKey,
+    enforce_production_dependencies: bool,
+}
+
+/// Complete persistent dependency graph for management and operator traffic.
+/// It deliberately exposes no control-owned application credential authority.
+pub struct ControlPlaneGraph {
+    storage: StorageOwner,
+    adapter: Arc<dyn KvAdapter>,
+    components: ControlPlaneComponents,
+}
+
+impl ControlPlaneGraph {
+    pub fn open(config: &ServiceConfig) -> Result<Self, ControlPlaneGraphError> {
+        Self::open_with_data_plane_endpoint(config, DATA_PLANE_ENDPOINT)
+    }
+
+    #[allow(clippy::field_reassign_with_default)]
+    fn open_with_data_plane_endpoint(
+        config: &ServiceConfig,
+        data_plane_endpoint: SocketAddr,
+    ) -> Result<Self, ControlPlaneGraphError> {
+        if config.service != ServiceKind::ControlPlane {
+            return Err(ControlPlaneGraphError::WrongService);
+        }
+        let secret = config
+            .internal_auth_secret
+            .as_ref()
+            .ok_or(ControlPlaneGraphError::MissingKeyMaterial)?;
+        if secret.expose_secret().len() < 32 || secret.expose_secret().chars().any(char::is_control)
+        {
+            return Err(ControlPlaneGraphError::InvalidKeyMaterial);
+        }
+        let public_origin = config.public_url.as_ref().map_or_else(
+            || format!("http://{}", config.bind_address),
+            ToString::to_string,
+        );
+        let issuer = format!("{}/control-identity", public_origin.trim_end_matches('/'));
+        let storage = StorageOwner::open(config)?;
+        if !storage.initial_readiness().is_ready() {
+            return Err(ControlPlaneGraphError::StorageNotReady);
+        }
+        let adapter: Arc<dyn KvAdapter> = Arc::new(storage.adapter());
+        let developer_registration = DeveloperRegistrationStore::new(
+            Arc::clone(&adapter),
+            Durability::Sync,
+            DeveloperLookupKey::derive(secret.expose_secret().as_bytes()),
+        )
+        .map_err(|_| ControlPlaneGraphError::Composition("developer registration store"))?;
+        block_on(developer_registration.migrate_legacy_developers())
+            .map_err(|_| ControlPlaneGraphError::Composition("developer identity migration"))?;
+        let registration = &config.developer_registration;
+        let mail_key_material = registration
+            .mail_encryption_secret
+            .as_ref()
+            .map_or_else(|| secret.expose_secret(), |value| value.expose_secret());
+        let mail_key = DeveloperMailEncryptionKey::derive(mail_key_material.as_bytes());
+        let smtp_transport: Option<Arc<dyn DeveloperMailTransport>> = registration
+            .smtp
+            .as_ref()
+            .map(|smtp| {
+                ProductionSmtpTransport::new(ProductionSmtpConfig {
+                    relay_hostname: smtp.relay_hostname.clone(),
+                    port: smtp.port,
+                    tls_mode: match smtp.tls_mode {
+                        mako_config::SmtpTlsMode::Wrapper => SmtpTlsMode::Wrapper,
+                        mako_config::SmtpTlsMode::StartTls => SmtpTlsMode::StartTls,
+                    },
+                    username: smtp.username.clone(),
+                    password: smtp.password.expose_secret().to_owned(),
+                    sender: smtp.sender.clone(),
+                    timeout: smtp.timeout,
+                })
+                .map(|transport| Arc::new(transport) as Arc<dyn DeveloperMailTransport>)
+            })
+            .transpose()
+            .map_err(|_| ControlPlaneGraphError::Composition("authenticated SMTP"))?;
+        let mail_ready = smtp_transport
+            .as_ref()
+            .is_some_and(|transport| block_on(transport.readiness()).is_ok());
+        let mut developer_registration_config = DeveloperRegistrationConfig::default();
+        developer_registration_config.enabled = registration.enabled;
+        developer_registration_config.mail_ready = mail_ready;
+        developer_registration_config.public_origin =
+            public_origin.trim_end_matches('/').to_owned();
+        developer_registration_config.issuer = issuer.clone();
+        developer_registration_config.verification_lifetime_seconds =
+            registration.verification_lifetime.as_secs();
+        developer_registration_config.recovery_lifetime_seconds =
+            registration.recovery_lifetime.as_secs();
+        developer_registration_config.access_lifetime_seconds =
+            registration.access_lifetime.as_secs();
+        developer_registration_config.refresh_lifetime_seconds =
+            registration.refresh_lifetime.as_secs();
+        developer_registration_config.decision_retention_seconds =
+            registration.decision_retention.as_secs();
+        developer_registration_config.rate_window_seconds = registration.rate_window.as_secs();
+        developer_registration_config.global_requests_per_window =
+            registration.global_requests_per_window;
+        developer_registration_config.source_requests_per_window =
+            registration.source_requests_per_window;
+        developer_registration_config.email_requests_per_window =
+            registration.email_requests_per_window;
+        developer_registration_config.token_attempts_per_window =
+            registration.token_attempts_per_window;
+        developer_registration_config.maximum_parallel_password_work =
+            registration.maximum_parallel_password_work;
+        developer_registration_config.maximum_pending_outbox = registration.maximum_pending_outbox;
+        developer_registration_config.maximum_outbox_batch = registration.maximum_outbox_batch;
+        developer_registration_config.outbox_lease_seconds = registration.outbox_lease.as_secs();
+        developer_registration_config.outbox_maximum_attempts =
+            registration.outbox_maximum_attempts;
+        developer_registration_config.outbox_maximum_backoff_seconds =
+            registration.outbox_maximum_backoff.as_secs();
+        developer_registration_config.delivered_mail_retention_seconds =
+            registration.delivered_mail_retention.as_secs();
+        let developer_registration_service = DeveloperRegistrationService::new(
+            developer_registration.clone(),
+            developer_registration_config.clone(),
+            mail_key.clone(),
+        )
+        .map_err(|_| ControlPlaneGraphError::Composition("developer registration service"))?;
+        let operator_authentication_store = OperatorAuthenticationStore::new(
+            Arc::clone(&adapter),
+            Durability::Sync,
+            OperatorAuthenticationKey::derive(secret.expose_secret().as_bytes()),
+        )
+        .map_err(|_| ControlPlaneGraphError::Composition("operator authentication store"))?;
+        block_on(operator_authentication_store.migrate()).map_err(|_| {
+            ControlPlaneGraphError::Composition("operator authentication migration")
+        })?;
+        let developer_metrics = Arc::new(DeveloperMetrics::default());
+        let developer_mail_worker = smtp_transport
+            .map(|transport| {
+                DeveloperMailOutboxWorker::new(
+                    developer_registration.clone(),
+                    DeveloperMailCipher::new(mail_key),
+                    transport,
+                    developer_registration_config,
+                )
+            })
+            .transpose()
+            .map_err(|_| ControlPlaneGraphError::Composition("developer mail worker"))?;
+        let (developer_authenticator, operator_authenticator) = deployment_authenticators(
+            secret.expose_secret(),
+            &issuer,
+            Some(developer_registration.clone()),
+        )
+        .map_err(|_| ControlPlaneGraphError::Identity)?;
+        let operator_authenticator = operator_authenticator
+            .with_enabled(config.operator_authentication.break_glass_bearer_enabled);
+        let developer_session_issuer =
+            DeploymentDeveloperSessionIssuer::derive(secret.expose_secret());
+        let hosted_session_authenticator = DeploymentHostedSessionAuthenticator::new(
+            secret.expose_secret(),
+            issuer.clone(),
+            developer_registration.clone(),
+        );
+
+        let audit_store = AuditStore::new(
+            Arc::clone(&adapter),
+            AuditStoreConfig {
+                durability: Durability::Sync,
+                retention_milliseconds: AUDIT_RETENTION_MILLISECONDS,
+                maximum_page_records: nonzero(100),
+                maximum_export_records: nonzero(10_000),
+                maximum_examined_records: nonzero(50_000),
+                cursor_signing_key: CursorSigningKey::new(blake3::derive_key(
+                    "mako/control-plane/audit-cursor-signing/v1",
+                    secret.expose_secret().as_bytes(),
+                )),
+            },
+        )
+        .map_err(|_| ControlPlaneGraphError::Composition("audit store"))?;
+        let redactor = TelemetryRedactor::new([secret.expose_secret()])
+            .map_err(|_| ControlPlaneGraphError::Composition("audit redaction"))?;
+        let audit = Arc::new(PersistentControlAudit::new(
+            audit_store.clone(),
+            redactor,
+            Arc::clone(&adapter),
+        ));
+        let control_audit: Arc<dyn ControlAuditSink> = audit.clone();
+        let operator_audit: Arc<dyn OperatorAuditSink> = audit.clone();
+        let operator_authentication_audit: Arc<dyn OperatorAuthenticationAuditSink> = audit.clone();
+        let operator_settings = &config.operator_authentication;
+        let operator_password_authentication = OperatorAuthenticationService::new(
+            operator_authentication_store,
+            developer_registration_service.clone(),
+            OperatorAuthenticationConfig {
+                enabled: operator_settings.enabled,
+                session_lifetime_seconds: operator_settings.session_lifetime.as_secs(),
+                mutation_freshness_seconds: operator_settings.mutation_freshness.as_secs(),
+                attempt_window_seconds: operator_settings.attempt_window.as_secs(),
+                source_attempts_per_window: operator_settings.source_attempts_per_window,
+                identity_attempts_per_window: operator_settings.identity_attempts_per_window,
+                base_backoff_seconds: operator_settings.base_backoff.as_secs(),
+                maximum_backoff_seconds: operator_settings.maximum_backoff.as_secs(),
+                cookie_name: operator_settings.cookie_name.clone(),
+            },
+            operator_authentication_audit,
+        )
+        .map_err(|_| ControlPlaneGraphError::Composition("operator password authentication"))?;
+
+        let organizations = OrganizationStore::new(Arc::clone(&adapter), Durability::Sync)
+            .map_err(|_| ControlPlaneGraphError::Composition("organization store"))?;
+        let projects = ProjectStore::new(Arc::clone(&adapter), Durability::Sync)
+            .map_err(|_| ControlPlaneGraphError::Composition("project store"))?;
+        let organization_service =
+            OrganizationService::new(organizations.clone(), Arc::clone(&control_audit));
+        let project_service = ProjectEnvironmentService::new(
+            projects.clone(),
+            organizations.clone(),
+            Arc::clone(&control_audit),
+        );
+        let management_authorizer =
+            ManagementAuthorizer::new(organizations.clone(), projects.clone());
+        let automation_tokens = AutomationTokenService::new(Arc::clone(&adapter), Durability::Sync)
+            .map_err(|_| ControlPlaneGraphError::Composition("automation tokens"))?;
+        let collections = CollectionAdminService::new(
+            Arc::clone(&adapter),
+            Durability::Sync,
+            projects.clone(),
+            organizations.clone(),
+            Arc::clone(&control_audit),
+        )
+        .map_err(|_| ControlPlaneGraphError::Composition("collection management"))?;
+        let policies = PolicyAdminService::new(
+            Arc::clone(&adapter),
+            Durability::Sync,
+            projects.clone(),
+            organizations.clone(),
+            Arc::clone(&control_audit),
+            PolicyCompiler::default(),
+        )
+        .map_err(|_| ControlPlaneGraphError::Composition("policy management"))?;
+        let application_users = ApplicationUserAccess::new(
+            projects.clone(),
+            organizations.clone(),
+            Arc::clone(&control_audit),
+        );
+        let explorer_capability_key = ExplorerCapabilityKey::new(
+            "xcap-v1",
+            &blake3::derive_key(
+                "mako/explorer-capability-signing/v1",
+                secret.expose_secret().as_bytes(),
+            ),
+        )
+        .map_err(|_| ControlPlaneGraphError::Composition("explorer capability key"))?;
+        let explorer_grants = ExplorerGrantService::new(
+            Arc::clone(&adapter),
+            Durability::Sync,
+            developer_registration.clone(),
+            projects.clone(),
+            organizations.clone(),
+            collections.clone(),
+            ExplorerCapabilityKeyRing::new(explorer_capability_key, Vec::new())
+                .map_err(|_| ControlPlaneGraphError::Composition("explorer capability key ring"))?,
+            Arc::clone(&control_audit),
+        );
+
+        let provisioning_store = ProvisioningStore::new(Arc::clone(&adapter), Durability::Sync)
+            .map_err(|_| ControlPlaneGraphError::Composition("provisioning store"))?;
+        let provisioning = Provisioner::new(provisioning_store);
+        let provisioning_config = ProvisioningBackendConfig::new(
+            &public_origin,
+            &public_origin,
+            &public_origin,
+            default_quotas(),
+        )
+        .map_err(|_| ControlPlaneGraphError::Composition("provisioning configuration"))?;
+        let provisioning_backend =
+            KvProvisioningBackend::new(Arc::clone(&adapter), Durability::Sync, provisioning_config)
+                .map_err(|_| ControlPlaneGraphError::Composition("provisioning backend"))?;
+        let operator_service = OperatorService::new(
+            Arc::clone(&adapter),
+            Durability::Sync,
+            projects.clone(),
+            provisioning.clone(),
+            Arc::clone(&operator_audit),
+        )
+        .map_err(|_| ControlPlaneGraphError::Composition("operator service"))?;
+
+        let deployment_key = DeploymentKey::derive(secret.expose_secret())
+            .map_err(|_| ControlPlaneGraphError::Composition("internal authentication"))?;
+        let internal_client = InternalHttpClient::new(
+            InternalHttpClientConfig::loopback(data_plane_endpoint),
+            deployment_key.clone(),
+            InternalCaller::ControlPlane,
+        )
+        .map_err(|_| ControlPlaneGraphError::Composition("data-plane client"))?;
+        let data_plane_identity_admin = ControlToDataClient::new(internal_client)
+            .map_err(|_| ControlPlaneGraphError::Composition("data-plane identity client"))?;
+        let function_encryption_key = FunctionSecretEncryptionKey::from_bytes(blake3::derive_key(
+            "mako/control-plane/function-secret-encryption/v1",
+            secret.expose_secret().as_bytes(),
+        ));
+        let credentials = CredentialAdminService::new(
+            Arc::clone(&adapter),
+            Durability::Sync,
+            projects.clone(),
+            organizations.clone(),
+            Arc::clone(&control_audit),
+            KeyEncryptionKey::from_bytes(blake3::derive_key(
+                "mako/control-plane/unused-local-signing-key-encryption/v1",
+                secret.expose_secret().as_bytes(),
+            )),
+            function_encryption_key.clone(),
+        )
+        .map_err(|_| ControlPlaneGraphError::Composition("function secret service"))?;
+        let object_access = config
+            .object_store_access_key
+            .as_ref()
+            .ok_or(ControlPlaneGraphError::MissingKeyMaterial)?;
+        let object_secret = config
+            .object_store_secret_key
+            .as_ref()
+            .ok_or(ControlPlaneGraphError::MissingKeyMaterial)?;
+        let object_store = Arc::new(
+            S3ObjectStore::new(
+                S3ObjectStoreConfig::loopback(
+                    config.object_store_endpoint.clone(),
+                    config.region.clone(),
+                ),
+                S3Credentials::new(object_access.expose_secret(), object_secret.expose_secret())
+                    .map_err(|_| ControlPlaneGraphError::Composition("object-store credentials"))?,
+            )
+            .map_err(|_| ControlPlaneGraphError::Composition("object store"))?,
+        );
+        let data_jobs = DataJobService::new(
+            Arc::clone(&adapter),
+            Durability::Sync,
+            projects.clone(),
+            organizations.clone(),
+            collections.clone(),
+            object_store.clone(),
+            blake3::derive_key(
+                "mako/control-plane/data-job-artifact-grant/v1",
+                secret.expose_secret().as_bytes(),
+            ),
+            &public_origin,
+            data_plane_identity_admin.clone(),
+            Arc::clone(&control_audit),
+        )
+        .map_err(|_| ControlPlaneGraphError::Composition("data jobs"))?;
+        let runtime = Arc::new(
+            RuntimeDeploymentClient::new(
+                RuntimeDeploymentClientConfig::loopback(
+                    config.runtime_supervisor_address,
+                    config.region.clone(),
+                ),
+                RuntimeSupervisorCredential::new(secret.expose_secret())
+                    .map_err(|_| ControlPlaneGraphError::Composition("runtime credential"))?,
+            )
+            .map_err(|_| ControlPlaneGraphError::Composition("runtime client"))?,
+        );
+        let objects: Arc<dyn ObjectStore> = object_store.clone();
+        let deployment_backend: Arc<dyn FunctionDeploymentBackend> = runtime.clone();
+        let functions = FunctionAdminService::new(
+            Arc::clone(&adapter),
+            Durability::Sync,
+            projects.clone(),
+            organizations.clone(),
+            Arc::clone(&control_audit),
+            credentials.clone(),
+            objects,
+            deployment_backend,
+        )
+        .map_err(|_| ControlPlaneGraphError::Composition("function administration"))?;
+        let observability_backend = Arc::new(
+            ProductionObservabilityBackend::new(
+                ProductionObservabilityConfig::loopback(
+                    config.telemetry_query_address,
+                    config.region.clone(),
+                ),
+                audit_store.clone(),
+                Arc::clone(&adapter),
+                Arc::new(
+                    TelemetryRedactor::new([secret.expose_secret()]).map_err(|_| {
+                        ControlPlaneGraphError::Composition("observability redaction")
+                    })?,
+                ),
+                TelemetryQueryCredential::new(secret.expose_secret())
+                    .map_err(|_| ControlPlaneGraphError::Composition("telemetry credential"))?,
+            )
+            .map_err(|_| ControlPlaneGraphError::Composition("observability backend"))?,
+        );
+        let backend: Arc<dyn ObservabilityBackend> = observability_backend.clone();
+        let observability = ObservabilityService::new(
+            projects.clone(),
+            organizations.clone(),
+            Arc::clone(&control_audit),
+            backend,
+        );
+        let operator_control_center_config = operator_control_center_config();
+        let developer_backups =
+            Arc::new(crate::operator_provider::ProductionOperatorProvider::new(
+                observability_backend.clone(),
+                operator_control_center_config
+                    .allowed_diagnostic_origins
+                    .clone(),
+                operator_backup_evidence(),
+                storage.adapter(),
+            ));
+        let operator_provider: Arc<dyn mako_control_plane::OperatorProvider> =
+            developer_backups.clone();
+        let operator_control_center = mako_control_plane::OperatorControlCenterService::new(
+            Arc::clone(&adapter),
+            Durability::Sync,
+            projects.clone(),
+            organizations.clone(),
+            developer_registration.clone(),
+            operator_provider,
+            operator_audit,
+            blake3::derive_key(
+                "mako/operator-control-center/cursor-signing/v1",
+                secret.expose_secret().as_bytes(),
+            ),
+            operator_control_center_config,
+        )
+        .map_err(|_| ControlPlaneGraphError::Composition("operator control center"))?;
+        let function_resolution =
+            FunctionResolutionService::new(Arc::clone(&adapter), function_encryption_key)?;
+        let developer_workspace_security = DeveloperWorkspaceSecurity::new(blake3::derive_key(
+            "mako/developer-workspace/step-up/v1",
+            secret.expose_secret().as_bytes(),
+        ));
+        let developer_restores = DeveloperRestoreService::new(
+            Arc::clone(&adapter),
+            Durability::Sync,
+            projects.clone(),
+            organizations.clone(),
+            developer_workspace_security.clone(),
+        )
+        .map_err(|_| ControlPlaneGraphError::Composition("developer restore service"))?;
+
+        Ok(Self {
+            storage,
+            adapter,
+            components: ControlPlaneComponents {
+                public_origin: public_origin.trim_end_matches('/').to_owned(),
+                audit,
+                developer_authenticator,
+                developer_session_issuer,
+                hosted_session_authenticator,
+                developer_registration,
+                developer_registration_service,
+                developer_mail_worker,
+                developer_metrics,
+                operator_authenticator,
+                operator_password_authentication,
+                operator_break_glass_bearer_enabled: operator_settings.break_glass_bearer_enabled,
+                organizations,
+                projects,
+                organization_service,
+                project_service,
+                management_authorizer,
+                automation_tokens,
+                collections,
+                policies,
+                application_users,
+                explorer_grants,
+                data_jobs,
+                developer_workspace_security,
+                developer_restores,
+                developer_backups,
+                provisioning,
+                provisioning_backend,
+                operator_service,
+                operator_control_center,
+                data_plane_identity_admin,
+                credentials,
+                functions,
+                object_store,
+                runtime,
+                observability_backend,
+                observability,
+                function_resolution,
+                internal_deployment_key: deployment_key,
+                enforce_production_dependencies: config.environment
+                    == DeploymentEnvironment::Production,
+            },
+        })
+    }
+
+    #[must_use]
+    pub fn storage_mode(&self) -> ControlPlaneStorageMode {
+        self.storage.mode()
+    }
+
+    #[must_use]
+    pub fn developer_authenticator(&self) -> &ControlPlaneAuthenticator {
+        &self.components.developer_authenticator
+    }
+
+    #[must_use]
+    pub fn developer_registration_store(&self) -> &DeveloperRegistrationStore {
+        &self.components.developer_registration
+    }
+
+    #[must_use]
+    pub fn developer_registration_service(&self) -> &DeveloperRegistrationService {
+        &self.components.developer_registration_service
+    }
+
+    pub fn developer_mail_worker(&self) -> Option<&DeveloperMailOutboxWorker> {
+        self.components.developer_mail_worker.as_ref()
+    }
+
+    pub(crate) fn developer_metrics(&self) -> &Arc<DeveloperMetrics> {
+        &self.components.developer_metrics
+    }
+
+    pub(crate) fn control_storage_health_signals(
+        &self,
+    ) -> Result<mako_storage::SqliteHealthSignals, StorageError> {
+        self.storage.health_signals()
+    }
+
+    pub fn observe_developer_mail(&self, report: &mako_control_plane::DeveloperOutboxWorkerReport) {
+        self.components.developer_metrics.observe_mail(report);
+    }
+
+    pub fn observe_developer_mail_worker_failure(&self) {
+        self.components
+            .developer_metrics
+            .observe_mail_worker_failure();
+    }
+
+    pub async fn cleanup_operator_authentication(
+        &self,
+        now_unix_seconds: u64,
+    ) -> Result<mako_control_plane::OperatorAuthenticationCleanupReport, ControlPlaneGraphError>
+    {
+        self.components
+            .operator_password_authentication
+            .store()
+            .cleanup_expired(
+                now_unix_seconds,
+                NonZeroUsize::new(256).expect("operator cleanup limit is non-zero"),
+            )
+            .await
+            .map_err(|_| ControlPlaneGraphError::Composition("operator authentication cleanup"))
+    }
+
+    pub(crate) fn developer_session_issuer(&self) -> &DeploymentDeveloperSessionIssuer {
+        &self.components.developer_session_issuer
+    }
+
+    pub(crate) fn hosted_session_authenticator(&self) -> &DeploymentHostedSessionAuthenticator {
+        &self.components.hosted_session_authenticator
+    }
+
+    #[must_use]
+    pub fn operator_authenticator(&self) -> &OperatorAuthenticator {
+        &self.components.operator_authenticator
+    }
+
+    #[must_use]
+    pub fn operator_password_authentication(&self) -> &OperatorAuthenticationService {
+        &self.components.operator_password_authentication
+    }
+
+    #[must_use]
+    pub const fn operator_break_glass_bearer_enabled(&self) -> bool {
+        self.components.operator_break_glass_bearer_enabled
+    }
+
+    #[must_use]
+    pub fn organization_store(&self) -> &OrganizationStore {
+        &self.components.organizations
+    }
+
+    #[must_use]
+    pub fn project_store(&self) -> &ProjectStore {
+        &self.components.projects
+    }
+
+    #[must_use]
+    pub fn organization_service(&self) -> &OrganizationService {
+        &self.components.organization_service
+    }
+
+    #[must_use]
+    pub fn project_service(&self) -> &ProjectEnvironmentService {
+        &self.components.project_service
+    }
+
+    #[must_use]
+    pub fn management_authorizer(&self) -> &ManagementAuthorizer {
+        &self.components.management_authorizer
+    }
+
+    #[must_use]
+    pub fn automation_token_service(&self) -> &AutomationTokenService {
+        &self.components.automation_tokens
+    }
+
+    #[must_use]
+    pub fn collection_service(&self) -> &CollectionAdminService {
+        &self.components.collections
+    }
+
+    #[must_use]
+    pub fn policy_service(&self) -> &PolicyAdminService {
+        &self.components.policies
+    }
+
+    #[must_use]
+    pub fn application_user_access(&self) -> &ApplicationUserAccess {
+        &self.components.application_users
+    }
+
+    #[must_use]
+    pub fn explorer_grant_service(&self) -> &ExplorerGrantService {
+        &self.components.explorer_grants
+    }
+
+    #[must_use]
+    pub fn data_job_service(&self) -> &DataJobService {
+        &self.components.data_jobs
+    }
+
+    #[must_use]
+    pub fn developer_workspace_security(&self) -> &DeveloperWorkspaceSecurity {
+        &self.components.developer_workspace_security
+    }
+
+    #[must_use]
+    pub fn developer_restore_service(&self) -> &DeveloperRestoreService {
+        &self.components.developer_restores
+    }
+
+    pub fn developer_backups(
+        &self,
+        tenant: &mako_api::TenantScope,
+        now_unix_seconds: u64,
+    ) -> Vec<mako_api::DeveloperBackupView> {
+        self.components
+            .developer_backups
+            .developer_backups(tenant, now_unix_seconds)
+    }
+
+    #[must_use]
+    pub fn provisioner(&self) -> &Provisioner {
+        &self.components.provisioning
+    }
+
+    #[must_use]
+    pub fn provisioning_backend(&self) -> &KvProvisioningBackend {
+        &self.components.provisioning_backend
+    }
+
+    #[must_use]
+    pub fn operator_service(&self) -> &OperatorService {
+        &self.components.operator_service
+    }
+
+    pub fn operator_control_center(&self) -> &mako_control_plane::OperatorControlCenterService {
+        &self.components.operator_control_center
+    }
+
+    #[must_use]
+    pub fn data_plane_identity_admin(&self) -> &ControlToDataClient {
+        &self.components.data_plane_identity_admin
+    }
+
+    #[must_use]
+    pub fn credential_service(&self) -> &CredentialAdminService {
+        &self.components.credentials
+    }
+
+    #[must_use]
+    pub fn function_service(&self) -> &FunctionAdminService {
+        &self.components.functions
+    }
+
+    #[must_use]
+    pub fn observability_service(&self) -> &ObservabilityService {
+        &self.components.observability
+    }
+
+    #[must_use]
+    pub fn function_resolution(&self) -> &FunctionResolutionService {
+        &self.components.function_resolution
+    }
+
+    #[must_use]
+    pub fn internal_authenticator(&self) -> InternalRequestAuthenticator {
+        InternalRequestAuthenticator::new(
+            self.components.internal_deployment_key.clone(),
+            InternalCaller::EdgeGateway,
+        )
+    }
+
+    #[must_use]
+    pub fn operator_admin_authenticator(&self) -> InternalRequestAuthenticator {
+        InternalRequestAuthenticator::new(
+            self.components.internal_deployment_key.clone(),
+            InternalCaller::OperatorAdmin,
+        )
+    }
+
+    #[must_use]
+    pub fn public_origin(&self) -> &str {
+        &self.components.public_origin
+    }
+
+    pub fn internal_replay_guard(
+        &self,
+        tenant: &mako_api::TenantScope,
+    ) -> Result<RocksInternalReplayGuard, ControlPlaneGraphError> {
+        RocksInternalReplayGuard::new(Arc::clone(&self.adapter), tenant, tenant)
+            .map_err(|_| ControlPlaneGraphError::Composition("internal replay guard"))
+    }
+
+    pub fn readiness(&self) -> ControlPlaneReadiness {
+        let enforce = self.components.enforce_production_dependencies;
+        ControlPlaneReadiness {
+            storage: block_on(check_storage_readiness(
+                self.adapter.as_ref(),
+                Durability::Sync,
+            )),
+            developer_authentication: true,
+            operator_authentication: true,
+            rbac: true,
+            audit: self.components.audit.healthy(),
+            provisioning: true,
+            management: true,
+            data_plane_identity_admin: self
+                .components
+                .data_plane_identity_admin
+                .dependency_ready()
+                .unwrap_or(false),
+            object_store: !enforce
+                || self.components.object_store.dependency_ready()
+                || self.components.object_store.ensure_bucket().is_ok(),
+            runtime_supervisor: !enforce || self.components.runtime.dependency_ready(),
+            telemetry_query: !enforce
+                || block_on(self.components.observability_backend.dependency_ready()),
+            function_resolution: true,
+        }
+    }
+
+    pub async fn shutdown(self) -> Result<(), ControlPlaneGraphError> {
+        let Self {
+            storage,
+            adapter,
+            components,
+        } = self;
+        drop(components);
+        drop(adapter);
+        storage.shutdown().await.map_err(Into::into)
+    }
+}
+
+impl ReadinessProbe for ControlPlaneGraph {
+    fn snapshot(&self) -> ReadinessSnapshot {
+        self.readiness().snapshot()
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ControlPlaneReadiness {
+    pub storage: StorageReadiness,
+    pub developer_authentication: bool,
+    pub operator_authentication: bool,
+    pub rbac: bool,
+    pub audit: bool,
+    pub provisioning: bool,
+    pub management: bool,
+    pub data_plane_identity_admin: bool,
+    pub object_store: bool,
+    pub runtime_supervisor: bool,
+    pub telemetry_query: bool,
+    pub function_resolution: bool,
+}
+
+impl ControlPlaneReadiness {
+    #[must_use]
+    pub fn is_ready(&self) -> bool {
+        self.storage.is_ready()
+            && self.developer_authentication
+            && self.operator_authentication
+            && self.rbac
+            && self.audit
+            && self.provisioning
+            && self.management
+            && self.object_store
+            && self.runtime_supervisor
+            && self.telemetry_query
+            && self.function_resolution
+    }
+
+    fn snapshot(&self) -> ReadinessSnapshot {
+        let gating_dependencies = [
+            ("storage", self.storage.is_ready()),
+            ("developer_authentication", self.developer_authentication),
+            ("operator_authentication", self.operator_authentication),
+            ("rbac", self.rbac),
+            ("audit", self.audit),
+            ("provisioning", self.provisioning),
+            ("management", self.management),
+            ("object_store", self.object_store),
+            ("runtime_supervisor", self.runtime_supervisor),
+            ("telemetry_query", self.telemetry_query),
+            ("function_resolution", self.function_resolution),
+        ];
+        let failed = gating_dependencies
+            .into_iter()
+            .filter_map(|(name, ready)| (!ready).then_some(name))
+            .collect::<Vec<_>>();
+        if failed.is_empty() {
+            ReadinessSnapshot::ready(if self.data_plane_identity_admin {
+                "control_ready:data_plane=available"
+            } else {
+                "control_ready:data_plane=unavailable"
+            })
+        } else {
+            ReadinessSnapshot::not_ready(format!("dependencies_not_ready:{}", failed.join(",")))
+        }
+    }
+}
+
+impl fmt::Display for ControlPlaneReadiness {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.snapshot().detail)
+    }
+}
+
+fn default_quotas() -> BTreeMap<String, u64> {
+    BTreeMap::from([
+        ("storage_bytes".to_owned(), 10 * 1024 * 1024 * 1024),
+        ("replication_requests_per_day".to_owned(), 100_000),
+        (
+            "replication_bytes_per_day".to_owned(),
+            10 * 1024 * 1024 * 1024,
+        ),
+        ("function_invocations_per_day".to_owned(), 100_000),
+    ])
+}
+
+fn operator_backup_evidence() -> Vec<mako_control_plane::BackupSummary> {
+    std::env::var("MAKO_OPERATOR_BACKUP_EVIDENCE_JSON")
+        .ok()
+        .and_then(|value| {
+            serde_json::from_str::<Vec<mako_control_plane::BackupSummary>>(&value).ok()
+        })
+        .filter(|records| records.len() <= 100)
+        .unwrap_or_default()
+}
+
+fn operator_control_center_config() -> mako_control_plane::OperatorControlCenterConfig {
+    let enabled = |name: &str| {
+        std::env::var(name)
+            .ok()
+            .is_some_and(|value| value.eq_ignore_ascii_case("true") || value == "1")
+    };
+    let allowed_diagnostic_origins = std::env::var("MAKO_OPERATOR_DIAGNOSTIC_ORIGINS")
+        .ok()
+        .into_iter()
+        .flat_map(|value| {
+            value
+                .split(',')
+                .map(str::trim)
+                .filter(|origin| {
+                    origin.strip_prefix("https://").is_some_and(|authority| {
+                        !authority.is_empty()
+                            && !authority.contains(['/', '?', '#', '@'])
+                            && !authority.contains("..")
+                    })
+                })
+                .map(str::to_owned)
+                .collect::<Vec<_>>()
+        })
+        .collect::<BTreeSet<_>>();
+    mako_control_plane::OperatorControlCenterConfig {
+        recovery_creation_enabled: enabled("MAKO_OPERATOR_RECOVERY_CREATE_ENABLED"),
+        recovery_promotion_enabled: enabled("MAKO_OPERATOR_RECOVERY_PROMOTE_ENABLED"),
+        allowed_diagnostic_origins,
+    }
+}
+
+fn nonzero(value: usize) -> NonZeroUsize {
+    NonZeroUsize::new(value).expect("control-plane limits are positive constants")
+}
+
+#[derive(Debug)]
+pub enum ControlPlaneGraphError {
+    WrongService,
+    MissingKeyMaterial,
+    InvalidKeyMaterial,
+    StorageNotReady,
+    Storage(StorageError),
+    Identity,
+    FunctionResolution(crate::FunctionResolutionError),
+    Composition(&'static str),
+}
+
+impl fmt::Display for ControlPlaneGraphError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::WrongService => {
+                formatter.write_str("control-plane graph received another service configuration")
+            }
+            Self::MissingKeyMaterial => {
+                formatter.write_str("control-plane protected key material is unavailable")
+            }
+            Self::InvalidKeyMaterial => {
+                formatter.write_str("control-plane protected key material is invalid")
+            }
+            Self::StorageNotReady => {
+                formatter.write_str("control-plane storage dependencies are not ready")
+            }
+            Self::Storage(_) => formatter.write_str("control-plane storage could not be opened"),
+            Self::Identity => formatter.write_str("control-plane identity could not be composed"),
+            Self::FunctionResolution(_) => {
+                formatter.write_str("control-plane function resolution could not be composed")
+            }
+            Self::Composition(component) => {
+                write!(formatter, "control-plane {component} could not be composed")
+            }
+        }
+    }
+}
+
+impl Error for ControlPlaneGraphError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Storage(error) => Some(error),
+            Self::FunctionResolution(error) => Some(error),
+            _ => None,
+        }
+    }
+}
+
+impl From<StorageError> for ControlPlaneGraphError {
+    fn from(error: StorageError) -> Self {
+        Self::Storage(error)
+    }
+}
+
+impl From<crate::FunctionResolutionError> for ControlPlaneGraphError {
+    fn from(error: crate::FunctionResolutionError) -> Self {
+        Self::FunctionResolution(error)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        fs,
+        io::{Read, Write},
+        net::TcpListener,
+        path::Path,
+        thread,
+    };
+
+    use mako_config::ConfigLoader;
+    use mako_control_plane::{
+        ControlKeyspace, DeveloperAccount, DeveloperIdentityId, DeveloperIdentityStatus,
+        OperatorEntitlementRecord, OperatorPermission,
+    };
+    use mako_identity::{Argon2idParameters, NormalizedEmail, PasswordPolicy, PasswordService};
+    use mako_service_runtime::{HttpMethod, HttpRequest};
+    use mako_storage::{SqliteAdapter, SqliteConfig, WriteBatch};
+    use tempfile::{Builder, TempDir};
+
+    use super::*;
+
+    #[test]
+    fn local_graph_composes_all_dependencies_and_probes_data_plane() {
+        let directory = local_tempdir("control-plane-local");
+        let config = config_for(directory.path(), DeploymentEnvironment::Local);
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("ready listener");
+        let endpoint = listener.local_addr().expect("listener address");
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("ready request");
+            let mut request = Vec::new();
+            let mut chunk = [0_u8; 512];
+            while !request.windows(4).any(|window| window == b"\r\n\r\n") {
+                let read = stream.read(&mut chunk).expect("request bytes");
+                assert!(read > 0, "request ended before its headers");
+                request.extend_from_slice(&chunk[..read]);
+            }
+            assert!(String::from_utf8_lossy(&request).starts_with("GET /readyz HTTP/1.1"));
+            stream
+                .write_all(
+                    b"HTTP/1.1 200 OK\r\ncontent-length: 0\r\nx-mako-request-id: req_readiness\r\nconnection: close\r\n\r\n",
+                )
+                .expect("ready response");
+        });
+
+        let graph = Arc::new(
+            ControlPlaneGraph::open_with_data_plane_endpoint(&config, endpoint)
+                .expect("control-plane graph"),
+        );
+        assert_eq!(graph.storage_mode(), ControlPlaneStorageMode::Sqlite);
+        let router = crate::control_plane_router(Arc::clone(&graph)).expect("management routes");
+        assert!(router.permits(
+            mako_service_runtime::HttpMethod::Post,
+            "/_internal/v1/control/functions/resolve"
+        ));
+        assert!(router.permits(
+            mako_service_runtime::HttpMethod::Post,
+            "/_internal/v1/control/operator-entitlements/plan"
+        ));
+        assert!(router.permits(
+            mako_service_runtime::HttpMethod::Post,
+            "/_internal/v1/control/operator-entitlements/apply"
+        ));
+        assert!(router.permits(
+            mako_service_runtime::HttpMethod::Post,
+            "/v1/projects/prj_example00/environments/env_example00/functions"
+        ));
+        assert!(router.permits(
+            mako_service_runtime::HttpMethod::Get,
+            "/v1/operator/projects/prj_example00"
+        ));
+        assert!(router.permits(
+            mako_service_runtime::HttpMethod::Get,
+            "/v1/operator/overview"
+        ));
+        assert!(router.permits(
+            mako_service_runtime::HttpMethod::Get,
+            "/v1/operator/tenants"
+        ));
+        assert!(router.permits(
+            mako_service_runtime::HttpMethod::Get,
+            "/v1/operator/support-sessions/current"
+        ));
+        assert!(router.permits(
+            mako_service_runtime::HttpMethod::Post,
+            "/v1/developer-auth/registrations"
+        ));
+        assert!(router.permits(
+            mako_service_runtime::HttpMethod::Get,
+            "/v1/developer-auth/wait-list-status"
+        ));
+        assert!(router.permits(
+            mako_service_runtime::HttpMethod::Post,
+            "/v1/operator-auth/sessions"
+        ));
+        assert!(router.permits(
+            mako_service_runtime::HttpMethod::Get,
+            "/v1/operator-auth/sessions/current"
+        ));
+        assert!(router.permits(
+            mako_service_runtime::HttpMethod::Delete,
+            "/v1/operator-auth/sessions/current"
+        ));
+        assert!(router.permits(
+            mako_service_runtime::HttpMethod::Post,
+            "/v1/operator-auth/sessions/current/actions/verify-password"
+        ));
+        assert!(router.permits(
+            mako_service_runtime::HttpMethod::Post,
+            "/v1/operator/developer-waitlist/dev_example00/actions/approve"
+        ));
+        assert!(router.permits(mako_service_runtime::HttpMethod::Get, "/metrics"));
+        assert!(!router.permits(
+            mako_service_runtime::HttpMethod::Get,
+            "/v1/developer-auth/private-identities"
+        ));
+        assert!(!router.permits(
+            mako_service_runtime::HttpMethod::Get,
+            "/_internal/v1/control/functions/resolve"
+        ));
+        assert!(!router.permits(
+            mako_service_runtime::HttpMethod::Get,
+            "/_internal/v1/unknown"
+        ));
+        drop(router);
+        assert!(graph.readiness().is_ready());
+        server.join().expect("ready server");
+        let _ = graph.developer_authenticator();
+        let _ = graph.operator_authenticator();
+        let _ = graph.management_authorizer();
+        let _ = graph.data_plane_identity_admin();
+        let _ = graph.function_resolution();
+        let graph = Arc::try_unwrap(graph).unwrap_or_else(|_| panic!("route owners dropped"));
+        block_on(graph.shutdown()).expect("shutdown");
+    }
+
+    #[test]
+    fn control_readiness_and_control_state_survive_data_plane_outage() {
+        let directory = local_tempdir("control-plane-data-outage");
+        let config = config_for(directory.path(), DeploymentEnvironment::Local);
+        let unavailable = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("unused listener");
+        let endpoint = unavailable.local_addr().expect("unused endpoint");
+        drop(unavailable);
+
+        let graph = ControlPlaneGraph::open_with_data_plane_endpoint(&config, endpoint)
+            .expect("control-plane graph");
+        let readiness = graph.readiness();
+        assert!(!readiness.data_plane_identity_admin);
+        assert!(readiness.is_ready());
+        assert_eq!(
+            readiness.snapshot().detail,
+            "control_ready:data_plane=unavailable"
+        );
+
+        let mut batch = WriteBatch::new();
+        batch.put(b"\x01control-outage-test", b"available");
+        block_on(graph.adapter.write(batch, Durability::Sync)).expect("control mutation");
+        assert_eq!(
+            block_on(graph.adapter.get(b"\x01control-outage-test")).expect("control read"),
+            Some(b"available".to_vec())
+        );
+        block_on(graph.shutdown()).expect("shutdown");
+    }
+
+    #[test]
+    fn operator_password_http_boundary_enforces_origin_cookie_audience_freshness_and_signout() {
+        let directory = local_tempdir("control-plane-operator-http");
+        let config = config_for(directory.path(), DeploymentEnvironment::Local);
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("ready listener");
+        let endpoint = listener.local_addr().expect("listener address");
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("ready request");
+            let mut request = [0_u8; 512];
+            let _ = stream.read(&mut request).expect("request bytes");
+            stream
+                .write_all(
+                    b"HTTP/1.1 200 OK\r\ncontent-length: 0\r\nx-mako-request-id: req_readiness\r\nconnection: close\r\n\r\n",
+                )
+                .expect("ready response");
+        });
+        let graph = Arc::new(
+            ControlPlaneGraph::open_with_data_plane_endpoint(&config, endpoint)
+                .expect("control-plane graph"),
+        );
+        let _ = graph.readiness();
+        seed_password_operator(&graph);
+        let router = crate::control_plane_router(Arc::clone(&graph)).expect("router");
+
+        let cross_origin = dispatch(
+            &router,
+            request(
+                HttpMethod::Post,
+                "/v1/operator-auth/sessions",
+                Some("https://evil.example.test"),
+                None,
+                br#"{"email":"operator@example.test","password":"correct horse battery staple"}"#,
+                "127.0.0.2:1000",
+            ),
+        )
+        .expect_err("cross-origin login must fail");
+        assert_eq!(
+            cross_origin.envelope().error.code,
+            mako_api::ErrorCode::PermissionDenied
+        );
+        assert_eq!(
+            block_on(
+                graph
+                    .operator_password_authentication()
+                    .store()
+                    .health_snapshot(now_unix_seconds_for_test()),
+            )
+            .expect("health")
+            .active_sessions,
+            0
+        );
+
+        let unknown = dispatch(
+            &router,
+            request(
+                HttpMethod::Post,
+                "/v1/operator-auth/sessions",
+                Some("https://api.example.test"),
+                None,
+                br#"{"email":"unknown@example.test","password":"incorrect password"}"#,
+                "127.0.0.2:1001",
+            ),
+        )
+        .expect_err("unknown identity");
+        let incorrect = dispatch(
+            &router,
+            request(
+                HttpMethod::Post,
+                "/v1/operator-auth/sessions",
+                Some("https://api.example.test"),
+                None,
+                br#"{"email":"operator@example.test","password":"incorrect password"}"#,
+                "127.0.0.3:1002",
+            ),
+        )
+        .expect_err("incorrect password");
+        assert_eq!(
+            unknown.envelope().error.code,
+            incorrect.envelope().error.code
+        );
+        assert_eq!(
+            unknown.envelope().error.message,
+            incorrect.envelope().error.message
+        );
+        let repeated = dispatch(
+            &router,
+            request(
+                HttpMethod::Post,
+                "/v1/operator-auth/sessions",
+                Some("https://api.example.test"),
+                None,
+                br#"{"email":"operator@example.test","password":"incorrect again"}"#,
+                "127.0.0.3:1003",
+            ),
+        )
+        .expect_err("repeated attempt");
+        assert_eq!(
+            repeated.envelope().error.code,
+            mako_api::ErrorCode::Unauthenticated
+        );
+        let throttled = dispatch(
+            &router,
+            request(
+                HttpMethod::Post,
+                "/v1/operator-auth/sessions",
+                Some("https://api.example.test"),
+                None,
+                br#"{"email":"operator@example.test","password":"incorrect third attempt"}"#,
+                "127.0.0.3:1004",
+            ),
+        )
+        .expect_err("attempt budget must throttle");
+        assert_eq!(
+            throttled.envelope().error.code,
+            mako_api::ErrorCode::RateLimited
+        );
+
+        let signed_in = dispatch(
+            &router,
+            request(
+                HttpMethod::Post,
+                "/v1/operator-auth/sessions",
+                Some("https://api.example.test"),
+                None,
+                br#"{"email":"operator@example.test","password":"correct horse battery staple"}"#,
+                "127.0.0.4:1004",
+            ),
+        )
+        .expect("sign in");
+        assert_eq!(signed_in.status_for_test(), 200);
+        let set_cookie = signed_in
+            .header_for_test("set-cookie")
+            .expect("operator cookie")
+            .to_owned();
+        for required in [
+            "__Secure-mako_operator=",
+            "Secure",
+            "HttpOnly",
+            "SameSite=Strict",
+            "Path=/v1",
+            "Max-Age=",
+        ] {
+            assert!(set_cookie.contains(required), "cookie omits {required}");
+        }
+        assert!(!set_cookie.contains("Domain="));
+        let cookie = set_cookie
+            .split(';')
+            .next()
+            .expect("cookie pair")
+            .to_owned();
+
+        assert_eq!(
+            dispatch(
+                &router,
+                request(
+                    HttpMethod::Get,
+                    "/v1/operator-auth/sessions/current",
+                    None,
+                    Some(&cookie),
+                    b"",
+                    "127.0.0.4:1005",
+                ),
+            )
+            .expect("inspect")
+            .status_for_test(),
+            200
+        );
+        let denied = dispatch(
+            &router,
+            request(
+                HttpMethod::Get,
+                "/v1/operator/projects/prj_example00",
+                None,
+                Some(&cookie),
+                b"",
+                "127.0.0.4:1006",
+            ),
+        )
+        .expect_err("missing permission");
+        assert_eq!(
+            denied.envelope().error.code,
+            mako_api::ErrorCode::PermissionDenied
+        );
+
+        let mutation_path = "/v1/operator/developer-waitlist/dev_applicant01/actions/approve";
+        let csrf = dispatch(
+            &router,
+            request(
+                HttpMethod::Post,
+                mutation_path,
+                Some("https://evil.example.test"),
+                Some(&cookie),
+                b"not-json",
+                "127.0.0.4:1007",
+            ),
+        )
+        .expect_err("mutation CSRF");
+        assert_eq!(
+            csrf.envelope().error.code,
+            mako_api::ErrorCode::PermissionDenied
+        );
+        let credential = cookie
+            .split_once('=')
+            .map(|(_, value)| value)
+            .expect("operator credential");
+        let authenticated = block_on(
+            graph
+                .operator_password_authentication()
+                .authenticate(Some(credential), now_unix_seconds_for_test()),
+        )
+        .expect("authenticated operator");
+        let stale_at = authenticated
+            .profile
+            .password_verified_at_unix_seconds
+            .checked_add(301)
+            .expect("stale timestamp");
+        assert!(matches!(
+            graph
+                .operator_password_authentication()
+                .require_mutation_freshness(&authenticated, stale_at),
+            Err(mako_control_plane::OperatorPasswordAuthenticationError::StepUpRequired)
+        ));
+        assert!(
+            dispatch(
+                &router,
+                request(
+                    HttpMethod::Post,
+                    "/v1/operator-auth/sessions/current/actions/verify-password",
+                    Some("https://api.example.test"),
+                    Some(&cookie),
+                    br#"{"password":"correct horse battery staple"}"#,
+                    "127.0.0.4:1009",
+                ),
+            )
+            .is_ok()
+        );
+        let parsed_after_freshness = dispatch(
+            &router,
+            request(
+                HttpMethod::Post,
+                mutation_path,
+                Some("https://api.example.test"),
+                Some(&cookie),
+                b"not-json",
+                "127.0.0.4:1010",
+            ),
+        )
+        .expect_err("invalid body after freshness");
+        assert_eq!(
+            parsed_after_freshness.envelope().error.code,
+            mako_api::ErrorCode::InvalidRequest
+        );
+
+        let signed_out = dispatch(
+            &router,
+            request(
+                HttpMethod::Delete,
+                "/v1/operator-auth/sessions/current",
+                Some("https://api.example.test"),
+                Some(&cookie),
+                b"",
+                "127.0.0.4:1011",
+            ),
+        )
+        .expect("sign out");
+        assert_eq!(signed_out.status_for_test(), 204);
+        assert!(
+            signed_out
+                .header_for_test("set-cookie")
+                .is_some_and(|value| value.contains("Max-Age=0"))
+        );
+        let after_signout = dispatch(
+            &router,
+            request(
+                HttpMethod::Get,
+                "/v1/operator-auth/sessions/current",
+                None,
+                Some(&cookie),
+                b"",
+                "127.0.0.4:1012",
+            ),
+        )
+        .expect_err("revoked cookie");
+        assert_eq!(
+            after_signout.envelope().error.code,
+            mako_api::ErrorCode::Unauthenticated
+        );
+
+        drop(router);
+        server.join().expect("ready server");
+        let graph = Arc::try_unwrap(graph).unwrap_or_else(|_| panic!("route owners dropped"));
+        block_on(graph.shutdown()).expect("shutdown");
+    }
+
+    #[test]
+    fn production_refuses_an_unprovisioned_control_volume() {
+        let directory = local_tempdir("control-plane-empty-production");
+        let config = config_for(directory.path(), DeploymentEnvironment::Production);
+        assert!(matches!(
+            ControlPlaneGraph::open(&config),
+            Err(ControlPlaneGraphError::Storage(_))
+        ));
+    }
+
+    #[test]
+    fn production_opens_only_the_control_plane_owned_volume() {
+        let directory = local_tempdir("control-plane-production");
+        let config = config_for(directory.path(), DeploymentEnvironment::Production);
+        provision_control_sqlite(&config);
+        let graph = ControlPlaneGraph::open(&config).expect("production graph");
+        assert_eq!(graph.storage_mode(), ControlPlaneStorageMode::Sqlite);
+        block_on(graph.shutdown()).expect("shutdown");
+    }
+
+    fn config_for(root: &Path, environment: DeploymentEnvironment) -> ServiceConfig {
+        let database = root.join("live/control.sqlite3");
+        let lock = root.join("lock/control.lock");
+        let migration = root.join("migration");
+        let backup_staging = root.join("backup-staging");
+        let backup_publish = root.join("backup-publish");
+        let restore = root.join("restore");
+        let reserve = root.join("reserve");
+        let environment_name = match environment {
+            DeploymentEnvironment::Local => "local",
+            DeploymentEnvironment::Production => "production",
+            _ => unreachable!("test uses local or production"),
+        };
+        ConfigLoader::from_environment([
+            ("MAKO_ENVIRONMENT", environment_name),
+            ("MAKO_REGION", "us-east-1-beta"),
+            ("MAKO_PUBLIC_URL", "https://api.example.test"),
+            (
+                "MAKO_CONTROL_SQLITE_PATH",
+                database.to_str().expect("UTF-8 path"),
+            ),
+            (
+                "MAKO_CONTROL_SQLITE_LOCK_PATH",
+                lock.to_str().expect("UTF-8 path"),
+            ),
+            ("MAKO_CONTROL_SQLITE_IDENTITY", "mako-control-test"),
+            (
+                "MAKO_CONTROL_SQLITE_MIGRATION_WORKSPACE",
+                migration.to_str().expect("UTF-8 path"),
+            ),
+            (
+                "MAKO_CONTROL_SQLITE_BACKUP_STAGING",
+                backup_staging.to_str().expect("UTF-8 path"),
+            ),
+            (
+                "MAKO_CONTROL_SQLITE_BACKUP_PUBLISH",
+                backup_publish.to_str().expect("UTF-8 path"),
+            ),
+            (
+                "MAKO_CONTROL_SQLITE_RESTORE_WORKSPACE",
+                restore.to_str().expect("UTF-8 path"),
+            ),
+            (
+                "MAKO_CONTROL_SQLITE_RESERVE_PATH",
+                reserve.to_str().expect("UTF-8 path"),
+            ),
+            ("MAKO_CONTROL_SQLITE_DISK_WARNING_FREE_BYTES", "134217728"),
+            ("MAKO_CONTROL_SQLITE_DISK_CRITICAL_FREE_BYTES", "67108864"),
+            (
+                "MAKO_INTERNAL_AUTH_SECRET_REF",
+                "env:TEST_CONTROL_PLANE_ROOT_KEY",
+            ),
+            (
+                "TEST_CONTROL_PLANE_ROOT_KEY",
+                "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+            ),
+            (
+                "MAKO_OBJECT_STORE_ACCESS_KEY_REF",
+                "env:TEST_OBJECT_STORE_ACCESS_KEY",
+            ),
+            (
+                "TEST_OBJECT_STORE_ACCESS_KEY",
+                "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+            ),
+            (
+                "MAKO_OBJECT_STORE_SECRET_KEY_REF",
+                "env:TEST_OBJECT_STORE_SECRET_KEY",
+            ),
+            (
+                "TEST_OBJECT_STORE_SECRET_KEY",
+                "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+            ),
+            ("MAKO_OPERATOR_PASSWORD_AUTH_ENABLED", "true"),
+            ("MAKO_OPERATOR_MUTATION_FRESHNESS_SECONDS", "300"),
+            ("MAKO_OPERATOR_BASE_BACKOFF_SECONDS", "30"),
+            ("MAKO_OPERATOR_MAX_BACKOFF_SECONDS", "30"),
+            ("MAKO_OPERATOR_SOURCE_RATE_LIMIT", "1"),
+        ])
+        .load(ServiceKind::ControlPlane)
+        .expect("configuration")
+    }
+
+    fn provision_control_sqlite(config: &ServiceConfig) {
+        let settings = config
+            .control_sqlite
+            .as_ref()
+            .expect("control SQLite settings");
+        let mut sqlite =
+            SqliteConfig::new(&settings.database_path, settings.database_identity.clone());
+        sqlite.lock_path = settings.lock_path.clone();
+        sqlite.create_if_missing = true;
+        sqlite.maximum_batch_operations = settings.maximum_batch_operations;
+        sqlite.maximum_scan_items = settings.maximum_scan_items;
+        sqlite.busy_timeout = settings.busy_timeout;
+        sqlite.transaction_expiration = settings.transaction_expiration;
+        sqlite.shutdown_timeout = settings.shutdown_timeout;
+        sqlite.wal_autocheckpoint_pages = settings.wal_autocheckpoint_pages;
+        sqlite.maximum_wal_bytes = settings.maximum_wal_bytes;
+        sqlite.disk_warning_free_bytes = settings.disk_warning_free_bytes;
+        sqlite.disk_critical_free_bytes = settings.disk_critical_free_bytes;
+        SqliteAdapter::open(sqlite)
+            .expect("provision control SQLite")
+            .shutdown()
+            .expect("close provisioned control SQLite");
+    }
+
+    fn seed_password_operator(graph: &ControlPlaneGraph) {
+        let now = now_unix_seconds_for_test();
+        let passwords =
+            PasswordService::new(PasswordPolicy::default(), Argon2idParameters::default());
+        let hash = passwords
+            .hash("correct horse battery staple")
+            .expect("password hash");
+        let identity = DeveloperIdentityId::parse("dev_operator01").expect("identity");
+        let email = NormalizedEmail::parse("operator@example.test").expect("email");
+        let mut account = DeveloperAccount::new_unverified(
+            identity.clone(),
+            email,
+            "Test Operator",
+            hash.encoded(),
+            now - 10,
+        )
+        .expect("account");
+        account
+            .transition(DeveloperIdentityStatus::Waitlisted, now - 9)
+            .expect("verify");
+        let lookup = graph.components.developer_registration.lookup_key();
+        let mut batch = WriteBatch::new();
+        batch.put(
+            ControlKeyspace::authentication_identity_key(&identity).expect("identity key"),
+            serde_json::to_vec(account.identity()).expect("identity json"),
+        );
+        batch.put(
+            ControlKeyspace::developer_role_key(&identity).expect("role key"),
+            serde_json::to_vec(account.role()).expect("role json"),
+        );
+        batch.put(
+            ControlKeyspace::developer_email_key(&lookup.email_digest(account.normalized_email()))
+                .expect("email key"),
+            serde_json::to_vec(&identity).expect("identity json"),
+        );
+        batch.put(
+            ControlKeyspace::developer_status_key(
+                account.status(),
+                account.created_at_unix_seconds(),
+                &identity,
+            )
+            .expect("status key"),
+            serde_json::to_vec(&identity).expect("identity json"),
+        );
+        block_on(graph.adapter.write(batch, Durability::Sync)).expect("seed account");
+        let store = graph.operator_password_authentication().store();
+        let entitlement = OperatorEntitlementRecord::new(
+            identity.clone(),
+            store.authentication_key().stable_operator_id(&identity),
+            1,
+            [OperatorPermission::WaitlistReview],
+            "protected HTTP integration entitlement",
+            "request_http_seed",
+            now - 7,
+        )
+        .expect("entitlement");
+        block_on(store.create_entitlement(&entitlement)).expect("seed entitlement");
+    }
+
+    fn request(
+        method: HttpMethod,
+        path: &str,
+        origin: Option<&str>,
+        cookie: Option<&str>,
+        body: &[u8],
+        remote: &str,
+    ) -> HttpRequest {
+        let mut headers = Vec::new();
+        if let Some(origin) = origin {
+            headers.push(("origin".to_owned(), origin.to_owned()));
+        }
+        if let Some(cookie) = cookie {
+            headers.push(("cookie".to_owned(), cookie.to_owned()));
+        }
+        if !body.is_empty() {
+            headers.push(("content-type".to_owned(), "application/json".to_owned()));
+        }
+        HttpRequest::for_test(
+            method,
+            path,
+            headers,
+            body,
+            Some(remote.parse().expect("remote address")),
+        )
+    }
+
+    fn dispatch(
+        router: &mako_service_runtime::HttpRouter,
+        request: HttpRequest,
+    ) -> Result<mako_service_runtime::HttpResponse, mako_service_runtime::HttpApiError> {
+        router
+            .dispatch_for_test(request)
+            .expect("registered test route")
+    }
+
+    fn now_unix_seconds_for_test() -> u64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::SystemTime::UNIX_EPOCH)
+            .expect("system time")
+            .as_secs()
+    }
+
+    fn local_tempdir(prefix: &str) -> TempDir {
+        let root = std::env::current_dir()
+            .expect("working directory")
+            .join(".local");
+        fs::create_dir_all(&root).expect("local test root");
+        Builder::new()
+            .prefix(prefix)
+            .tempdir_in(root)
+            .expect("temporary directory")
+    }
+}

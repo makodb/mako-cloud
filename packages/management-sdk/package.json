@@ -1,0 +1,23 @@
+{
+  "name": "@mako-cloud/management-sdk",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "test:unit": "npm run build && node --test test/*.test.mjs",
+    "typecheck": "tsc -b --pretty false"
+  },
+  "dependencies": {
+    "@mako-cloud/api-types": "*"
+  }
+}

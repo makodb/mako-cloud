@@ -1,0 +1,28 @@
+[Unit]
+Description=Mako Cloud public-beta Prometheus
+PartOf=mako-dependencies.target
+Before=mako-dependencies.target
+
+[Container]
+Image=docker.io/prom/prometheus@sha256:0e698e35e50d1ddc2d11a4a55b089fe62eb71358a5c204dfafd21bdf8ffe04b8
+Pull=never
+ContainerName=mako-prometheus
+Network=host
+Exec=--config.file=/etc/prometheus/prometheus.yaml --storage.tsdb.path=/prometheus --web.listen-address=127.0.0.1:9090
+Volume=/home/mako-runtime/.config/mako-cloud/prometheus.yaml:/etc/prometheus/prometheus.yaml:ro
+Volume=/home/mako-runtime/.config/mako-cloud/prometheus-rules:/etc/prometheus/rules:ro
+Volume=mako-prometheus.volume:/prometheus
+ReadOnly=true
+NoNewPrivileges=true
+DropCapability=all
+Tmpfs=/tmp:rw,noexec,nosuid,nodev,size=64m
+LogDriver=journald
+PodmanArgs=--init --pids-limit=256
+Label=io.mako.environment=public-beta
+
+[Service]
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=60s
+MemoryMax=2G
+CPUQuota=150%

@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-09T03:04:04Z",
+  "environment": "public-beta",
+  "vmId": 124,
+  "publicAdmissionEnabled": false,
+  "listeners": {
+    "grafana": "127.0.0.1:3000",
+    "prometheus": "127.0.0.1:9090",
+    "nodeExporter": "127.0.0.1:9100",
+    "otelMetrics": "127.0.0.1:9464"
+  },
+  "inventory": {
+    "dashboards": 11,
+    "alertRules": 26,
+    "prometheusTargetsUp": 3,
+    "unhealthyRules": 0,
+    "firingRulesAtQualification": 0,
+    "nodeTextfileScrapeError": 0
+  },
+  "sanitizedSignals": [
+    "service-active-and-readiness",
+    "certificate-expiry-gate",
+    "filesystem-reserves",
+    "rocksdb",
+    "signed-backup-age-and-verification",
+    "restore-and-recovery",
+    "request-latency",
+    "http-errors",
+    "audit-write-failures",
+    "service-restarts",
+    "rootless-podman-dependencies",
+    "host-cpu-memory-and-network"
+  ],
+  "allFourServicesReady": true,
+  "allSixPodmanDependenciesActive": true,
+  "backupRemoteVerified": true,
+  "validation": [
+    "node scripts/validate-observability-assets.js",
+    "promtool check rules /etc/prometheus/rules/mako-cloud-alerts.yaml"
+  ]
+}

@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "$#" -ne 1 ]]; then
+  echo "usage: mako-checkpoint-backup data-plane|control-plane" >&2
+  exit 64
+fi
+
+case "$1" in
+  data-plane|control-plane)
+    component="$1"
+    ;;
+  *)
+    echo "unsupported backup component" >&2
+    exit 64
+    ;;
+esac
+
+if [[ -z "${CREDENTIALS_DIRECTORY:-}" ]]; then
+  echo "systemd credentials are unavailable" >&2
+  exit 1
+fi
+
+service="mako-${component}"
+publish_root="{{ mako_data_mount }}/backup-publish/${component}"
+if [[ "$component" == "control-plane" ]]; then
+  database_path="{{ mako_data_mount }}/sqlite/control-plane/live/control.sqlite3"
+  # SQLite artifacts are published with rename(2). Keep their incomplete
+  # directory on the same filesystem as the publish directory so the rename
+  # remains atomic when the top-level backup roots are separate Btrfs
+  # subvolumes.
+  staging_root="${publish_root}/.staging"
+else
+  database_path="{{ mako_data_mount }}/rocksdb/${component}"
+  staging_root="{{ mako_data_mount }}/backup-staging/${component}"
+fi
+/usr/bin/install --directory --mode=0700 "${staging_root}"
+backup_id="$(/usr/bin/date --utc +%Y%m%dT%H%M%SZ)-${component}"
+artifact="${publish_root}/${backup_id}"
+remote_verification=$(/usr/bin/mktemp --directory "${staging_root}/remote-verification.XXXXXX")
+trap '/usr/bin/rm -rf -- "$remote_verification"' EXIT
+
+if [[ "$component" == "control-plane" ]]; then
+  /opt/mako/current/bin/mako-control-storage-ops backup \
+    "--database=${database_path}" \
+    "--staging=${staging_root}" \
+    "--publish=${publish_root}" \
+    "--identity=mako-control-plane-{{ mako_storage_region }}" \
+    "--backup-id=${backup_id}" \
+    "--release-sha256={{ mako_release_digest }}" \
+    --retention=14 \
+    "--signing-key-file=${CREDENTIALS_DIRECTORY}/backup-signing-key"
+
+  /opt/mako/current/bin/mako-control-storage-ops verify-backup \
+    "--artifact=${artifact}" \
+    "--signing-key-file=${CREDENTIALS_DIRECTORY}/backup-signing-key"
+else
+  /opt/mako/current/bin/mako-storage-ops backup \
+  "--database-path=${database_path}" \
+  "--staging-root=${staging_root}" \
+  "--destination=${publish_root}" \
+  "--service=${service}" \
+  "--database-id=${service}-{{ mako_storage_region }}" \
+  "--backup-id=${backup_id}" \
+  --retention=14 \
+  "--signing-key-file=${CREDENTIALS_DIRECTORY}/backup-signing-key"
+
+  /opt/mako/current/bin/mako-storage-ops inspect \
+  "--artifact=${artifact}" \
+  "--signing-key-file=${CREDENTIALS_DIRECTORY}/backup-signing-key"
+fi
+
+/usr/bin/rsync -rt --chmod=D700,F600 \
+  -e "/usr/bin/ssh -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=10 -o UserKnownHostsFile=${CREDENTIALS_DIRECTORY}/backup-known-hosts -i ${CREDENTIALS_DIRECTORY}/backup-ssh-key" \
+  "${artifact}/" \
+  "{{ mako_backup_remote_user }}@{{ mako_backup_remote_host }}:/${component}/${backup_id}/"
+
+/usr/bin/rsync -rt \
+  -e "/usr/bin/ssh -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=10 -o UserKnownHostsFile=${CREDENTIALS_DIRECTORY}/backup-known-hosts -i ${CREDENTIALS_DIRECTORY}/backup-ssh-key" \
+  "{{ mako_backup_remote_user }}@{{ mako_backup_remote_host }}:/${component}/${backup_id}/" \
+  "${remote_verification}/"
+
+if [[ "$component" == "control-plane" ]]; then
+  /opt/mako/current/bin/mako-control-storage-ops verify-backup \
+    "--artifact=${remote_verification}" \
+    "--signing-key-file=${CREDENTIALS_DIRECTORY}/backup-signing-key"
+else
+  /opt/mako/current/bin/mako-storage-ops inspect \
+    "--artifact=${remote_verification}" \
+    "--signing-key-file=${CREDENTIALS_DIRECTORY}/backup-signing-key"
+fi
+
+echo "published and remotely reverified checkpoint backup=${backup_id} component=${component}"

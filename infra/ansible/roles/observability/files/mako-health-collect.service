@@ -1,0 +1,43 @@
+[Unit]
+Description=Collect sanitized Mako Cloud host health
+After=local-fs.target
+RequiresMountsFor=/opt/mako/current /srv/mako-data
+ConditionPathExists=/etc/mako/storage-layout.json
+
+[Service]
+Type=oneshot
+User=mako-health
+Group=mako-health
+ExecStart=/usr/local/sbin/mako-health-collect
+StateDirectory=mako-health
+StateDirectoryMode=0755
+TimeoutStartSec=30s
+UMask=0027
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+PrivateDevices=yes
+PrivateIPC=yes
+PrivateTmp=yes
+ProtectClock=yes
+ProtectControlGroups=yes
+ProtectHome=yes
+ProtectHostname=yes
+ProtectKernelLogs=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectSystem=strict
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RemoveIPC=yes
+RestrictAddressFamilies=AF_UNIX AF_INET
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+SystemCallArchitectures=native
+IPAddressDeny=any
+IPAddressAllow=localhost
+DevicePolicy=closed
+TasksMax=64
+MemoryMax=128M
+CPUQuota=25%

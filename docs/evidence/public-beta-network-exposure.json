@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-08-08T00:04:25-04:00",
+  "planHash": "d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073",
+  "vmId": 124,
+  "admissionMode": "disabled-before-beta-gates",
+  "authorizedVantage": {
+    "source": "130.245.173.105/32",
+    "ssh22": "open",
+    "http80": "not-reachable",
+    "https443": "not-reachable"
+  },
+  "unauthorizedVantage": {
+    "implementation": "temporary L2 namespace on vmbr0",
+    "source": "192.0.2.250/32",
+    "ssh22": "blocked-at-proxmox-bridge",
+    "internalPorts": {
+      "tested": [3000, 4317, 5432, 6379, 8080, 8081, 8082, 9000, 9090, 9100],
+      "result": "all-blocked-at-proxmox-bridge"
+    },
+    "rateLimitedDropLogsObserved": true,
+    "temporaryNamespaceRemoved": true,
+    "temporaryInterfaceRemoved": true
+  },
+  "ambientInternetProbe": {
+    "source": "138.226.239.12",
+    "destinationPort": 4096,
+    "observedResult": "blocked-at-proxmox-bridge"
+  },
+  "publicInternalListeners": [],
+  "result": "passed"
+}

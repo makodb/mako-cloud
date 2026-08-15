@@ -1,0 +1,22 @@
+[package]
+name = "mako-edge-gateway"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+futures.workspace = true
+mako-api = { path = "../mako-api" }
+mako-edge-runtime-protocol = { path = "../mako-edge-runtime-protocol" }
+mako-gateway = { path = "../mako-gateway" }
+rand_core.workspace = true
+
+[dev-dependencies]
+ed25519-dalek.workspace = true
+mako-identity = { path = "../mako-identity" }
+serde_json.workspace = true
+
+[lints]
+workspace = true

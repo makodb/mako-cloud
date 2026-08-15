@@ -1,0 +1,31 @@
+[Unit]
+Description=Mako Cloud public-beta SeaweedFS object store
+PartOf=mako-dependencies.target
+Before=mako-dependencies.target
+
+[Container]
+Image=docker.io/chrislusf/seaweedfs@sha256:d47c7ee99fcb951351d7194915f4e3a5ea604a8e8871183d713907dec4fb9bf5
+Pull=never
+ContainerName=mako-object-store
+Network=mako-cloud.network
+User=1000
+EnvironmentFile=/home/mako-runtime/.config/mako-cloud/object-store.env
+Exec=server -s3 -dir=/data
+Volume=mako-object-store.volume:/data
+PublishPort=127.0.0.1:8333:8333
+PublishPort=127.0.0.1:8888:8888
+PublishPort=127.0.0.1:9333:9333
+ReadOnly=true
+NoNewPrivileges=true
+DropCapability=all
+Tmpfs=/tmp:rw,noexec,nosuid,nodev,size=128m
+LogDriver=journald
+PodmanArgs=--init --pids-limit=256
+Label=io.mako.environment=public-beta
+
+[Service]
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=60s
+MemoryMax=2G
+CPUQuota=200%

@@ -1,0 +1,203 @@
+{
+  "schemaVersion": 1,
+  "startedAt": "2026-08-13T22:21:01.716Z",
+  "completedAt": "2026-08-13T22:21:06.434Z",
+  "environment": "public-beta",
+  "publicOrigin": "https://cloud-test.makodb.com",
+  "admissionMode": "pre_gate",
+  "releaseDigest": "a5ccdaabff7d6ef30da512330dab38b60e32ae034f621ee4d4eed2b49e976000",
+  "qualificationReleaseDigest": "fc7811e24f02cca05da42df109c129e77ffd2303eba2cf0fc571e0d2cda4570e",
+  "carriedForwardByIdenticalConsoleAndServiceArtifacts": true,
+  "sourceDigest": "c05ba9d874f211e6d08ed74b75fec3ccea0fba5e7b90f44785b6539b2f3bf5c9",
+  "runtimeDigest": "b0e4ea7b66166492c3c29910858dc5d1b7f9786df81aed7057d80f34a1ad2abd",
+  "dependencyDigest": "e470026153038551cc39c37afdca492ad6947f75596bb38ccb456ba1b4c5aef0",
+  "artifactDigest": "2629ebf6b726f18213f1adab901d7869570758c44328143b3c5762e2449f2490",
+  "selectedReleaseVerifiedBeforeAndAfter": true,
+  "hostedBundleHashesVerified": true,
+  "hostedAssetCount": 2,
+  "securityHeaders": {
+    "strictTransportSecurity": "max-age=31536000; includeSubDomains",
+    "contentTypeOptions": "nosniff",
+    "frameOptions": "DENY",
+    "referrerPolicy": "no-referrer",
+    "permissionsPolicy": "camera=(), geolocation=(), microphone=(), payment=(), usb=()",
+    "server": null
+  },
+  "publicRouteStatuses": [
+    {
+      "method": "GET",
+      "path": "/_internal/v1/control/operator-entitlements/plan",
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/v1/not-a-public-route",
+      "status": 404
+    },
+    {
+      "method": "POST",
+      "path": "/v1/operator-auth/sessions",
+      "status": 400
+    },
+    {
+      "method": "GET",
+      "path": "/v1/operator-auth/sessions/current",
+      "status": 401
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/operator-auth/sessions/current",
+      "status": 204
+    },
+    {
+      "method": "POST",
+      "path": "/v1/operator-auth/sessions/current/actions/verify-password",
+      "status": 401
+    },
+    {
+      "method": "GET",
+      "path": "/v1/operator/projects/prj_qualify01",
+      "status": 401
+    },
+    {
+      "method": "GET",
+      "path": "/v1/operator/overview",
+      "status": 401
+    },
+    {
+      "method": "GET",
+      "path": "/v1/operator/tenants",
+      "status": 401
+    },
+    {
+      "method": "GET",
+      "path": "/v1/operator/inventory/operations",
+      "status": 401
+    },
+    {
+      "method": "GET",
+      "path": "/v1/operator/incidents",
+      "status": 401
+    },
+    {
+      "method": "GET",
+      "path": "/v1/operator/recovery-jobs",
+      "status": 401
+    },
+    {
+      "method": "GET",
+      "path": "/v1/operator/security",
+      "status": 401
+    },
+    {
+      "method": "GET",
+      "path": "/v1/operator/activity",
+      "status": 401
+    },
+    {
+      "method": "POST",
+      "path": "/v1/operator/projects/prj_qualify01/provisioning/wf_qualify01/actions/repair",
+      "status": 401
+    },
+    {
+      "method": "POST",
+      "path": "/v1/operator/projects/prj_qualify01/quota-overrides",
+      "status": 401
+    },
+    {
+      "method": "POST",
+      "path": "/v1/operator/projects/prj_qualify01/abuse-responses",
+      "status": 401
+    },
+    {
+      "method": "POST",
+      "path": "/v1/operator/projects/prj_qualify01/support-sessions",
+      "status": 401
+    },
+    {
+      "method": "POST",
+      "path": "/v1/operator/projects/prj_qualify01/support-sessions/sup_qualify01/actions/revoke",
+      "status": 401
+    },
+    {
+      "method": "GET",
+      "path": "/v1/operator/developer-waitlist",
+      "status": 401
+    },
+    {
+      "method": "GET",
+      "path": "/v1/operator/developer-waitlist/dev_qualify01",
+      "status": 401
+    },
+    {
+      "method": "POST",
+      "path": "/v1/operator/developer-waitlist/dev_qualify01/actions/approve",
+      "status": 401
+    },
+    {
+      "method": "POST",
+      "path": "/v1/operator/developer-waitlist/dev_qualify01/actions/reject",
+      "status": 401
+    }
+  ],
+  "browser": {
+    "realHostedHttps": true,
+    "controlCenterShell": true,
+    "legacyRouteRetired": true,
+    "sessionRestoration": true,
+    "permissionFamilies": [
+      "tenant_read",
+      "overview_read",
+      "operations_read",
+      "incident_read",
+      "incident_manage",
+      "backup_read",
+      "recovery_manage",
+      "fleet_read",
+      "security_read",
+      "security_manage",
+      "activity_read",
+      "activity_export",
+      "provisioning_repair",
+      "quota_override",
+      "abuse_response",
+      "support_access",
+      "waitlist_review"
+    ],
+    "permissionPanelsVisible": 12,
+    "stepUpAndOriginalRetry": true,
+    "signOut": true,
+    "authorizationLossClearsSession": true,
+    "optionalReviewReason": true,
+    "batchApproval": {
+      "selected": 2,
+      "committed": 2,
+      "failed": 0,
+      "selfReviewIncluded": true,
+      "uniqueIdempotencyKeys": true,
+      "hiddenSelectionCleared": true
+    },
+    "tokenInputs": 0,
+    "javascriptReadableCredential": false,
+    "controlledFixtureRoutes": {
+      "DELETE /v1/operator-auth/sessions/current": 1,
+      "GET /v1/operator-auth/sessions/current": 3,
+      "GET /v1/operator/developer-waitlist": 4,
+      "GET /v1/operator/inventory/operations": 5,
+      "GET /v1/operator/overview": 1,
+      "GET /v1/operator/projects/prj_qualify01": 3,
+      "GET /v1/operator/projects/prj_qualify01/abuse-responses": 3,
+      "GET /v1/operator/projects/prj_qualify01/quota-overrides": 3,
+      "GET /v1/operator/projects/prj_qualify01/support-sessions": 3,
+      "GET /v1/operator/provisioning-workflows": 3,
+      "GET /v1/operator/support-sessions/current": 5,
+      "POST /v1/developer-auth/sessions/refresh": 3,
+      "POST /v1/operator-auth/sessions": 2,
+      "POST /v1/operator-auth/sessions/current/actions/verify-password": 1,
+      "POST /v1/operator/developer-waitlist/dev_qualify01/actions/approve": 1,
+      "POST /v1/operator/developer-waitlist/dev_qualify02/actions/approve": 1,
+      "POST /v1/operator/projects/prj_qualify01/provisioning/wf_qualify01/actions/repair": 2
+    }
+  },
+  "passed": true
+}

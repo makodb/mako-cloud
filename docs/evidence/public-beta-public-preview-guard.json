@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-14T01:08:46.000Z",
+  "mode": "risk_accepted_preview",
+  "releaseDigest": "a5ccdaabff7d6ef30da512330dab38b60e32ae034f621ee4d4eed2b49e976000",
+  "blockerDigest": "b8492baa802b961ba5cd240e211e0fccc87498d7fd589370dde5f44c8ef7e6a8",
+  "approvalValid": true,
+  "approvalInvalidated": false,
+  "approvalPersistence": "until-manually-paused",
+  "approvalExpiresAt": null,
+  "approvalFingerprint": "d36ca72ee24fd7ccf100cba833875e21ea24e0bb86619fd0bfa6424231fa31f7",
+  "timerActive": true,
+  "timerEnabled": true,
+  "timerEvaluationObserved": true,
+  "caddyActive": true,
+  "caddyEnabled": true,
+  "selectedConfiguration": "/etc/caddy/mako-admission/Caddyfile.risk_accepted_preview",
+  "reasons": [],
+  "repeatedEvaluation": {
+    "firstObservedAt": "2026-08-13T22:24:00.000Z",
+    "secondObservedAt": "2026-08-13T22:30:03.639714Z",
+    "secondResult": "success",
+    "previewRemainedActive": true,
+    "guestRebootObserved": true,
+    "startupGraceSeconds": 60,
+    "manualReactivationAfterReboot": false
+  },
+  "externalVerification": {
+    "directHttpsStatus": 200,
+    "operatorStatus": 200,
+    "createAccountStatus": 200,
+    "httpRedirectStatus": 308,
+    "internalRouteStatus": 404,
+    "unauthenticatedOperatorSessionStatus": 401,
+    "ordinaryDeveloperSessionOperatorStatus": 401,
+    "hostedBundleHashesVerified": true,
+    "hostedAssetCount": 2,
+    "operatorPasswordForm": true,
+    "operatorTokenInputs": 0,
+    "registrationAvailable": true
+  }
+}

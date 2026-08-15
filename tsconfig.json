@@ -1,0 +1,12 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/api-types" },
+    { "path": "packages/rxdb-client" },
+    { "path": "packages/management-sdk" },
+    { "path": "packages/edge-sdk" },
+    { "path": "packages/cli" },
+    { "path": "apps/console" },
+    { "path": "examples/local-first" }
+  ]
+}

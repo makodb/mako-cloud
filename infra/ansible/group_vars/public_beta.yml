@@ -1,0 +1,83 @@
+---
+mako_plan_hash: d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073
+mako_public_fqdn: cloud-test.makodb.com
+mako_public_ipv4: 130.245.173.11
+mako_public_prefix_length: 24
+mako_gateway_ipv4: 130.245.173.1
+mako_dns_servers:
+  - 8.8.8.8
+mako_primary_mac: "02:3b:12:f8:ec:76"
+mako_management_cidrs:
+  - 130.245.173.10/32
+mako_proxmox_recovery_cidrs:
+  - 130.245.173.105/32
+mako_public_tcp_ports:
+  - 80
+  - 443
+mako_console_recovery_verified: true
+mako_data_device: /dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_drive-scsi1
+mako_data_mount: /srv/mako-data
+mako_prepare_data_filesystem: true
+mako_backup_enabled: true
+mako_services_enabled: true
+mako_health_collection_enabled: true
+mako_dependencies_enabled: true
+mako_caddy_enabled: false
+mako_public_admission_mode: disabled
+mako_public_beta_approval: ""
+mako_tester_cidrs: []
+mako_public_preview_approval_source: ""
+mako_public_preview_blocker_digest: ""
+mako_public_preview_trusted_https_and_hsts: false
+mako_public_preview_exact_route_allowlist: false
+mako_public_preview_application_security: false
+mako_public_preview_backup_and_recovery: false
+mako_public_preview_zero_acknowledged_write_loss: false
+mako_public_preview_zero_integrity_failures: false
+mako_public_preview_service_readiness: false
+mako_public_preview_emergency_stop: false
+mako_acme_environment: staging
+mako_acme_contact: ""
+mako_hsts_enabled: false
+mako_alert_email: "msmummy@gmail.com"
+mako_alert_smtp_host: smtp.resend.com
+mako_alert_smtp_port: 587
+mako_alert_smtp_username: resend
+mako_alert_smtp_sender: alerts@mail.makodb.com
+mako_alert_smtp_password_source: "{{ playbook_dir }}/../../../.local/public-beta-secrets/developer-smtp-password"
+mako_alert_delivery_enabled: true
+mako_developer_registration_enabled: false
+mako_developer_smtp_relay_hostname: smtp.resend.com
+mako_developer_smtp_port: 587
+mako_developer_smtp_tls_mode: starttls
+mako_developer_smtp_username: resend
+mako_developer_smtp_sender: no-reply@mail.makodb.com
+mako_operator_password_auth_enabled: false
+mako_operator_session_lifetime_seconds: 3600
+mako_operator_mutation_freshness_seconds: 300
+mako_operator_attempt_window_seconds: 900
+mako_operator_source_attempts_per_window: 20
+mako_operator_identity_attempts_per_window: 10
+mako_operator_base_backoff_seconds: 1
+mako_operator_maximum_backoff_seconds: 300
+# Pre-gate rollback only. This is disabled after browser password qualification.
+mako_operator_break_glass_bearer_enabled: true
+mako_node_exporter_listen: 127.0.0.1:9100
+mako_release_digest: a5ccdaabff7d6ef30da512330dab38b60e32ae034f621ee4d4eed2b49e976000
+mako_release_candidate_path: "{{ playbook_dir }}/../../../.local/public-beta-candidates/{{ mako_release_digest }}"
+mako_storage_region: us-east-1-beta
+mako_disk_warning_free_bytes: 17179869184
+mako_disk_critical_free_bytes: 8589934592
+mako_emergency_reserve_bytes: 8589934592
+mako_backup_remote_host: 130.245.173.105
+mako_backup_remote_user: mako-beta-backup
+mako_backup_remote_root: /var/lib/vz/dump/mako-cloud-public-beta
+mako_backup_private_key_source: "{{ playbook_dir }}/../../../.local/public-beta-backup/id_ed25519"
+mako_internal_auth_secret_source: "{{ playbook_dir }}/../../../.local/public-beta-secrets/internal-auth"
+mako_runtime_state_key_source: "{{ playbook_dir }}/../../../.local/public-beta-secrets/runtime-state-key"
+mako_object_store_access_key_source: "{{ playbook_dir }}/../../../.local/public-beta-secrets/object-store-access-key"
+mako_object_store_secret_key_source: "{{ playbook_dir }}/../../../.local/public-beta-secrets/object-store-secret-key"
+mako_backup_signing_key_source: "{{ playbook_dir }}/../../../.local/public-beta-secrets/backup-signing-key"
+mako_grafana_admin_password_source: "{{ playbook_dir }}/../../../.local/public-beta-secrets/grafana-admin-password"
+mako_developer_mail_encryption_secret_source: "{{ playbook_dir }}/../../../.local/public-beta-secrets/developer-mail-encryption"
+mako_developer_smtp_password_source: "{{ playbook_dir }}/../../../.local/public-beta-secrets/developer-smtp-password"

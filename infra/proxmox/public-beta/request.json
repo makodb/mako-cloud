@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "identity": {
+    "fqdn": "cloud-test.makodb.com",
+    "guestType": "qemu",
+    "ipv4Address": "130.245.173.11",
+    "vmName": "mako-cloud-public-beta"
+  },
+  "resources": {
+    "cpuType": "host",
+    "dataDiskGiB": 256,
+    "memoryMiB": 16384,
+    "minimumHostFreeMemoryMiBAfterAllocation": 8192,
+    "minimumStorageHeadroomPercent": 30,
+    "osDiskGiB": 64,
+    "sockets": 1,
+    "vcpus": 8
+  },
+  "operatingSystem": {
+    "architecture": "amd64",
+    "distribution": "ubuntu",
+    "release": "24.04"
+  },
+  "networkPolicy": {
+    "ipv6Mode": "disabled",
+    "publicTcpPorts": [80, 443],
+    "qualificationOnly": true
+  }
+}

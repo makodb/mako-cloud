@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "publicFqdn": {{ mako_public_fqdn | to_json }},
+  "planHash": {{ mako_plan_hash | to_json }},
+  "releaseDigest": {{ mako_release_digest | to_json }},
+  "blockerDigest": {{ mako_public_preview_blocker_digest | to_json }},
+  "nonWaivableSafeguards": {
+    "trustedHttpsAndHsts": {{ mako_public_preview_trusted_https_and_hsts | bool | to_json }},
+    "exactPublicRouteAllowlist": {{ mako_public_preview_exact_route_allowlist | bool | to_json }},
+    "applicationSecurity": {{ mako_public_preview_application_security | bool | to_json }},
+    "backupAndRecovery": {{ mako_public_preview_backup_and_recovery | bool | to_json }},
+    "zeroAcknowledgedWriteLoss": {{ mako_public_preview_zero_acknowledged_write_loss | bool | to_json }},
+    "zeroIntegrityFailures": {{ mako_public_preview_zero_integrity_failures | bool | to_json }},
+    "serviceReadiness": {{ mako_public_preview_service_readiness | bool | to_json }},
+    "emergencyAdmissionStop": {{ mako_public_preview_emergency_stop | bool | to_json }}
+  }
+}

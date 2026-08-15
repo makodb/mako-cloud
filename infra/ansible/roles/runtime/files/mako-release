@@ -1,0 +1,320 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+umask 022
+release_root=/opt/mako
+if [[ "${1:-}" == "--root" ]]; then
+  [[ -n "${2:-}" ]] || { echo "--root requires an absolute path" >&2; exit 2; }
+  release_root=$2
+  shift 2
+fi
+case "$release_root" in
+  /*) ;;
+  *) echo "release root must be absolute" >&2; exit 2 ;;
+esac
+[[ "$release_root" != "/" && "$release_root" != "/opt" ]] || {
+  echo "refusing unsafe release root: $release_root" >&2
+  exit 2
+}
+
+usage() {
+  echo "usage: mako-release [--root ABSOLUTE_PATH] {verify PATH|install PATH|select DIGEST|mark-good DIGEST|inspect}" >&2
+  exit 2
+}
+
+prepare_root() {
+  install -d -m 0755 "$release_root" "$release_root/releases"
+  if [[ -L "$release_root/releases" || ! -d "$release_root/releases" ]]; then
+    echo "release directory must be a real directory" >&2
+    exit 1
+  fi
+}
+
+with_lock() {
+  exec 9>"$release_root/.release.lock"
+  flock -x 9
+  "$@"
+}
+
+verify_release_integrity() {
+  local directory=$1
+  [[ "$directory" = /* && -d "$directory" && ! -L "$directory" ]] || {
+    echo "release candidate must be an absolute, non-symlink directory: $directory" >&2
+    return 1
+  }
+  local manifest=$directory/manifest.json
+  [[ -f "$manifest" && ! -L "$manifest" ]] || {
+    echo "release candidate has no regular manifest.json" >&2
+    return 1
+  }
+  jq -e '
+    .schemaVersion == 1 and
+    ((.storageCompatibility == null) or
+      ((.storageCompatibility.controlSqlite | type == "array") and
+       (.storageCompatibility.tenantRocksDb | type == "array"))) and
+    (.releaseDigest | type == "string" and test("^[0-9a-f]{64}$")) and
+    (.planHash | type == "string" and test("^[0-9a-f]{64}$")) and
+    (.source.digest | type == "string" and test("^[0-9a-f]{64}$")) and
+    (.runtime.digest | type == "string" and test("^[0-9a-f]{64}$")) and
+    (.dependencies.digest | type == "string" and test("^[0-9a-f]{64}$")) and
+    (.artifacts.digest | type == "string" and test("^[0-9a-f]{64}$")) and
+    (.artifacts.files | type == "array" and length > 0) and
+    (all(.artifacts.files[];
+      (.path | type == "string" and test("^(bin/[a-z0-9-]+|console/[A-Za-z0-9._/-]+)$")) and
+      (.path | contains("//") | not) and
+      (.path | split("/") | all(. != "." and . != "..")) and
+      (.source | type == "string") and
+      (.sha256 | type == "string" and test("^[0-9a-f]{64}$")) and
+      (.size | type == "number" and floor == . and . >= 0) and
+      (.mode == 420 or .mode == 493)
+    )) and
+    ([.artifacts.files[].path] | length == (unique | length))
+  ' "$manifest" >/dev/null
+
+  local recorded_release computed_release
+  recorded_release=$(jq -r '.releaseDigest' "$manifest")
+  computed_release=$(
+    jq -cjS 'if .storageCompatibility == null then
+      {schemaVersion,planHash,source,runtime,dependencies,artifacts}
+    else
+      {schemaVersion,storageCompatibility,planHash,source,runtime,dependencies,artifacts}
+    end' "$manifest" |
+      sha256sum | cut -d ' ' -f 1
+  )
+  [[ "$recorded_release" == "$computed_release" ]] || {
+    echo "release identity digest does not match manifest" >&2
+    return 1
+  }
+  verify_section_digest "$manifest" source files
+  verify_section_digest "$manifest" dependencies files
+  verify_section_digest "$manifest" runtime values
+  verify_section_digest "$manifest" artifacts files
+
+  declare -A expected=()
+  while IFS=$'\t' read -r path artifact_digest size mode; do
+    [[ -z "${expected[$path]+present}" ]] || {
+      echo "duplicate artifact path: $path" >&2
+      return 1
+    }
+    expected[$path]="$artifact_digest:$size:$mode"
+    local artifact=$directory/$path
+    [[ -f "$artifact" && ! -L "$artifact" ]] || {
+      echo "release artifact is missing or not regular: $path" >&2
+      return 1
+    }
+    [[ $(stat -c '%s' "$artifact") == "$size" ]] || {
+      echo "release artifact size mismatch: $path" >&2
+      return 1
+    }
+    [[ $(sha256sum "$artifact" | cut -d ' ' -f 1) == "$artifact_digest" ]] || {
+      echo "release artifact checksum mismatch: $path" >&2
+      return 1
+    }
+  done < <(jq -r '.artifacts.files[] | [.path,.sha256,(.size|tostring),(.mode|tostring)] | @tsv' "$manifest")
+
+  while IFS= read -r entry; do
+    local relative=${entry#"$directory"/}
+    [[ "$relative" == "manifest.json" || -n "${expected[$relative]+present}" ]] || {
+      echo "unmanifested file in release: $relative" >&2
+      return 1
+    }
+  done < <(find "$directory" -type f -print)
+  if find "$directory" -type l -print -quit | grep -q .; then
+    echo "release contains a symbolic link" >&2
+    return 1
+  fi
+  [[ ${#expected[@]} -eq $(jq '.artifacts.files | length' "$manifest") ]] || {
+    echo "release artifact inventory is incomplete" >&2
+    return 1
+  }
+  printf '%s\n' "$recorded_release"
+}
+
+verify_release() {
+  local directory=$1
+  verify_release_integrity "$directory" >/dev/null
+  jq -e '
+    ([.artifacts.files[].path] | index("bin/mako-control-plane") != null) and
+    ([.artifacts.files[].path] | index("bin/mako-control-session") != null) and
+    ([.artifacts.files[].path] | index("bin/mako-operator-session") != null) and
+    (
+      ([.source.files[].path] | index("services/mako-control-plane/src/bin/mako-operator-admin.rs") == null) or
+      ([.artifacts.files[].path] | index("bin/mako-operator-admin") != null)
+    ) and
+    ([.artifacts.files[].path] | index("bin/mako-data-plane") != null) and
+    ([.artifacts.files[].path] | index("bin/mako-edge-gateway") != null) and
+    ([.artifacts.files[].path] | index("bin/mako-qualification-fixture") != null) and
+    ([.artifacts.files[].path] | index("bin/mako-telemetry-query") != null) and
+    ([.artifacts.files[].path] | index("bin/mako-storage-ops") != null) and
+    ([.artifacts.files[].path] | index("bin/mako-control-storage-ops") != null) and
+    (.storageCompatibility.controlSqlite | index(1) != null) and
+    (.storageCompatibility.tenantRocksDb | index(1) != null) and
+    ([.artifacts.files[].path] | index("console/index.html") != null)
+  ' "$directory/manifest.json" >/dev/null || {
+    echo "release does not contain a compatible service inventory" >&2
+    return 1
+  }
+  jq -r '.releaseDigest' "$directory/manifest.json"
+}
+
+verify_section_digest() {
+  local manifest=$1 section=$2 field=$3 recorded computed
+  recorded=$(jq -r --arg section "$section" '.[$section].digest' "$manifest")
+  computed=$(jq -cjS --arg section "$section" --arg field "$field" '.[$section][$field]' "$manifest" | sha256sum | cut -d ' ' -f 1)
+  [[ "$recorded" == "$computed" ]] || {
+    echo "$section digest does not match manifest" >&2
+    return 1
+  }
+}
+
+install_release() {
+  local candidate=$1 digest destination staging
+  digest=$(verify_release "$candidate")
+  destination=$release_root/releases/$digest
+  if [[ -e "$destination" || -L "$destination" ]]; then
+    [[ -d "$destination" && ! -L "$destination" ]] || {
+      echo "release destination is not a real directory: $destination" >&2
+      exit 1
+    }
+    verify_release "$destination" >/dev/null
+    echo "release already installed and verified: $digest"
+    return
+  fi
+
+  staging=$release_root/releases/.staging-$digest-$$
+  [[ ! -e "$staging" && ! -L "$staging" ]] || {
+    echo "release staging path already exists: $staging" >&2
+    exit 1
+  }
+  trap 'cleanup_staging "$staging"' EXIT
+  install -d -m 0700 "$staging"
+  install -m 0644 "$candidate/manifest.json" "$staging/manifest.json"
+  while IFS=$'\t' read -r path mode; do
+    install -d -m 0755 "$(dirname "$staging/$path")"
+    install -m "$(printf '%04o' "$mode")" "$candidate/$path" "$staging/$path"
+  done < <(jq -r '.artifacts.files[] | [.path,(.mode|tostring)] | @tsv' "$candidate/manifest.json")
+  verify_release "$staging" >/dev/null
+  if [[ $EUID -eq 0 ]]; then chown -R root:root "$staging"; fi
+  chmod 0444 "$staging/manifest.json"
+  find "$staging" -type d -exec chmod 0555 {} +
+  mv -T "$staging" "$destination"
+  trap - EXIT
+  echo "installed immutable release: $digest"
+}
+
+cleanup_staging() {
+  local staging=$1
+  if [[ -d "$staging" && "$staging" == "$release_root/releases/.staging-"* ]]; then
+    rm -rf -- "$staging"
+  fi
+}
+
+select_release() {
+  local digest=$1 destination current_digest
+  validate_digest "$digest"
+  destination=$release_root/releases/$digest
+  [[ -d "$destination" && ! -L "$destination" ]] || {
+    echo "release is not installed: $digest" >&2
+    exit 1
+  }
+  verify_release "$destination" >/dev/null
+  if [[ -f /srv/mako-data/sqlite/control-plane/live/control.sqlite3 ]]; then
+    jq -e '.storageCompatibility.controlSqlite | index(1) != null' "$destination/manifest.json" >/dev/null || {
+      echo "release cannot read the active control SQLite format; reverse migration is required" >&2
+      exit 1
+    }
+  fi
+  current_digest=$(selected_digest current)
+  if [[ -n "$current_digest" && "$current_digest" != "$digest" ]]; then
+    # The selected release can predate the current service inventory. Preserve
+    # it as rollback state after checking its manifest and artifact integrity;
+    # only the incoming candidate must satisfy today's complete inventory.
+    verify_release_integrity "$release_root/releases/$current_digest" >/dev/null
+    atomic_release_link last-known-good "$current_digest"
+  fi
+  atomic_release_link current "$digest"
+  echo "selected release: $digest"
+}
+
+mark_good() {
+  local digest=$1
+  validate_digest "$digest"
+  [[ $(selected_digest current) == "$digest" ]] || {
+    echo "only the selected current release can be marked good" >&2
+    exit 1
+  }
+  verify_release "$release_root/releases/$digest" >/dev/null
+  atomic_release_link last-known-good "$digest"
+  echo "marked last-known-good release: $digest"
+}
+
+atomic_release_link() {
+  local name=$1 digest=$2 temporary
+  temporary=$release_root/.${name}.$$
+  [[ ! -e "$temporary" && ! -L "$temporary" ]] || {
+    echo "temporary selector already exists: $temporary" >&2
+    exit 1
+  }
+  ln -s "releases/$digest" "$temporary"
+  mv -Tf "$temporary" "$release_root/$name"
+}
+
+selected_digest() {
+  local name=$1 link target
+  link=$release_root/$name
+  if [[ ! -e "$link" && ! -L "$link" ]]; then return 0; fi
+  [[ -L "$link" ]] || {
+    echo "$name selector is not a symbolic link" >&2
+    exit 1
+  }
+  target=$(readlink "$link")
+  [[ "$target" =~ ^releases/([0-9a-f]{64})$ ]] || {
+    echo "$name selector has an unsafe target" >&2
+    exit 1
+  }
+  printf '%s\n' "${BASH_REMATCH[1]}"
+}
+
+inspect_release_state() {
+  local current last_good
+  current=$(selected_digest current)
+  last_good=$(selected_digest last-known-good)
+  jq -n --arg root "$release_root" --arg current "$current" --arg lastKnownGood "$last_good" \
+    '{releaseRoot:$root,current:(if $current == "" then null else $current end),lastKnownGood:(if $lastKnownGood == "" then null else $lastKnownGood end)}'
+}
+
+validate_digest() {
+  [[ "$1" =~ ^[0-9a-f]{64}$ ]] || {
+    echo "release digest must be 64 lowercase hexadecimal characters" >&2
+    exit 2
+  }
+}
+
+command_name=${1:-}
+shift || true
+case "$command_name" in
+  verify)
+    [[ $# -eq 1 ]] || usage
+    verify_release "$1"
+    ;;
+  install)
+    [[ $# -eq 1 ]] || usage
+    prepare_root
+    with_lock install_release "$1"
+    ;;
+  select)
+    [[ $# -eq 1 ]] || usage
+    prepare_root
+    with_lock select_release "$1"
+    ;;
+  mark-good)
+    [[ $# -eq 1 ]] || usage
+    prepare_root
+    with_lock mark_good "$1"
+    ;;
+  inspect)
+    [[ $# -eq 0 ]] || usage
+    inspect_release_state
+    ;;
+  *) usage ;;
+esac

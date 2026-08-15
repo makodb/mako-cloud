@@ -1,0 +1,64 @@
+{
+  "annotations": { "list": [] },
+  "editable": false,
+  "graphTooltip": 1,
+  "panels": [
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "id": 1,
+      "targets": [
+        {
+          "expr": "max by (project_id, environment_id, collection_id) (mako_replication_committed_high_water - mako_replication_delivered_position)",
+          "legendFormat": "{{project_id}}/{{environment_id}}/{{collection_id}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Replication position lag",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "id": 2,
+      "targets": [
+        {
+          "expr": "max by (project_id, environment_id, collection_id) (mako_replication_lag_seconds{project_id=~\"$project\",environment_id=~\"$environment\"})",
+          "legendFormat": "{{collection_id}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Oldest undelivered change",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 41,
+  "tags": ["mako-cloud", "replication", "lag"],
+  "templating": {
+    "list": [
+      {
+        "allValue": ".*",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "includeAll": true,
+        "name": "project",
+        "query": "label_values(mako_replication_lag_seconds, project_id)",
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "includeAll": true,
+        "name": "environment",
+        "query": "label_values(mako_replication_lag_seconds{project_id=~\"$project\"}, environment_id)",
+        "type": "query"
+      }
+    ]
+  },
+  "time": { "from": "now-6h", "to": "now" },
+  "title": "Mako Cloud — Replication Lag",
+  "uid": "mako-replication-lag",
+  "version": 1
+}

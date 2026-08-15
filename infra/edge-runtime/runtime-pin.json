@@ -1,0 +1,9 @@
+{
+  "provider": "supabase-edge-runtime",
+  "release": "v1.74.3",
+  "sourceRepository": "https://github.com/supabase/edge-runtime",
+  "sourceCommit": "47d04fdd22e33ea3fd904576cf3248d963d903a9",
+  "imageRepository": "docker.io/supabase/edge-runtime",
+  "imageDigest": "sha256:c52405002a890ca9fcf77978671c57f3a988e03174afb277f84ac65bc917013c",
+  "protocolVersion": 1
+}

@@ -1,0 +1,72 @@
+{
+  "annotations": { "list": [] },
+  "editable": false,
+  "graphTooltip": 1,
+  "panels": [
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "id": 1,
+      "targets": [
+        {
+          "expr": "max by (service, region) (time() - mako_revocation_last_refresh_unix_seconds{project_id=~\"$project\",environment_id=~\"$environment\"})",
+          "legendFormat": "{{service}} / {{region}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Revocation cache age",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "id": 2,
+      "targets": [
+        {
+          "expr": "min by (service, region) (mako_revocation_cache_fresh{project_id=~\"$project\",environment_id=~\"$environment\"})",
+          "legendFormat": "{{service}} / {{region}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Freshness proof available",
+      "type": "stat"
+    }
+  ],
+  "refresh": "15s",
+  "schemaVersion": 41,
+  "tags": ["mako-cloud", "identity", "revocation"],
+  "templating": {
+    "list": [
+      {
+        "allValue": ".*",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "includeAll": true,
+        "name": "project",
+        "query": "label_values(mako_revocation_cache_fresh, project_id)",
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "includeAll": true,
+        "name": "environment",
+        "query": "label_values(mako_revocation_cache_fresh{project_id=~\"$project\"}, environment_id)",
+        "type": "query"
+      }
+    ]
+  },
+  "time": { "from": "now-6h", "to": "now" },
+  "title": "Mako Cloud — Revocation Freshness",
+  "uid": "mako-revocation-freshness",
+  "version": 1
+}

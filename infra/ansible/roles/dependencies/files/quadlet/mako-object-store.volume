@@ -1,0 +1,5 @@
+[Unit]
+Description=Mako Cloud public-beta object storage data
+
+[Volume]
+VolumeName=mako-object-store-data

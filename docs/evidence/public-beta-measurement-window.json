@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "status": "in-progress",
+  "environment": "public-beta",
+  "vmId": 124,
+  "address": "130.245.173.11",
+  "publicOrigin": "https://cloud-test.makodb.com",
+  "planHash": "d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073",
+  "releaseDigest": "a5ccdaabff7d6ef30da512330dab38b60e32ae034f621ee4d4eed2b49e976000",
+  "startedAt": "2026-08-13T22:21:15.513Z",
+  "expectedCompleteAt": "2026-09-12T22:21:15.513Z",
+  "completedAt": null,
+  "completeDays": 0,
+  "initialSnapshot": {
+    "guestUptimeSeconds": 1046.78,
+    "storageTotalBytes": 274875809792,
+    "storageUsedBytes": 11513606144,
+    "storageAvailableBytes": 261283827712,
+    "networkReceivedBytes": 156603803,
+    "networkTransmittedBytes": 41750233,
+    "networkReceivedErrors": 0,
+    "networkTransmittedErrors": 0,
+    "servicesReady": 4,
+    "dependenciesActive": 6,
+    "backupRemoteVerified": 1,
+    "cpuBusyRatio": 0.024068965517241248,
+    "memoryUsedRatio": 0.07487841355164893,
+    "publicAdmissionEnabled": false
+  },
+  "observed": {
+    "resource": {
+      "initialSnapshotRecorded": true,
+      "thirtyDayMaximum": null
+    },
+    "capacity": {
+      "initialStorageAvailableBytes": 261283827712,
+      "headroomAtTargetLoadPercent": 50
+    },
+    "backup": {
+      "initialRemoteVerification": true,
+      "thirtyDaySuccessRate": null
+    },
+    "availability": null,
+    "workload": null,
+    "egress": null,
+    "allocatedHost": {
+      "vcpus": 16,
+      "memoryMiB": 32768,
+      "osDiskGiB": 64,
+      "dataDiskGiB": 256
+    },
+    "power": null,
+    "network": {
+      "initialReceivedBytes": 156603803,
+      "initialTransmittedBytes": 41750233,
+      "thirtyDayDelta": null
+    },
+    "storage": {
+      "filesystem": "btrfs",
+      "initialTotalBytes": 274875809792,
+      "thirtyDayMaximumUsedBytes": null
+    },
+    "operationalCost": null
+  },
+  "providerOrFacilityEvidence": [
+    "docs/evidence/public-beta-preflight-plan.json",
+    "docs/evidence/public-beta-provisioning.json"
+  ],
+  "note": "The exact deployed release baseline restarts the 30-day measurement window; completion, maxima, availability, workload, egress, and cost remain intentionally unset until observed for the full window."
+}

@@ -1,0 +1,102 @@
+---
+- name: Record the converged plan hash
+  ansible.builtin.copy:
+    dest: /etc/mako-plan-hash
+    content: "{{ mako_plan_hash }}\n"
+    owner: root
+    group: root
+    mode: "0444"
+
+- name: Inspect installed packages before listener-safe installation
+  ansible.builtin.package_facts:
+    manager: apt
+
+- name: Identify packages that still need installation
+  ansible.builtin.set_fact:
+    base_missing_packages: "{{ base_packages | difference(ansible_facts.packages.keys() | list) }}"
+
+- name: Prevent package post-install scripts from starting listeners
+  ansible.builtin.copy:
+    dest: /usr/sbin/policy-rc.d
+    content: "#!/bin/sh\nexit 101\n"
+    owner: root
+    group: root
+    mode: "0755"
+  when: base_missing_packages | length > 0
+
+- name: Install pinned-to-Ubuntu-release host packages
+  block:
+    - name: Install base, runtime, proxy, storage, and monitoring packages
+      ansible.builtin.apt:
+        name: "{{ base_packages }}"
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+  always:
+    - name: Remove the temporary package-listener policy
+      ansible.builtin.file:
+        path: /usr/sbin/policy-rc.d
+        state: absent
+      when: base_missing_packages | length > 0
+
+- name: Configure automatic security updates
+  ansible.builtin.copy:
+    dest: /etc/apt/apt.conf.d/20auto-upgrades
+    content: |
+      APT::Periodic::Update-Package-Lists "1";
+      APT::Periodic::Unattended-Upgrade "1";
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Inspect the system timezone
+  ansible.builtin.command: /usr/bin/timedatectl show --property=Timezone --value
+  register: base_timezone
+  changed_when: false
+  check_mode: false
+
+- name: Configure the system timezone
+  ansible.builtin.command: /usr/bin/timedatectl set-timezone UTC
+  when: base_timezone.stdout != "UTC"
+  changed_when: true
+
+- name: Disable guest IPv6 explicitly
+  ansible.builtin.copy:
+    dest: /etc/sysctl.d/90-mako-cloud-ipv6.conf
+    content: |
+      net.ipv6.conf.all.disable_ipv6=1
+      net.ipv6.conf.default.disable_ipv6=1
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Apply sysctl
+
+- name: Configure key-only SSH after verified recovery access
+  ansible.builtin.copy:
+    dest: /etc/ssh/sshd_config.d/90-mako-cloud.conf
+    content: |
+      PasswordAuthentication no
+      KbdInteractiveAuthentication no
+      PermitRootLogin no
+      PubkeyAuthentication yes
+    owner: root
+    group: root
+    mode: "0644"
+    validate: /usr/sbin/sshd -t -f %s
+  notify: Reload ssh
+
+- name: Enable time sync and the Proxmox guest agent
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    enabled: true
+    state: started
+  loop:
+    - chrony.service
+    - qemu-guest-agent.service
+
+- name: Keep Caddy disabled until a fail-closed proxy configuration exists
+  ansible.builtin.systemd_service:
+    name: caddy.service
+    enabled: "{{ mako_caddy_enabled | bool }}"
+    state: "{{ 'started' if mako_caddy_enabled | bool else 'stopped' }}"
+  when: not ansible_check_mode

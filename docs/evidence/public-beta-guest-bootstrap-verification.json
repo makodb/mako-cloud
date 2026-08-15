@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-08-08T03:32:13-04:00",
+  "planHash": "d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073",
+  "node": "zoo-005",
+  "vmId": 124,
+  "repair": {
+    "observedInterface": "enp6s18",
+    "resolution": "The NoCloud network config now matches 02:3b:12:f8:ec:76 and deterministically renames it to ens18.",
+    "seedVolume": "local:iso/mako-cloud-public-beta-seed-d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073-1822dc2713284d75.iso",
+    "seedSha256": "ca2b974b4a0b695734933f6f55274b53220465c9bda1c9a87b64783f29217075"
+  },
+  "reboot": {
+    "beforeBootId": "d9a51763-b961-4965-ad0e-ce0acb1985f6",
+    "afterBootId": "920ff1de-f3a1-4e86-988c-acdee169e77d",
+    "persisted": true
+  },
+  "checks": {
+    "vmRunning": true,
+    "qemuGuestAgentHealthy": true,
+    "cloudInitStatus": "done",
+    "cloudInitErrors": [],
+    "firstBootMarkerPresent": true,
+    "planHashMarkerMatches": true,
+    "keyOnlySsh": {
+      "user": "mako-admin",
+      "passed": true,
+      "passwordAuthentication": false,
+      "keyboardInteractiveAuthentication": false,
+      "directRootLogin": false,
+      "publicKeyAuthentication": true
+    },
+    "consoleRecovery": {
+      "serialDevice": "socket",
+      "vga": "serial0",
+      "kernelConsole": "ttyS0",
+      "serialGetty": "enabled-runtime",
+      "bootAndLoginPromptObserved": true
+    },
+    "network": {
+      "interface": "ens18",
+      "macAddress": "02:3b:12:f8:ec:76",
+      "ipv4Cidr": "130.245.173.11/24",
+      "defaultRoute": "default via 130.245.173.1 dev ens18 proto static onlink",
+      "dnsServers": ["8.8.8.8"],
+      "externalDnsQueryPassed": true
+    },
+    "time": {
+      "service": "chrony",
+      "active": true,
+      "ntpSynchronized": true
+    },
+    "disks": {
+      "os": {
+        "device": "/dev/sda",
+        "serial": "drive-scsi0",
+        "sizeBytes": 68719476736,
+        "rootFilesystem": "ext4"
+      },
+      "data": {
+        "device": "/dev/sdb",
+        "serial": "drive-scsi1",
+        "sizeBytes": 274877906944,
+        "partitioned": false,
+        "formatted": false
+      }
+    }
+  },
+  "result": "passed"
+}

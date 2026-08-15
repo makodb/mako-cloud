@@ -1,0 +1,180 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-13T21:31:02.704Z",
+  "environment": "public-beta",
+  "vmId": 124,
+  "publicOrigin": "https://cloud-test.makodb.com",
+  "planHash": "d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073",
+  "releaseDigest": "a5ccdaabff7d6ef30da512330dab38b60e32ae034f621ee4d4eed2b49e976000",
+  "qualificationReleaseDigest": "f215b7d5232c1f8dad5e8046b38f359fe97f81de06f2080a15f66461e7cfe6af",
+  "carriedForwardByIdenticalRuntimeArtifacts": true,
+  "publicAdmissionMode": "restricted-pre-gate",
+  "qualificationMode": "existing-isolated-fixture",
+  "managementControlCoveredBy": "docs/evidence/public-beta-hosted-qualification.json",
+  "target": {
+    "concurrency": 16,
+    "qualifiedHeadroomConcurrency": 24,
+    "saturationProbeConcurrency": 64,
+    "capacityHeadroomAtTargetLoadPercent": 50
+  },
+  "latencyMilliseconds": {
+    "authSignIn": {
+      "samples": 10,
+      "p50": 247.8914010000001,
+      "p95": 341.92343000000005,
+      "maximum": 341.92343000000005
+    },
+    "rxdbPushBatch": {
+      "samples": 4,
+      "p50": 323.8113400000002,
+      "p95": 385.49941999999965,
+      "maximum": 385.49941999999965
+    },
+    "rxdbPullBeforeRecovery": 1604.8523670000004,
+    "rxdbLiveFirstEvent": 52.25101300000006,
+    "controlRead": null,
+    "coldFunction": 439.4438310000005,
+    "warmFunction": 441.0257550000006,
+    "recoveryToReady": 1086.1317720000006,
+    "rxdbPullAfterRecovery": 5453.2733979999975
+  },
+  "workload": {
+    "acknowledgedDocuments": 32,
+    "acknowledgedWriteLoss": 0,
+    "integrityFailures": 0,
+    "liveEvent": "heartbeat",
+    "functionResponseBytes": 130304,
+    "functionBodyStableAcrossColdAndWarm": true
+  },
+  "concurrentLoad": {
+    "target": {
+      "concurrency": 16,
+      "requests": 64,
+      "elapsedMilliseconds": 3685.264622999999,
+      "requestsPerSecond": 17.366421248670818,
+      "failedRequests": 0,
+      "serverErrors": 0,
+      "rateLimitedRequests": 0,
+      "statusCounts": {
+        "authUser": {
+          "200": 32
+        },
+        "control": {},
+        "function": {
+          "200": 16
+        },
+        "pull": {
+          "200": 16
+        }
+      },
+      "latencyMilliseconds": {
+        "authUser": {
+          "samples": 32,
+          "p50": 527.6918299999998,
+          "p95": 3352.440714000002,
+          "maximum": 3593.2939619999997
+        },
+        "control": null,
+        "function": {
+          "samples": 16,
+          "p50": 650.5493470000001,
+          "p95": 1254.8180890000003,
+          "maximum": 1254.8180890000003
+        },
+        "pull": {
+          "samples": 16,
+          "p50": 263.8390069999987,
+          "p95": 840.3155529999985,
+          "maximum": 840.3155529999985
+        }
+      }
+    },
+    "requiredHeadroom": {
+      "concurrency": 24,
+      "requests": 96,
+      "elapsedMilliseconds": 5212.147240000002,
+      "requestsPerSecond": 18.418508214637974,
+      "failedRequests": 0,
+      "serverErrors": 0,
+      "rateLimitedRequests": 0,
+      "statusCounts": {
+        "authUser": {
+          "200": 48
+        },
+        "control": {},
+        "function": {
+          "200": 24
+        },
+        "pull": {
+          "200": 24
+        }
+      },
+      "latencyMilliseconds": {
+        "authUser": {
+          "samples": 48,
+          "p50": 543.0798969999996,
+          "p95": 5005.106201999999,
+          "maximum": 5207.379608000003
+        },
+        "control": null,
+        "function": {
+          "samples": 24,
+          "p50": 662.6392450000021,
+          "p95": 1291.003254000003,
+          "maximum": 1356.2979900000028
+        },
+        "pull": {
+          "samples": 24,
+          "p50": 318.23191399999996,
+          "p95": 845.9641059999994,
+          "maximum": 1149.1380480000007
+        }
+      }
+    },
+    "saturationProbe": {
+      "concurrency": 64,
+      "requests": 256,
+      "elapsedMilliseconds": 15774.692596,
+      "requestsPerSecond": 16.228523928420866,
+      "failedRequests": 2,
+      "serverErrors": 0,
+      "rateLimitedRequests": 2,
+      "statusCounts": {
+        "authUser": {
+          "200": 128
+        },
+        "control": {},
+        "function": {
+          "200": 64
+        },
+        "pull": {
+          "200": 62,
+          "429": 2
+        }
+      },
+      "latencyMilliseconds": {
+        "authUser": {
+          "samples": 128,
+          "p50": 1654.2665669999988,
+          "p95": 14752.867656000002,
+          "maximum": 15772.138090999997
+        },
+        "control": null,
+        "function": {
+          "samples": 64,
+          "p50": 1003.6989880000001,
+          "p95": 4528.715225999997,
+          "maximum": 7203.6995849999985
+        },
+        "pull": {
+          "samples": 64,
+          "p50": 467.40718800000104,
+          "p95": 6131.478536999999,
+          "maximum": 8802.104593
+        }
+      }
+    },
+    "saturationConcurrencyLowerBound": 24
+  },
+  "passed": true
+}

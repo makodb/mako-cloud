@@ -1,0 +1,121 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-08T02:55:01.237Z",
+  "mode": "read-only-plan",
+  "identity": {
+    "fqdn": "cloud-test.makodb.com",
+    "guestType": "qemu",
+    "ipv4Address": "130.245.173.11",
+    "vmName": "mako-cloud-public-beta"
+  },
+  "proxmox": {
+    "cluster": "zoo",
+    "node": "zoo-005",
+    "vmId": 124,
+    "existingGuest": null
+  },
+  "resources": {
+    "vcpus": 8,
+    "sockets": 1,
+    "cpuType": "host",
+    "memoryMiB": 16384,
+    "osDiskGiB": 64,
+    "dataDiskGiB": 256
+  },
+  "image": {
+    "distribution": "ubuntu",
+    "release": "24.04",
+    "architecture": "amd64",
+    "source": "https://cloud-images.ubuntu.com/noble/20260801/noble-server-cloudimg-amd64.img",
+    "sha256": "0533b0655c32e68b31d792ecd6ccfca95abdbc536c4446874fe0513bd4140ffe",
+    "availableLocally": true
+  },
+  "network": {
+    "bridge": "vmbr0",
+    "prefixLength": 24,
+    "gateway": "130.245.173.1",
+    "dnsServers": ["8.8.8.8"],
+    "macAddress": "02:3b:12:f8:ec:76",
+    "ipv6Mode": "disabled",
+    "onLink": true
+  },
+  "storage": {
+    "os": {
+      "id": "qnas-lun-lvm",
+      "content": ["images", "rootdir"],
+      "availableBytes": 10995112083456,
+      "requiredBytes": 68719476736,
+      "headroomPercent": 99.37499976158134,
+      "offVm": false
+    },
+    "data": {
+      "id": "qnas-lun-lvm",
+      "content": ["images", "rootdir"],
+      "availableBytes": 10995112083456,
+      "requiredBytes": 274877906944,
+      "headroomPercent": 97.49999904632533,
+      "offVm": false
+    },
+    "backup": {
+      "id": "local",
+      "content": ["backup", "iso", "vztmpl"],
+      "availableBytes": 1703535517696,
+      "requiredBytes": 274877906944,
+      "headroomPercent": 76.86480502310306,
+      "offVm": true
+    }
+  },
+  "security": {
+    "managementCidrs": ["130.245.173.10/32"],
+    "sshPublicKeyFingerprint": "SHA256:Z1qtWxs8JeaB2FRwvVDGitg1cZnWbtRG+2A95G4x6BQ",
+    "passwordLogin": false,
+    "rootLogin": false
+  },
+  "checks": {
+    "dns": {
+      "localA": ["130.245.173.11"],
+      "publicA": ["130.245.173.11"],
+      "publicAaaa": []
+    },
+    "inventory": {
+      "vmNameMatches": [],
+      "addressMatches": [],
+      "vmIdAvailable": true
+    },
+    "address": {
+      "routeDevice": "vmbr0",
+      "neighborState": "incomplete",
+      "activeOwnerDetected": false
+    },
+    "ambiguities": [],
+    "conflictFree": true,
+    "capacity": {
+      "memoryPass": true,
+      "osStoragePass": true,
+      "dataStoragePass": true,
+      "backupStoragePass": true
+    }
+  },
+  "changes": {
+    "classification": "create",
+    "items": [
+      {
+        "path": "vm",
+        "action": "create",
+        "destructive": false
+      },
+      {
+        "path": "vm.osDisk",
+        "action": "create",
+        "destructive": false
+      },
+      {
+        "path": "vm.dataDisk",
+        "action": "create",
+        "destructive": false
+      }
+    ],
+    "requiresDestructiveConfirmation": false
+  },
+  "planHash": "d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073"
+}

@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Mako Cloud local-first example</title>
+  </head>
+  <body>
+    <main>
+      <p class="eyebrow">Mako Cloud + RxDB</p>
+      <h1>Local-first todos</h1>
+      <p>Writes remain available offline and synchronize when the network returns.</p>
+      <section class="card" aria-label="Todo editor">
+        <form id="todo-form">
+          <label for="title">Todo</label>
+          <input id="title" name="title" autocomplete="off" required />
+          <button type="submit">Add</button>
+        </form>
+        <ul id="todos" aria-live="polite"></ul>
+      </section>
+      <section class="card network" aria-label="Network controls">
+        <button id="offline" type="button">Go offline</button>
+        <button id="online" type="button">Go online</button>
+      </section>
+      <p>Replication: <span id="status" role="status">loading</span></p>
+      <output id="diagnostics"></output>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

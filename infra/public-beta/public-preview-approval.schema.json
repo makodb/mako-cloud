@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://makodb.com/schemas/public-preview-approval.schema.json",
+  "title": "Mako Cloud risk-accepted public-preview approval",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "kind",
+    "persistence",
+    "operatorIdentity",
+    "planHash",
+    "releaseDigest",
+    "blockers",
+    "blockerDigest",
+    "acceptedAt",
+    "expiresAt",
+    "nonWaivableSafeguards",
+    "typedConfirmation"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 2 },
+    "kind": { "const": "risk-accepted-public-preview" },
+    "persistence": { "const": "until-manually-paused" },
+    "operatorIdentity": { "type": "string", "minLength": 3, "maxLength": 254 },
+    "planHash": { "$ref": "#/$defs/digest" },
+    "releaseDigest": { "$ref": "#/$defs/digest" },
+    "blockers": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1, "maxLength": 500 }
+    },
+    "blockerDigest": { "$ref": "#/$defs/digest" },
+    "acceptedAt": { "type": "string", "format": "date-time" },
+    "expiresAt": { "type": "null" },
+    "nonWaivableSafeguards": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "trustedHttpsAndHsts",
+        "exactPublicRouteAllowlist",
+        "applicationSecurity",
+        "backupAndRecovery",
+        "zeroAcknowledgedWriteLoss",
+        "zeroIntegrityFailures",
+        "serviceReadiness",
+        "emergencyAdmissionStop"
+      ],
+      "properties": {
+        "trustedHttpsAndHsts": { "const": true },
+        "exactPublicRouteAllowlist": { "const": true },
+        "applicationSecurity": { "const": true },
+        "backupAndRecovery": { "const": true },
+        "zeroAcknowledgedWriteLoss": { "const": true },
+        "zeroIntegrityFailures": { "const": true },
+        "serviceReadiness": { "const": true },
+        "emergencyAdmissionStop": { "const": true }
+      }
+    },
+    "typedConfirmation": { "type": "string", "minLength": 1, "maxLength": 400 }
+  },
+  "$defs": {
+    "digest": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+  }
+}

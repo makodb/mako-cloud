@@ -1,0 +1,119 @@
+{
+  "annotations": { "list": [] },
+  "editable": false,
+  "graphTooltip": 1,
+  "panels": [
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 0 },
+      "id": 1,
+      "targets": [
+        {
+          "expr": "mako_developer_registration_enabled",
+          "legendFormat": "registration",
+          "refId": "A"
+        },
+        { "expr": "mako_developer_mail_ready", "legendFormat": "mail", "refId": "B" }
+      ],
+      "title": "Registration and mail readiness",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 0 },
+      "id": 2,
+      "targets": [
+        { "expr": "mako_developer_identities", "legendFormat": "{{state}}", "refId": "A" }
+      ],
+      "title": "Developer lifecycle counts",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 0 },
+      "id": 3,
+      "targets": [
+        {
+          "expr": "mako_developer_waitlist_oldest_age_seconds",
+          "legendFormat": "oldest applicant",
+          "refId": "A"
+        }
+      ],
+      "title": "Oldest wait-list age",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 6 },
+      "id": 4,
+      "targets": [
+        { "expr": "mako_developer_outbox_pending", "legendFormat": "pending", "refId": "A" },
+        {
+          "expr": "mako_developer_outbox_dead_letters",
+          "legendFormat": "dead letters",
+          "refId": "B"
+        }
+      ],
+      "title": "Mail outbox state",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 6 },
+      "id": 5,
+      "targets": [
+        {
+          "expr": "rate(mako_developer_registration_requests_total[5m])",
+          "legendFormat": "registration",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(mako_developer_sign_in_requests_total[5m])",
+          "legendFormat": "sign-in",
+          "refId": "B"
+        },
+        {
+          "expr": "rate(mako_developer_recovery_requests_total[5m])",
+          "legendFormat": "recovery",
+          "refId": "C"
+        }
+      ],
+      "title": "Hosted identity request rates",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 6 },
+      "id": 6,
+      "targets": [
+        {
+          "expr": "rate(mako_developer_throttles_total[5m])",
+          "legendFormat": "throttles",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(mako_developer_failures_total[5m])",
+          "legendFormat": "failures",
+          "refId": "B"
+        }
+      ],
+      "title": "Safe denials and failures",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 40,
+  "tags": ["mako", "developer-identity", "wait-list"],
+  "templating": { "list": [] },
+  "time": { "from": "now-6h", "to": "now" },
+  "timezone": "browser",
+  "title": "Mako Developer Registration",
+  "uid": "mako-developer-registration",
+  "version": 1
+}

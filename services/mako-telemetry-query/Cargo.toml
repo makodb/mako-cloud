@@ -1,0 +1,26 @@
+[package]
+name = "mako-telemetry-query-service"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "mako-telemetry-query"
+path = "src/main.rs"
+
+[dependencies]
+base64.workspace = true
+futures.workspace = true
+mako-api = { path = "../../crates/mako-api" }
+mako-audit = { path = "../../crates/mako-audit" }
+mako-control-plane = { path = "../../crates/mako-control-plane" }
+mako-service-runtime = { path = "../../crates/mako-service-runtime" }
+mako-storage = { path = "../../crates/mako-storage" }
+rand_core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+
+[lints]
+workspace = true

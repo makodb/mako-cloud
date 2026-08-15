@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-08-08T03:52:00Z",
+  "planHash": "d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073",
+  "vmId": 124,
+  "proxmoxLayer": {
+    "implementation": "nftables bridge hook scoped to tap124i0",
+    "service": "mako-vm124-firewall.service",
+    "active": true,
+    "enabledAtBoot": true,
+    "clusterWideFirewallChanged": false,
+    "reason": "The cluster-wide switch affects unrelated Proxmox nodes; the dedicated bridge table enforces only VM 124.",
+    "publicIngress": ["tcp/80", "tcp/443"],
+    "managementSshSources": ["130.245.173.10/32", "130.245.173.105/32"],
+    "ipv6": "drop",
+    "sourceMac": "02:3b:12:f8:ec:76",
+    "sourceIpv4": "130.245.173.11"
+  },
+  "guestLayer": {
+    "implementation": "nftables inet input and forward hooks",
+    "service": "nftables.service",
+    "active": true,
+    "enabledAtBoot": true,
+    "inputPolicy": "drop",
+    "forwardPolicy": "drop",
+    "publicIngress": ["tcp/80", "tcp/443"],
+    "managementSshSources": ["130.245.173.10/32", "130.245.173.105/32"],
+    "ipv6": "drop",
+    "rateLimitedLogs": true
+  },
+  "postActivationManagementSsh": "passed",
+  "result": "passed"
+}

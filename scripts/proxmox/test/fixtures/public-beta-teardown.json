@@ -1,0 +1,26 @@
+{
+  "vm": {
+    "id": 124,
+    "status": "running",
+    "name": "mako-cloud-public-beta",
+    "node": "pve",
+    "disks": [
+      { "slot": "scsi0", "value": "local-lvm:vm-124-disk-0" },
+      { "slot": "scsi1", "value": "local-lvm:vm-124-disk-1" }
+    ]
+  },
+  "admission": { "serviceActive": true, "serviceEnabled": true, "edgeFilterInstalled": true },
+  "backups": [{ "path": "data-plane/example/manifest.json", "sizeBytes": 1024 }],
+  "guest": {
+    "release": {
+      "current": "081b1a0f8be959f7eabefaa9aa8fc1e1911f5f81a8d0776d73ac1dd2294fbb5b",
+      "lastKnownGood": "2d0d5970f58011efb12e33dbab6d11a384e2cb121e0daa78fed55a13e0f9d96d"
+    },
+    "blockDevices": [],
+    "credentials": ["internal-auth"],
+    "certificates": [],
+    "releaseOperationEvidence": ["operation.json"]
+  },
+  "dns": { "name": "cloud-test.makodb.com", "a": ["130.245.173.11"], "aaaa": [] },
+  "retainedEvidence": ["docs/evidence/public-beta-admission-stop.json"]
+}

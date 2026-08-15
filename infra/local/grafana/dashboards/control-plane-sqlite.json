@@ -1,0 +1,95 @@
+{
+  "annotations": { "list": [] },
+  "editable": false,
+  "panels": [
+    {
+      "id": 1,
+      "title": "Readiness",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "mako_control_sqlite_ready", "refId": "A" }]
+    },
+    {
+      "id": 2,
+      "title": "Integrity and schema",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "mako_control_sqlite_integrity_verified", "refId": "A" },
+        { "expr": "mako_control_sqlite_schema_version", "refId": "B" }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Busy outcomes and oldest transaction",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "rate(mako_control_sqlite_busy_total[5m])", "refId": "A" },
+        { "expr": "mako_control_sqlite_transaction_oldest_seconds", "refId": "B" }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Database and WAL bytes",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "mako_control_sqlite_database_bytes", "refId": "A" },
+        { "expr": "mako_control_sqlite_wal_bytes", "refId": "B" }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Available bytes and reserves",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "mako_control_sqlite_available_bytes", "refId": "A" },
+        { "expr": "mako_control_sqlite_disk_warning_free_bytes", "refId": "B" },
+        { "expr": "mako_control_sqlite_disk_critical_free_bytes", "refId": "C" }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Backup age and remote verification",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "mako_control_sqlite_backup_age_seconds", "refId": "A" },
+        { "expr": "mako_control_sqlite_backup_remote_verified", "refId": "B" }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Checkpoint and restore failures",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "increase(mako_control_sqlite_checkpoint_failures_total[15m])", "refId": "A" },
+        { "expr": "increase(mako_control_sqlite_restore_failures_total[15m])", "refId": "B" }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Migration and service restarts",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "mako_control_sqlite_migration_verified", "refId": "A" },
+        {
+          "expr": "increase(mako_service_restarts_total{service=\"mako-control-plane\"}[1h])",
+          "refId": "B"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 41,
+  "tags": ["mako-cloud", "control-plane", "sqlite"],
+  "templating": { "list": [] },
+  "time": { "from": "now-6h", "to": "now" },
+  "timezone": "browser",
+  "title": "Mako Control-plane SQLite",
+  "uid": "mako-control-sqlite",
+  "version": 1
+}

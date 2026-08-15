@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-14T01:08:46.000Z",
+  "label": "risk-accepted-public-preview",
+  "status": "active",
+  "admissionMode": "risk_accepted_preview",
+  "qualifiedBetaStatus": "blocked",
+  "planHash": "d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073",
+  "releaseDigest": "a5ccdaabff7d6ef30da512330dab38b60e32ae034f621ee4d4eed2b49e976000",
+  "acceptedBlockers": [
+    "complete the 30-day resource, capacity, availability, and cost window with provider or facility evidence",
+    "measured auth, RxDB pull, and RxDB push latency exceed their single-region beta p95 budgets"
+  ],
+  "blockerDigest": "b8492baa802b961ba5cd240e211e0fccc87498d7fd589370dde5f44c8ef7e6a8",
+  "approvalEvidence": "docs/evidence/public-beta-public-preview-approval.json",
+  "guardEvidence": "docs/evidence/public-beta-public-preview-guard.json",
+  "note": "The exact-release-bound risk acceptance has no calendar expiry and remains active until an operator pauses it or the recurring guard detects binding or non-waivable safeguard drift; the separate single-region beta gate remains blocked."
+}

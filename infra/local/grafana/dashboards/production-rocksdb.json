@@ -1,0 +1,98 @@
+{
+  "annotations": { "list": [] },
+  "editable": false,
+  "panels": [
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 8, "w": 6, "x": 0, "y": 0 },
+      "id": 1,
+      "targets": [
+        { "expr": "min by (service, volume) (mako_storage_rocksdb_ready)", "refId": "A" }
+      ],
+      "title": "Readiness and exclusive lock",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 6, "x": 6, "y": 0 },
+      "id": 2,
+      "targets": [{ "expr": "mako_storage_available_bytes", "refId": "A" }],
+      "title": "Available capacity",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 8, "w": 6, "x": 12, "y": 0 },
+      "id": 3,
+      "targets": [
+        {
+          "expr": "mako_storage_write_stopped + mako_storage_background_errors_total",
+          "refId": "A"
+        }
+      ],
+      "title": "Write stalls and background errors",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 6, "x": 18, "y": 0 },
+      "id": 4,
+      "targets": [{ "expr": "mako_storage_pending_compaction_bytes", "refId": "A" }],
+      "title": "Compaction pressure",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 8 },
+      "id": 5,
+      "targets": [
+        {
+          "expr": "increase(mako_storage_io_errors_total[15m]) + increase(mako_storage_corruption_signals_total[15m])",
+          "refId": "A"
+        }
+      ],
+      "title": "I/O and corruption signals",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 8 },
+      "id": 6,
+      "targets": [{ "expr": "mako_storage_backup_age_seconds", "refId": "A" }],
+      "title": "Verified backup age",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 8, "w": 4, "x": 16, "y": 8 },
+      "id": 7,
+      "targets": [{ "expr": "mako_storage_restore_verification_success", "refId": "A" }],
+      "title": "Restore verification",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 4, "x": 20, "y": 8 },
+      "id": 8,
+      "targets": [{ "expr": "mako_storage_recovery_duration_seconds", "refId": "A" }],
+      "title": "Recovery duration",
+      "type": "stat"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 41,
+  "tags": ["mako", "rocksdb", "production"],
+  "templating": { "list": [] },
+  "time": { "from": "now-6h", "to": "now" },
+  "title": "Mako Production RocksDB",
+  "uid": "mako-production-rocksdb",
+  "version": 1
+}

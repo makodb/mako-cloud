@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-08T04:35:00.000Z",
+  "planHash": "d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073",
+  "releaseDigest": "b6498ee71722d76d67ee5c77f99c29afa65660f7024a7a588fb76b9dec4d7be3",
+  "guest": {
+    "releasePath": "/opt/mako/releases/b6498ee71722d76d67ee5c77f99c29afa65660f7024a7a588fb76b9dec4d7be3",
+    "currentTarget": "releases/b6498ee71722d76d67ee5c77f99c29afa65660f7024a7a588fb76b9dec4d7be3",
+    "lastKnownGood": null,
+    "manifestVerifiedOffline": true,
+    "artifactChecksumsVerified": true,
+    "owner": "root:root",
+    "directoryMode": "0555",
+    "manifestMode": "0444",
+    "binaryMode": "0755",
+    "consoleMode": "0644"
+  },
+  "installer": {
+    "path": "/usr/local/sbin/mako-release",
+    "idempotentInstallVerified": true,
+    "atomicSelectionVerified": true,
+    "lastKnownGoodSelectionVerifiedLocally": true,
+    "tamperedArtifactRejected": true,
+    "existingReleaseNeverOverwritten": true
+  },
+  "convergence": {
+    "checkModePassed": true,
+    "firstLog": ".local/ansible/release-install-convergence.log",
+    "secondLog": ".local/ansible/release-second-convergence.log",
+    "secondRun": {
+      "ok": 13,
+      "changed": 0,
+      "unreachable": 0,
+      "failed": 0,
+      "skipped": 5
+    },
+    "ansibleLintProfile": "production"
+  },
+  "admission": {
+    "caddyActive": false,
+    "makoServicesStarted": false,
+    "publicApplicationRoutesEnabled": false
+  }
+}

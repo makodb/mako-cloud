@@ -1,0 +1,42 @@
+[Unit]
+Description=Fail-closed Mako Cloud public-preview admission guard
+After=network-online.target caddy.service mako-data-plane.service mako-control-plane.service mako-edge-gateway.service mako-telemetry-query.service
+Wants=network-online.target caddy.service
+ConditionPathExists=/etc/mako/public-preview-approval.json
+ConditionPathExists=/etc/mako/public-preview-context.json
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/mako-public-preview-admission guard
+StateDirectory=mako-public-preview
+StateDirectoryMode=0750
+UMask=0027
+TimeoutStartSec=2min
+NoNewPrivileges=yes
+PrivateDevices=yes
+PrivateIPC=yes
+PrivateTmp=yes
+ProtectClock=yes
+ProtectControlGroups=yes
+ProtectHome=yes
+ProtectHostname=yes
+ProtectKernelLogs=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectProc=invisible
+ProtectSystem=strict
+ReadWritePaths=/etc/caddy /var/lib/mako-public-preview
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RemoveIPC=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+SystemCallArchitectures=native
+IPAddressDeny=any
+IPAddressAllow=localhost
+DevicePolicy=closed
+TasksMax=64
+MemoryMax=128M
+CPUQuota=25%

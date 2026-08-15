@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-13T15:51:03Z",
+  "host": {
+    "scope": "repository qualification host",
+    "kernel": "Linux 7.0.14-5-pve x86_64",
+    "rustc": "1.97.1",
+    "buildProfile": "release"
+  },
+  "engine": "sqlite",
+  "databaseFormat": 1,
+  "workload": {
+    "records": 1200,
+    "controlDomains": 6,
+    "synchronousWrites": 1200,
+    "contentionWorkers": 32
+  },
+  "latencyMicroseconds": {
+    "synchronousWriteP50": 291,
+    "synchronousWriteP95": 356,
+    "synchronousWriteP99": 414,
+    "boundedFullControlScan": 903,
+    "contentionRound": 16366,
+    "checkpointAndShutdown": 421,
+    "verifiedBackup": 7303,
+    "verifiedEmptyTargetRestore": 2680
+  },
+  "contention": {
+    "applied": 1,
+    "conflicts": 31,
+    "busyOrErrors": 0,
+    "adapterBusyTotal": 0
+  },
+  "recovery": {
+    "backupRecords": 1201,
+    "restoredRecords": 1201,
+    "inventoryEqual": true,
+    "integrityVerified": true
+  },
+  "capacity": {
+    "databaseBytes": 122880,
+    "walBytesBeforeCheckpoint": 0,
+    "availableBytes": 458207232,
+    "configuredCriticalReserveBytes": 1,
+    "note": "The benchmark lowers only its isolated temporary-database reserve so the repository host can run it; production thresholds remain unchanged."
+  },
+  "command": "cargo run --release -p mako-storage --example control_sqlite_benchmark"
+}

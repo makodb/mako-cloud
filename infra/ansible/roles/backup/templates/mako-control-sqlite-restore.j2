@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+set -euo pipefail
+umask 077
+
+if [[ "$#" -ne 1 || ! "$1" =~ ^[A-Za-z0-9_-]{1,128}$ ]]; then
+  echo "usage: mako-control-sqlite-restore BACKUP_ID" >&2
+  exit 64
+fi
+if [[ -z "${CREDENTIALS_DIRECTORY:-}" ]]; then
+  echo "systemd credentials are unavailable" >&2
+  exit 1
+fi
+
+backup_id=$1
+artifact="{{ mako_data_mount }}/backup-publish/control-plane/${backup_id}"
+target="{{ mako_data_mount }}/restore/control-plane/${backup_id}.sqlite3"
+status_root=/var/lib/mako-backup
+failure_file="${status_root}/control-plane.restore-failures"
+
+read_failures() {
+  local value=0
+  if [[ -f "$failure_file" ]]; then
+    value=$(<"$failure_file")
+  fi
+  [[ "$value" =~ ^[0-9]+$ ]] || value=0
+  printf '%s' "$value"
+}
+
+record_failure() {
+  local result=$?
+  if (( result != 0 )); then
+    printf '%s\n' "$(( $(read_failures) + 1 ))" >"$failure_file"
+  fi
+  exit "$result"
+}
+trap record_failure EXIT
+
+/opt/mako/current/bin/mako-control-storage-ops restore \
+  "--artifact=${artifact}" \
+  "--target=${target}" \
+  "--identity=mako-control-plane-{{ mako_storage_region }}" \
+  "--release-sha256={{ mako_release_digest }}" \
+  --maximum-age-seconds=86400 \
+  "--signing-key-file=${CREDENTIALS_DIRECTORY}/backup-signing-key" \
+  --confirm=RESTORE_CONTROL_SQLITE
+
+/opt/mako/current/bin/mako-control-storage-ops inspect-sqlite \
+  "--database=${target}" \
+  "--identity=mako-control-plane-{{ mako_storage_region }}"
+
+echo "verified offline control SQLite restore backup=${backup_id}; explicit stopped-service promotion remains required"

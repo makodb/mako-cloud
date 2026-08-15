@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "planHash": "{{ mako_plan_hash }}",
+  "releaseDigest": "{{ mako_release_digest }}",
+  "environment": "production",
+  "region": "{{ mako_storage_region }}",
+  "publicOrigin": "https://{{ mako_public_fqdn }}",
+  "listeners": {
+    "dataPlane": "127.0.0.1:8080",
+    "controlPlane": "127.0.0.1:8081",
+    "edgeGateway": "127.0.0.1:8082"
+  },
+  "storage": {
+    "dataPlane": "{{ mako_data_mount }}/rocksdb/data-plane",
+    "controlPlane": "{{ mako_data_mount }}/sqlite/control-plane/live/control.sqlite3",
+    "edgeGateway": "{{ mako_data_mount }}/rocksdb/edge-gateway",
+    "telemetryQuery": "{{ mako_data_mount }}/rocksdb/telemetry-query",
+    "engines": {
+      "controlPlane": "sqlite",
+      "dataPlane": "rocksdb",
+      "edgeGateway": "rocksdb",
+      "telemetryQuery": "rocksdb"
+    },
+    "controlPlaneLock": "{{ mako_data_mount }}/sqlite/control-plane/lock/control.lock",
+    "controlPlaneMigration": "{{ mako_data_mount }}/sqlite/control-plane/migration",
+    "controlPlaneRestore": "{{ mako_data_mount }}/restore/control-plane",
+    "dataPlaneBackup": "{{ mako_data_mount }}/backup-staging/data-plane",
+    "controlPlaneBackup": "{{ mako_data_mount }}/backup-staging/control-plane",
+    "controlPlaneBackupPublish": "{{ mako_data_mount }}/backup-publish/control-plane",
+    "durability": "synchronous-fsync"
+  },
+  "dependencies": {
+    "smtp": "127.0.0.1:1025",
+    "objectStore": "http://127.0.0.1:8333",
+    "otlp": "127.0.0.1:4317"
+  },
+  "limits": {
+    "maximumRequestBytes": 16777216,
+    "shutdownGraceSeconds": 30,
+    "maximumBatchOperations": 10000,
+    "maximumScanItems": 10000,
+    "diskWarningFreeBytes": {{ mako_disk_warning_free_bytes }},
+    "diskCriticalFreeBytes": {{ mako_disk_critical_free_bytes }}
+  },
+  "operatorAuthentication": {
+    "passwordEnabled": {{ mako_operator_password_auth_enabled | bool | lower }},
+    "sessionLifetimeSeconds": {{ mako_operator_session_lifetime_seconds }},
+    "mutationFreshnessSeconds": {{ mako_operator_mutation_freshness_seconds }},
+    "attemptWindowSeconds": {{ mako_operator_attempt_window_seconds }},
+    "sourceAttemptsPerWindow": {{ mako_operator_source_attempts_per_window }},
+    "identityAttemptsPerWindow": {{ mako_operator_identity_attempts_per_window }},
+    "baseBackoffSeconds": {{ mako_operator_base_backoff_seconds }},
+    "maximumBackoffSeconds": {{ mako_operator_maximum_backoff_seconds }},
+    "cookiePolicy": "Secure; HttpOnly; SameSite=Strict; Path=/v1",
+    "breakGlassBearerEnabled": {{ mako_operator_break_glass_bearer_enabled | bool | lower }}
+  },
+  "quotaPolicy": "/etc/mako/quota-policy.json",
+  "secretReferences": {
+    "internalAuth": "systemd-credential:internal-auth",
+    "backupSigning": "systemd-credential:backup-signing-key",
+    "backupSsh": "systemd-credential:backup-ssh-key",
+    "grafanaAdmin": "protected-environment-file:grafana.env"
+  },
+  "secretValuesPresent": false,
+  "publicApplicationRoutesEnabled": false
+}

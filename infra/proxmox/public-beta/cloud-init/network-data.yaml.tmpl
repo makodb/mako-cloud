@@ -1,0 +1,18 @@
+version: 2
+ethernets:
+  primary:
+    match:
+      macaddress: @@MAC_ADDRESS@@
+    set-name: ens18
+    dhcp4: false
+    dhcp6: false
+    accept-ra: false
+    addresses:
+      - @@IPV4_ADDRESS@@/@@PREFIX_LENGTH@@
+    routes:
+      - to: 0.0.0.0/0
+        via: @@GATEWAY@@
+        on-link: true
+    nameservers:
+      addresses: @@DNS_SERVERS@@
+      search: [lan]

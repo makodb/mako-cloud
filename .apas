@@ -1,0 +1,55 @@
+{
+  "id": "73757577-63d9-4133-8253-e76a65dbb0f3",
+  "name": "mako-cloud",
+  "created_at": "2026-08-06T01:17:56.406677131+00:00",
+  "prompt": null,
+  "panes": [
+    {
+      "pane_id": 305,
+      "provider": "claude",
+      "mode": "interactive",
+      "kind": "terminal",
+      "session_id": "d21f31ca-e0d8-4e5a-acdb-eec6f8322ede",
+      "is_paused": false,
+      "stop_requested": false,
+      "prompt": null,
+      "label": "Claude 3",
+      "plan_review_mode": "never",
+      "manual_mode": false,
+      "managed": false
+    },
+    {
+      "pane_id": 826,
+      "provider": "claude",
+      "mode": "interactive",
+      "kind": "terminal",
+      "session_id": "d89dbb48-26d4-4ed8-b83c-3b3233b391bb",
+      "is_paused": false,
+      "stop_requested": false,
+      "prompt": null,
+      "label": "Claude 2",
+      "plan_review_mode": "never",
+      "manual_mode": false,
+      "managed": false
+    },
+    {
+      "pane_id": 888,
+      "provider": "codex",
+      "mode": "interactive",
+      "kind": "terminal",
+      "session_id": "ad0eb7be-9e80-4f2a-b719-513bfb06070b",
+      "is_paused": false,
+      "stop_requested": false,
+      "prompt": null,
+      "label": "Codex TTY 2",
+      "plan_review_mode": "never",
+      "manual_mode": false,
+      "managed": false
+    }
+  ],
+  "auto_approve_todos": false,
+  "auto_merge_prs": false,
+  "team_enabled": false,
+  "disallowed_tab_types": [],
+  "is_paused": false
+}

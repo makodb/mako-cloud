@@ -1,0 +1,23 @@
+[package]
+name = "mako-qualification-fixture"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "mako-qualification-fixture"
+path = "src/main.rs"
+
+[dependencies]
+blake3.workspace = true
+futures.workspace = true
+mako-api = { path = "../mako-api" }
+mako-documents = { path = "../mako-documents" }
+mako-identity = { path = "../mako-identity" }
+mako-policy = { path = "../mako-policy" }
+mako-storage = { path = "../mako-storage" }
+serde_json.workspace = true
+
+[lints]
+workspace = true
