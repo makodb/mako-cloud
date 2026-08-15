@@ -4,5 +4,12 @@
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["playwright.config.ts", "test/**/*.ts"]
+  "include": [
+    "playwright.config.ts",
+    "playwright.live.config.ts",
+    "vite.config.ts",
+    "test-support/**/*.d.ts",
+    "test/**/*.ts",
+    "test-live/**/*.ts"
+  ]
 }

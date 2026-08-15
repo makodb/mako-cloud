@@ -1,5 +1,24 @@
+import type { ReferenceBackend } from "./backend.js";
+import { type LiveBackendOptions, LiveMakoBackend } from "./live-backend.js";
+import { FakeMakoBackend } from "./mock-backend.js";
 import { createReferenceApplication, type ReferenceTodo } from "./reference-app.js";
 import "./styles.css";
+
+/**
+ * The app runs against its in-browser fake by default so it is runnable with no
+ * server. Supplying `window.__MAKO_EXAMPLE__` before load points it at a real
+ * deployment instead, which is how the live end-to-end suite drives it.
+ */
+declare global {
+  interface Window {
+    __MAKO_EXAMPLE__?: LiveBackendOptions;
+  }
+}
+
+function selectBackend(): ReferenceBackend {
+  const live = window.__MAKO_EXAMPLE__;
+  return live === undefined ? new FakeMakoBackend() : new LiveMakoBackend(live);
+}
 
 const status = requiredElement("status");
 const diagnostics = requiredElement("diagnostics");
@@ -11,7 +30,7 @@ if (form === null || title === null) {
 }
 
 status.textContent = "starting";
-const application = await createReferenceApplication();
+const application = await createReferenceApplication(selectBackend());
 let todoSequence = 0;
 
 function renderTodos(todos: readonly ReferenceTodo[]): void {

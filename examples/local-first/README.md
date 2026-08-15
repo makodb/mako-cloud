@@ -4,8 +4,9 @@ This self-contained browser application demonstrates the supported RxDB integrat
 real `@mako-cloud/rxdb` auth, pull, push, SSE, checkpoint, and signal adapters against a deterministic
 in-browser implementation of the public Mako protocol.
 
-The fake backend is test infrastructure, not a storage adapter or production server. Replace its
-injected `fetch` implementation with a hosted Mako endpoint in an application.
+The fake backend is test infrastructure, not a storage adapter or production server. It is one
+implementation of the `ReferenceBackend` seam; `LiveMakoBackend` is the other, and points the same
+application at a running deployment. An application supplies its own hosted endpoint the same way.
 
 ## Run it
 
@@ -37,6 +38,27 @@ The six scenarios verify:
 - an expiring access token is refreshed;
 - a broken SSE stream reconnects and emits `RESYNC`;
 - access revocation clears protected local state and requires authentication.
+
+## Run the same scenarios against a real backend
+
+The suite above proves the client half of the protocol; it would pass even if the server were
+broken. To prove the server implements the other half, run the same six scenarios against real
+service binaries:
+
+```sh
+cargo build --workspace --bins
+npm run build --workspace @mako-cloud/rxdb
+npm run test:browser-live --workspace @mako-cloud/example-local-first
+```
+
+That seeds a local tenant, starts a data plane, serves this application from an origin that also
+proxies `/v1` to it, and drives the scenarios over real HTTP. Nothing is intercepted: the app signs
+in for real, its writes are persisted, and every "remote" edit comes from a second authenticated
+application user.
+
+The proxy is not a convenience. The data plane emits no CORS headers, so a browser can only reach it
+same-origin — which is how a deployment serves it, behind one reverse proxy. The live suite
+reproduces that topology rather than loosening the server to suit a test.
 
 The implementation is in [`src/reference-app.ts`](src/reference-app.ts), the protocol fixture is in
 [`src/mock-backend.ts`](src/mock-backend.ts), and the assertions are in

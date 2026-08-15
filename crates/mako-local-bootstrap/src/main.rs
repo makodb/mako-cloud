@@ -363,13 +363,16 @@ fn seed_control_plane(
 /// The schema the bootstrapped collection uses. Policy compilation validates
 /// expressions against this same schema, so both must read it from one place.
 fn collection_schema() -> serde_json::Value {
+    // Matches the todo shape the reference application under examples/local-first
+    // replicates, so a bootstrapped tenant is directly usable by it.
     json!({
         "type": "object",
-        "required": ["id", "title", "done"],
+        "required": ["id", "ownerId", "title", "updatedAt"],
         "properties": {
             "id": { "type": "string" },
+            "ownerId": { "type": "string" },
             "title": { "type": "string" },
-            "done": { "type": "boolean" }
+            "updatedAt": { "type": "integer" }
         },
         "additionalProperties": true
     })

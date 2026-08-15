@@ -64,7 +64,8 @@
     "test:rxdb-chaos": "bash scripts/run-rxdb-chaos-qualification.sh",
     "test:rollback": "bash scripts/run-rollback-qualification.sh",
     "test:storage-soak": "bash scripts/run-storage-soak-qualification.sh",
-    "test:tenant-boundaries": "bash scripts/run-tenant-boundary-qualification.sh"
+    "test:tenant-boundaries": "bash scripts/run-tenant-boundary-qualification.sh",
+    "test:browser-live": "npm run test:browser-live --workspace @mako-cloud/example-local-first"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.7",

@@ -1,12 +1,12 @@
 import {
-  MakoAuthClient,
-  MakoLivePullStream,
-  MakoReplicationSignals,
   createMakoPullOptions,
   createMakoPushOptions,
-  normalizeMakoRxdbConfig,
+  MakoAuthClient,
   type MakoCheckpoint,
+  MakoLivePullStream,
   type MakoReplicationActivity,
+  MakoReplicationSignals,
+  normalizeMakoRxdbConfig,
 } from "@mako-cloud/rxdb";
 import {
   createRxDatabase,
@@ -15,12 +15,13 @@ import {
   type RxJsonSchema,
   type WithDeleted,
 } from "rxdb";
-import { replicateRxCollection, type RxReplicationState } from "rxdb/plugins/replication";
+import { type RxReplicationState, replicateRxCollection } from "rxdb/plugins/replication";
 import { getRxStorageMemory } from "rxdb/plugins/storage-memory";
 import { RXDB_VERSION } from "rxdb/plugins/utils";
 import type { Subscription } from "rxjs";
 
-import { FakeMakoBackend, type FakeBackendDiagnostics } from "./mock-backend.js";
+import type { ReferenceBackend, ReferenceBackendDiagnostics } from "./backend.js";
+import { FakeMakoBackend } from "./mock-backend.js";
 
 export interface ReferenceTodo {
   readonly id: string;
@@ -29,7 +30,7 @@ export interface ReferenceTodo {
   readonly updatedAt: number;
 }
 
-export interface ReferenceApplicationDiagnostics extends FakeBackendDiagnostics {
+export interface ReferenceApplicationDiagnostics extends ReferenceBackendDiagnostics {
   readonly activity: MakoReplicationActivity;
   readonly conflicts: number;
   readonly errors: number;
@@ -43,7 +44,7 @@ interface ReferenceCollections {
 }
 
 export interface ReferenceApplication {
-  readonly backend: FakeMakoBackend;
+  readonly backend: ReferenceBackend;
   readonly collection: RxCollection<ReferenceTodo>;
   addTodo(document: ReferenceTodo): Promise<void>;
   close(): Promise<void>;
@@ -80,22 +81,22 @@ const todoSchema: RxJsonSchema<ReferenceTodo> = {
 };
 
 export async function createReferenceApplication(
-  backend = new FakeMakoBackend(),
+  backend: ReferenceBackend = new FakeMakoBackend(),
 ): Promise<ReferenceApplication> {
   const config = normalizeMakoRxdbConfig({
-    endpoint: "http://127.0.0.1:4173/",
-    projectId: "prj_example01",
-    environmentId: "env_example01",
-    collectionId: "todos",
+    endpoint: backend.config.endpoint,
+    projectId: backend.config.projectId,
+    environmentId: backend.config.environmentId,
+    collectionId: backend.config.collectionId,
     schemaVersion: 1,
-    publicProjectKey: "mako_pk.reference-app",
+    publicProjectKey: backend.config.publicProjectKey,
     rxdbVersion: RXDB_VERSION,
     runtime: "browser",
     pullBatchSize: 100,
     pushBatchSize: 100,
   });
   const auth = new MakoAuthClient(config, { fetch: backend.fetch, now: backend.now });
-  await auth.signInWithPassword("local@example.test", "reference-password");
+  await backend.authenticate(auth);
 
   const database = await createRxDatabase<ReferenceCollections>({
     name: `makoexample${crypto.randomUUID().replaceAll("-", "")}`,
@@ -195,7 +196,7 @@ class ReferenceApplicationImpl implements ReferenceApplication {
   readonly #subscription: Subscription;
 
   constructor(
-    readonly backend: FakeMakoBackend,
+    readonly backend: ReferenceBackend,
     auth: MakoAuthClient,
     database: RxDatabase<ReferenceCollections>,
     readonly collection: RxCollection<ReferenceTodo>,
@@ -282,7 +283,7 @@ class ReferenceApplicationImpl implements ReferenceApplication {
 
   async putRemote(document: ReferenceTodo): Promise<void> {
     this.#assertAvailable();
-    this.backend.putRemote(document);
+    await this.backend.putRemote(document);
     if (this.backend.diagnostics().online) {
       this.#replication.reSync();
     }
@@ -290,14 +291,13 @@ class ReferenceApplicationImpl implements ReferenceApplication {
 
   async removeRemote(id: string, updatedAt: number): Promise<void> {
     this.#assertAvailable();
-    this.backend.deleteRemote(id, updatedAt);
+    await this.backend.deleteRemote(id, updatedAt);
     this.#replication.reSync();
   }
 
   async forceTokenRefresh(): Promise<void> {
     this.#assertAvailable();
-    this.backend.advanceClock(40_000);
-    await this.#auth.validAccessToken();
+    await this.backend.forceTokenRefresh(this.#auth);
   }
 
   async forceReconnect(): Promise<void> {
@@ -309,7 +309,7 @@ class ReferenceApplicationImpl implements ReferenceApplication {
 
   async revokeAccess(): Promise<void> {
     this.#assertAvailable();
-    this.backend.revokeAccess();
+    await this.backend.revokeAccess(this.#auth);
     try {
       await this.#auth.validAccessToken();
     } catch {

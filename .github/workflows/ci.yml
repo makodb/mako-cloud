@@ -122,6 +122,19 @@ jobs:
         run: rustup default 1.97.0
       - name: Drive the application happy path against the real services
         run: bash scripts/run-e2e-smoke-qualification.sh
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Build the RxDB client the reference application imports
+        run: npm run build --workspace @mako-cloud/rxdb
+      - name: Install the browser runtime
+        run: npx playwright install --with-deps chromium
+      - name: Drive the reference application against the real services
+        # The default browser suite runs these same six scenarios against an
+        # in-browser fake. This one proves the server implements the other half.
+        run: npm run test:browser-live
       - name: Publish smoke evidence
         if: always()
         uses: actions/upload-artifact@v4

@@ -1,3 +1,9 @@
+import type { MakoAuthClient } from "@mako-cloud/rxdb";
+import type {
+  ReferenceBackend,
+  ReferenceBackendConfig,
+  ReferenceBackendDiagnostics,
+} from "./backend.js";
 import type { ReferenceTodo } from "./reference-app.js";
 
 type WireTodo = ReferenceTodo & { _deleted: boolean };
@@ -16,7 +22,7 @@ export interface FakeBackendDiagnostics {
  * its browser tests hermetic; production applications point the same adapters
  * at a hosted Mako endpoint.
  */
-export class FakeMakoBackend {
+export class FakeMakoBackend implements ReferenceBackend {
   readonly #documents = new Map<string, WireTodo>();
   readonly #changes: Array<{ sequence: number; document: WireTodo }> = [];
   readonly #streams = new Set<ReadableStreamDefaultController<Uint8Array>>();
@@ -29,7 +35,25 @@ export class FakeMakoBackend {
   #sequence = 0;
   #streamConnections = 0;
 
+  readonly config: ReferenceBackendConfig = {
+    endpoint: "http://127.0.0.1:4173/",
+    projectId: "prj_example01",
+    environmentId: "env_example01",
+    collectionId: "todos",
+    publicProjectKey: "mako_pk.reference-app",
+  };
+
   readonly now = (): number => this.#clock;
+
+  async authenticate(auth: MakoAuthClient): Promise<void> {
+    await auth.signInWithPassword("local@example.test", "reference-password");
+  }
+
+  /** The fake ages its own clock rather than exchanging a real credential. */
+  async forceTokenRefresh(auth: MakoAuthClient): Promise<void> {
+    this.advanceClock(40_000);
+    await auth.validAccessToken();
+  }
 
   readonly fetch: typeof globalThis.fetch = async (input, init = {}) => {
     const url = requestUrl(input);
@@ -67,7 +91,7 @@ export class FakeMakoBackend {
     return apiError(404, "not_found", "route not found", "never");
   };
 
-  diagnostics(): FakeBackendDiagnostics {
+  diagnostics(): ReferenceBackendDiagnostics {
     return {
       acceptedWrites: this.#acceptedWrites,
       conflictResponses: this.#conflictResponses,
@@ -88,17 +112,17 @@ export class FakeMakoBackend {
     }
   }
 
-  revokeAccess(): void {
+  async revokeAccess(_auth?: MakoAuthClient): Promise<void> {
     this.#revoked = true;
     this.#clock += 4_000_000;
     this.disconnectStreams();
   }
 
-  putRemote(document: ReferenceTodo): void {
+  async putRemote(document: ReferenceTodo): Promise<void> {
     this.#record({ ...structuredClone(document), _deleted: false });
   }
 
-  deleteRemote(id: string, updatedAt: number): void {
+  async deleteRemote(id: string, updatedAt: number): Promise<void> {
     const current = this.#documents.get(id);
     this.#record({
       id,

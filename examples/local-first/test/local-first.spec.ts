@@ -116,9 +116,3 @@ test("clears local data and requires authentication after access revocation", as
 function todo(id: string, title: string, updatedAt: number): Todo {
   return { id, ownerId: "user-example", title, updatedAt };
 }
-
-declare global {
-  interface Window {
-    makoExample: BrowserApplication;
-  }
-}

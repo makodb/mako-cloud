@@ -35,6 +35,25 @@ Each run allocates ephemeral ports and a temporary directory under `MAKO_STORAGE
 - Management API project, environment, and collection administration
 - Edge functions, the object store, telemetry, and the console user interface
 
+## The reference application against a real backend
+
+`examples/local-first` ships two backends behind one seam. Its default suite runs against
+`FakeMakoBackend`, an in-browser implementation of the protocol, which proves the RxDB adapters are
+correct but would pass with the server completely broken. `LiveMakoBackend` runs the same six
+scenarios against real service binaries:
+
+```bash
+npm run test:browser-live
+```
+
+Offline writes, conflict resolution, remote tombstones, token refresh, live-stream reconnect, and
+access revocation are all exercised over real HTTP, with remote edits coming from a second
+authenticated application user rather than a staged fixture.
+
+The application is served from an origin that also proxies `/v1` to the data plane, because the data
+plane emits no CORS headers and is only reachable same-origin — the same topology a deployment gets
+from its reverse proxy.
+
 ## Local tenant bootstrap
 
 `mako-local-bootstrap` seeds a complete, usable tenant into the two owned stores: a developer identity, organization, project, environment, public project key, project signing key, collection, and a permissive development document policy.

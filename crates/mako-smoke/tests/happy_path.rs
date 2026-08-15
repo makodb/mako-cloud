@@ -125,8 +125,9 @@ fn application_happy_path_succeeds_against_the_real_services() {
     );
     let document = json!({
         "id": "todo-smoke-1",
+        "ownerId": "smoke-user",
         "title": "prove the happy path works",
-        "done": false
+        "updatedAt": 1_786_752_000_000_i64
     });
     let (status, body) = request(
         data_port,
@@ -167,7 +168,8 @@ fn application_happy_path_succeeds_against_the_real_services() {
         .find(|candidate| candidate["id"] == "todo-smoke-1")
         .unwrap_or_else(|| panic!("pushed document was not returned by pull: {body}"));
     assert_eq!(pulled["title"], "prove the happy path works");
-    assert_eq!(pulled["done"], false);
+    assert_eq!(pulled["ownerId"], "smoke-user");
+    assert_eq!(pulled["updatedAt"], 1_786_752_000_000_i64);
     assert_eq!(pulled["_deleted"], false);
 
     // Negative control: without the issued session the same operations are

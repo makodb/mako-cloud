@@ -7,7 +7,8 @@
     "build": "tsc -b && vite build",
     "dev": "vite --host 127.0.0.1",
     "test:browser": "playwright test",
-    "typecheck": "tsc -b --pretty false && tsc -p tsconfig.test.json --pretty false"
+    "typecheck": "tsc -b --pretty false && tsc -p tsconfig.test.json --pretty false",
+    "test:browser-live": "playwright test --config playwright.live.config.ts"
   },
   "dependencies": {
     "@mako-cloud/rxdb": "*",

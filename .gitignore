@@ -12,4 +12,5 @@
 **/.local/
 /.playwright-tmp/
 **/test-results/
+**/.live-tenant.json
 **/playwright-report/
