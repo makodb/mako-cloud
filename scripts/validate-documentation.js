@@ -80,6 +80,8 @@ const coverage = [
     guides: ["docs/edge-functions.md", "docs/local-functions.md", "docs/edge-runtime-protocol.md"],
     evidence: [
       "scripts/run-edge-security-qualification.sh",
+      "scripts/run-edge-e2e-qualification.sh",
+      "crates/mako-smoke/tests/edge_function.rs",
       "packages/cli/test/compatibility.integration.mjs",
     ],
   },

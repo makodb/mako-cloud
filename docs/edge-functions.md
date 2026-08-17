@@ -88,6 +88,27 @@ On a host whose home directory is on a network filesystem, rootless Podman canno
 image into the default graph root (`lsetxattr ... operation not supported`). Use an isolated graph
 root on a local filesystem, as described in [local development](local-development.md).
 
+## Automated hosted invocation
+
+`crates/mako-smoke/tests/edge_function.rs` performs the whole path: it starts the pinned runtime,
+deploys a function through the administrative path, brings up the data plane, control plane, and
+edge gateway, and asserts the function's own response comes back through the gateway. It also
+asserts an undeployed function is not served and that a bare project reference does not resolve.
+
+```bash
+MAKO_RUN_EDGE_RUNTIME_TESTS=1 npm run test:edge-e2e
+```
+
+`MAKO_EDGE_TEST_ENGINE` selects `docker` or `podman`, and `MAKO_EDGE_TEST_ENGINE_PREFIX_JSON`
+supplies arguments that must precede the subcommand — a JSON string array, used for an isolated
+graph root on hosts where the default one cannot hold the image. Without
+`MAKO_RUN_EDGE_RUNTIME_TESTS=1` the test reports why it is skipping and passes, matching the other
+edge suites.
+
+The suite requires ports 8080, 8081, 8082, and 9000, and says so when one is taken. The edge gateway
+resolves its dependencies from compiled-in constants rather than configuration, so it cannot be
+pointed at other ports and cannot run beside a development stack.
+
 ## Tested evidence
 
 Run `MAKO_RUN_EDGE_RUNTIME_TESTS=1 npm run test:edge-security` with a working

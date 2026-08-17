@@ -65,7 +65,8 @@
     "test:rollback": "bash scripts/run-rollback-qualification.sh",
     "test:storage-soak": "bash scripts/run-storage-soak-qualification.sh",
     "test:tenant-boundaries": "bash scripts/run-tenant-boundary-qualification.sh",
-    "test:browser-live": "npm run test:browser-live --workspace @mako-cloud/example-local-first"
+    "test:browser-live": "npm run test:browser-live --workspace @mako-cloud/example-local-first",
+    "test:edge-e2e": "bash scripts/run-edge-e2e-qualification.sh"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.7",

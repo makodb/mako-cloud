@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "qualification": "hosted-edge-function-invocation",
+  "status": "passed",
+  "startedAt": "2026-08-17T20:09:47Z",
+  "completedAt": "2026-08-17T20:09:55Z",
+  "host": {
+    "kernel": "Linux",
+    "release": "7.0.14-5-pve",
+    "architecture": "x86_64",
+    "containerEngine": "podman"
+  },
+  "runtimeImage": "docker.io/supabase/edge-runtime@sha256:c52405002a890ca9fcf77978671c57f3a988e03174afb277f84ac65bc917013c",
+  "scope": {
+    "profile": "debug",
+    "services": ["mako-data-plane", "mako-control-plane", "mako-edge-gateway"],
+    "transport": "real HTTP over loopback, no mocked or intercepted requests",
+    "covered": [
+      "function deployed through the administrative path and registered with the supervisor",
+      "invocation through the edge gateway returns the function's own response",
+      "an undeployed function is not served",
+      "a project reference without an environment does not resolve"
+    ],
+    "notCovered": [
+      "JWT-verified invocation, function secrets, and outbound egress policy",
+      "regional failover and quota enforcement",
+      "promotion, rollback, and retirement of a deployed version"
+    ]
+  },
+  "test": "crates/mako-smoke/tests/edge_function.rs"
+}

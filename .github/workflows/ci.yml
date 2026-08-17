@@ -143,6 +143,35 @@ jobs:
           path: docs/evidence/e2e-smoke-qualification.json
           if-no-files-found: warn
 
+  edge-function-e2e:
+    name: Edge function end-to-end
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install Rust toolchain
+        run: rustup toolchain install 1.97.0 --profile minimal --no-self-update
+      - name: Use Rust toolchain
+        run: rustup default 1.97.0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Invoke a deployed function through the edge gateway
+        # Executes user code inside the pinned Supabase Edge Runtime, so this is
+        # the one job that needs a container engine. Runners provide Docker.
+        env:
+          MAKO_RUN_EDGE_RUNTIME_TESTS: "1"
+          MAKO_EDGE_TEST_ENGINE: docker
+        run: npm run test:edge-e2e
+      - name: Publish edge evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: edge-e2e-qualification
+          path: docs/evidence/edge-e2e-qualification.json
+          if-no-files-found: warn
+
   public-beta-infrastructure:
     name: Public beta infrastructure (offline)
     runs-on: ubuntu-latest
