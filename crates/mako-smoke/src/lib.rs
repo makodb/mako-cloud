@@ -191,26 +191,64 @@ pub fn start_service(
 
 /// Each service refuses to serve until its readiness passes, so a ready service
 /// is proof its storage and identity dependencies opened.
-pub fn await_readiness(port: u16, label: &str) {
+///
+/// The component is checked, not just the status. A port can be answered by
+/// another process — a service that lost a bind race, or anything else on the
+/// host — and a readiness gate that accepts any 200 would report that as
+/// success while the service under test is dead.
+pub fn await_readiness(port: u16, component: &str) {
     let deadline = Instant::now() + READINESS_TIMEOUT;
     let mut last = String::from("no response");
     while Instant::now() < deadline {
         match try_request(port, "GET", "/readyz", &BTreeMap::new(), None) {
-            Ok((200, _)) => return,
+            Ok((200, body)) => {
+                let answered = serde_json::from_str::<Value>(&body)
+                    .ok()
+                    .and_then(|value| value["component"].as_str().map(str::to_owned));
+                match answered.as_deref() {
+                    Some(name) if name == component => return,
+                    Some(other) => panic!(
+                        "port {port} is served by {other}, not {component}. The service under \
+                         test is not the one answering."
+                    ),
+                    None => last = format!("readiness body did not name a component: {body}"),
+                }
+            }
             Ok((status, body)) => last = format!("status {status}: {body}"),
             Err(error) => last = error,
         }
         sleep(Duration::from_millis(200));
     }
-    panic!("{label} did not become ready within {READINESS_TIMEOUT:?} ({last})");
+    panic!("{component} did not become ready within {READINESS_TIMEOUT:?} ({last})");
 }
 
-pub fn free_port() -> u16 {
-    TcpListener::bind("127.0.0.1:0")
-        .expect("ephemeral port")
-        .local_addr()
-        .expect("bound address")
-        .port()
+/// Allocate `count` distinct ephemeral ports.
+///
+/// The kernel can hand back a port that a previous call already released, so
+/// asking for them together and rejecting duplicates is what keeps two services
+/// from being pointed at the same address. This narrows the window rather than
+/// closing it — another process can still take a port between here and the
+/// service's bind — which is why `await_readiness` verifies who answered.
+pub fn free_ports<const N: usize>() -> [u16; N] {
+    for _ in 0..64 {
+        let mut listeners = Vec::with_capacity(N);
+        for _ in 0..N {
+            listeners.push(TcpListener::bind("127.0.0.1:0").expect("ephemeral port"));
+        }
+        let ports: Vec<u16> = listeners
+            .iter()
+            .map(|listener| listener.local_addr().expect("bound address").port())
+            .collect();
+        // Holding every listener until all are bound is what makes them distinct.
+        drop(listeners);
+        let mut unique = ports.clone();
+        unique.sort_unstable();
+        unique.dedup();
+        if unique.len() == N {
+            return ports.try_into().expect("exactly N ports");
+        }
+    }
+    panic!("could not allocate {N} distinct ephemeral ports");
 }
 
 pub fn request(
@@ -344,4 +382,64 @@ fn read_chunked(reader: &mut BufReader<TcpStream>) -> Result<String, String> {
             .map_err(|error| error.to_string())?;
     }
     Ok(String::from_utf8_lossy(&body).into_owned())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{io::Write, net::TcpListener, thread};
+
+    use super::*;
+
+    /// Serve one readiness response naming `component`, then stop.
+    fn readiness_server(component: &'static str) -> u16 {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("probe listener");
+        let port = listener.local_addr().expect("probe address").port();
+        thread::spawn(move || {
+            for stream in listener.incoming().take(4) {
+                let Ok(mut stream) = stream else { continue };
+                let body = format!(
+                    "{{\"status\":\"ready\",\"component\":\"{component}\",\"detail\":\"probe\"}}"
+                );
+                let _ = write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+            }
+        });
+        port
+    }
+
+    #[test]
+    fn readiness_accepts_only_the_service_under_test() {
+        let port = readiness_server("mako-data-plane");
+        // The matching component is what readiness is waiting for.
+        await_readiness(port, "mako-data-plane");
+    }
+
+    #[test]
+    fn readiness_rejects_another_service_answering_the_port() {
+        // A port can be answered by a service that won a bind race, or by
+        // anything else on the host. Accepting any 200 would report that as
+        // success while the service under test is dead.
+        let port = readiness_server("mako-data-plane");
+        let outcome = std::panic::catch_unwind(|| await_readiness(port, "mako-control-plane"));
+        let panic = outcome.expect_err("readiness must reject another service");
+        let message = panic
+            .downcast_ref::<String>()
+            .cloned()
+            .unwrap_or_else(|| String::from("<non-string panic>"));
+        assert!(
+            message.contains("is served by mako-data-plane, not mako-control-plane"),
+            "unexpected rejection message: {message}"
+        );
+    }
+
+    #[test]
+    fn allocated_ports_are_distinct() {
+        let [first, second, third] = free_ports::<3>();
+        assert_ne!(first, second);
+        assert_ne!(second, third);
+        assert_ne!(first, third);
+    }
 }

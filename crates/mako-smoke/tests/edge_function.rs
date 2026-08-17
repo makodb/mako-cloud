@@ -180,9 +180,9 @@ fn deployed_function_is_served_through_the_edge_gateway() {
         root.join("edge-gateway.log"),
     );
 
-    await_readiness(DATA_PLANE_PORT, "data plane");
-    await_readiness(CONTROL_PLANE_PORT, "control plane");
-    await_readiness(GATEWAY_PORT, "edge gateway");
+    await_readiness(DATA_PLANE_PORT, "mako-data-plane");
+    await_readiness(CONTROL_PLANE_PORT, "mako-control-plane");
+    await_readiness(GATEWAY_PORT, "mako-edge-gateway");
 
     // The project reference encodes the environment; a bare project id never
     // resolves to a tenant.

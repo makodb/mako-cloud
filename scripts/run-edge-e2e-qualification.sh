@@ -25,7 +25,9 @@ started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
 # Pull by digest up front so a slow first pull is not mistaken for a hang.
 read -r -a engine_prefix <<< "$(node -e 'const a=JSON.parse(process.env.MAKO_EDGE_TEST_ENGINE_PREFIX_JSON??"[]");process.stdout.write(a.join(" "))')"
-"$engine" "${engine_prefix[@]}" pull "$image"
+# `set -u` on bash 3.2, which macOS still ships, treats an empty array
+# expansion as an unset variable, so the empty case needs the guarded form.
+"$engine" "${engine_prefix[@]+"${engine_prefix[@]}"}" pull "$image"
 
 cargo build --workspace --bins
 cargo test -p mako-smoke --test edge_function -- --nocapture

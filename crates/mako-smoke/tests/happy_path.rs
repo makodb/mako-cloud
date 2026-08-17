@@ -10,7 +10,7 @@
 use std::{collections::BTreeMap, process::Command};
 
 use mako_smoke::{
-    await_readiness, binary_directory, free_port, request, run_bootstrap, scratch_root,
+    await_readiness, binary_directory, free_ports, request, run_bootstrap, scratch_root,
     service_environment, start_service,
 };
 use serde_json::{Value, json};
@@ -42,8 +42,8 @@ fn application_happy_path_succeeds_against_the_real_services() {
     assert_eq!(bootstrap["environmentId"], ENVIRONMENT_ID);
     assert_eq!(bootstrap["collectionId"], COLLECTION_ID);
 
-    let data_port = free_port();
-    let control_port = free_port();
+    // Allocated together so the two services cannot be handed the same port.
+    let [data_port, control_port] = free_ports::<2>();
     let _data = start_service(
         "mako-data-plane",
         &binaries,
@@ -58,8 +58,8 @@ fn application_happy_path_succeeds_against_the_real_services() {
         control_port,
         root.join("control-plane.log"),
     );
-    await_readiness(data_port, "data plane");
-    await_readiness(control_port, "control plane");
+    await_readiness(data_port, "mako-data-plane");
+    await_readiness(control_port, "mako-control-plane");
 
     let base = format!("/v1/projects/{PROJECT_ID}/environments/{ENVIRONMENT_ID}");
     let keyed = BTreeMap::from([("x-mako-key".to_owned(), public_key.clone())]);
