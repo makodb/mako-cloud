@@ -16,6 +16,7 @@
 #![forbid(unsafe_code)]
 
 use std::{
+    collections::BTreeMap,
     num::NonZeroUsize,
     process::ExitCode,
     sync::Arc,
@@ -26,10 +27,13 @@ use futures::executor::block_on;
 use mako_api::{CollectionId, CollectionScope, EnvironmentId, ProjectId, TenantScope};
 use mako_config::{DeploymentEnvironment, ServiceConfig, ServiceKind};
 use mako_control_plane::{
-    AuthenticationIdentityRecord, DeveloperIdentityId, DeveloperLookupKey,
-    DeveloperRegistrationStore, DeveloperRoleRecord, EnvironmentRecord, MembershipRecord,
-    OrganizationId, OrganizationRecord, OrganizationRole, OrganizationStore, ProjectRecord,
-    ProjectStore,
+    AuthenticationIdentityRecord, ControlAuditEvent, ControlAuditSink, CredentialAdminService,
+    DeveloperIdentityId, DeveloperLookupKey, DeveloperPrincipal, DeveloperRegistrationStore,
+    DeveloperRoleRecord, EnvironmentRecord, FunctionAdminService, FunctionBundleUpload,
+    FunctionConfiguration, FunctionLimits, FunctionName, FunctionSecretEncryptionKey,
+    FunctionSourceFile, MembershipRecord, NewFunction, NewFunctionVersion, OrganizationId,
+    OrganizationRecord, OrganizationRole, OrganizationStore, ProjectRecord, ProjectStore,
+    RuntimeDeploymentClient, RuntimeDeploymentClientConfig, RuntimeSupervisorCredential,
 };
 use mako_data_plane_service::DataPlaneGraph;
 use mako_documents::{
@@ -37,9 +41,10 @@ use mako_documents::{
     SchemaCompatibility, SchemaVersion,
 };
 use mako_identity::{
-    Argon2idParameters, NormalizedEmail, PasswordPolicy, PasswordService, ProjectCredentialId,
-    ProjectCredentialKind,
+    Argon2idParameters, KeyEncryptionKey, NormalizedEmail, PasswordPolicy, PasswordService,
+    ProjectCredentialId, ProjectCredentialKind,
 };
+use mako_object_store::MemoryObjectStore;
 use mako_policy::{
     DocumentOperation, PolicyCompiler, PolicyEffect, PolicyRule, PolicyRuleId, PolicySet,
     PolicyState, PolicyVersion,
@@ -57,6 +62,23 @@ const PROJECT_ID: &str = "prj_localboot";
 const ENVIRONMENT_ID: &str = "env_localboot";
 const COLLECTION_ID: &str = "todos";
 const PUBLIC_KEY_ID: &str = "key_localbootstrap";
+const FUNCTION_NAME: &str = "hello";
+const FUNCTION_ENTRYPOINT: &str = "index.ts";
+const FUNCTION_REGION: &str = "local";
+const RUNTIME_VERSION: &str = "v1.74.3";
+
+/// The function body the bootstrapped tenant deploys. The edge test asserts on
+/// this response, so it stays trivial and self-describing.
+const FUNCTION_SOURCE: &str = r#"export default {
+  fetch(request: Request): Response {
+    const url = new URL(request.url);
+    return new Response(
+      JSON.stringify({ ok: true, function: "hello", method: request.method, path: url.pathname }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+  },
+};
+"#;
 
 fn main() -> ExitCode {
     match run() {
@@ -104,6 +126,9 @@ fn run() -> Result<String, String> {
         "environmentId": ENVIRONMENT_ID,
         "collectionId": COLLECTION_ID,
         "publicProjectKey": public_key,
+        "functionName": FUNCTION_NAME,
+        "functionEntrypoint": FUNCTION_ENTRYPOINT,
+        "functionRegion": FUNCTION_REGION,
     });
     serde_json::to_string_pretty(&summary).map_err(|_| "summary could not be encoded".to_owned())
 }
@@ -297,7 +322,7 @@ fn seed_control_plane(
                         .map_err(|_| "organization is invalid".to_owned())?,
                     &MembershipRecord::new(
                         organization_id.clone(),
-                        developer_id,
+                        developer_id.clone(),
                         OrganizationRole::Owner,
                         now,
                     ),
@@ -351,13 +376,196 @@ fn seed_control_plane(
         // The control store keeps its own copy of the collection record, so
         // management surfaces list the same collection the data plane serves.
         install_collection(
-            &mako_documents::DocumentEngine::new(adapter),
+            &mako_documents::DocumentEngine::new(Arc::clone(&adapter)),
             tenant,
             collection_id,
             Durability::Sync,
         )
+        .await?;
+
+        deploy_function(FunctionDeployment {
+            adapter,
+            projects: &projects,
+            organizations: &organizations,
+            secret: secret.expose_secret(),
+            supervisor: config.runtime_supervisor_address,
+            region: &config.region,
+            actor: &DeveloperPrincipal::for_local_bootstrap(developer_id, DEVELOPER_EMAIL),
+            tenant,
+            now,
+        })
         .await
     })
+}
+
+/// Deploy a function through the real administrative path: create, upload a
+/// bundle, deploy an immutable version, health-check it, then promote.
+///
+/// Going through `FunctionAdminService` rather than writing records directly is
+/// what makes the edge test meaningful: what the gateway resolves at invocation
+/// time is exactly what a genuine deployment produces.
+/// What deploying the sample function needs from the surrounding bootstrap.
+struct FunctionDeployment<'a> {
+    adapter: Arc<dyn KvAdapter>,
+    projects: &'a ProjectStore,
+    organizations: &'a OrganizationStore,
+    secret: &'a str,
+    supervisor: std::net::SocketAddr,
+    region: &'a str,
+    actor: &'a DeveloperPrincipal,
+    tenant: &'a TenantScope,
+    now: u64,
+}
+
+async fn deploy_function(deployment: FunctionDeployment<'_>) -> Result<(), String> {
+    let FunctionDeployment {
+        adapter,
+        projects,
+        organizations,
+        secret,
+        supervisor,
+        region,
+        actor,
+        tenant,
+        now,
+    } = deployment;
+    // The supervisor is what actually holds a deployment. Without it the
+    // control plane would record a version that no runtime can serve, so the
+    // function is only deployed when a supervisor is listening.
+    let runtime = RuntimeDeploymentClient::new(
+        RuntimeDeploymentClientConfig::loopback(supervisor, region.to_owned()),
+        RuntimeSupervisorCredential::new(secret)
+            .map_err(|_| "runtime supervisor credential is invalid".to_owned())?,
+    )
+    .map_err(|_| "runtime supervisor client is invalid".to_owned())?;
+    if !runtime.dependency_ready() {
+        eprintln!(
+            "no runtime supervisor at {supervisor}; skipping function deployment. See \
+             docs/edge-functions.md for how to run one locally. `mako functions serve` is not \
+             suitable: it generates a random supervisor credential, so the control plane cannot \
+             authenticate to it."
+        );
+        return Ok(());
+    }
+    let audit: Arc<dyn ControlAuditSink> = Arc::new(DiscardedAudit);
+    let credentials = CredentialAdminService::new(
+        Arc::clone(&adapter),
+        Durability::Sync,
+        projects.clone(),
+        organizations.clone(),
+        Arc::clone(&audit),
+        KeyEncryptionKey::from_bytes(blake3::derive_key(
+            "mako/control-plane/unused-local-signing-key-encryption/v1",
+            secret.as_bytes(),
+        )),
+        FunctionSecretEncryptionKey::from_bytes(blake3::derive_key(
+            "mako/control-plane/function-secret-encryption/v1",
+            secret.as_bytes(),
+        )),
+    )
+    .map_err(|_| "function secret service is unavailable".to_owned())?;
+    let functions = FunctionAdminService::new(
+        adapter,
+        Durability::Sync,
+        projects.clone(),
+        organizations.clone(),
+        audit,
+        credentials,
+        // Bundles are only read when a hosted runtime fetches one. Local
+        // function serving mounts the source directory instead, so the artifact
+        // does not need to outlive this process.
+        Arc::new(MemoryObjectStore::default()),
+        Arc::new(runtime),
+    )
+    .map_err(|_| "function administration is unavailable".to_owned())?;
+
+    let name =
+        FunctionName::parse(FUNCTION_NAME).map_err(|_| "function name is invalid".to_owned())?;
+    if functions
+        .get_function(actor, tenant, &name, now)
+        .await
+        .is_ok()
+    {
+        return Ok(());
+    }
+
+    functions
+        .create_function(
+            actor,
+            NewFunction {
+                tenant: tenant.clone(),
+                name: name.clone(),
+                configuration: FunctionConfiguration {
+                    verify_jwt: false,
+                    regions: vec![FUNCTION_REGION.to_owned()],
+                    secret_names: Vec::new(),
+                    limits: FunctionLimits {
+                        cpu_milliseconds: 1_000,
+                        wall_milliseconds: 10_000,
+                        memory_bytes: 128 * 1024 * 1024,
+                        request_bytes: 1024 * 1024,
+                        response_bytes: 1024 * 1024,
+                        concurrency: 4,
+                    },
+                },
+                now_unix_seconds: now,
+            },
+        )
+        .await
+        .map_err(|error| format!("function could not be created: {error:?}"))?;
+
+    let outcome = functions
+        .upload_bundle(
+            actor,
+            tenant,
+            FunctionBundleUpload::Source {
+                entrypoint: FUNCTION_ENTRYPOINT.to_owned(),
+                files: vec![FunctionSourceFile {
+                    path: FUNCTION_ENTRYPOINT.to_owned(),
+                    contents: FUNCTION_SOURCE.as_bytes().to_vec(),
+                }],
+                dependencies: BTreeMap::new(),
+            },
+            now,
+        )
+        .await
+        .map_err(|error| format!("function bundle could not be uploaded: {error:?}"))?;
+    let artifact = outcome
+        .artifact
+        .ok_or_else(|| format!("function bundle was rejected: {:?}", outcome.diagnostics))?;
+
+    functions
+        .deploy_version(
+            actor,
+            NewFunctionVersion {
+                tenant: tenant.clone(),
+                function_name: name.clone(),
+                version: 1,
+                bundle_digest: artifact.digest().to_owned(),
+                entrypoint: FUNCTION_ENTRYPOINT.to_owned(),
+                runtime_version: RUNTIME_VERSION.to_owned(),
+                now_unix_seconds: now,
+            },
+        )
+        .await
+        .map_err(|error| format!("function version could not be deployed: {error:?}"))?;
+    functions
+        .check_version_health(actor, tenant, &name, 1, now)
+        .await
+        .map_err(|error| format!("function version health check failed: {error:?}"))?;
+    functions
+        .promote(actor, tenant, &name, 1, now)
+        .await
+        .map_err(|error| format!("function version could not be promoted: {error:?}"))?;
+    Ok(())
+}
+
+/// Audit output is not part of what the bootstrap reports, and the control
+/// plane writes its own records once it is running.
+struct DiscardedAudit;
+
+impl ControlAuditSink for DiscardedAudit {
+    fn record(&self, _event: ControlAuditEvent) {}
 }
 
 /// The schema the bootstrapped collection uses. Policy compilation validates

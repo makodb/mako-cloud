@@ -10,6 +10,8 @@ name = "mako-local-bootstrap"
 path = "src/main.rs"
 
 [dependencies]
+async-trait.workspace = true
+blake3.workspace = true
 futures.workspace = true
 mako-api = { path = "../mako-api" }
 mako-config = { path = "../mako-config" }
@@ -17,6 +19,7 @@ mako-control-plane = { path = "../mako-control-plane" }
 mako-data-plane-service = { path = "../../services/mako-data-plane" }
 mako-documents = { path = "../mako-documents" }
 mako-identity = { path = "../mako-identity" }
+mako-object-store = { path = "../mako-object-store" }
 mako-policy = { path = "../mako-policy" }
 mako-storage = { path = "../mako-storage" }
 serde.workspace = true

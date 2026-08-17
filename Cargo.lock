@@ -1322,6 +1322,8 @@ dependencies = [
 name = "mako-local-bootstrap"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
+ "blake3",
  "futures",
  "mako-api",
  "mako-config",
@@ -1329,6 +1331,7 @@ dependencies = [
  "mako-data-plane-service",
  "mako-documents",
  "mako-identity",
+ "mako-object-store",
  "mako-policy",
  "mako-storage",
  "serde",

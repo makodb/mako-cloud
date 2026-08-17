@@ -52,6 +52,42 @@ revocation freshness, quotas, and production egress infrastructure are explicit
 differences. The internal upstream boundary is documented in
 [edge runtime protocol](edge-runtime-protocol.md).
 
+## Running a hosted function locally
+
+Local serving (`mako functions serve`) and hosted invocation are different paths. Serving runs the
+pinned runtime for one function and answers directly, which is what a developer wants while writing
+code. Hosted invocation goes through the gateway, which resolves the function against the control
+plane and forwards to a supervisor holding a **registered deployment**.
+
+`mako functions serve` cannot act as the hosted supervisor. It generates a random
+`MAKO_RUNTIME_AUTHORIZATION` for its container, so the control plane cannot authenticate to it and
+no deployment can be registered. To exercise the hosted path locally, run the runtime on the same
+contract a deployment uses — see
+`infra/ansible/roles/dependencies/files/quadlet/mako-edge-runtime.container` for the authoritative
+form. The parts that matter:
+
+- `MAKO_RUNTIME_AUTHORIZATION` must equal the internal auth secret the services use.
+- `MAKO_RUNTIME_REGION` must equal `MAKO_REGION`, or the control plane reports the function
+  unavailable in that region.
+- Mount `packages/cli/runtime/main` at `/home/deno/functions/main` and publish container port 9000.
+
+With that supervisor listening, `mako-local-bootstrap` deploys its sample function through the real
+administrative path — create, bundle, deploy an immutable version, health-check, promote — and the
+`deploy` step is what registers the deployment with the supervisor. Without a supervisor the
+bootstrap skips function deployment and says so.
+
+Invocation addresses the project reference, which encodes the environment:
+
+```text
+GET /{projectId}--{environmentId}/functions/v1/{functionName}
+```
+
+A bare project id never resolves.
+
+On a host whose home directory is on a network filesystem, rootless Podman cannot pull the pinned
+image into the default graph root (`lsetxattr ... operation not supported`). Use an isolated graph
+root on a local filesystem, as described in [local development](local-development.md).
+
 ## Tested evidence
 
 Run `MAKO_RUN_EDGE_RUNTIME_TESTS=1 npm run test:edge-security` with a working

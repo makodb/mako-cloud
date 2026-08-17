@@ -78,6 +78,25 @@ impl DeveloperPrincipal {
         }
     }
 
+    /// Build a principal for the local bootstrap tool.
+    ///
+    /// This is an actor value object, not an authority: every administrative
+    /// service still resolves the identity's organization membership from the
+    /// store before permitting anything, so a principal for an identity that is
+    /// not a real member grants nothing. The bootstrap needs one because hosted
+    /// developer sign-in requires mail delivery a local environment does not
+    /// have.
+    #[must_use]
+    pub fn for_local_bootstrap(identity_id: DeveloperIdentityId, normalized_email: &str) -> Self {
+        Self {
+            identity_id,
+            normalized_email: normalized_email.to_owned(),
+            display_name: "Local Bootstrap".to_owned(),
+            session_id: "local-bootstrap-session".to_owned(),
+            authenticated_at_unix_seconds: 1,
+        }
+    }
+
     #[must_use]
     pub fn identity_id(&self) -> &DeveloperIdentityId {
         &self.identity_id
