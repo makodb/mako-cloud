@@ -20,9 +20,11 @@ The pass also reconciles resources whose workflow already reached `Active` but w
 
 ### Policy propagation mirrors collection propagation
 
-`InstallPolicy` is added to `IdentityAdminOperation` under a new `ManagePolicies` permission granted to Owner and Administrator, matching how `InstallCollection` works. The control plane activates locally, then propagates, then advances the tenant's authorization epoch.
+`InstallPolicy` is added to `IdentityAdminOperation` under a new `ManagePolicies` permission granted to Owner and Administrator, matching how `InstallCollection` works.
 
-The data plane records a version as a draft and activates it as a separate step, but the policy arrives already active because the control plane activated it first. The propagation handler normalises the received policy back to a draft before recording it, then activates that version. The alternative — propagating before the control plane activates — would leave the data plane enforcing a policy the control plane had not committed to.
+The data plane is granted the version *before* the control plane commits the activation, which is the same ordering the collection path uses. Committing first was tried and is wrong: on a propagation failure every management surface reports the new version active while the data plane is still enforcing the old one, so a developer reads their new rules as live when no document request is evaluated against them. Failing before the local commit leaves both sides on the previously granted version. Both writes are idempotent, so a retry converges.
+
+The data plane records a version as a draft and activates it as a separate step, so the propagation handler normalises the received policy to a draft before recording it, then activates that version. The residual risk runs the other way: propagation can succeed and the local commit still fail, leaving the data plane enforcing a version the control plane has not committed. That is the safer direction — the developer asked for exactly that policy, sees an error, and retrying converges.
 
 ### The data-plane address becomes configuration
 

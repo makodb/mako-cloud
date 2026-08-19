@@ -15,7 +15,7 @@
 - [x] 3.1 Add `InstallPolicy` to the internal-RPC identity-admin contract with an `InstallPolicyInput` payload.
 - [x] 3.2 Add a `ManagePolicies` permission and grant it to Owner and Administrator.
 - [x] 3.3 Handle the operation in the data plane: verify scope and version, normalise the received policy to a draft, record it, and activate it against the collection's schema.
-- [x] 3.4 Propagate on policy activation in the control plane before advancing the tenant's authorization epoch.
+- [x] 3.4 Propagate on policy activation and rollback in the control plane before committing the transition locally, so a version the data plane never received is never reported as active.
 
 ## 4. Session and configuration
 

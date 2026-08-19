@@ -31,15 +31,46 @@ pub const INTERNAL_AUTH_SECRET: &str =
 /// run never leaves a process holding a database lock.
 pub struct ServiceProcess {
     pub name: &'static str,
+    pub port: u16,
     pub child: Child,
+    stopped: bool,
 }
 
-impl Drop for ServiceProcess {
-    fn drop(&mut self) {
+impl ServiceProcess {
+    /// Stop the service and wait until its port stops answering.
+    ///
+    /// Injecting a dependency outage means the dependency has to be genuinely
+    /// gone before the next request, not merely signalled.
+    pub fn stop(mut self) {
+        self.terminate();
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while Instant::now() < deadline {
+            if TcpStream::connect(("127.0.0.1", self.port)).is_err() {
+                return;
+            }
+            sleep(Duration::from_millis(100));
+        }
+        panic!(
+            "{} kept answering on {} after being killed",
+            self.name, self.port
+        );
+    }
+
+    fn terminate(&mut self) {
+        if self.stopped {
+            return;
+        }
+        self.stopped = true;
         if let Err(error) = self.child.kill() {
             eprintln!("{} could not be terminated: {error}", self.name);
         }
         let _ = self.child.wait();
+    }
+}
+
+impl Drop for ServiceProcess {
+    fn drop(&mut self) {
+        self.terminate();
     }
 }
 
@@ -242,7 +273,12 @@ pub fn start_service(
         .stderr(Stdio::from(errors))
         .spawn()
         .unwrap_or_else(|error| panic!("{name} could not be started: {error}"));
-    ServiceProcess { name, child }
+    ServiceProcess {
+        name,
+        port,
+        child,
+        stopped: false,
+    }
 }
 
 /// Each service refuses to serve until its readiness passes, so a ready service

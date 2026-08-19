@@ -216,11 +216,8 @@ async fn propagate_policy(
     actor: &DeveloperPrincipal,
     tenant: &TenantScope,
     collection_id: &CollectionId,
-    view: &ActivePolicyView,
+    policy: &PolicySet,
 ) -> Result<(), HttpApiError> {
-    let Some(policy) = view.policy.as_ref() else {
-        return Ok(());
-    };
     let encoded = policy
         .encode()
         .map_err(|_| unavailable(request, "policy could not be encoded"))?;
@@ -258,6 +255,24 @@ fn policy_lifecycle(
             .active_policy(&actor, &tenant, &collection_id, now)
             .await
             .map_err(|error| policy_error(request, error))?;
+        // Document authorization is enforced by the data plane against its own
+        // store. A policy that is only recorded here leaves replication pull
+        // returning an empty batch and every push denied, so the version is not
+        // enforced until the data plane holds it.
+        //
+        // The data plane is granted the version before it is committed here,
+        // deliberately. Committing first would leave every management surface
+        // reporting a version active that the data plane never received and is
+        // not enforcing — a developer would read their new rules as live while
+        // traffic was still evaluated against the old ones. Failing before the
+        // local commit keeps the previously granted version in effect on both
+        // sides. Both writes are idempotent, so a retry converges.
+        let target = graph
+            .policy_service()
+            .get_policy(&actor, &tenant, &collection_id, version, now)
+            .await
+            .map_err(|error| policy_error(request, error))?;
+        propagate_policy(graph, request, &actor, &tenant, &collection_id, &target).await?;
         let view = if current
             .policy
             .as_ref()
@@ -277,16 +292,6 @@ fn policy_lifecycle(
                 .await
                 .map_err(|error| policy_error(request, error))?
         };
-        // Document authorization is enforced by the data plane against its own
-        // store. A policy that is only recorded here leaves replication pull
-        // returning an empty batch and every push denied, so the activation is
-        // not complete until the data plane holds it.
-        //
-        // The local activation is committed first deliberately. If propagation
-        // then fails, the data plane simply has not been granted the new policy
-        // and traffic stays denied — the fail-closed direction. Both writes are
-        // idempotent, so a retry converges.
-        propagate_policy(graph, request, &actor, &tenant, &collection_id, &view).await?;
         explorer_invalidation::advance_tenant(
             graph,
             request,

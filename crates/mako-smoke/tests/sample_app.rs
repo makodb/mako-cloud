@@ -12,6 +12,12 @@
 //! Everything the control plane creates has to cross that boundary over
 //! internal RPC before an application can see it, and nothing else in the test
 //! suite exercises that crossing end to end.
+//!
+//! The second test takes the data plane away mid-flight and proves the control
+//! plane refuses to report a policy version active that the data plane never
+//! received. That is the failure direction that matters: a developer reading
+//! their new rules as live while document traffic is still evaluated against
+//! the old ones.
 
 use std::{
     collections::BTreeMap,
@@ -20,8 +26,8 @@ use std::{
 };
 
 use mako_smoke::{
-    await_readiness, binary_directory, free_ports, mint_developer_session, request, run_bootstrap,
-    scratch_root, service_environment, start_service,
+    ServiceProcess, await_readiness, binary_directory, free_ports, mint_developer_session, request,
+    run_bootstrap, scratch_root, service_environment, start_service,
 };
 use serde_json::{Value, json};
 
@@ -33,22 +39,42 @@ const APP_EMAIL: &str = "sample-app-user@local.test";
 const APP_PASSWORD: &str = "SampleAppPass1!";
 const PROVISIONING_TIMEOUT: Duration = Duration::from_secs(90);
 
-#[test]
-fn a_developer_builds_a_sample_app_and_an_application_user_replicates_through_it() {
+/// A control plane and data plane running against one throwaway tenant, with
+/// a developer management session already minted.
+struct Services {
+    data: Option<ServiceProcess>,
+    _control: ServiceProcess,
+    data_port: u16,
+    control_port: u16,
+    session: String,
+    // Declared last so it is dropped last: fields drop in declaration order,
+    // and removing the directory before the processes release their database
+    // locks would race them.
+    _workspace: tempfile::TempDir,
+}
+
+impl Services {
+    /// Take the data plane away, and do not return until it is really gone.
+    fn stop_data_plane(&mut self) {
+        self.data.take().expect("data plane is running").stop();
+    }
+}
+
+fn start(prefix: &str) -> Services {
     let binaries = binary_directory();
     let workspace = tempfile::Builder::new()
-        .prefix("mako-sample-app-")
+        .prefix(prefix)
         .tempdir_in(scratch_root())
         .expect("smoke workspace");
     let root = workspace.path();
     let environment = service_environment(root);
 
-    // Seeds the developer and their organization only. Everything this test
-    // uses beyond that is created through the API.
+    // Seeds the developer and their organization only. Everything a test uses
+    // beyond that is created through the API.
     run_bootstrap(&binaries, &environment);
 
     let [data_port, control_port] = free_ports::<2>();
-    let _data = start_service(
+    let data = start_service(
         "mako-data-plane",
         &binaries,
         &environment,
@@ -62,7 +88,7 @@ fn a_developer_builds_a_sample_app_and_an_application_user_replicates_through_it
         "MAKO_DATA_PLANE_ENDPOINT".to_owned(),
         format!("127.0.0.1:{data_port}"),
     );
-    let _control = start_service(
+    let control = start_service(
         "mako-control-plane",
         &binaries,
         &control_environment,
@@ -74,6 +100,22 @@ fn a_developer_builds_a_sample_app_and_an_application_user_replicates_through_it
 
     let session =
         mint_developer_session(&binaries, root, control_port, DEVELOPER_ID, DEVELOPER_EMAIL);
+    Services {
+        data: Some(data),
+        _control: control,
+        data_port,
+        control_port,
+        session,
+        _workspace: workspace,
+    }
+}
+
+/// Everything a developer does through the management API to turn an empty
+/// organization into a backend an application can sign in to. Returns the
+/// environment's URL scope and the public project key issued along the way.
+fn build_app(services: &Services) -> (String, String) {
+    let control_port = services.control_port;
+    let session = &services.session;
     let manage = |suffix: &str| -> BTreeMap<String, String> {
         BTreeMap::from([
             ("authorization".to_owned(), format!("Bearer {session}")),
@@ -106,13 +148,13 @@ fn a_developer_builds_a_sample_app_and_an_application_user_replicates_through_it
     // so a test that went straight to the next call would be racing it.
     await_active(
         control_port,
-        &session,
+        session,
         &format!("/v1/projects/{project_id}"),
         "project",
     );
     await_active(
         control_port,
-        &session,
+        session,
         &format!("/v1/projects/{project_id}/environments/{environment_id}"),
         "environment",
     );
@@ -190,6 +232,15 @@ fn a_developer_builds_a_sample_app_and_an_application_user_replicates_through_it
     assert_eq!(status, 200, "activating the policy failed: {body}");
     let activated: Value = serde_json::from_str(&body).expect("activation reports the policy");
     assert_eq!(activated["policy"]["state"], "active");
+
+    (scope, public_key)
+}
+
+#[test]
+fn a_developer_builds_a_sample_app_and_an_application_user_replicates_through_it() {
+    let services = start("mako-sample-app-");
+    let data_port = services.data_port;
+    let (scope, public_key) = build_app(&services);
 
     // --- The app is now built. An application user takes it from here. -----
 
@@ -283,6 +334,75 @@ fn a_developer_builds_a_sample_app_and_an_application_user_replicates_through_it
         titles,
         vec!["written through the app the developer just built"],
         "the pushed document did not come back: {body}"
+    );
+}
+
+#[test]
+fn policy_activation_fails_when_the_data_plane_cannot_record_it() {
+    let mut services = start("mako-policy-outage-");
+    let control_port = services.control_port;
+    let session = services.session.clone();
+    let (scope, _) = build_app(&services);
+    let policies = format!("{scope}/collections/{COLLECTION_ID}/policies");
+    let reading = BTreeMap::from([("authorization".to_owned(), format!("Bearer {session}"))]);
+    let manage = |suffix: &str| -> BTreeMap<String, String> {
+        BTreeMap::from([
+            ("authorization".to_owned(), format!("Bearer {session}")),
+            (
+                "idempotency-key".to_owned(),
+                format!("policy-outage-{suffix}"),
+            ),
+        ])
+    };
+
+    // A second version, authored while everything is still healthy. Its rules
+    // differ from version 1 so that enforcing the wrong one would be visible.
+    created(
+        control_port,
+        &policies,
+        &manage("draft"),
+        Some(&json!({
+            "version": 2,
+            "rules": [{
+                "id": "read-only",
+                "effect": "allow",
+                "operations": ["read"],
+                "expression": "true",
+            }],
+        })),
+    );
+
+    // The data plane is the store that actually enforces policies. Taking it
+    // away is the outage this scenario is about.
+    services.stop_data_plane();
+
+    let (status, body) = request(
+        control_port,
+        "POST",
+        &format!("{policies}/2/actions/activate"),
+        &manage("activate"),
+        None,
+    );
+    assert!(
+        !(200..300).contains(&status),
+        "activation reported success while the data plane was unreachable: {body}"
+    );
+    let error: Value = serde_json::from_str(&body).expect("activation reports an api error");
+    assert!(
+        error["error"]["retry"]["kind"]
+            .as_str()
+            .is_some_and(|kind| kind != "never"),
+        "activation failure is not retryable, so a caller has no path back: {body}"
+    );
+
+    // The version the data plane never received must not be presented as the
+    // one in force. Version 1 is what documents are still evaluated against.
+    let (status, body) = request(control_port, "GET", &policies, &reading, None);
+    assert_eq!(status, 200, "reading the active policy failed: {body}");
+    let active: Value = serde_json::from_str(&body).expect("active policy reports json");
+    assert_eq!(
+        active["policy"]["version"], 1,
+        "a version the data plane never recorded is reported as active: {body}"
     );
 }
 
