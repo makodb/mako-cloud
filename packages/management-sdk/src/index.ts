@@ -83,6 +83,7 @@ export const MANAGEMENT_OPERATIONS = [
   "getProjectCredential",
   "retireProjectCredential",
   "rotateProjectCredential",
+  "initializeJwtSigningKey",
   "listJwtSigningKeys",
   "rotateJwtSigningKey",
   "createFunctionSecret",
@@ -1204,6 +1205,24 @@ export class MakoManagementClient {
             header: { "Idempotency-Key": idempotencyKey },
           },
           body: { replacementId, overlapSeconds },
+        },
+      ),
+    );
+  }
+
+  async initializeJwtSigningKey(
+    projectId: string,
+    environmentId: string,
+    idempotencyKey: string,
+  ): Promise<JwtSigningKey> {
+    return unwrap(
+      await this.#client.POST(
+        "/v1/projects/{projectId}/environments/{environmentId}/signing-keys/actions/initialize",
+        {
+          params: {
+            path: { projectId, environmentId },
+            header: { "Idempotency-Key": idempotencyKey },
+          },
         },
       ),
     );

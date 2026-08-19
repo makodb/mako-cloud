@@ -704,6 +704,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/projects/{projectId}/environments/{environmentId}/signing-keys/actions/initialize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create an environment's first JWT signing key
+         * @description Rotation replaces an existing active key and fails when there is none, so a newly created environment needs this before it can issue application-user sessions. Replaying with the same idempotency key returns the committed result.
+         */
+        post: operations["initializeJwtSigningKey"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/projects/{projectId}/environments/{environmentId}/signing-keys": {
         parameters: {
             query?: never;
@@ -6051,6 +6071,32 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProjectCredentialIssue"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    initializeJwtSigningKey: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                environmentId: components["parameters"]["EnvironmentId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description First signing key created; private material is never returned */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JwtSigningKey"];
                 };
             };
             default: components["responses"]["ApiError"];

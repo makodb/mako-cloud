@@ -126,10 +126,41 @@ fn start(service: ServiceKind) -> ExitCode {
             }
         })
     };
+    // Project and environment creation enqueue provisioning and report an
+    // asynchronous state. Without this pass those resources stay in
+    // `provisioning` and never expose a usable data plane.
+    let provisioning_worker = {
+        let stopping = Arc::clone(&mail_stopping);
+        let graph = Arc::clone(&graph);
+        thread::spawn(move || {
+            while !stopping.load(Ordering::Acquire) {
+                match SystemTime::now()
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .map(|duration| duration.as_secs())
+                {
+                    Ok(now) => {
+                        let (_advanced, failed) = block_on(graph.run_pending_provisioning(now));
+                        if failed > 0 {
+                            eprintln!(
+                                "provisioning worker pass advanced with failures: class=provisioning count={failed}"
+                            );
+                        }
+                    }
+                    Err(_) => eprintln!("provisioning worker pass failed: class=clock"),
+                }
+                // Control storage is a single-writer SQLite database shared with
+                // request handling and the readiness probe. A tight loop here
+                // starves them, so this polls at a cadence that still advances
+                // provisioning promptly without contending for the write lock.
+                thread::park_timeout(Duration::from_secs(10));
+            }
+        })
+    };
     let runtime = serve_http_transport_with_readiness(transport, router, readiness_probe);
     mail_stopping.store(true, Ordering::Release);
     operator_maintenance.thread().unpark();
     data_job_worker.thread().unpark();
+    provisioning_worker.thread().unpark();
     if let Some(worker) = &mail_worker {
         worker.thread().unpark();
     }
@@ -146,6 +177,9 @@ fn start(service: ServiceKind) -> ExitCode {
     let data_job_worker_shutdown = data_job_worker
         .join()
         .map_err(|_| "data-job worker did not stop");
+    let provisioning_worker_shutdown = provisioning_worker
+        .join()
+        .map_err(|_| "provisioning worker did not stop");
     let shutdown = Arc::try_unwrap(graph)
         .map_err(|_| "control-plane graph still has active owners")
         .and_then(|graph| {
@@ -157,17 +191,21 @@ fn start(service: ServiceKind) -> ExitCode {
         mail_shutdown,
         operator_maintenance_shutdown,
         data_job_worker_shutdown,
+        provisioning_worker_shutdown,
     ) {
-        (Ok(()), Ok(()), Ok(_), Ok(()), Ok(())) => ExitCode::SUCCESS,
-        (Err(error), _, _, _, _) => {
+        (Ok(()), Ok(()), Ok(_), Ok(()), Ok(()), Ok(())) => ExitCode::SUCCESS,
+        (Err(error), _, _, _, _, _) => {
             eprintln!("service runtime failed: {error}");
             ExitCode::FAILURE
         }
-        (_, Err(error), _, _, _) => {
+        (_, Err(error), _, _, _, _) => {
             eprintln!("service shutdown failed: {error}");
             ExitCode::FAILURE
         }
-        (_, _, Err(error), _, _) | (_, _, _, Err(error), _) | (_, _, _, _, Err(error)) => {
+        (_, _, Err(error), _, _, _)
+        | (_, _, _, Err(error), _, _)
+        | (_, _, _, _, Err(error), _)
+        | (_, _, _, _, _, Err(error)) => {
             eprintln!("service shutdown failed: {error}");
             ExitCode::FAILURE
         }

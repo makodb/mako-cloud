@@ -2,7 +2,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     error::Error,
     fmt,
-    net::{IpAddr, Ipv4Addr, SocketAddr},
+    net::SocketAddr,
     num::NonZeroUsize,
     sync::Arc,
 };
@@ -18,13 +18,14 @@ use mako_control_plane::{
     DeveloperMailTransport, DeveloperRegistrationConfig, DeveloperRegistrationService,
     DeveloperRegistrationStore, DeveloperRestoreService, DeveloperWorkspaceSecurity,
     ExplorerGrantService, FunctionAdminService, FunctionDeploymentBackend,
-    FunctionSecretEncryptionKey, ManagementAuthorizer, ObservabilityBackend, ObservabilityService,
-    OperatorAuditSink, OperatorAuthenticationAuditSink, OperatorAuthenticationConfig,
-    OperatorAuthenticationKey, OperatorAuthenticationService, OperatorAuthenticationStore,
-    OperatorAuthenticator, OperatorService, OrganizationService, OrganizationStore,
-    PolicyAdminService, ProductionObservabilityBackend, ProductionObservabilityConfig,
-    ProjectEnvironmentService, ProjectStore, RuntimeDeploymentClient,
-    RuntimeDeploymentClientConfig, RuntimeSupervisorCredential, TelemetryQueryCredential,
+    FunctionSecretEncryptionKey, LifecycleState, ManagementAuthorizer, ObservabilityBackend,
+    ObservabilityService, OperatorAuditSink, OperatorAuthenticationAuditSink,
+    OperatorAuthenticationConfig, OperatorAuthenticationKey, OperatorAuthenticationService,
+    OperatorAuthenticationStore, OperatorAuthenticator, OperatorService, OrganizationService,
+    OrganizationStore, PolicyAdminService, ProductionObservabilityBackend,
+    ProductionObservabilityConfig, ProjectEnvironmentService, ProjectStore,
+    RuntimeDeploymentClient, RuntimeDeploymentClientConfig, RuntimeSupervisorCredential,
+    TelemetryQueryCredential,
 };
 use mako_identity::KeyEncryptionKey;
 use mako_internal_rpc::{
@@ -34,7 +35,8 @@ use mako_internal_rpc::{
 use mako_object_store::{ObjectStore, S3Credentials, S3ObjectStore, S3ObjectStoreConfig};
 use mako_policy::PolicyCompiler;
 use mako_provisioning::{
-    KvProvisioningBackend, Provisioner, ProvisioningBackendConfig, ProvisioningStore,
+    KvProvisioningBackend, Provisioner, ProvisioningBackendConfig, ProvisioningResource,
+    ProvisioningState, ProvisioningStore,
 };
 use mako_service_runtime::{ReadinessProbe, ReadinessSnapshot};
 use mako_storage::{
@@ -54,7 +56,6 @@ use crate::{
 };
 
 const AUDIT_RETENTION_MILLISECONDS: u64 = 90 * 24 * 60 * 60 * 1_000;
-const DATA_PLANE_ENDPOINT: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 8080);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ControlPlaneStorageMode {
@@ -172,7 +173,7 @@ pub struct ControlPlaneGraph {
 
 impl ControlPlaneGraph {
     pub fn open(config: &ServiceConfig) -> Result<Self, ControlPlaneGraphError> {
-        Self::open_with_data_plane_endpoint(config, DATA_PLANE_ENDPOINT)
+        Self::open_with_data_plane_endpoint(config, config.data_plane_address)
     }
 
     #[allow(clippy::field_reassign_with_default)]
@@ -805,6 +806,113 @@ impl ControlPlaneGraph {
         &self.components.provisioning
     }
 
+    /// Advance every provisioning workflow that is still queued or running.
+    ///
+    /// Project and environment creation enqueue a workflow and report an
+    /// asynchronous state. Without something executing them the resources stay
+    /// in `provisioning` forever and never expose a usable data plane, so this
+    /// runs one pass and reports how many workflows it advanced. A workflow that
+    /// fails does not stop the pass: it keeps its own diagnostics and is retried
+    /// on the next one.
+    pub async fn run_pending_provisioning(&self, now_unix_seconds: u64) -> (usize, usize) {
+        let limit = NonZeroUsize::new(100).expect("provisioning batch is positive");
+        let Ok(workflows) = self.components.provisioning.list(limit).await else {
+            return (0, 0);
+        };
+        let mut advanced = 0;
+        let mut failed = 0;
+        for workflow in workflows {
+            // A workflow that already finished still leaves its project or
+            // environment in Provisioning if nothing transitioned the record,
+            // so completed workflows are reconciled rather than skipped.
+            let completed = match workflow.state() {
+                ProvisioningState::Queued | ProvisioningState::Running => {
+                    match self
+                        .components
+                        .provisioning
+                        .run(
+                            workflow.id(),
+                            &self.components.provisioning_backend,
+                            now_unix_seconds,
+                        )
+                        .await
+                    {
+                        Ok(completed) => completed,
+                        Err(_) => {
+                            failed += 1;
+                            continue;
+                        }
+                    }
+                }
+                ProvisioningState::Active => workflow,
+                _ => continue,
+            };
+            if completed.state() != ProvisioningState::Active {
+                continue;
+            }
+            match self
+                .activate_provisioned_resource(completed.resource(), now_unix_seconds)
+                .await
+            {
+                Ok(true) => advanced += 1,
+                Ok(false) => {}
+                Err(()) => failed += 1,
+            }
+        }
+        (advanced, failed)
+    }
+
+    /// Move the project or environment a completed workflow provisioned out of
+    /// its provisioning lifecycle state.
+    async fn activate_provisioned_resource(
+        &self,
+        resource: &ProvisioningResource,
+        now_unix_seconds: u64,
+    ) -> Result<bool, ()> {
+        match resource {
+            ProvisioningResource::Project(project_id) => {
+                let Ok(Some(current)) = self.components.projects.get_project(project_id).await
+                else {
+                    return Err(());
+                };
+                if current.lifecycle() != LifecycleState::Provisioning {
+                    return Ok(false);
+                }
+                let mut next = current.clone();
+                next.transition(LifecycleState::Active, now_unix_seconds, None)
+                    .map_err(|_| ())?;
+                self.components
+                    .projects
+                    .replace_project(&current, &next)
+                    .await
+                    .map(|()| true)
+                    .map_err(|_| ())
+            }
+            ProvisioningResource::Environment(tenant) => {
+                let Ok(Some(current)) = self
+                    .components
+                    .projects
+                    .get_environment(tenant.project_id(), tenant.environment_id())
+                    .await
+                else {
+                    return Err(());
+                };
+                if current.lifecycle() != LifecycleState::Provisioning {
+                    return Ok(false);
+                }
+                let mut next = current.clone();
+                next.transition(LifecycleState::Active, now_unix_seconds, None)
+                    .map_err(|_| ())?;
+                self.components
+                    .projects
+                    .replace_environment(&current, &next)
+                    .await
+                    .map(|()| true)
+                    .map_err(|_| ())
+            }
+        }
+    }
+
     #[must_use]
     pub fn provisioning_backend(&self) -> &KvProvisioningBackend {
         &self.components.provisioning_backend
@@ -1110,7 +1218,7 @@ mod tests {
     use std::{
         fs,
         io::{Read, Write},
-        net::TcpListener,
+        net::{Ipv4Addr, TcpListener},
         path::Path,
         thread,
     };

@@ -110,6 +110,11 @@ pub(crate) fn add_identity_admin_routes(
             "/v1/projects/{projectId}/environments/{environmentId}/signing-keys",
             handle_rotate_signing_key,
         ),
+        (
+            HttpMethod::Post,
+            "/v1/projects/{projectId}/environments/{environmentId}/signing-keys/actions/initialize",
+            handle_initialize_signing_key,
+        ),
     ] {
         let graph = Arc::clone(&graph);
         router.add_route(method, path, move |request| handler(&graph, &request))?;
@@ -409,6 +414,28 @@ fn handle_list_signing_keys(
     })
 }
 
+/// Create an environment's first signing key.
+///
+/// Rotation cannot stand in for this: it replaces an existing active key and
+/// fails when there is none, so without this route a freshly created
+/// environment can never issue an application-user session.
+fn handle_initialize_signing_key(
+    graph: &Arc<ControlPlaneGraph>,
+    request: &HttpRequest,
+) -> Result<HttpResponse, HttpApiError> {
+    no_query(request)?;
+    no_payload(request)?;
+    require_idempotency(request)?;
+    identity_command(
+        graph,
+        request,
+        IdentityAdminOperation::InitializeSigningKey,
+        json!({}),
+        201,
+        true,
+    )
+}
+
 fn handle_rotate_signing_key(
     graph: &Arc<ControlPlaneGraph>,
     request: &HttpRequest,
@@ -521,6 +548,7 @@ pub(crate) async fn identity_permissions(
             IdentityAdminPermission::ReadSigningKeys,
             IdentityAdminPermission::ManageSigningKeys,
             IdentityAdminPermission::ManageCollections,
+            IdentityAdminPermission::ManagePolicies,
         ]),
         OrganizationRole::Developer => {
             BTreeSet::from([IdentityAdminPermission::ReadApplicationUsers])

@@ -231,6 +231,11 @@ pub enum IdentityAdminOperation {
     /// traffic cannot resolve a collection until its metadata exists in the
     /// data plane's own store.
     InstallCollection,
+    /// Install and activate a document policy in the data plane that serves the
+    /// environment. Document authorization is default-deny, so a policy that
+    /// exists only in the control store leaves every read filtered out and every
+    /// write denied.
+    InstallPolicy,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
@@ -245,6 +250,7 @@ pub enum IdentityAdminPermission {
     ManageExplorerGrants,
     ExecuteDataJobs,
     ManageCollections,
+    ManagePolicies,
 }
 
 /// Collection metadata propagated to the data plane. `metadata` is the
@@ -256,6 +262,17 @@ pub enum IdentityAdminPermission {
 pub struct InstallCollectionInput {
     pub collection_id: String,
     pub metadata: Value,
+}
+
+/// A document policy propagated to the data plane. `policy` is the policy
+/// model's own encoding, so the data plane validates it with the same codec it
+/// reads back rather than a parallel wire schema that could drift.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct InstallPolicyInput {
+    pub collection_id: String,
+    pub version: u64,
+    pub policy: Value,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]

@@ -27,8 +27,9 @@ use mako_internal_rpc::{
     DataJobImportBatchOutput, DataJobRowError, GuardDecision, IdentityAdminCommand,
     IdentityAdminOperation, IdentityAdminPermission, IdentityVerificationOperation,
     IdentityVerificationRequest, IdentityVerificationResponse, InstallCollectionInput,
-    InternalCaller, InternalReplayGuard, InternalRoute, PreparedResponseJournal,
-    ResponseJournalLookup, ResponseJournalStoreOutcome, RocksInternalReplayGuardError,
+    InstallPolicyInput, InternalCaller, InternalReplayGuard, InternalRoute,
+    PreparedResponseJournal, ResponseJournalLookup, ResponseJournalStoreOutcome,
+    RocksInternalReplayGuardError,
 };
 use mako_policy::{ExplorerGrantAuthorityRecord, SubjectId};
 use mako_service_runtime::{
@@ -463,6 +464,9 @@ async fn execute_operation(
         IdentityAdminOperation::InstallCollection => {
             execute_collection_operation(graph, request, tenant, command, now).await
         }
+        IdentityAdminOperation::InstallPolicy => {
+            execute_policy_operation(graph, request, tenant, command, now).await
+        }
         IdentityAdminOperation::CreateProjectCredential
         | IdentityAdminOperation::RotateProjectCredential => Err(auth_http::invalid(
             request,
@@ -529,6 +533,124 @@ async fn execute_collection_operation(
         "status": status,
     }))
     .map_err(|_| auth_http::unavailable(request, "collection response could not be encoded"))
+}
+
+/// Install and activate a document policy so this data plane enforces it.
+///
+/// Document authorization is default-deny. A policy that exists only in the
+/// control plane's own store leaves replication pull returning an empty batch
+/// and every push denied, which reads as a working sync that silently carries
+/// nothing.
+async fn execute_policy_operation(
+    graph: &Arc<DataPlaneGraph>,
+    request: &HttpRequest,
+    tenant: &mako_api::TenantScope,
+    command: &IdentityAdminCommand,
+    now: u64,
+) -> Result<Vec<u8>, HttpApiError> {
+    require_permission(
+        graph,
+        request,
+        tenant,
+        command,
+        IdentityAdminPermission::ManagePolicies,
+        "policy_install",
+        "policies",
+        now,
+    )
+    .await?;
+    let input: InstallPolicyInput = parse_input(request, &command.input)?;
+    let collection_id = mako_api::CollectionId::parse(input.collection_id)
+        .map_err(|_| auth_http::invalid(request, "collection id is invalid"))?;
+    let version = mako_policy::PolicyVersion::new(input.version)
+        .map_err(|_| auth_http::invalid(request, "policy version is invalid"))?;
+    let encoded = serde_json::to_vec(&input.policy)
+        .map_err(|_| auth_http::invalid(request, "policy is invalid"))?;
+    let policy = mako_policy::PolicySet::decode(&encoded)
+        .map_err(|_| auth_http::invalid(request, "policy is invalid"))?;
+    let scope = mako_api::CollectionScope::new(tenant.clone(), collection_id.clone());
+    if policy.scope() != &scope || policy.version() != version {
+        return Err(auth_http::invalid(
+            request,
+            "policy does not match the requested scope",
+        ));
+    }
+
+    // Compile against the schema this data plane actually validates documents
+    // with, so an activated policy can never disagree with the stored metadata.
+    let scoped = graph
+        .document_engine()
+        .scope_collection(tenant, scope.clone())
+        .map_err(|_| auth_http::invalid(request, "collection scope is invalid"))?;
+    let metadata = scoped
+        .collection_metadata()
+        .await
+        .map_err(|_| auth_http::unavailable(request, "collection metadata is unavailable"))?
+        .ok_or_else(|| not_found(request, "collection was not found"))?;
+    let schema = Value::Object(metadata.json_schema().clone());
+
+    let store = graph
+        .policy_store(tenant, scope)
+        .map_err(|_| auth_http::unavailable(request, "policy storage is unavailable"))?;
+    // Idempotent: a retried propagation must converge rather than conflict.
+    if store
+        .policy_version(version)
+        .await
+        .map_err(|_| auth_http::unavailable(request, "policy storage is unavailable"))?
+        .is_none()
+    {
+        // The control plane activates locally before propagating, so the policy
+        // arrives already active. This store records a version as a draft and
+        // activates it separately, so it is normalised back before recording.
+        let draft = policy
+            .with_state(mako_policy::PolicyState::Draft, Vec::new())
+            .map_err(|_| auth_http::invalid(request, "policy is invalid"))?;
+        store.create_draft(&draft).await.map_err(|error| {
+            conflict(
+                request,
+                match error {
+                    mako_policy::PolicyStoreError::VersionAlreadyExists => {
+                        "policy version already exists"
+                    }
+                    _ => "policy version could not be recorded",
+                },
+            )
+        })?;
+    }
+    store
+        .activate(version, &schema, &mako_policy::PolicyCompiler::default())
+        .await
+        .map_err(|error| {
+            conflict(
+                request,
+                match error {
+                    mako_policy::PolicyStoreError::ValidationFailed(_)
+                    | mako_policy::PolicyStoreError::Compile(_) => {
+                        "policy does not compile against the collection schema"
+                    }
+                    mako_policy::PolicyStoreError::NewVersionMustBeDraft => {
+                        "policy version is not a draft"
+                    }
+                    mako_policy::PolicyStoreError::ScopeMismatch => {
+                        "policy scope does not match the collection"
+                    }
+                    mako_policy::PolicyStoreError::VersionNotFound => {
+                        "policy version was not recorded"
+                    }
+                    mako_policy::PolicyStoreError::ConcurrentLifecycleChange => {
+                        "policy changed during activation"
+                    }
+                    _ => "policy could not be activated",
+                },
+            )
+        })?;
+
+    serde_json::to_vec(&serde_json::json!({
+        "collectionId": collection_id.as_str(),
+        "version": version.get(),
+        "status": "active",
+    }))
+    .map_err(|_| auth_http::unavailable(request, "policy response could not be encoded"))
 }
 
 fn map_collection_install_error(
@@ -1649,6 +1771,7 @@ fn json_bytes(body: Vec<u8>) -> HttpResponse {
 const fn operation_name(operation: IdentityAdminOperation) -> &'static str {
     match operation {
         IdentityAdminOperation::InstallCollection => "install_collection",
+        IdentityAdminOperation::InstallPolicy => "install_policy",
         IdentityAdminOperation::SearchUsers => "search_users",
         IdentityAdminOperation::InspectUser => "inspect_user",
         IdentityAdminOperation::CreateUser => "create_user",

@@ -66,6 +66,12 @@ export function qualificationDeveloper() {
     Number.isSafeInteger(developer.authorizationEpoch) && developer.authorizationEpoch >= 1,
     "qualification developer authorization epoch is invalid",
   );
+  // The control plane compares this against the stored identity, so it cannot be
+  // defaulted: a wrong value authenticates as a stale session and is rejected.
+  assert(
+    Number.isSafeInteger(developer.credentialEpoch) && developer.credentialEpoch >= 1,
+    "qualification developer credential epoch is missing or invalid",
+  );
   return developer;
 }
 

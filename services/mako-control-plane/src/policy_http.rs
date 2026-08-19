@@ -2,8 +2,10 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use mako_api::{CollectionId, CollectionScope, TenantScope};
 use mako_control_plane::{
-    ActivePolicyView, NewPolicyDraft, PolicyAdminError, PolicyExampleResult, PolicyValidationView,
+    ActivePolicyView, DeveloperPrincipal, NewPolicyDraft, PolicyAdminError, PolicyExampleResult,
+    PolicyValidationView,
 };
+use mako_internal_rpc::IdentityAdminOperation;
 use mako_policy::{
     DiagnosticSeverity, DocumentOperation, PolicyEffect, PolicyEvaluationContext, PolicyRule,
     PolicyRuleId, PolicySet, PolicyStoreError, SafeRequestMetadata, SubjectId, VerifiedIdentity,
@@ -13,10 +15,11 @@ use mako_service_runtime::{
     HttpApiError, HttpMethod, HttpRequest, HttpResponse, HttpRouter, RouteRegistrationError,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Value, json as json_value};
 
 use crate::{
     ControlPlaneGraph, explorer_invalidation,
+    identity_admin_http::administer,
     management_http::{
         conflict, forbidden, invalid, json, no_payload, no_query, not_found, parse_json,
         require_idempotency, require_json, unavailable, with_developer,
@@ -206,6 +209,40 @@ fn handle_rollback_policy(
     policy_lifecycle(graph, request, true)
 }
 
+/// Install the active policy in the data plane that enforces it.
+async fn propagate_policy(
+    graph: &Arc<ControlPlaneGraph>,
+    request: &HttpRequest,
+    actor: &DeveloperPrincipal,
+    tenant: &TenantScope,
+    collection_id: &CollectionId,
+    view: &ActivePolicyView,
+) -> Result<(), HttpApiError> {
+    let Some(policy) = view.policy.as_ref() else {
+        return Ok(());
+    };
+    let encoded = policy
+        .encode()
+        .map_err(|_| unavailable(request, "policy could not be encoded"))?;
+    let value: Value = serde_json::from_slice(&encoded)
+        .map_err(|_| unavailable(request, "policy could not be encoded"))?;
+    let _: Value = administer(
+        graph,
+        request,
+        actor,
+        tenant,
+        IdentityAdminOperation::InstallPolicy,
+        json_value!({
+            "collectionId": collection_id.as_str(),
+            "version": policy.version().get(),
+            "policy": value,
+        }),
+        true,
+    )
+    .await?;
+    Ok(())
+}
+
 fn policy_lifecycle(
     graph: &Arc<ControlPlaneGraph>,
     request: &HttpRequest,
@@ -240,6 +277,16 @@ fn policy_lifecycle(
                 .await
                 .map_err(|error| policy_error(request, error))?
         };
+        // Document authorization is enforced by the data plane against its own
+        // store. A policy that is only recorded here leaves replication pull
+        // returning an empty batch and every push denied, so the activation is
+        // not complete until the data plane holds it.
+        //
+        // The local activation is committed first deliberately. If propagation
+        // then fails, the data plane simply has not been granted the new policy
+        // and traffic stays denied — the fail-closed direction. Both writes are
+        // idempotent, so a retry converges.
+        propagate_policy(graph, request, &actor, &tenant, &collection_id, &view).await?;
         explorer_invalidation::advance_tenant(
             graph,
             request,

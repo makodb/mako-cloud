@@ -160,6 +160,7 @@ pub struct ServiceConfig {
     pub developer_registration: DeveloperRegistrationSettings,
     pub operator_authentication: OperatorAuthenticationSettings,
     pub object_store_endpoint: Url,
+    pub data_plane_address: SocketAddr,
     pub runtime_supervisor_address: SocketAddr,
     pub telemetry_query_address: SocketAddr,
     pub otlp_address: SocketAddr,
@@ -498,6 +499,7 @@ struct RawConfig {
     operator_maximum_backoff_seconds: String,
     operator_break_glass_bearer_enabled: String,
     object_store_endpoint: String,
+    data_plane_address: String,
     runtime_supervisor_address: String,
     telemetry_query_address: String,
     otlp_address: String,
@@ -604,6 +606,7 @@ impl RawConfig {
             operator_maximum_backoff_seconds: (5 * 60).to_string(),
             operator_break_glass_bearer_enabled: "false".into(),
             object_store_endpoint: "http://127.0.0.1:8333".into(),
+            data_plane_address: "127.0.0.1:8080".into(),
             runtime_supervisor_address: "127.0.0.1:9001".into(),
             telemetry_query_address: "127.0.0.1:9465".into(),
             otlp_address: "127.0.0.1:4317".into(),
@@ -822,6 +825,9 @@ impl RawConfig {
         }
         if let Some(value) = overlay.dependencies.object_store_endpoint {
             self.object_store_endpoint = value;
+        }
+        if let Some(value) = overlay.dependencies.data_plane_address {
+            self.data_plane_address = value;
         }
         if let Some(value) = overlay.dependencies.runtime_supervisor_address {
             self.runtime_supervisor_address = value;
@@ -1140,6 +1146,11 @@ impl RawConfig {
             loader,
             "MAKO_OBJECT_STORE_ENDPOINT",
             &mut self.object_store_endpoint,
+        )?;
+        apply_string(
+            loader,
+            "MAKO_DATA_PLANE_ENDPOINT",
+            &mut self.data_plane_address,
         )?;
         apply_string(
             loader,
@@ -1816,6 +1827,17 @@ impl RawConfig {
             &self.object_store_endpoint,
             "dependencies.object_store_endpoint",
         )?;
+        // The control plane reaches the data plane over internal RPC, which is
+        // loopback-only by design: the two run on one node and the transport
+        // carries no network authentication beyond the shared secret.
+        let data_plane_address =
+            parse_socket(&self.data_plane_address, "dependencies.data_plane_address")?;
+        if service == ServiceKind::ControlPlane && !data_plane_address.ip().is_loopback() {
+            return Err(invalid(
+                "dependencies.data_plane_address",
+                "control-plane data plane must use a loopback address",
+            ));
+        }
         let runtime_supervisor_address = parse_socket(
             &self.runtime_supervisor_address,
             "dependencies.runtime_supervisor_address",
@@ -1908,6 +1930,7 @@ impl RawConfig {
             developer_registration,
             operator_authentication,
             object_store_endpoint,
+            data_plane_address,
             runtime_supervisor_address,
             telemetry_query_address,
             otlp_address,
@@ -1993,6 +2016,7 @@ struct ControlSqliteOverlay {
 struct DependenciesOverlay {
     smtp_address: Option<String>,
     object_store_endpoint: Option<String>,
+    data_plane_address: Option<String>,
     runtime_supervisor_address: Option<String>,
     telemetry_query_address: Option<String>,
     otlp_address: Option<String>,

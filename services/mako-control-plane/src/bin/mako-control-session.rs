@@ -46,6 +46,9 @@ fn run(arguments: impl IntoIterator<Item = String>) -> Result<PathBuf, String> {
     let identity_id = required(&options, "identity-id")?;
     let email = required(&options, "email")?;
     let display_name = required(&options, "display-name")?;
+    let credential_epoch = required(&options, "credential-epoch")?
+        .parse::<u64>()
+        .map_err(|_| "credential-epoch must be an integer".to_owned())?;
     let authorization_epoch = required(&options, "authorization-epoch")?
         .parse::<u64>()
         .map_err(|_| "authorization-epoch must be a positive integer".to_owned())?;
@@ -90,6 +93,7 @@ fn run(arguments: impl IntoIterator<Item = String>) -> Result<PathBuf, String> {
             "sid": format!("session_{}", &session_digest[..20]),
             "developerIdentityId": identity_id,
             "status": "active",
+            "credentialEpoch": credential_epoch,
             "authorizationEpoch": authorization_epoch,
             "iat": now,
             "exp": expires,
@@ -118,6 +122,7 @@ fn parse_options(
     }
     let expected = [
         "authorization-epoch",
+        "credential-epoch",
         "display-name",
         "email",
         "identity-id",

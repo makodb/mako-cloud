@@ -12,6 +12,7 @@ use std::{
     collections::BTreeMap,
     io::{BufRead, BufReader, Read, Write},
     net::{TcpListener, TcpStream},
+    os::unix::fs::PermissionsExt as _,
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     thread::sleep,
@@ -21,6 +22,10 @@ use std::{
 use serde_json::Value;
 
 pub const READINESS_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// The shared secret every smoke service is configured with.
+pub const INTERNAL_AUTH_SECRET: &str =
+    "5f4e3d2c1b0a998877665544332211000112233445566778899aabbccddeeff0";
 
 /// Terminates a spawned service even when an assertion unwinds, so a failing
 /// run never leaves a process holding a database lock.
@@ -116,9 +121,12 @@ pub fn service_environment(root: &Path) -> BTreeMap<String, String> {
         ),
         // Secrets are references, never inline values, so the run supplies both
         // the variable and the reference that points at it.
+        // 64 hexadecimal characters, because the same secret derives the
+        // developer session signing key and `mako-control-session` refuses any
+        // other shape.
         (
             "MAKO_INTERNAL_AUTH_SECRET".to_owned(),
-            "smoke-internal-auth-secret-0123456789abcdef".to_owned(),
+            INTERNAL_AUTH_SECRET.to_owned(),
         ),
         (
             "MAKO_INTERNAL_AUTH_SECRET_REF".to_owned(),
@@ -161,6 +169,54 @@ pub fn run_bootstrap(binaries: &Path, environment: &BTreeMap<String, String>) ->
         String::from_utf8_lossy(&output.stderr)
     );
     serde_json::from_slice(&output.stdout).expect("bootstrap reports json")
+}
+
+/// Mint a developer management session for the bootstrapped developer.
+///
+/// The control plane never issues one over HTTP for a locally seeded developer
+/// — hosted registration does — so deployment tooling ships `mako-control-session`
+/// for exactly this. The issuer has to be the control plane's own, which is
+/// derived from its bind address when no public URL is configured.
+pub fn mint_developer_session(
+    binaries: &Path,
+    root: &Path,
+    control_port: u16,
+    identity_id: &str,
+    email: &str,
+) -> String {
+    let secret = root.join("internal-auth");
+    std::fs::write(&secret, INTERNAL_AUTH_SECRET).expect("secret file");
+    std::fs::set_permissions(&secret, std::fs::Permissions::from_mode(0o600))
+        .expect("secret file is private");
+    // The tool refuses to overwrite an existing session file.
+    let output = root.join(format!("session-{control_port}.jwt"));
+    let _ = std::fs::remove_file(&output);
+
+    let executable = binaries.join("mako-control-session");
+    let result = Command::new(&executable)
+        .args(["--secret-file", &secret.to_string_lossy()])
+        .args(["--output", &output.to_string_lossy()])
+        .args([
+            "--issuer",
+            &format!("http://127.0.0.1:{control_port}/control-identity"),
+        ])
+        .args(["--identity-id", identity_id])
+        .args(["--email", email])
+        .args(["--display-name", "Smoke Developer"])
+        .args(["--credential-epoch", "1"])
+        .args(["--authorization-epoch", "1"])
+        .args(["--ttl-seconds", "3600"])
+        .output()
+        .expect("session tool runs");
+    assert!(
+        result.status.success(),
+        "developer session was not issued: {}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    std::fs::read_to_string(&output)
+        .expect("session token")
+        .trim()
+        .to_owned()
 }
 
 pub fn start_service(

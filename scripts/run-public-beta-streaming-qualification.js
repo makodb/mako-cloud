@@ -241,6 +241,8 @@ function issueDeveloperToken(developer) {
         developer.email,
         "--display-name",
         developer.displayName,
+        "--credential-epoch",
+        String(developer.credentialEpoch),
         "--authorization-epoch",
         String(developer.authorizationEpoch),
         "--ttl-seconds",

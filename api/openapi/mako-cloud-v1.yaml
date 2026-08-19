@@ -1346,6 +1346,28 @@ paths:
                 $ref: "#/components/schemas/ProjectCredentialIssue"
         default:
           $ref: "#/components/responses/ApiError"
+  /v1/projects/{projectId}/environments/{environmentId}/signing-keys/actions/initialize:
+    post:
+      tags: [Management]
+      operationId: initializeJwtSigningKey
+      summary: Create an environment's first JWT signing key
+      description: >-
+        Rotation replaces an existing active key and fails when there is none, so
+        a newly created environment needs this before it can issue application-user
+        sessions. Replaying with the same idempotency key returns the committed result.
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/EnvironmentId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "201":
+          description: First signing key created; private material is never returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JwtSigningKey"
+        default:
+          $ref: "#/components/responses/ApiError"
   /v1/projects/{projectId}/environments/{environmentId}/signing-keys:
     get:
       tags: [Management]
