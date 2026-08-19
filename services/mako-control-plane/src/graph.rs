@@ -176,10 +176,46 @@ impl ControlPlaneGraph {
         Self::open_with_data_plane_endpoint(config, config.data_plane_address)
     }
 
-    #[allow(clippy::field_reassign_with_default)]
     fn open_with_data_plane_endpoint(
         config: &ServiceConfig,
         data_plane_endpoint: SocketAddr,
+    ) -> Result<Self, ControlPlaneGraphError> {
+        Self::open_with_dependencies(config, data_plane_endpoint, None)
+    }
+
+    fn production_smtp_transport(
+        registration: &mako_config::DeveloperRegistrationSettings,
+    ) -> Result<Option<Arc<dyn DeveloperMailTransport>>, ControlPlaneGraphError> {
+        registration
+            .smtp
+            .as_ref()
+            .map(|smtp| {
+                ProductionSmtpTransport::new(ProductionSmtpConfig {
+                    relay_hostname: smtp.relay_hostname.clone(),
+                    port: smtp.port,
+                    tls_mode: match smtp.tls_mode {
+                        mako_config::SmtpTlsMode::Wrapper => SmtpTlsMode::Wrapper,
+                        mako_config::SmtpTlsMode::StartTls => SmtpTlsMode::StartTls,
+                    },
+                    username: smtp.username.clone(),
+                    password: smtp.password.expose_secret().to_owned(),
+                    sender: smtp.sender.clone(),
+                    timeout: smtp.timeout,
+                })
+                .map(|transport| Arc::new(transport) as Arc<dyn DeveloperMailTransport>)
+            })
+            .transpose()
+            .map_err(|_| ControlPlaneGraphError::Composition("authenticated SMTP"))
+    }
+
+    /// `mail_transport` replaces the configured SMTP relay. Hosted registration
+    /// only opens when mail is genuinely reachable, so a test that drives it
+    /// has to supply a transport rather than name a relay it cannot contact.
+    #[allow(clippy::field_reassign_with_default)]
+    fn open_with_dependencies(
+        config: &ServiceConfig,
+        data_plane_endpoint: SocketAddr,
+        mail_transport: Option<Arc<dyn DeveloperMailTransport>>,
     ) -> Result<Self, ControlPlaneGraphError> {
         if config.service != ServiceKind::ControlPlane {
             return Err(ControlPlaneGraphError::WrongService);
@@ -216,26 +252,10 @@ impl ControlPlaneGraph {
             .as_ref()
             .map_or_else(|| secret.expose_secret(), |value| value.expose_secret());
         let mail_key = DeveloperMailEncryptionKey::derive(mail_key_material.as_bytes());
-        let smtp_transport: Option<Arc<dyn DeveloperMailTransport>> = registration
-            .smtp
-            .as_ref()
-            .map(|smtp| {
-                ProductionSmtpTransport::new(ProductionSmtpConfig {
-                    relay_hostname: smtp.relay_hostname.clone(),
-                    port: smtp.port,
-                    tls_mode: match smtp.tls_mode {
-                        mako_config::SmtpTlsMode::Wrapper => SmtpTlsMode::Wrapper,
-                        mako_config::SmtpTlsMode::StartTls => SmtpTlsMode::StartTls,
-                    },
-                    username: smtp.username.clone(),
-                    password: smtp.password.expose_secret().to_owned(),
-                    sender: smtp.sender.clone(),
-                    timeout: smtp.timeout,
-                })
-                .map(|transport| Arc::new(transport) as Arc<dyn DeveloperMailTransport>)
-            })
-            .transpose()
-            .map_err(|_| ControlPlaneGraphError::Composition("authenticated SMTP"))?;
+        let smtp_transport: Option<Arc<dyn DeveloperMailTransport>> = match mail_transport {
+            Some(transport) => Some(transport),
+            None => Self::production_smtp_transport(registration)?,
+        };
         let mail_ready = smtp_transport
             .as_ref()
             .is_some_and(|transport| block_on(transport.readiness()).is_ok());
@@ -1461,6 +1481,498 @@ mod tests {
         block_on(graph.shutdown()).expect("shutdown");
     }
 
+    /// The path a stranger takes: register, verify, wait, get reviewed, and
+    /// only then reach the product.
+    ///
+    /// Every step here is a route a browser calls. The service-level workflow
+    /// test covers the same lifecycle through `DeveloperRegistrationService`
+    /// directly, and the console specs cover the pages — but between them sits
+    /// the HTTP surface those pages actually depend on, and nothing drove it.
+    /// Rejection in particular had no server-side coverage at all.
+    #[test]
+    fn hosted_registration_reaches_the_product_through_the_public_and_operator_routes() {
+        const ORIGIN: &str = "https://api.example.test";
+        const PASSWORD: &str = "a-sufficiently-long-applicant-password";
+
+        let directory = local_tempdir("control-plane-hosted-registration");
+        let config = registration_config_for(directory.path());
+        let unavailable = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("unused listener");
+        let endpoint = unavailable.local_addr().expect("unused endpoint");
+        drop(unavailable);
+        let graph = Arc::new(
+            ControlPlaneGraph::open_with_dependencies(
+                &config,
+                endpoint,
+                Some(Arc::new(ReadyMailTransport)),
+            )
+            .expect("control-plane graph"),
+        );
+        let _ = graph.readiness();
+        seed_password_operator(&graph);
+        let router = crate::control_plane_router(Arc::clone(&graph)).expect("router");
+
+        // --- A visitor creates an account. ---------------------------------
+
+        let register = |email: &str, name: &str, remote: &str| {
+            let body =
+                format!(r#"{{"email":"{email}","displayName":"{name}","password":"{PASSWORD}"}}"#);
+            dispatch(
+                &router,
+                request(
+                    HttpMethod::Post,
+                    "/v1/developer-auth/registrations",
+                    Some(ORIGIN),
+                    None,
+                    body.as_bytes(),
+                    remote,
+                ),
+            )
+            .expect("registration is accepted")
+        };
+        assert!(
+            (200..300).contains(
+                &register("applicant@example.test", "New Applicant", "127.0.1.1:1000")
+                    .status_for_test()
+            ),
+        );
+        assert!(
+            (200..300).contains(
+                &register("rejected@example.test", "Other Applicant", "127.0.1.2:1000")
+                    .status_for_test()
+            ),
+        );
+
+        // --- Verification uses the token the queued mail carries. ----------
+
+        let approved_token = verification_token(&graph, "applicant@example.test");
+        let rejected_token = verification_token(&graph, "rejected@example.test");
+        for (token, remote) in [
+            (&approved_token, "127.0.1.1:1001"),
+            (&rejected_token, "127.0.1.2:1001"),
+        ] {
+            let body = format!(r#"{{"token":"{token}"}}"#);
+            let verified = dispatch(
+                &router,
+                request(
+                    HttpMethod::Post,
+                    "/v1/developer-auth/verifications",
+                    Some(ORIGIN),
+                    None,
+                    body.as_bytes(),
+                    remote,
+                ),
+            )
+            .expect("verification");
+            assert!((200..300).contains(&verified.status_for_test()));
+        }
+
+        // --- Verified, but wait-listed: not yet a product identity. --------
+
+        let waitlisted = sign_in(
+            &router,
+            "applicant@example.test",
+            PASSWORD,
+            "127.0.1.1:1002",
+        );
+        assert_eq!(waitlisted["audience"], "mako-developer-waitlist");
+        let waitlist_token = waitlisted["accessToken"]
+            .as_str()
+            .expect("wait-list access token")
+            .to_owned();
+
+        // Its own route answers, which is the baseline the revocation checks
+        // below are measured against.
+        assert_eq!(
+            dispatch(
+                &router,
+                request_with_authorization(
+                    HttpMethod::Get,
+                    "/v1/developer-auth/wait-list-status",
+                    &waitlist_token,
+                    "127.0.1.1:1007",
+                ),
+            )
+            .expect("a wait-list session may read its own status")
+            .status_for_test(),
+            200
+        );
+
+        // A wait-list session must not reach a product route.
+        let refused = dispatch(
+            &router,
+            request_with_authorization(
+                HttpMethod::Get,
+                "/v1/organizations",
+                &waitlist_token,
+                "127.0.1.1:1003",
+            ),
+        )
+        .expect_err("a wait-list session must not reach the product");
+        // The audience is wrong, so the route never gets as far as authorizing
+        // against tenant state; either rejection code proves that.
+        assert!(
+            matches!(
+                refused.envelope().error.code,
+                mako_api::ErrorCode::Unauthenticated | mako_api::ErrorCode::PermissionDenied
+            ),
+            "a wait-list session was rejected as {:?}",
+            refused.envelope().error.code
+        );
+
+        // --- The operator reviews the queue. -------------------------------
+
+        let cookie = operator_cookie(&router, "127.0.1.9:1000");
+        let page = json_body(
+            &dispatch(
+                &router,
+                request(
+                    HttpMethod::Get,
+                    "/v1/operator/developer-waitlist",
+                    None,
+                    Some(&cookie),
+                    b"",
+                    "127.0.1.9:1001",
+                ),
+            )
+            .expect("wait-list page"),
+        );
+        let applicants = page["applicants"].as_array().expect("applicant page");
+        let listed = applicants
+            .iter()
+            .find(|applicant| applicant["email"] == "applicant@example.test")
+            .expect("the applicant is queued for review");
+        let identity = listed["developerIdentityId"]
+            .as_str()
+            .expect("applicant identity")
+            .to_owned();
+        // The page carries review metadata and nothing that could authenticate
+        // as the applicant or disclose a reviewer's private note.
+        for forbidden in [
+            "password",
+            "passwordHash",
+            "token",
+            "accessToken",
+            "refreshToken",
+            "sessionCredential",
+            "reason",
+            "reviewerNote",
+        ] {
+            assert!(
+                listed.get(forbidden).is_none(),
+                "the wait-list page exposes {forbidden}"
+            );
+        }
+
+        // --- Approval commits once and is idempotent. ----------------------
+
+        let approve = |remote: &str| {
+            dispatch(
+                &router,
+                request_with_idempotency(
+                    HttpMethod::Post,
+                    &format!("/v1/operator/developer-waitlist/{identity}/actions/approve"),
+                    ORIGIN,
+                    &cookie,
+                    br#"{"reason":"qualified for the beta"}"#,
+                    "hosted-registration-approve",
+                    remote,
+                ),
+            )
+            .expect("approval")
+        };
+        let first = json_body(&approve("127.0.1.9:1002"));
+        assert_eq!(first["status"], "active", "approval did not commit");
+        let replayed = json_body(&approve("127.0.1.9:1003"));
+        assert_eq!(
+            first, replayed,
+            "replaying the approval key did not return the committed result"
+        );
+
+        // The wait-list session the applicant already held is revoked. Measured
+        // on the route that answered it a moment ago, so this cannot pass
+        // merely because the audience was wrong all along.
+        dispatch(
+            &router,
+            request_with_authorization(
+                HttpMethod::Get,
+                "/v1/developer-auth/wait-list-status",
+                &waitlist_token,
+                "127.0.1.1:1004",
+            ),
+        )
+        .expect_err("the wait-list session must not survive approval");
+
+        // --- A fresh sign-in reaches the product, joined to nothing. -------
+
+        let active = sign_in(
+            &router,
+            "applicant@example.test",
+            PASSWORD,
+            "127.0.1.1:1005",
+        );
+        assert_eq!(active["audience"], "mako-management");
+        let access = active["accessToken"].as_str().expect("access token");
+        let organizations = json_body(
+            &dispatch(
+                &router,
+                request_with_authorization(
+                    HttpMethod::Get,
+                    "/v1/organizations",
+                    access,
+                    "127.0.1.1:1006",
+                ),
+            )
+            .expect("the approved developer reaches the product"),
+        );
+        assert_eq!(
+            organizations["items"].as_array().map(Vec::len),
+            Some(0),
+            "an approved developer was silently joined to an existing tenant"
+        );
+
+        // --- Rejection is the other outcome, and discloses nothing. --------
+
+        let rejected_identity = identity_for(&graph, "rejected@example.test");
+        let rejected_session =
+            sign_in(&router, "rejected@example.test", PASSWORD, "127.0.1.2:1002");
+        let rejected_token_value = rejected_session["accessToken"]
+            .as_str()
+            .expect("wait-list access token")
+            .to_owned();
+        assert_eq!(
+            dispatch(
+                &router,
+                request_with_authorization(
+                    HttpMethod::Get,
+                    "/v1/developer-auth/wait-list-status",
+                    &rejected_token_value,
+                    "127.0.1.2:1005",
+                ),
+            )
+            .expect("the applicant may read its own status before a decision")
+            .status_for_test(),
+            200
+        );
+        let decision = json_body(
+            &dispatch(
+                &router,
+                request_with_idempotency(
+                    HttpMethod::Post,
+                    &format!("/v1/operator/developer-waitlist/{rejected_identity}/actions/reject"),
+                    ORIGIN,
+                    &cookie,
+                    br#"{"reason":"private reviewer note that must not leak"}"#,
+                    "hosted-registration-reject",
+                    "127.0.1.9:1004",
+                ),
+            )
+            .expect("rejection"),
+        );
+        assert_eq!(decision["status"], "rejected");
+
+        // Every session is gone and no product permission was granted.
+        dispatch(
+            &router,
+            request_with_authorization(
+                HttpMethod::Get,
+                "/v1/developer-auth/wait-list-status",
+                &rejected_token_value,
+                "127.0.1.2:1003",
+            ),
+        )
+        .expect_err("a rejected identity must hold no session");
+        dispatch(
+            &router,
+            request_with_authorization(
+                HttpMethod::Get,
+                "/v1/organizations",
+                &rejected_token_value,
+                "127.0.1.2:1006",
+            ),
+        )
+        .expect_err("a rejected identity must hold no product permission");
+        // Signing in again reports the decision without the reviewer's reason.
+        let status = dispatch(
+            &router,
+            request(
+                HttpMethod::Post,
+                "/v1/developer-auth/sessions",
+                Some(ORIGIN),
+                None,
+                format!(r#"{{"email":"rejected@example.test","password":"{PASSWORD}"}}"#)
+                    .as_bytes(),
+                "127.0.1.2:1004",
+            ),
+        );
+        let disclosed = match &status {
+            Ok(response) => {
+                String::from_utf8_lossy(response.body_for_test().unwrap_or_default()).into_owned()
+            }
+            Err(error) => serde_json::to_string(error.envelope()).expect("error json"),
+        };
+        assert!(
+            !disclosed.contains("private reviewer note"),
+            "the reviewer's private reason was disclosed to the applicant: {disclosed}"
+        );
+
+        drop(router);
+        let graph = Arc::try_unwrap(graph).unwrap_or_else(|_| panic!("route owners dropped"));
+        block_on(graph.shutdown()).expect("shutdown");
+    }
+
+    /// Reports ready and is never asked to deliver: the queued message is read
+    /// out of the outbox rather than sent, because the token is what the test
+    /// needs and sending it would require a real relay.
+    struct ReadyMailTransport;
+
+    #[async_trait::async_trait]
+    impl mako_control_plane::DeveloperMailTransport for ReadyMailTransport {
+        async fn readiness(&self) -> Result<(), mako_control_plane::DeveloperMailTransportError> {
+            Ok(())
+        }
+
+        async fn deliver(
+            &self,
+            _delivery_id: &str,
+            _envelope: &mako_control_plane::DeveloperMailEnvelope,
+        ) -> Result<(), mako_control_plane::DeveloperMailTransportError> {
+            unreachable!("this test never runs the delivery worker")
+        }
+    }
+
+    fn json_body(response: &mako_service_runtime::HttpResponse) -> serde_json::Value {
+        serde_json::from_slice(response.body_for_test().expect("a fixed response body"))
+            .expect("response is json")
+    }
+
+    fn sign_in(
+        router: &mako_service_runtime::HttpRouter,
+        email: &str,
+        password: &str,
+        remote: &str,
+    ) -> serde_json::Value {
+        let body = format!(r#"{{"email":"{email}","password":"{password}"}}"#);
+        json_body(
+            &dispatch(
+                router,
+                request(
+                    HttpMethod::Post,
+                    "/v1/developer-auth/sessions",
+                    Some("https://api.example.test"),
+                    None,
+                    body.as_bytes(),
+                    remote,
+                ),
+            )
+            .expect("sign in"),
+        )
+    }
+
+    fn operator_cookie(router: &mako_service_runtime::HttpRouter, remote: &str) -> String {
+        dispatch(
+            router,
+            request(
+                HttpMethod::Post,
+                "/v1/operator-auth/sessions",
+                Some("https://api.example.test"),
+                None,
+                br#"{"email":"operator@example.test","password":"correct horse battery staple"}"#,
+                remote,
+            ),
+        )
+        .expect("operator sign in")
+        .header_for_test("set-cookie")
+        .expect("operator cookie")
+        .split(';')
+        .next()
+        .expect("cookie pair")
+        .to_owned()
+    }
+
+    /// The verification token is never returned over HTTP — it is mailed. The
+    /// queued message is read straight out of the outbox and decrypted with the
+    /// configured key, which is what the delivery worker would have done.
+    fn verification_token(graph: &ControlPlaneGraph, email: &str) -> String {
+        let cipher = DeveloperMailCipher::new(DeveloperMailEncryptionKey::derive(
+            MAIL_ENCRYPTION_SECRET.as_bytes(),
+        ));
+        let identity = identity_for(graph, email);
+        let records = block_on(graph.developer_registration_store().pending_outbox(
+            now_unix_seconds_for_test(),
+            NonZeroUsize::new(100).expect("limit"),
+        ))
+        .expect("pending outbox");
+        let record = records
+            .iter()
+            .rev()
+            .find(|record| {
+                record.kind() == mako_control_plane::DeveloperMailKind::VerifyEmail
+                    && record.identity_id().as_str() == identity
+            })
+            .expect("a verification mail was queued");
+        let envelope = cipher.decrypt(record).expect("decrypt");
+        envelope
+            .text_body()
+            .split("#token=")
+            .nth(1)
+            .and_then(|value| value.lines().next())
+            .expect("the verification mail carries a token")
+            .to_owned()
+    }
+
+    fn identity_for(graph: &ControlPlaneGraph, email: &str) -> String {
+        let normalized = NormalizedEmail::parse(email).expect("email");
+        block_on(
+            graph
+                .developer_registration_store()
+                .get_account_by_email(&normalized),
+        )
+        .expect("account read")
+        .expect("account exists")
+        .identity()
+        .id()
+        .as_str()
+        .to_owned()
+    }
+
+    fn request_with_authorization(
+        method: HttpMethod,
+        path: &str,
+        token: &str,
+        remote: &str,
+    ) -> HttpRequest {
+        HttpRequest::for_test(
+            method,
+            path,
+            vec![("authorization".to_owned(), format!("Bearer {token}"))],
+            b"",
+            Some(remote.parse().expect("remote address")),
+        )
+    }
+
+    fn request_with_idempotency(
+        method: HttpMethod,
+        path: &str,
+        origin: &str,
+        cookie: &str,
+        body: &[u8],
+        idempotency_key: &str,
+        remote: &str,
+    ) -> HttpRequest {
+        HttpRequest::for_test(
+            method,
+            path,
+            vec![
+                ("origin".to_owned(), origin.to_owned()),
+                ("cookie".to_owned(), cookie.to_owned()),
+                ("content-type".to_owned(), "application/json".to_owned()),
+                ("idempotency-key".to_owned(), idempotency_key.to_owned()),
+            ],
+            body,
+            Some(remote.parse().expect("remote address")),
+        )
+    }
+
     #[test]
     fn operator_password_http_boundary_enforces_origin_cookie_audience_freshness_and_signout() {
         let directory = local_tempdir("control-plane-operator-http");
@@ -1776,6 +2288,48 @@ mod tests {
     }
 
     fn config_for(root: &Path, environment: DeploymentEnvironment) -> ServiceConfig {
+        config_with(root, environment, Vec::new())
+    }
+
+    /// The hosted registration surface is deny-by-default and refuses to open
+    /// without protected mail settings, so a test that drives it has to supply
+    /// them. No mail is sent here — the outbox is read directly — so the relay
+    /// named below is never contacted.
+    const MAIL_ENCRYPTION_SECRET: &str = "a-dedicated-test-mail-encryption-secret";
+
+    fn registration_config_for(root: &Path) -> ServiceConfig {
+        config_with(
+            root,
+            DeploymentEnvironment::Local,
+            vec![
+                ("MAKO_DEVELOPER_REGISTRATION_ENABLED", "true"),
+                ("MAKO_DEVELOPER_SMTP_RELAY_HOSTNAME", "smtp.invalid"),
+                ("MAKO_DEVELOPER_SMTP_PORT", "587"),
+                ("MAKO_DEVELOPER_SMTP_TLS_MODE", "starttls"),
+                ("MAKO_DEVELOPER_SMTP_USERNAME", "tests@smtp.invalid"),
+                (
+                    "MAKO_DEVELOPER_SMTP_SENDER",
+                    "Mako Tests <no-reply@smtp.invalid>",
+                ),
+                (
+                    "MAKO_DEVELOPER_MAIL_ENCRYPTION_SECRET_REF",
+                    "env:TEST_DEVELOPER_MAIL_KEY",
+                ),
+                ("TEST_DEVELOPER_MAIL_KEY", MAIL_ENCRYPTION_SECRET),
+                (
+                    "MAKO_DEVELOPER_SMTP_PASSWORD_REF",
+                    "env:TEST_DEVELOPER_SMTP_PASSWORD",
+                ),
+                ("TEST_DEVELOPER_SMTP_PASSWORD", "a-protected-smtp-password"),
+            ],
+        )
+    }
+
+    fn config_with(
+        root: &Path,
+        environment: DeploymentEnvironment,
+        extra: Vec<(&str, &str)>,
+    ) -> ServiceConfig {
         let database = root.join("live/control.sqlite3");
         let lock = root.join("lock/control.lock");
         let migration = root.join("migration");
@@ -1788,7 +2342,7 @@ mod tests {
             DeploymentEnvironment::Production => "production",
             _ => unreachable!("test uses local or production"),
         };
-        ConfigLoader::from_environment([
+        let mut entries: Vec<(&str, &str)> = vec![
             ("MAKO_ENVIRONMENT", environment_name),
             ("MAKO_REGION", "us-east-1-beta"),
             ("MAKO_PUBLIC_URL", "https://api.example.test"),
@@ -1852,9 +2406,11 @@ mod tests {
             ("MAKO_OPERATOR_BASE_BACKOFF_SECONDS", "30"),
             ("MAKO_OPERATOR_MAX_BACKOFF_SECONDS", "30"),
             ("MAKO_OPERATOR_SOURCE_RATE_LIMIT", "1"),
-        ])
-        .load(ServiceKind::ControlPlane)
-        .expect("configuration")
+        ];
+        entries.extend(extra);
+        ConfigLoader::from_environment(entries)
+            .load(ServiceKind::ControlPlane)
+            .expect("configuration")
     }
 
     fn provision_control_sqlite(config: &ServiceConfig) {

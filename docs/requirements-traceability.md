@@ -47,26 +47,26 @@ Run `npm run validate:traceability` whenever a scenario or row changes. The vali
 | DR-05 | Verification token is invalid, expired, or replayed | `crates/mako-control-plane/src/developer_workflow.rs::hosted_registration_waitlist_approval_and_recovery_are_isolated` | Automated |
 | DR-06 | Applicant requests another verification message | `crates/mako-control-plane/src/developer_registration.rs::cleanup_is_bounded_and_removes_only_expired_records` | Automated |
 | DR-07 | Wait-listed applicant signs in | `crates/mako-control-plane/src/developer_workflow.rs::hosted_registration_waitlist_approval_and_recovery_are_isolated` | Automated |
-| DR-08 | Wait-listed session calls a product route | `crates/mako-control-plane/src/developer_identity.rs::persistent_authority_rejects_stale_active_claims_and_epochs` and `apps/console/test-e2e/developer-registration-waitlist.spec.ts` (mocked backend) | Automated |
+| DR-08 | Wait-listed session calls a product route | `crates/mako-control-plane/src/developer_identity.rs::persistent_authority_rejects_stale_active_claims_and_epochs` and `services/mako-control-plane/src/graph.rs::hosted_registration_reaches_the_product_through_the_public_and_operator_routes` | Automated |
 | DR-09 | Applicant inspects wait-list status | `crates/mako-control-plane/src/developer_workflow.rs::hosted_registration_waitlist_approval_and_recovery_are_isolated` | Automated |
 | DR-10 | Active developer signs in after approval | `crates/mako-control-plane/src/developer_workflow.rs::hosted_registration_waitlist_approval_and_recovery_are_isolated` | Automated |
 | DR-11 | Stale token claims active status | `crates/mako-control-plane/src/developer_identity.rs::persistent_authority_rejects_stale_active_claims_and_epochs` | Automated |
 | DR-12 | Password recovery completes | `crates/mako-control-plane/src/developer_workflow.rs::hosted_registration_waitlist_approval_and_recovery_are_isolated` | Automated |
-| DR-13 | Operator reviews pending applicants | `apps/console/test-e2e/developer-registration-waitlist.spec.ts` (mocked backend) | Automated |
+| DR-13 | Operator reviews pending applicants | `services/mako-control-plane/src/graph.rs::hosted_registration_reaches_the_product_through_the_public_and_operator_routes` and `apps/console/test-e2e/developer-registration-waitlist.spec.ts` (mocked backend) | Automated |
 | DR-14 | Operator approves an applicant | `crates/mako-control-plane/src/developer_workflow.rs::hosted_registration_waitlist_approval_and_recovery_are_isolated` and `apps/console/test-e2e/developer-registration-waitlist.spec.ts` (mocked backend) | Automated |
-| DR-15 | Operator rejects an applicant | `apps/console/test-e2e/developer-registration-waitlist.spec.ts` (mocked backend) | Automated |
+| DR-15 | Operator rejects an applicant | `services/mako-control-plane/src/graph.rs::hosted_registration_reaches_the_product_through_the_public_and_operator_routes` and `apps/console/test-e2e/developer-registration-waitlist.spec.ts` (mocked backend) | Automated |
 | DR-16 | Two operators decide concurrently | `crates/mako-control-plane/src/developer_registration.rs::concurrent_decisions_have_one_winner_and_stable_indexes` | Automated |
 | DR-17 | Unauthorized actor calls a review route | `services/mako-control-plane/src/graph.rs::local_graph_composes_all_dependencies_and_probes_data_plane` | Automated |
 | DR-18 | Approved identity has an old wait-list session | `crates/mako-control-plane/src/developer_workflow.rs::hosted_registration_waitlist_approval_and_recovery_are_isolated` | Automated |
 | DR-19 | Active identity is disabled | `crates/mako-control-plane/src/developer_registration.rs::account_lifecycle_is_explicit_and_advances_authority` | Automated |
-| DR-20 | Newly active developer enters the product | `apps/console/test-e2e/developer-registration-waitlist.spec.ts` (mocked backend) | Automated |
+| DR-20 | Newly active developer enters the product | `services/mako-control-plane/src/graph.rs::hosted_registration_reaches_the_product_through_the_public_and_operator_routes` and `apps/console/test-e2e/developer-registration-waitlist.spec.ts` (mocked backend) | Automated |
 | DR-21 | Hosted mail is not configured | `crates/mako-config/src/lib.rs::developer_registration_is_deny_by_default_and_requires_protected_mail` | Automated |
 | DR-22 | Approval notice delivery fails temporarily | `crates/mako-control-plane/src/developer_workflow.rs::durable_worker_claims_and_delivers_each_outbox_record_once` | Automated |
 | DR-23 | Control plane restarts with pending applicants | `crates/mako-control-plane/src/developer_registration.rs::registration_is_atomic_unique_and_recovers_from_restart` | Automated |
 | DR-24 | Existing deployment is migrated | `crates/mako-control-plane/src/developer_registration.rs::legacy_migration_is_resumable_and_refuses_email_collisions` | Automated |
 | DR-25 | Tenant RocksDB is unavailable | `crates/mako-smoke/tests/control_outage.rs::control_operations_continue_while_the_data_plane_is_unavailable` (end-to-end) | Automated |
 | DR-26 | Visitor opens the hosted sign-in page | `apps/console/test-e2e/developer-registration-waitlist.spec.ts` (mocked backend) | Automated |
-| DR-27 | Operator approves from the console | `apps/console/test-e2e/developer-registration-waitlist.spec.ts` (mocked backend) | Automated |
+| DR-27 | Operator approves from the console | `services/mako-control-plane/src/graph.rs::hosted_registration_reaches_the_product_through_the_public_and_operator_routes` and `apps/console/test-e2e/developer-registration-waitlist.spec.ts` (mocked backend) | Automated |
 | DR-28 | Public caller probes a private identity route | `services/mako-control-plane/src/graph.rs::local_graph_composes_all_dependencies_and_probes_data_plane` and `scripts/validate-public-beta-caddy.js` | Automated |
 | DR-29 | Operator monitors wait-list health | `services/mako-control-plane/src/developer_metrics.rs::rendered_metrics_have_only_bounded_aggregate_labels` and `scripts/validate-observability-assets.js` | Automated |
 | DR-30 | Accepted preview remains open over time | `scripts/test/public-beta-preview-admission-guard.test.js` | Automated |

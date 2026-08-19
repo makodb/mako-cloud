@@ -738,6 +738,20 @@ impl HttpResponse {
             .find(|header| header.field.as_str().as_str().eq_ignore_ascii_case(name))
             .map(|header| header.value.as_str())
     }
+
+    /// The response body, for a test that asserts on what a handler returned.
+    ///
+    /// Only a fixed body is readable: a streaming body is produced on demand by
+    /// its source and has no bytes to hand back here.
+    #[cfg(feature = "test-support")]
+    #[doc(hidden)]
+    #[must_use]
+    pub fn body_for_test(&self) -> Option<&[u8]> {
+        match &self.body {
+            ResponseBody::Fixed(body) => Some(body.get_ref().as_slice()),
+            ResponseBody::Streaming(_) => None,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
