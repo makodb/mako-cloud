@@ -1377,6 +1377,90 @@ mod tests {
         block_on(graph.shutdown()).expect("shutdown");
     }
 
+    /// The operator console is the surface an outage is diagnosed from, so it
+    /// must not depend on the database that failed. Nothing else proves the
+    /// operator identity path is reachable while the data plane is gone.
+    #[test]
+    fn operator_authenticates_and_inspects_control_state_while_the_data_plane_is_unavailable() {
+        let directory = local_tempdir("control-plane-operator-outage");
+        let config = config_for(directory.path(), DeploymentEnvironment::Local);
+        // Bound only long enough to reserve an address, then released, so the
+        // control plane is configured for a data plane that is not listening.
+        let unavailable = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("unused listener");
+        let endpoint = unavailable.local_addr().expect("unused endpoint");
+        drop(unavailable);
+
+        let graph = Arc::new(
+            ControlPlaneGraph::open_with_data_plane_endpoint(&config, endpoint)
+                .expect("control-plane graph"),
+        );
+        let readiness = graph.readiness();
+        assert!(readiness.is_ready(), "control plane must still serve");
+        assert!(!readiness.data_plane_identity_admin);
+        seed_password_operator(&graph);
+        let router = crate::control_plane_router(Arc::clone(&graph)).expect("router");
+
+        let signed_in = dispatch(
+            &router,
+            request(
+                HttpMethod::Post,
+                "/v1/operator-auth/sessions",
+                Some("https://api.example.test"),
+                None,
+                br#"{"email":"operator@example.test","password":"correct horse battery staple"}"#,
+                "127.0.0.9:1000",
+            ),
+        )
+        .expect("operator sign-in must not depend on the data plane");
+        assert_eq!(signed_in.status_for_test(), 200);
+        let cookie = signed_in
+            .header_for_test("set-cookie")
+            .expect("operator cookie")
+            .split(';')
+            .next()
+            .expect("cookie pair")
+            .to_owned();
+
+        // Authenticated, and able to read back control-owned session state.
+        assert_eq!(
+            dispatch(
+                &router,
+                request(
+                    HttpMethod::Get,
+                    "/v1/operator-auth/sessions/current",
+                    None,
+                    Some(&cookie),
+                    b"",
+                    "127.0.0.9:1001",
+                ),
+            )
+            .expect("inspect current operator session")
+            .status_for_test(),
+            200
+        );
+        assert_eq!(
+            block_on(
+                graph
+                    .operator_password_authentication()
+                    .store()
+                    .health_snapshot(now_unix_seconds_for_test()),
+            )
+            .expect("health")
+            .active_sessions,
+            1
+        );
+
+        // The health evidence names the failed dependency rather than hiding it.
+        assert_eq!(
+            graph.readiness().snapshot().detail,
+            "control_ready:data_plane=unavailable"
+        );
+
+        drop(router);
+        let graph = Arc::try_unwrap(graph).unwrap_or_else(|_| panic!("route owners dropped"));
+        block_on(graph.shutdown()).expect("shutdown");
+    }
+
     #[test]
     fn operator_password_http_boundary_enforces_origin_cookie_audience_freshness_and_signout() {
         let directory = local_tempdir("control-plane-operator-http");
