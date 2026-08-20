@@ -10,8 +10,9 @@ Billing has the same shape, with a harder constraint: an undercount is lost reve
 - **Goal:** the amount a customer is charged can be re-derived from retained evidence, and an operator can explain any line item.
 - **Goal:** a plan's limits are the limits the gateway actually enforces.
 - **Non-Goal:** metering at a granularity finer than the billing period needs. Per-request rows for a year are a data-retention problem, not a billing requirement.
-- **Non-Goal:** holding card data. The provider's hosted flow holds it; this system holds a token and never sees a PAN.
-- **Non-Goal:** multi-currency, tax determination, and revenue recognition in the first phases. Each is real work and none blocks charging a single price in a single currency.
+- **Goal:** an organization can see what its use costs, and that number is explained by evidence rather than asserted.
+- **Non-Goal:** collecting anything. The beta charges nobody, so there is no provider, no card data, no webhook, and no dunning in this change.
+- **Non-Goal:** multi-currency, tax determination, and revenue recognition. None of them blocks showing a single price in a single currency, and all of them are cheaper to add once there is a real rate card to attach them to.
 
 ## Decisions
 
@@ -39,18 +40,30 @@ Bytes stored is a level, not a count, so it has no natural event. It is sampled 
 
 The cache must fail closed on a lookup failure by falling back to the free-tier limits, never to unlimited.
 
-### Payment is an outbound integration with a webhook, both fail-closed
+### Not charging is a property to enforce, not merely a feature left out
 
-The provider is reached from a worker thread over TLS, the same way developer mail is, with a durable outbox and provider-side idempotency keys so a retry after an ambiguous failure cannot double-charge. Results that arrive asynchronously come back through a signed webhook on a dedicated public route that verifies the signature before parsing, rejects replays, and is the only public route in the system that a third party may call.
+The beta shows a bill and a balance and collects neither. The easy version of that is to not write the payment code, which is what this change does — but "we did not build it" degrades quietly. A later change that adds collection, or a well-meaning change that makes a quota decision read the balance, turns an informational number into a restriction on a customer who was told they would not be charged.
 
-Invoice state advances only on a verified provider event or an explicit operator action — never on a request this system merely sent successfully. That distinction is the same one the wait-list approval already draws between a committed decision and a notification attempt.
+So the posture is written as requirements rather than left as an absence: no path may contact a payment provider or ask for payment details, no surface may show a bill without saying it is not payable, and no quota, suspension, or lifecycle decision may read the balance. The last one is the load-bearing constraint, because it is the one a future change is most likely to violate by accident. The balance is deliberately not made available to the code paths that make those decisions.
+
+### A balance is credits minus charges, and may be negative
+
+The sign convention is stated so it cannot be inferred inconsistently by two surfaces: balance is credits minus finalized charges, so an organization that has accrued use beyond its credit reads negative. Nothing clamps it at zero, because clamping would hide exactly the number this feature exists to show.
+
+The balance is derived from retained invoices and credit entries rather than stored as a running total that could drift from them. An operator explaining a balance walks the same entries the customer sees.
+
+### An accrued balance is not a debt
+
+Showing someone a number that looks like a bill, then later collecting it, is a trap. Accrual during the beta creates no payable obligation: it does not become one when the beta ends, when a plan changes, or when any timer expires. Converting accrued balances into collectible charges takes an explicit operator action with the amounts in front of them, and that action does not exist yet.
+
+This is why the rate card is versioned from the start even though nothing is charged. A beta invoice records the rates that produced it, so if that conversation ever happens, both sides are looking at the same arithmetic.
 
 ## Risks / Trade-offs
 
 - **Aggregating before transfer loses per-request detail.** A customer disputing a line item gets period totals and the sample series, not a request log. Keeping per-request rows for the dispute window is possible and expensive; the decision is deferred until someone actually disputes one.
 - **Sampled storage is approximate by construction.** A tenant that writes and deletes between samples is undercharged. The sample interval is the tuning knob and the approximation is stated in the customer-facing description rather than hidden.
-- **The webhook is new public attack surface** on a deployment whose public surface is otherwise deliberately small.
-- **Dunning can suspend a paying customer through a billing bug.** Suspension for non-payment is therefore operator-reviewable before it takes effect in the first phase, and automatic only once the pipeline has a track record.
+- **A shown bill invites reliance.** Someone plans around a number produced by a pipeline that has never been reconciled against money. The mitigation is that the number is explained by retained evidence and labelled as not payable, not that it is assumed correct.
+- **Metering bugs are cheap now and expensive later.** Running the pipeline through a beta where nobody is charged is the only chance to find them without a customer paying for the mistake. That is an argument for building metering early, not for deferring it until collection matters.
 
 ## Phases
 
@@ -58,8 +71,8 @@ Each phase is separately shippable and separately useful. Only Phase 1 is a prer
 
 1. **Metering.** Events, transfer, aggregation, retention, storage sampling, and reporting from the ledger. Ships value on its own: the usage API starts telling the truth, and quota divergence becomes visible.
 2. **Plans and entitlements.** Catalog, subscription, a real policy source, and enforcement of both plan limits and the operator overrides that are currently inert. Ships value on its own: differentiated limits without charging anyone.
-3. **Rating and invoices.** Periods, rate cards, line items, invoice lifecycle, credits. Produces an invoice a human can read and an operator can explain, with no money moving.
-4. **Payments.** Provider integration, hosted checkout, payment methods, webhook receiver, retries.
-5. **Dunning and enforcement.** Grace periods, notices, operator-reviewed suspension, restoration on payment.
+3. **Rating, invoices, and balance.** Periods, rate cards, line items, credits, and the running balance — shown, explained, never collected.
 
-Stopping after any phase leaves a coherent system. Stopping after 3 leaves one that can invoice and be paid out of band, which is a reasonable place for a public beta to sit.
+Three phases, and the beta needs all three to show a bill. Stopping after 1 leaves honest usage reporting; stopping after 2 adds limits that differ by plan. Neither is wasted if the prices are never chosen, because a rate card of all zeroes is a valid rate card and the pipeline runs the same.
+
+Collection — provider, payment methods, webhook, dunning, suspension for non-payment — is a separate later change, and this one is deliberately shaped so that change is additive rather than a rewrite.

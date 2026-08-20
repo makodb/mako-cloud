@@ -18,9 +18,10 @@ Billing therefore cannot be added as a surface on top of existing metering. The 
 - Measure storage at rest per collection and environment, which no current resource covers.
 - Add a plan catalog, per-organization subscription, and effective entitlements, and make the gateway's quota policy per-tenant so a plan's limits — and the operator overrides that already exist — are actually enforced.
 - Add billing periods, rate cards, rating of usage into line items, and an invoice lifecycle with credits and proration.
-- Add payment collection through an external provider, using the durable-outbox and worker shape the developer mail path already uses, plus a signed webhook receiver for asynchronous results.
-- Add dunning and its consequences, reusing the existing project suspension lifecycle rather than inventing a second one.
-- Add management, console, and operator surfaces for plans, usage, invoices, payment methods, credits, and refunds, with audit for every action that moves money.
+- Add a running account balance per organization, permitted to go negative, derivable from the invoices and credits that produced it.
+- Show the bill and the balance without collecting either. The beta charges nobody: no payment provider, no payment details, no dunning, and no lifecycle decision that reads the balance.
+
+**Deliberately excluded**, because the beta does not charge: payment collection, stored payment methods, provider webhooks, dunning, and suspension for non-payment. Each is a later change, and none of them is a prerequisite for showing an organization what its use costs.
 
 ## Capabilities
 
@@ -28,7 +29,7 @@ Billing therefore cannot be added as a surface on top of existing metering. The 
 
 - `billing/metering`: Measurement of billable resources, their transfer from the planes that observe them, and the retained per-period ledger they aggregate into.
 - `billing/plans-and-entitlements`: The plan catalog, an organization's subscription to a plan, and the effective limits that follow from it.
-- `billing/invoicing-and-payments`: Billing periods, rating, invoice lifecycle, payment collection through an external provider, and dunning.
+- `billing/invoicing-and-balance`: Billing periods, rating, invoice lifecycle, credits, and a running balance that is shown but never collected.
 
 ### Modified Capabilities
 
@@ -36,7 +37,9 @@ Billing therefore cannot be added as a surface on top of existing metering. The 
 
 ## Impact
 
-- New crates for the billing domain; new control-plane routes and console surfaces; a new outbound integration and a new public webhook route.
+- New crates for the billing domain; new control-plane routes and console surfaces. No new outbound integration and no new public route, because nothing is collected.
 - `crates/mako-gateway` gains a real per-tenant policy source; `services/mako-data-plane` and `services/mako-edge-gateway` stop constructing static policies.
 - **This is a multi-phase change and should not be implemented as one.** The phases below are separable and each is independently useful; only the first is a prerequisite for the rest.
-- **Not decided here:** which payment provider, which resources are billable, what the prices are, and whether the public beta charges at all. Those are product decisions this proposal deliberately leaves open, and the rate card is designed as data so they can be made later.
+- **Decided:** the beta does not charge. It shows the bill and a balance that may go negative.
+- **Not decided here:** which resources are billable and what the prices are. The rate card is versioned data so those can be set, and changed, without a code change — and a rate card of all zeroes is a valid one, so the pipeline can run before any price is chosen.
+- **Deferred to a later change:** the payment provider, stored payment methods, the webhook receiver, dunning, and whether accrued beta balances are ever converted into collectible charges.

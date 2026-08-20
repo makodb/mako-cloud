@@ -18,32 +18,34 @@
 - [ ] 2.4 Replace the static policies constructed in the data plane and edge gateway with that source.
 - [ ] 2.5 Prove an operator quota override changes what the gateway enforces.
 
-## 3. Rating and invoices
+## 3. Rating, invoices, and balance
 
 - [ ] 3.1 Add billing periods per organization and their close semantics.
-- [ ] 3.2 Add rate cards as versioned data, so prices change without a code change and a past invoice re-derives at the rate that applied.
+- [ ] 3.2 Add rate cards as versioned data, so prices change without a code change and a past invoice re-derives at the rate that applied. A rate card of all zeroes is valid.
 - [ ] 3.3 Rate a closed period's ledger into invoice line items.
 - [ ] 3.4 Add the invoice lifecycle, credits, and proration on plan change.
-- [ ] 3.5 Prove a finalized invoice re-derives to the same total from retained evidence.
+- [ ] 3.5 Add the running account balance as credits minus finalized charges, derived from those entries rather than stored as a total.
+- [ ] 3.6 Prove a finalized invoice re-derives to the same total from retained evidence, and that a balance re-derives from its entries.
 
-## 4. Payments
+## 4. Not charging, enforced
 
-- [ ] 4.1 Choose the provider and record the decision, including what it is trusted with.
-- [ ] 4.2 Add hosted checkout and payment-method storage that never exposes card data to this system.
-- [ ] 4.3 Add the payment outbox, worker, and provider-side idempotency keys.
-- [ ] 4.4 Add the signed webhook route: verify before parsing, reject replays, fail closed.
-- [ ] 4.5 Advance invoice state only on a verified provider event or an explicit operator action.
+- [ ] 4.1 Prove no code path contacts a payment provider or requests payment details, as a check that fails if one is ever added.
+- [ ] 4.2 Prove no quota, suspension, or lifecycle decision reads the balance, and keep the balance out of the reach of those paths rather than relying on review.
+- [ ] 4.3 State on every surface that shows a bill or balance that it is not payable and no charge will be made.
+- [ ] 4.4 Prove a deeply negative balance leaves a tenant's traffic, quotas, and lifecycle unchanged.
+- [ ] 4.5 Ensure no automatic process converts an accrued balance into a payable debt, including when the beta ends.
 
-## 5. Dunning and enforcement
+## 5. Surfaces
 
-- [ ] 5.1 Add grace periods, notices, and their schedule.
-- [ ] 5.2 Suspend for non-payment through the existing project suspension lifecycle, operator-reviewed before taking effect.
-- [ ] 5.3 Restore on payment, and prove no data is destroyed by a suspension.
+- [ ] 5.1 Add management API operations for plan, usage, invoices, and balance, and regenerate the checked API types.
+- [ ] 5.2 Add the console surfaces for the same, including the not-payable statement.
+- [ ] 5.3 Add operator surfaces for credits and comped plans.
+- [ ] 5.4 Audit every action that changes a balance, and prove no audit record carries a rate card secret or personal financial data.
+- [ ] 5.5 Record every new scenario in the requirements traceability matrix.
 
-## 6. Surfaces
+## Deferred to a later change
 
-- [ ] 6.1 Add management API operations for plan, usage, invoices, and payment methods, and regenerate the checked API types.
-- [ ] 6.2 Add the console surfaces for the same.
-- [ ] 6.3 Add operator surfaces for credits, refunds, and comped plans.
-- [ ] 6.4 Audit every action that moves money, and prove no audit record carries a card, token, or provider secret.
-- [ ] 6.5 Record every new scenario in the requirements traceability matrix.
+Collection is out of scope here and is listed so it is not mistaken for an
+oversight: payment provider selection, hosted checkout, stored payment
+methods, the signed webhook receiver, charge idempotency, dunning, and
+suspension for non-payment.
