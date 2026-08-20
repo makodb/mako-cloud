@@ -53,6 +53,7 @@ pub use developer_workflow::{
 };
 pub use explorer::{ExplorerGrantError, ExplorerGrantService};
 pub use keyspace::{ControlKeyspace, ControlKeyspaceError};
+pub use mako_api::QuotaResource;
 pub use management_access::{
     AuthorizedManagementActor, ManagementAccessError, ManagementAction, ManagementActor,
     ManagementAuthorizer,
@@ -61,7 +62,7 @@ pub use model::{
     ControlModelError, DeveloperIdentity, DeveloperIdentityId, DeveloperIdentityStatus,
     EnvironmentRecord, InvitationId, InvitationInput, InvitationRecord, InvitationStatus,
     LifecycleState, MembershipRecord, OrganizationId, OrganizationRecord, OrganizationRole,
-    ProjectDataPermission, ProjectRecord, QuotaResource, QuotaSet,
+    ProjectDataPermission, ProjectRecord, QuotaSet,
 };
 pub use observability::{
     EventOutcome, HealthState, ObservabilityBackend, ObservabilityBackendError, ObservabilityError,

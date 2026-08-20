@@ -25,13 +25,11 @@ use crate::{
     RetentionWindow,
 };
 
-pub const TELEMETRY_PROTOCOL_VERSION: u16 = 1;
-pub const TELEMETRY_VERSION_HEADER: &str = "x-mako-telemetry-version";
-pub const TELEMETRY_REQUEST_ID_HEADER: &str = "x-mako-request-id";
-pub const TELEMETRY_AUTHORIZATION_HEADER: &str = "x-mako-telemetry-authorization";
-pub const TELEMETRY_HEALTH_PATH: &str = "/_mako/telemetry/v1/health";
-pub const TELEMETRY_QUERY_PATH: &str = "/_mako/telemetry/v1/query";
-pub const TELEMETRY_INGEST_PATH: &str = "/_mako/telemetry/v1/ingest";
+pub use mako_api::{
+    TELEMETRY_AUTHORIZATION_HEADER, TELEMETRY_HEALTH_PATH, TELEMETRY_INGEST_PATH,
+    TELEMETRY_PROTOCOL_VERSION, TELEMETRY_QUERY_PATH, TELEMETRY_REQUEST_ID_HEADER,
+    TELEMETRY_VERSION_HEADER, TelemetryIngestRequest, TelemetryIngestResponse,
+};
 const REQUEST_ID_HEADER: &str = TELEMETRY_REQUEST_ID_HEADER;
 const AUTHORIZATION_HEADER: &str = TELEMETRY_AUTHORIZATION_HEADER;
 const MAX_HEADER_BYTES: usize = 32 * 1024;
@@ -328,27 +326,6 @@ pub struct TelemetryQueryResponse {
     pub protocol_version: u16,
     pub request_id: String,
     pub page: ObservabilityPage,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
-pub struct TelemetryIngestRequest {
-    pub protocol_version: u16,
-    pub request_id: String,
-    pub source: String,
-    pub offset: u64,
-    pub records: Vec<ObservabilityRecord>,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
-pub struct TelemetryIngestResponse {
-    pub protocol_version: u16,
-    pub request_id: String,
-    pub source: String,
-    pub offset: u64,
-    pub accepted_records: usize,
-    pub replayed: bool,
 }
 
 #[derive(Debug, Deserialize, Serialize)]

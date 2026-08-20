@@ -5,6 +5,7 @@
 mod error;
 mod explorer;
 mod explorer_contract;
+mod observability;
 mod scope;
 
 pub use error::{
@@ -17,6 +18,13 @@ pub use explorer::{
     ExplorerOperation,
 };
 pub use explorer_contract::*;
+pub use observability::{
+    EventOutcome, HealthState, ObservabilityPage, ObservabilityPayload, ObservabilityQuery,
+    ObservabilityQueryError, ObservabilityRecord, ObservabilitySignal, QuotaResource,
+    RetentionWindow, TELEMETRY_AUTHORIZATION_HEADER, TELEMETRY_HEALTH_PATH, TELEMETRY_INGEST_PATH,
+    TELEMETRY_PROTOCOL_VERSION, TELEMETRY_QUERY_PATH, TELEMETRY_REQUEST_ID_HEADER,
+    TELEMETRY_VERSION_HEADER, TelemetryIngestRequest, TelemetryIngestResponse,
+};
 pub use scope::{CollectionId, CollectionScope, EnvironmentId, ProjectId, ScopeError, TenantScope};
 
 /// Identifies this workspace component in diagnostics.

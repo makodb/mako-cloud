@@ -4,7 +4,7 @@ use std::{
     fmt,
 };
 
-use mako_api::{EnvironmentId, ProjectId};
+use mako_api::{EnvironmentId, ProjectId, QuotaResource};
 use serde::{Deserialize, Deserializer, Serialize, de};
 
 macro_rules! control_id {
@@ -851,21 +851,6 @@ impl EnvironmentRecord {
     pub fn complete_deletion(&mut self, now_unix_seconds: u64) -> Result<(), ControlModelError> {
         self.transition(LifecycleState::Deleted, now_unix_seconds, None)
     }
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum QuotaResource {
-    Environments,
-    CollectionsPerEnvironment,
-    StorageBytes,
-    ReplicationRequestsPerMinute,
-    ReplicationBytesPerMonth,
-    ApplicationUsers,
-    EdgeFunctions,
-    EdgeInvocationsPerMonth,
-    EdgeComputeMillisecondsPerMonth,
-    LogBytesPerMonth,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

@@ -577,6 +577,10 @@ pub(crate) async fn append_audit_with_details(
     let correlation = CorrelationId::parse(request_id)
         .map_err(|_| internal_from_id(request_id, "audit context is invalid"))?;
     let event_id = audit_event_id(action, request_id);
+    let application_user_id = match &actor {
+        ActorIdentity::ApplicationUser { actor_id, .. } => Some(actor_id.clone()),
+        _ => None,
+    };
     let organization_id = authority_organization_id(tenant);
     let context = SignalContext::new(
         SignalScope::Tenant {
@@ -591,6 +595,26 @@ pub(crate) async fn append_audit_with_details(
         None,
     )
     .map_err(|_| internal_from_id(request_id, "audit context is invalid"))?;
+    // Every authenticated outcome the audit trail records is also an
+    // observability signal, and this is the one place all of them pass
+    // through. Emitting is best effort: it must never fail the request.
+    if category == AuditCategory::Authentication {
+        graph.telemetry().record(mako_api::ObservabilityRecord {
+            tenant: tenant.clone(),
+            timestamp_unix_milliseconds: now_unix_seconds.saturating_mul(1_000),
+            payload: mako_api::ObservabilityPayload::AuthenticationEvent {
+                category: resource_kind.to_owned(),
+                outcome: match outcome {
+                    AuditOutcome::Allowed => mako_api::EventOutcome::Allowed,
+                    AuditOutcome::Denied => mako_api::EventOutcome::Denied,
+                    _ => mako_api::EventOutcome::Failed,
+                },
+                application_user_id: application_user_id.clone(),
+                message: action.to_owned(),
+                correlation_id: request_id.to_owned(),
+            },
+        });
+    }
     graph
         .audit_store()
         .append(

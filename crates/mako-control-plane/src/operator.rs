@@ -1,7 +1,7 @@
 use std::{collections::BTreeSet, error::Error, fmt, num::NonZeroUsize, sync::Arc};
 
 use async_trait::async_trait;
-use mako_api::{EnvironmentId, ProjectId};
+use mako_api::{EnvironmentId, ProjectId, QuotaResource};
 use mako_provisioning::{
     OperatorRepairAction, Provisioner, ProvisioningResource, ProvisioningWorkflow,
     ProvisioningWorkflowError, ProvisioningWorkflowId,
@@ -14,7 +14,7 @@ use serde::{Deserialize, Deserializer, Serialize, de};
 
 use crate::{
     ControlKeyspace, ControlKeyspaceError, ControlModelError, DeveloperIdentityId,
-    EnvironmentRecord, ProjectRecord, ProjectStore, ProjectStoreError, QuotaResource,
+    EnvironmentRecord, ProjectRecord, ProjectStore, ProjectStoreError,
 };
 
 const MAX_SUPPORT_SESSION_SECONDS: u64 = 8 * 60 * 60;

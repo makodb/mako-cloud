@@ -9,6 +9,7 @@ mod explorer_metrics;
 mod graph;
 mod internal_http;
 mod replication_http;
+pub mod telemetry;
 
 use std::sync::Arc;
 
