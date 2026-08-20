@@ -135,6 +135,14 @@ def verify_static(paths, now):
     require(not re.search(r"[\r\n\x00]", operator), "operator identity contains control characters")
     for field in ("planHash", "releaseDigest", "blockerDigest"):
         require(re.fullmatch(r"[a-f0-9]{64}", approval.get(field, "")), f"approval {field} is invalid")
+    # The plan and the blocker set still bind: an approval accepted against a
+    # different deployment plan, or a different set of accepted blockers, is not
+    # an approval of this one. The release digest is recorded on both sides as
+    # provenance -- which release the safeguards were measured on, and which one
+    # is deployed -- but it is not compared, because comparing it here would
+    # reintroduce the release binding through the context file, which Ansible
+    # renders from the currently deployed release.
+    for field in ("planHash", "blockerDigest"):
         require(approval[field] == context.get(field), f"approval {field} binding changed")
 
     blockers = sorted(set(str(value).strip() for value in approval.get("blockers", [])))
@@ -168,8 +176,20 @@ def verify_static(paths, now):
 
 
 def verify_dynamic(paths, context):
-    selected = Path(os.path.realpath(paths.current_release)).name
-    require(selected == context["releaseDigest"], "selected release changed")
+    # Admission is deliberately not bound to the selected release.
+    #
+    # It was, and every redeploy silently closed public admission within a
+    # minute and fell back to the source-restricted allowlist, because the
+    # approval named a release digest that no longer matched. Reopening then
+    # required re-deriving the whole evidence chain. The intent -- do not serve
+    # a release nobody qualified -- is sound, but in practice it made shipping a
+    # fix cost an outage, which pushed operators toward not shipping fixes.
+    #
+    # The approval still records the release its safeguards were measured on, as
+    # provenance. Everything else still fails closed: plan hash, blocker set,
+    # typed confirmation, the eight non-waivable safeguards, readiness, TLS, and
+    # the manual pause. What is given up is the guarantee that those safeguards
+    # were measured on the exact release now serving.
     for port in (8080, 8081, 8082, 9465):
         ready = False
         # Production SQLite performs identity, schema, integrity, capacity, and

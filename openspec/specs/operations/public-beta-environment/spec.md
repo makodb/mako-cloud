@@ -312,12 +312,15 @@ recovery, zero acknowledged-write loss and integrity failures for the exact
 release, and a tested emergency admission stop. Those safeguards are
 non-waivable. An operator MAY accept named latency, alert-delivery, cost, and
 incomplete observation-window blockers only through a retained approval record
-that identifies the operator, exact release digest, exact plan hash, active
-blockers, acceptance time, and an expiry no more than 14 days later.
+that identifies the operator, exact plan hash, active blockers, acceptance
+time, and the release digest those safeguards were measured on. That record
+persists until an operator pauses it rather than expiring on a calendar.
 
 The preview approval MUST fail closed to source-restricted pre-gate admission
-when it expires, its release or plan binding no longer matches, the recorded
-blocker set changes, or any non-waivable safeguard fails. Re-enabling preview
+when its plan binding no longer matches, the recorded blocker set changes, or
+any non-waivable safeguard fails. Deploying a different release MUST NOT by
+itself close admission, and the deployed release MUST NOT be compared against
+the approval to decide admission. Re-enabling preview
 requires a new approval record. Preview changes only the ingress source
 allowlist; it MUST NOT bypass authentication, authorization, policy, quota,
 rate-limit, audit, route, or private-listener controls.
@@ -327,11 +330,11 @@ rate-limit, audit, route, or private-listener controls.
 - **THEN** unrestricted public admission remains disabled while authorized qualification traffic may continue
 
 #### Scenario: Operator accepts bounded public-preview risk
-- **WHEN** every non-waivable safeguard passes and an authorized operator records an unexpired approval bound to the exact release, plan, and current blocker set
+- **WHEN** every non-waivable safeguard passes and an authorized operator records an approval bound to the exact plan and current blocker set
 - **THEN** the deployment admits rate-limited public-preview traffic without changing the blocked beta-gate result or describing the release as qualified beta
 
 #### Scenario: Public-preview approval becomes stale or unsafe
-- **WHEN** preview approval expires, its release or plan binding changes, the active blocker set differs, or a non-waivable safeguard fails
+- **WHEN** the preview approval's plan binding changes, the active blocker set differs, or a non-waivable safeguard fails
 - **THEN** unrestricted ingress fails closed to source-restricted pre-gate admission and requires a new valid approval before preview can resume
 
 #### Scenario: The beta gate passes

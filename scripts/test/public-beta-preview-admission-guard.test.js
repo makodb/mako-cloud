@@ -148,11 +148,29 @@ test("persistent approval survives time and manual pause is atomic and revocable
   assert.match(realActive(state.path), /Caddyfile\.risk_accepted_preview$/);
 });
 
-test("release, plan, blocker, confirmation, and every safeguard drift fail closed", () => {
+test("a redeploy does not close admission", () => {
+  // Admission used to be bound to the selected release, so shipping any build
+  // closed public access within a minute and fell back to the source-restricted
+  // allowlist. Deploying a different release must now leave preview open.
+  const state = fixture();
+  assert.equal(run(state.directory, "activate").status, 0);
+  assert.match(realActive(state.path), /Caddyfile\.risk_accepted_preview$/);
+
+  const redeployed = "d".repeat(64);
+  mkdirSync(state.path(`/opt/mako/releases/${redeployed}`));
+  unlinkSync(state.path("/opt/mako/current"));
+  symlinkSync(state.path(`/opt/mako/releases/${redeployed}`), state.path("/opt/mako/current"));
+  // Ansible renders the context from the deployed release, so it moves too.
+  state.context.releaseDigest = redeployed;
+  writeJson(state.path("/etc/mako/public-preview-context.json"), state.context);
+
+  const guarded = run(state.directory, "guard");
+  assert.equal(guarded.status, 0, guarded.stderr);
+  assert.match(realActive(state.path), /Caddyfile\.risk_accepted_preview$/);
+});
+
+test("plan, blocker, confirmation, and every safeguard drift fail closed", () => {
   const mutations = [
-    ({ context }) => {
-      context.releaseDigest = "c".repeat(64);
-    },
     ({ context }) => {
       context.planHash = "c".repeat(64);
     },

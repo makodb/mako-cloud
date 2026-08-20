@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "recordedAt": "2026-08-14T01:08:46.000Z",
+  "recordedAt": "2026-08-20T04:04:18Z",
   "status": "risk-accepted-public-preview-active",
   "environment": "public-beta",
   "vmId": 124,
@@ -8,25 +8,24 @@
   "publicOrigin": "https://cloud-test.makodb.com",
   "planHash": "d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073",
   "release": {
-    "digest": "a5ccdaabff7d6ef30da512330dab38b60e32ae034f621ee4d4eed2b49e976000",
-    "sourceDigest": "c05ba9d874f211e6d08ed74b75fec3ccea0fba5e7b90f44785b6539b2f3bf5c9",
+    "digest": "12f06ea01e3c8a96976e87c430049c53c37d4d8caa80b7caf57cb544dee3a308",
+    "sourceDigest": "8449334650ac896f832c3b2083d087a21b46f970d937abcd196d880ada322196",
     "runtimeDigest": "b0e4ea7b66166492c3c29910858dc5d1b7f9786df81aed7057d80f34a1ad2abd",
-    "dependencyDigest": "e470026153038551cc39c37afdca492ad6947f75596bb38ccb456ba1b4c5aef0",
-    "artifactDigest": "2629ebf6b726f18213f1adab901d7869570758c44328143b3c5762e2449f2490",
-    "selectedPath": "/opt/mako/releases/a5ccdaabff7d6ef30da512330dab38b60e32ae034f621ee4d4eed2b49e976000",
+    "dependencyDigest": "245c4d15294f7f68f92b02de90d897b79ad5d82734314d86ad792cf3b5fcb0a9",
+    "artifactDigest": "1c6e4f84458e39ca1fdd60cf52e4331463dcec2f1bacd3a21fc0a8edb8687e84",
+    "selectedPath": "/opt/mako/releases/12f06ea01e3c8a96976e87c430049c53c37d4d8caa80b7caf57cb544dee3a308",
     "releaseOperation": {
-      "kind": "ansible-reselection-after-qualified-rollback",
-      "from": "5cc8599aca5651b2f217110d904d95282f4387d5b9c033f8d0b412c821277e2f",
-      "to": "a5ccdaabff7d6ef30da512330dab38b60e32ae034f621ee4d4eed2b49e976000",
-      "durationSeconds": null,
+      "kind": "upgrade",
+      "from": "a5ccdaabff7d6ef30da512330dab38b60e32ae034f621ee4d4eed2b49e976000",
+      "to": "12f06ea01e3c8a96976e87c430049c53c37d4d8caa80b7caf57cb544dee3a308",
+      "durationSeconds": 12,
       "checkpointVerified": true,
       "storageFormatCompatible": true,
       "configurationSnapshotBound": true,
-      "storageFencedBeforeSelection": false,
+      "storageFencedBeforeSelection": true,
       "identicalRuntimeArtifacts": true,
       "allStatefulServicesReady": true,
-      "publicAdmissionEnabled": false,
-      "guestEvidence": null
+      "publicAdmissionEnabled": false
     }
   },
   "networkAdmission": {

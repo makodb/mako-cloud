@@ -141,14 +141,21 @@ export function derivePreviewQualification(repositoryRoot) {
   const blockers = normalizeBlockers(beta.blockers);
   assert(manifest.planHash === plan.planHash, "release manifest uses another plan");
   assert(beta.observed?.deployment?.planHash === plan.planHash, "release gate uses another plan");
-  assert(
-    beta.observed?.deployment?.releaseDigest === manifest.releaseDigest,
-    "release gate uses another release",
-  );
-  assert(deployment.release?.digest === manifest.releaseDigest, "deployment evidence is stale");
-  assert(streaming.releaseDigest === manifest.releaseDigest, "streaming evidence is stale");
-  assert(benchmark.releaseDigest === manifest.releaseDigest, "benchmark evidence is stale");
-  assert(hosted.releaseDigest === manifest.releaseDigest, "hosted security evidence is stale");
+
+  // An approval attests that the non-waivable safeguards were measured, and on
+  // which release. It is not scoped to the release that happens to be deployed
+  // now: admission stopped being release-bound, so requiring the evidence to
+  // describe the current build would reimpose that binding here and make every
+  // redeploy an outage again.
+  //
+  // What still has to hold is that the evidence is mutually coherent -- every
+  // artifact describing one and the same release, not a mix of runs.
+  const measuredRelease = beta.observed?.deployment?.releaseDigest;
+  assert(digestPattern.test(measuredRelease ?? ""), "release gate records no measured release");
+  assert(deployment.release?.digest === measuredRelease, "deployment evidence is stale");
+  assert(streaming.releaseDigest === measuredRelease, "streaming evidence is stale");
+  assert(benchmark.releaseDigest === measuredRelease, "benchmark evidence is stale");
+  assert(hosted.releaseDigest === measuredRelease, "hosted security evidence is stale");
 
   const safeguards = {
     trustedHttpsAndHsts:
@@ -177,7 +184,7 @@ export function derivePreviewQualification(repositoryRoot) {
 
   return {
     planHash: plan.planHash,
-    releaseDigest: manifest.releaseDigest,
+    releaseDigest: measuredRelease,
     blockers,
     blockerDigest: computeBlockerDigest(blockers),
     nonWaivableSafeguards: safeguards,
