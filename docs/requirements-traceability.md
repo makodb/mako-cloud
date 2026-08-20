@@ -23,18 +23,19 @@ Run `npm run validate:traceability` whenever a scenario or row changes. The vali
 | CP-11 | Incompatible schema is submitted directly | `crates/mako-control-plane/src/collection.rs::compatible_publication_succeeds_and_incompatible_change_requires_migration` | Automated |
 | CP-12 | Created collection accepts document traffic | `crates/mako-documents/src/collection.rs::installed_metadata_becomes_resolvable_and_replays_as_unchanged` and `crates/mako-smoke/tests/happy_path.rs::application_happy_path_succeeds_against_the_real_services` (end-to-end) | Automated |
 | CP-13 | Data plane cannot record the collection | `crates/mako-control-plane/src/collection.rs::created_collection_stays_pending_until_activated_and_activation_is_idempotent` | Automated |
-| CP-14 | Administrator tests a policy | `crates/mako-control-plane/src/policy.rs::draft_validation_testing_activation_and_rollback_report_epochs` | Automated |
-| CP-15 | Activated policy governs document traffic | `crates/mako-smoke/tests/sample_app.rs::a_developer_builds_a_sample_app_and_an_application_user_replicates_through_it` (end-to-end) | Automated |
-| CP-16 | Data plane cannot record the policy | `crates/mako-smoke/tests/sample_app.rs::policy_activation_fails_when_the_data_plane_cannot_record_it` (end-to-end) | Automated |
-| CP-17 | Service credential is created | `crates/mako-control-plane/src/credentials.rs::credentials_keys_and_function_secrets_rotate_without_persistent_plaintext` | Automated |
-| CP-18 | New environment obtains its first signing key | `crates/mako-smoke/tests/sample_app.rs::a_developer_builds_a_sample_app_and_an_application_user_replicates_through_it` (end-to-end) | Automated |
-| CP-19 | Support operator inspects a user | `crates/mako-control-plane/src/application_user.rs::organization_roles_become_identity_permissions_and_core_service_audits_denials` | Automated |
-| CP-20 | Developer promotes a function version | `crates/mako-control-plane/src/function.rs::deploy_promote_rollback_test_logs_and_delete_follow_safe_lifecycle` | Automated |
-| CP-21 | Project reaches a hard quota | `crates/mako-gateway/src/quota.rs::hard_limits_rate_limits_and_retry_advice_are_stable` | Automated |
-| CP-22 | Policy version is activated | `crates/mako-control-plane/src/policy.rs::draft_validation_testing_activation_and_rollback_report_epochs` | Automated |
-| CP-23 | Operator opens support access | `crates/mako-control-plane/src/operator.rs::operator_permissions_scope_repairs_abuse_and_expiring_support` | Automated |
-| CP-24 | Project deletion is requested | `crates/mako-control-plane/src/deletion.rs::deletion_revokes_restores_and_destroys_in_durable_order` | Automated |
-| CP-25 | Grace period expires | `crates/mako-control-plane/src/deletion.rs::deletion_revokes_restores_and_destroys_in_durable_order` | Automated |
+| CP-14 | Created index answers document queries | `crates/mako-smoke/tests/database_service.rs::an_application_user_authenticates_reads_writes_and_queries_their_own_data` (end-to-end) | Automated |
+| CP-15 | Administrator tests a policy | `crates/mako-control-plane/src/policy.rs::draft_validation_testing_activation_and_rollback_report_epochs` | Automated |
+| CP-16 | Activated policy governs document traffic | `crates/mako-smoke/tests/sample_app.rs::a_developer_builds_a_sample_app_and_an_application_user_replicates_through_it` (end-to-end) | Automated |
+| CP-17 | Data plane cannot record the policy | `crates/mako-smoke/tests/sample_app.rs::policy_activation_fails_when_the_data_plane_cannot_record_it` (end-to-end) | Automated |
+| CP-18 | Service credential is created | `crates/mako-control-plane/src/credentials.rs::credentials_keys_and_function_secrets_rotate_without_persistent_plaintext` | Automated |
+| CP-19 | New environment obtains its first signing key | `crates/mako-smoke/tests/sample_app.rs::a_developer_builds_a_sample_app_and_an_application_user_replicates_through_it` (end-to-end) | Automated |
+| CP-20 | Support operator inspects a user | `crates/mako-control-plane/src/application_user.rs::organization_roles_become_identity_permissions_and_core_service_audits_denials` | Automated |
+| CP-21 | Developer promotes a function version | `crates/mako-control-plane/src/function.rs::deploy_promote_rollback_test_logs_and_delete_follow_safe_lifecycle` | Automated |
+| CP-22 | Project reaches a hard quota | `crates/mako-gateway/src/quota.rs::hard_limits_rate_limits_and_retry_advice_are_stable` | Automated |
+| CP-23 | Policy version is activated | `crates/mako-control-plane/src/policy.rs::draft_validation_testing_activation_and_rollback_report_epochs` | Automated |
+| CP-24 | Operator opens support access | `crates/mako-control-plane/src/operator.rs::operator_permissions_scope_repairs_abuse_and_expiring_support` | Automated |
+| CP-25 | Project deletion is requested | `crates/mako-control-plane/src/deletion.rs::deletion_revokes_restores_and_destroys_in_durable_order` | Automated |
+| CP-26 | Grace period expires | `crates/mako-control-plane/src/deletion.rs::deletion_revokes_restores_and_destroys_in_durable_order` | Automated |
 
 ## Developer registration and wait list
 

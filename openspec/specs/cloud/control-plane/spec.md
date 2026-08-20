@@ -61,6 +61,8 @@ Authorized project members SHALL be able to create and inspect collections, publ
 
 Creating a collection SHALL make that collection resolvable for document reads and writes in the environment's owning data plane. The control plane MUST NOT report a collection as active until its metadata is durably recorded in the data plane that serves the environment. When that propagation cannot be completed, the operation MUST fail with a retryable diagnostic and MUST NOT leave a collection that management surfaces report as usable while document operations reject it as missing.
 
+Creating an index SHALL cause that index to be built in the environment's owning data plane and to become usable for document queries without further caller action. Reported index state MUST be the state that decides whether a query is answerable, and every management surface that reports it MUST report the same state.
+
 #### Scenario: Compatible schema version is published
 - **WHEN** validation proves existing documents and clients remain compatible
 - **THEN** the version becomes available for new replication sessions
@@ -76,6 +78,10 @@ Creating a collection SHALL make that collection resolvable for document reads a
 #### Scenario: Data plane cannot record the collection
 - **WHEN** the owning data plane cannot durably record the new collection's metadata
 - **THEN** creation fails with a retryable diagnostic and the collection is not reported as active by any management surface
+
+#### Scenario: Created index answers document queries
+- **WHEN** an authorized member creates an index covering a query's predicate and ordering, and the index is reported active
+- **THEN** an application user's query in that environment is answered from the index instead of being refused for lacking one
 
 ### Requirement: Policy management experience
 Authorized project members SHALL be able to author, validate, test, version, activate, and roll back document policy sets. The console MUST display the default-deny state and the authorization epoch affected by activation.

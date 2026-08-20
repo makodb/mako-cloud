@@ -226,6 +226,15 @@ pub enum IdentityAdminOperation {
     AdvanceExplorerEpoch,
     ImportDataJobBatch,
     ExportDataJobPage,
+    /// Install a collection index in the data plane that serves the
+    /// environment, and build it. Document queries are refused unless an
+    /// active index covers them, and only the data plane holds the documents
+    /// an index is built from.
+    InstallIndex,
+    /// Report the data plane's view of a collection index. The control plane
+    /// records the definition it was asked for; the state that decides whether
+    /// a query is answerable lives here.
+    InspectIndex,
     /// Install collection metadata in the data plane that serves the
     /// environment. The control plane owns the collection record, but document
     /// traffic cannot resolve a collection until its metadata exists in the
@@ -267,6 +276,31 @@ pub struct InstallCollectionInput {
 /// A document policy propagated to the data plane. `policy` is the policy
 /// model's own encoding, so the data plane validates it with the same codec it
 /// reads back rather than a parallel wire schema that could drift.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct InstallIndexInput {
+    pub collection_id: String,
+    pub name: String,
+    pub version: u64,
+    pub kind: String,
+    pub fields: Vec<IndexFieldInput>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct IndexFieldInput {
+    pub path: String,
+    pub direction: String,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct InspectIndexInput {
+    pub collection_id: String,
+    pub name: String,
+    pub version: u64,
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct InstallPolicyInput {

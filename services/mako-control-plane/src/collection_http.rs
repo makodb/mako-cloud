@@ -2,13 +2,14 @@ use std::sync::Arc;
 
 use mako_api::{CollectionId, TenantScope};
 use mako_control_plane::{
-    CollectionAdminError, CollectionAdminService, CollectionCompatibilityReport, IndexBuildStatus,
-    NewCollection, NewIndex, NewSchemaMigration, PublishSchema, SchemaMigrationId,
-    SchemaMigrationRecord, SchemaMigrationState, SchemaPublicationOutcome,
+    CollectionAdminError, CollectionAdminService, CollectionCompatibilityReport,
+    DeveloperPrincipal, IndexBuildStatus, NewCollection, NewIndex, NewSchemaMigration,
+    PublishSchema, SchemaMigrationId, SchemaMigrationRecord, SchemaMigrationState,
+    SchemaPublicationOutcome,
 };
 use mako_documents::{
-    CollectionMetadata, IndexDirection, IndexError, IndexField, IndexKind, IndexName, IndexVersion,
-    PrimaryKeyDefinition,
+    CollectionMetadata, IndexDirection, IndexError, IndexField, IndexKind, IndexName, IndexState,
+    IndexVersion, PrimaryKeyDefinition,
 };
 use mako_internal_rpc::IdentityAdminOperation;
 use mako_service_runtime::{
@@ -379,7 +380,14 @@ fn handle_list_indexes(
             .list_indexes(&actor, &tenant, &collection_id, now)
             .await
             .map_err(|error| collection_error(request, error))?;
-        let items = records.iter().map(index_wire).collect();
+        // Reported from the data plane too, so a listing cannot disagree with
+        // the single-index read about whether a query can use an index.
+        let mut items = Vec::with_capacity(records.len());
+        for record in &records {
+            let state =
+                inspect_index(graph, request, &actor, &tenant, &collection_id, record).await?;
+            items.push(index_wire_with_state(record, state));
+        }
         json(request, 200, &ItemsWire { items })
     })
 }
@@ -431,6 +439,7 @@ fn handle_create_index(
             }
             Err(error) => return Err(collection_error(request, error)),
         };
+        let state = install_index(graph, request, &actor, &tenant, &collection_id, &record).await?;
         explorer_invalidation::advance_tenant(
             graph,
             request,
@@ -438,7 +447,7 @@ fn handle_create_index(
             actor.identity_id().as_str(),
             "index-create",
         )?;
-        json(request, 202, &index_wire(&record))
+        json(request, 202, &index_wire_with_state(&record, state))
     })
 }
 
@@ -456,7 +465,8 @@ fn handle_get_index(
             .get_index(&actor, &tenant, &collection_id, &name, version, now)
             .await
             .map_err(|error| collection_error(request, error))?;
-        json(request, 200, &index_wire(&record))
+        let state = inspect_index(graph, request, &actor, &tenant, &collection_id, &record).await?;
+        json(request, 200, &index_wire_with_state(&record, state))
     })
 }
 
@@ -604,6 +614,100 @@ fn migration_wire(
         created_at: format_timestamp(request, record.created_at_unix_seconds())?,
         updated_at: format_timestamp(request, record.updated_at_unix_seconds())?,
     })
+}
+
+/// Grant the index to the data plane and report the state it reached there.
+///
+/// The control plane records the definition, but documents live in the data
+/// plane and so does the build. An index that exists only here is one a query
+/// can never use, which is why creation is not complete until this returns.
+async fn install_index(
+    graph: &Arc<ControlPlaneGraph>,
+    request: &HttpRequest,
+    actor: &DeveloperPrincipal,
+    tenant: &TenantScope,
+    collection_id: &CollectionId,
+    record: &IndexBuildStatus,
+) -> Result<IndexState, HttpApiError> {
+    let definition = &record.definition;
+    let fields: Vec<Value> = definition
+        .fields()
+        .iter()
+        .map(|field| {
+            json!({
+                "path": field.path(),
+                "direction": match field.direction() {
+                    mako_documents::IndexDirection::Ascending => "ascending",
+                    mako_documents::IndexDirection::Descending => "descending",
+                },
+            })
+        })
+        .collect();
+    let reported = administer(
+        graph,
+        request,
+        actor,
+        tenant,
+        IdentityAdminOperation::InstallIndex,
+        json!({
+            "collectionId": collection_id.as_str(),
+            "name": definition.name().as_str(),
+            "version": definition.version().get(),
+            "kind": match definition.kind() {
+                IndexKind::NonUnique => "non_unique",
+                IndexKind::Unique => "unique",
+            },
+            "fields": fields,
+        }),
+        true,
+    )
+    .await?;
+    Ok(reported_index_state(&reported, definition.state()))
+}
+
+/// The state a query would actually be answered against.
+async fn inspect_index(
+    graph: &Arc<ControlPlaneGraph>,
+    request: &HttpRequest,
+    actor: &DeveloperPrincipal,
+    tenant: &TenantScope,
+    collection_id: &CollectionId,
+    record: &IndexBuildStatus,
+) -> Result<IndexState, HttpApiError> {
+    let definition = &record.definition;
+    let reported = administer(
+        graph,
+        request,
+        actor,
+        tenant,
+        IdentityAdminOperation::InspectIndex,
+        json!({
+            "collectionId": collection_id.as_str(),
+            "name": definition.name().as_str(),
+            "version": definition.version().get(),
+        }),
+        // A read carries no idempotency key.
+        false,
+    )
+    .await?;
+    Ok(reported_index_state(&reported, definition.state()))
+}
+
+fn reported_index_state(reported: &Value, fallback: IndexState) -> IndexState {
+    match reported["state"].as_str() {
+        Some("active") => IndexState::Active,
+        Some("building") => IndexState::Building,
+        Some("failed") => IndexState::Failed,
+        Some("deleting") => IndexState::Deleting,
+        _ => fallback,
+    }
+}
+
+fn index_wire_with_state(record: &IndexBuildStatus, state: IndexState) -> IndexWire {
+    IndexWire {
+        state,
+        ..index_wire(record)
+    }
 }
 
 fn index_wire(record: &IndexBuildStatus) -> IndexWire {

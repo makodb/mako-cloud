@@ -23,11 +23,11 @@ pub use contract::{
     DataJobImportBatchOutput, DataJobRowError, FunctionSecretResolutionRequest,
     FunctionSecretResolutionResponse, INTERNAL_PROTOCOL_VERSION, IdentityAdminCommand,
     IdentityAdminOperation, IdentityAdminPermission, IdentityVerificationOperation,
-    IdentityVerificationRequest, IdentityVerificationResponse, InstallCollectionInput,
-    InstallPolicyInput, InternalCaller, InternalRoute, MAX_INTERNAL_BODY_BYTES,
-    OPERATOR_ADMIN_ENVIRONMENT_ID, OPERATOR_ADMIN_PROJECT_ID, OperatorEntitlementApplyResponse,
-    OperatorEntitlementCommand, OperatorEntitlementOperation, OperatorEntitlementPlanResponse,
-    ResolvedFunctionSecret,
+    IdentityVerificationRequest, IdentityVerificationResponse, IndexFieldInput, InspectIndexInput,
+    InstallCollectionInput, InstallIndexInput, InstallPolicyInput, InternalCaller, InternalRoute,
+    MAX_INTERNAL_BODY_BYTES, OPERATOR_ADMIN_ENVIRONMENT_ID, OPERATOR_ADMIN_PROJECT_ID,
+    OperatorEntitlementApplyResponse, OperatorEntitlementCommand, OperatorEntitlementOperation,
+    OperatorEntitlementPlanResponse, ResolvedFunctionSecret,
 };
 pub use guard::{
     GuardDecision, InternalReplayGuard, NoopReplayGuard, RocksInternalReplayGuard,

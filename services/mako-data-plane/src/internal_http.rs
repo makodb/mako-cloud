@@ -467,6 +467,12 @@ async fn execute_operation(
         IdentityAdminOperation::InstallPolicy => {
             execute_policy_operation(graph, request, tenant, command, now).await
         }
+        IdentityAdminOperation::InstallIndex => {
+            execute_index_install(graph, request, tenant, command, now).await
+        }
+        IdentityAdminOperation::InspectIndex => {
+            execute_index_inspect(graph, request, tenant, command, now).await
+        }
         IdentityAdminOperation::CreateProjectCredential
         | IdentityAdminOperation::RotateProjectCredential => Err(auth_http::invalid(
             request,
@@ -480,6 +486,233 @@ async fn execute_operation(
 /// The control plane owns the collection record but writes it to its own store,
 /// which this data plane cannot read. Without this propagation every document
 /// read and write for the collection is rejected as not found.
+/// One backfill or catch-up page. Bounded so a single build step cannot hold
+/// the request or the write path open indefinitely.
+const INDEX_BUILD_PAGE: usize = 512;
+/// Enough pages to build any collection this deployment is sized for. A build
+/// that exhausts the budget stays `building` and resumes on the next call,
+/// because every page commits its progress marker with its entries.
+const INDEX_BUILD_MAX_PAGES: usize = 4_096;
+
+async fn execute_index_install(
+    graph: &Arc<DataPlaneGraph>,
+    request: &HttpRequest,
+    tenant: &mako_api::TenantScope,
+    command: &IdentityAdminCommand,
+    now: u64,
+) -> Result<Vec<u8>, HttpApiError> {
+    require_permission(
+        graph,
+        request,
+        tenant,
+        command,
+        IdentityAdminPermission::ManageCollections,
+        "index_install",
+        "indexes",
+        now,
+    )
+    .await?;
+    let input: mako_internal_rpc::InstallIndexInput = parse_input(request, &command.input)?;
+    let (scoped, name, version) = index_target(
+        graph,
+        request,
+        tenant,
+        &input.collection_id,
+        &input.name,
+        input.version,
+    )?;
+
+    let kind = match input.kind.as_str() {
+        "non_unique" => mako_documents::IndexKind::NonUnique,
+        "unique" => mako_documents::IndexKind::Unique,
+        _ => return Err(auth_http::invalid(request, "index kind is invalid")),
+    };
+    let mut fields = Vec::with_capacity(input.fields.len());
+    for field in &input.fields {
+        let direction = match field.direction.as_str() {
+            "ascending" => mako_documents::IndexDirection::Ascending,
+            "descending" => mako_documents::IndexDirection::Descending,
+            _ => return Err(auth_http::invalid(request, "index direction is invalid")),
+        };
+        fields.push(
+            mako_documents::IndexField::new(field.path.clone(), direction)
+                .map_err(|_| auth_http::invalid(request, "index field path is invalid"))?,
+        );
+    }
+    let collection_id = mako_api::CollectionId::parse(input.collection_id.clone())
+        .map_err(|_| auth_http::invalid(request, "collection id is invalid"))?;
+    let definition = mako_documents::IndexDefinition::new_building(
+        collection_id,
+        name.clone(),
+        version,
+        kind,
+        fields,
+    )
+    .map_err(|_| auth_http::invalid(request, "index definition is invalid"))?;
+
+    // Recording is idempotent: a repeat of the same definition is not an error,
+    // because the control plane retries propagation.
+    match scoped.create_index(definition, Durability::Sync).await {
+        Ok(()) => {}
+        Err(mako_documents::IndexError::DefinitionAlreadyExists) => {}
+        Err(_) => {
+            return Err(conflict(
+                request,
+                "index definition conflicts with the recorded one",
+            ));
+        }
+    }
+    let state = build_index(&scoped, request, &name, version).await?;
+    index_response(request, &input.name, input.version, state)
+}
+
+async fn execute_index_inspect(
+    graph: &Arc<DataPlaneGraph>,
+    request: &HttpRequest,
+    tenant: &mako_api::TenantScope,
+    command: &IdentityAdminCommand,
+    now: u64,
+) -> Result<Vec<u8>, HttpApiError> {
+    require_permission(
+        graph,
+        request,
+        tenant,
+        command,
+        IdentityAdminPermission::ManageCollections,
+        "index_inspect",
+        "indexes",
+        now,
+    )
+    .await?;
+    let input: mako_internal_rpc::InspectIndexInput = parse_input(request, &command.input)?;
+    let (scoped, name, version) = index_target(
+        graph,
+        request,
+        tenant,
+        &input.collection_id,
+        &input.name,
+        input.version,
+    )?;
+    // Reading also advances an unfinished build, so an index that ran out of
+    // page budget converges instead of waiting for another write.
+    let state = build_index(&scoped, request, &name, version).await?;
+    index_response(request, &input.name, input.version, state)
+}
+
+fn index_target(
+    graph: &Arc<DataPlaneGraph>,
+    request: &HttpRequest,
+    tenant: &mako_api::TenantScope,
+    collection_id: &str,
+    name: &str,
+    version: u64,
+) -> Result<
+    (
+        mako_documents::ScopedCollectionEngine,
+        mako_documents::IndexName,
+        mako_documents::IndexVersion,
+    ),
+    HttpApiError,
+> {
+    let collection_id = mako_api::CollectionId::parse(collection_id.to_owned())
+        .map_err(|_| auth_http::invalid(request, "collection id is invalid"))?;
+    let name = mako_documents::IndexName::parse(name.to_owned())
+        .map_err(|_| auth_http::invalid(request, "index name is invalid"))?;
+    let version = mako_documents::IndexVersion::new(version)
+        .map_err(|_| auth_http::invalid(request, "index version is invalid"))?;
+    let scoped = graph
+        .document_engine()
+        .scope_collection(
+            tenant,
+            mako_api::CollectionScope::new(tenant.clone(), collection_id),
+        )
+        .map_err(|_| auth_http::invalid(request, "collection scope is invalid"))?;
+    Ok((scoped, name, version))
+}
+
+/// Drive an online build as far as one call is allowed to, and report the state
+/// the index ended in.
+async fn build_index(
+    scoped: &mako_documents::ScopedCollectionEngine,
+    request: &HttpRequest,
+    name: &mako_documents::IndexName,
+    version: mako_documents::IndexVersion,
+) -> Result<&'static str, HttpApiError> {
+    let page = NonZeroUsize::new(INDEX_BUILD_PAGE).expect("page size is not zero");
+    if index_state(scoped, request, name, version).await? == "active" {
+        return Ok("active");
+    }
+    for _ in 0..INDEX_BUILD_MAX_PAGES {
+        let progress = scoped
+            .backfill_index(name, version, page, Durability::Sync)
+            .await
+            .map_err(|_| conflict(request, "index backfill failed"))?;
+        if progress.backfill_complete() {
+            break;
+        }
+    }
+    let mut caught_up = u64::MAX;
+    for _ in 0..INDEX_BUILD_MAX_PAGES {
+        match scoped
+            .catch_up_index(name, version, page, Durability::Sync)
+            .await
+        {
+            // Catch-up reports the position it reached; activation is what
+            // decides whether that is far enough, so this stops as soon as a
+            // pass stops advancing.
+            Ok(progress) if progress.caught_up_position() == caught_up => break,
+            Ok(progress) => caught_up = progress.caught_up_position(),
+            Err(mako_documents::IndexBuildError::BackfillIncomplete) => {
+                return Ok("building");
+            }
+            Err(_) => return Err(conflict(request, "index catch-up failed")),
+        }
+    }
+    match scoped.activate_index(name, version, Durability::Sync).await {
+        Ok(_) => Ok("active"),
+        Err(
+            mako_documents::IndexBuildError::BackfillIncomplete
+            | mako_documents::IndexBuildError::CatchUpIncomplete { .. },
+        ) => Ok("building"),
+        Err(_) => Err(conflict(request, "index activation failed")),
+    }
+}
+
+async fn index_state(
+    scoped: &mako_documents::ScopedCollectionEngine,
+    request: &HttpRequest,
+    name: &mako_documents::IndexName,
+    version: mako_documents::IndexVersion,
+) -> Result<&'static str, HttpApiError> {
+    let definitions = scoped
+        .index_definitions()
+        .await
+        .map_err(|_| conflict(request, "index catalog is unreadable"))?;
+    Ok(definitions
+        .iter()
+        .find(|definition| definition.name() == name && definition.version() == version)
+        .map_or("absent", |definition| match definition.state() {
+            mako_documents::IndexState::Active => "active",
+            mako_documents::IndexState::Building => "building",
+            mako_documents::IndexState::Failed => "failed",
+            mako_documents::IndexState::Deleting => "deleting",
+        }))
+}
+
+fn index_response(
+    request: &HttpRequest,
+    name: &str,
+    version: u64,
+    state: &str,
+) -> Result<Vec<u8>, HttpApiError> {
+    serde_json::to_vec(&serde_json::json!({
+        "name": name,
+        "version": version,
+        "state": state,
+    }))
+    .map_err(|_| auth_http::unavailable(request, "index response could not be encoded"))
+}
+
 async fn execute_collection_operation(
     graph: &Arc<DataPlaneGraph>,
     request: &HttpRequest,
@@ -1772,6 +2005,8 @@ const fn operation_name(operation: IdentityAdminOperation) -> &'static str {
     match operation {
         IdentityAdminOperation::InstallCollection => "install_collection",
         IdentityAdminOperation::InstallPolicy => "install_policy",
+        IdentityAdminOperation::InstallIndex => "install_index",
+        IdentityAdminOperation::InspectIndex => "inspect_index",
         IdentityAdminOperation::SearchUsers => "search_users",
         IdentityAdminOperation::InspectUser => "inspect_user",
         IdentityAdminOperation::CreateUser => "create_user",
