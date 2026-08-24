@@ -41,6 +41,7 @@ use mako_storage::{
     Durability, KvAdapter, ProductionRocksDb, ProductionRocksDbConfig, ProductionVolumeIdentity,
     RocksDbAdapter, RocksDbConfig, StorageError, check_storage_readiness,
 };
+use mako_telemetry_client::TelemetryEmitter;
 use rand_core::{OsRng, RngCore};
 
 use crate::runtime::LoopbackRuntimeInvoker;
@@ -334,6 +335,9 @@ pub(crate) struct PersistentFunctionAudit {
     store: AuditStore,
     redactor: TelemetryRedactor,
     healthy: AtomicBool,
+    /// Every invocation passes through this sink, so it is also where the
+    /// invocation becomes reportable usage.
+    telemetry: Arc<TelemetryEmitter>,
 }
 
 impl PersistentFunctionAudit {
@@ -355,6 +359,19 @@ impl FunctionInvocationAuditSink for PersistentFunctionAudit {
             },
             FunctionInvocationActor::PublicWebhook => ActorIdentity::Anonymous,
         };
+        // Only an admitted invocation ran, so only that is charged as usage.
+        // A throttled or rejected one is still audited below.
+        if matches!(event.outcome, FunctionInvocationAuditOutcome::Admitted) {
+            self.telemetry.record(mako_api::ObservabilityRecord {
+                tenant: context.tenant.clone(),
+                timestamp_unix_milliseconds: now_unix_seconds().max(1).saturating_mul(1_000),
+                payload: mako_api::ObservabilityPayload::Usage {
+                    resource: mako_api::QuotaResource::EdgeInvocationsPerMonth,
+                    quantity: 1,
+                    unit: "invocations".to_owned(),
+                },
+            });
+        }
         let outcome = match event.outcome {
             FunctionInvocationAuditOutcome::Admitted => AuditOutcome::Allowed,
             FunctionInvocationAuditOutcome::Throttled
@@ -434,9 +451,15 @@ pub struct EdgeGatewayGraph {
     data_client: EdgeToDataClient,
     control_client: EdgeToControlClient,
     region: String,
+    telemetry: Arc<TelemetryEmitter>,
 }
 
 impl EdgeGatewayGraph {
+    #[must_use]
+    pub fn telemetry(&self) -> &Arc<TelemetryEmitter> {
+        &self.telemetry
+    }
+
     pub fn open(config: &ServiceConfig) -> Result<Self, EdgeGatewayGraphError> {
         if config.service != ServiceKind::EdgeGateway {
             return Err(EdgeGatewayGraphError::WrongService);
@@ -497,14 +520,21 @@ impl EdgeGatewayGraph {
                 )),
             },
         )?;
+        let telemetry = Arc::new(TelemetryEmitter::new(
+            config.telemetry_query_address,
+            secret.expose_secret(),
+            "mako.edge-gateway",
+        ));
         let audit = Arc::new(PersistentFunctionAudit {
             store: audit_store,
             redactor: TelemetryRedactor::new([secret.expose_secret()])?,
             healthy: AtomicBool::new(true),
+            telemetry: Arc::clone(&telemetry),
         });
         Ok(Self {
             _storage: storage,
             adapter,
+            telemetry,
             routes: PrivateRouteResolver::new(control_client.clone(), config.region.clone()),
             tokens: PrivateTokenVerifier {
                 client: data_client.clone(),
@@ -777,6 +807,61 @@ mod tests {
             },
             outcome: FunctionInvocationAuditOutcome::Admitted,
         });
+        assert!(graph.audit.healthy());
+    }
+
+    /// Invocations are what an edge platform bills for, and the audit sink is
+    /// the one place every invocation passes through. Only an invocation that
+    /// actually ran may be charged.
+    #[test]
+    fn only_an_admitted_invocation_is_reported_as_usage() {
+        let directory = local_tempdir("edge-gateway-invocation-usage");
+        let config = config_for(directory.path(), DeploymentEnvironment::Local);
+        let graph = EdgeGatewayGraph::open(&config).expect("edge graph");
+        let tenant = TenantScope::new(
+            ProjectId::parse("prj_d2b2dcc3f5acbcc2105200bafbde2134".to_owned()).expect("project"),
+            EnvironmentId::parse("env_4cfece7ecdaeba1f83064208c1cd84d6".to_owned())
+                .expect("environment"),
+        );
+        let event = |outcome| FunctionInvocationAuditEvent {
+            context: mako_edge_gateway::FunctionInvocationAuditContext {
+                tenant: tenant.clone(),
+                organization_id: "org_74d122b2a75fbf4f9fe389f62156f0e9".to_owned(),
+                function_name: "qualification-stream".to_owned(),
+                version: 1,
+                region: "us-east-1-beta".to_owned(),
+                regional_failover: false,
+                request_id: "req_0123456789abcdef01234567".to_owned(),
+                trace_id: "trc_4bf92f3577b34da6a3ce929d0e0e4736".to_owned(),
+                actor: FunctionInvocationActor::PublicWebhook,
+            },
+            outcome,
+        };
+
+        assert_eq!(graph.telemetry().buffered(), 0);
+        graph
+            .audit
+            .record(event(FunctionInvocationAuditOutcome::Admitted));
+        assert_eq!(
+            graph.telemetry().buffered(),
+            1,
+            "an admitted invocation was not reported as usage"
+        );
+
+        // A caller that was turned away did not run anything, so charging for
+        // it would bill a tenant for work the platform refused to do.
+        for refused in [
+            FunctionInvocationAuditOutcome::Throttled,
+            FunctionInvocationAuditOutcome::QuotaRejected,
+            FunctionInvocationAuditOutcome::RuntimeRejected,
+        ] {
+            graph.audit.record(event(refused));
+        }
+        assert_eq!(
+            graph.telemetry().buffered(),
+            1,
+            "an invocation that never ran was reported as usage"
+        );
         assert!(graph.audit.healthy());
     }
 

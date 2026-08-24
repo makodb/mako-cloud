@@ -1,0 +1,13 @@
+[package]
+name = "mako-telemetry-client"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+mako-api = { path = "../mako-api" }
+serde_json.workspace = true
+
+[lints]
+workspace = true

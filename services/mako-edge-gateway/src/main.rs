@@ -2,7 +2,15 @@
 
 #![forbid(unsafe_code)]
 
-use std::process::ExitCode;
+use std::{
+    process::ExitCode,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    thread,
+    time::Duration,
+};
 
 use mako_config::{ServiceConfig, ServiceKind};
 use mako_service_runtime::{HttpTransportConfig, serve_http_transport_with_readiness};
@@ -48,7 +56,27 @@ fn start(service: ServiceKind) -> ExitCode {
                 .unwrap_or(16 * 1024 * 1024)
                 .min(16 * 1024 * 1024);
             transport.shutdown_grace = config.shutdown_grace;
-            match serve_http_transport_with_readiness(transport, router, graph) {
+            // Invocations are recorded on the request path and shipped here,
+            // so a telemetry outage costs reporting rather than availability.
+            let stopping = Arc::new(AtomicBool::new(false));
+            let telemetry_worker = {
+                let stopping = Arc::clone(&stopping);
+                let emitter = Arc::clone(graph.telemetry());
+                thread::spawn(move || {
+                    while !stopping.load(Ordering::Acquire) {
+                        while emitter.flush_once() > 0 {}
+                        thread::park_timeout(Duration::from_secs(2));
+                    }
+                    while emitter.flush_once() > 0 {}
+                })
+            };
+            let served = serve_http_transport_with_readiness(transport, router, graph);
+            stopping.store(true, Ordering::Release);
+            telemetry_worker.thread().unpark();
+            if telemetry_worker.join().is_err() {
+                eprintln!("telemetry worker did not stop");
+            }
+            match served {
                 Ok(()) => ExitCode::SUCCESS,
                 Err(error) => {
                     eprintln!("service runtime failed: {error}");

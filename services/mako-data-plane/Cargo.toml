@@ -15,6 +15,7 @@ base64.workspace = true
 blake3.workspace = true
 futures.workspace = true
 mako-api = { path = "../../crates/mako-api" }
+mako-telemetry-client = { path = "../../crates/mako-telemetry-client" }
 mako-audit = { path = "../../crates/mako-audit" }
 mako-config = { path = "../../crates/mako-config" }
 mako-documents = { path = "../../crates/mako-documents" }

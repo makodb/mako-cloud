@@ -127,7 +127,7 @@ impl StorageOwner {
 
 struct DataPlaneComponents {
     documents: DocumentEngine,
-    telemetry: Arc<crate::telemetry::TelemetryEmitter>,
+    telemetry: Arc<mako_telemetry_client::TelemetryEmitter>,
     storage_sampler: Arc<crate::telemetry::StorageSampler>,
     quotas: Arc<GatewayQuotaEngine>,
     quota_policy: GatewayQuotaPolicy,
@@ -289,7 +289,7 @@ impl DataPlaneGraph {
                 // The telemetry store has an ingest endpoint that nothing has
                 // ever called, which is why every signal the management API
                 // serves from it answers empty. This is the emitting side.
-                telemetry: Arc::new(crate::telemetry::TelemetryEmitter::new(
+                telemetry: Arc::new(mako_telemetry_client::TelemetryEmitter::new(
                     config.telemetry_query_address,
                     secret.expose_secret(),
                     "mako.data-plane",
@@ -328,7 +328,7 @@ impl DataPlaneGraph {
     }
 
     #[must_use]
-    pub fn telemetry(&self) -> &Arc<crate::telemetry::TelemetryEmitter> {
+    pub fn telemetry(&self) -> &Arc<mako_telemetry_client::TelemetryEmitter> {
         &self.components.telemetry
     }
 

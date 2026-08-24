@@ -1182,6 +1182,7 @@ dependencies = [
  "mako-service-runtime",
  "mako-storage",
  "mako-sync",
+ "mako-telemetry-client",
  "serde",
  "serde_json",
  "tempfile",
@@ -1233,6 +1234,7 @@ dependencies = [
  "mako-internal-rpc",
  "mako-service-runtime",
  "mako-storage",
+ "mako-telemetry-client",
  "rand_core 0.6.4",
  "serde",
  "serde_json",
@@ -1447,6 +1449,14 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+]
+
+[[package]]
+name = "mako-telemetry-client"
+version = "0.1.0"
+dependencies = [
+ "mako-api",
+ "serde_json",
 ]
 
 [[package]]
