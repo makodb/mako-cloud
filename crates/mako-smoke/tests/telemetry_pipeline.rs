@@ -1,4 +1,4 @@
-//! Prove an observed event reaches the management API.
+//! Prove observed work reaches the management API.
 //!
 //! The telemetry store has always had an ingest endpoint and nothing has ever
 //! called it, so `queryAuthenticationEvents`, `queryProjectLogs`,
@@ -26,12 +26,13 @@ const DEVELOPER_ID: &str = "dev_localboot";
 const DEVELOPER_EMAIL: &str = "developer@local.test";
 const PROJECT_ID: &str = "prj_localboot";
 const ENVIRONMENT_ID: &str = "env_localboot";
+const COLLECTION_ID: &str = "todos";
 const APP_EMAIL: &str = "telemetry-user@local.test";
 const APP_PASSWORD: &str = "TelemetryUserPass1!";
 const DELIVERY_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[test]
-fn an_observed_authentication_event_reaches_the_management_api() {
+fn observed_events_and_usage_reach_the_management_api() {
     let binaries = binary_directory();
     let workspace = tempfile::Builder::new()
         .prefix("mako-telemetry-")
@@ -171,43 +172,81 @@ fn an_observed_authentication_event_reaches_the_management_api() {
         "sign-in failed with {status}: {body}"
     );
 
+    // Replication is metered, so serving it must also report usage.
+    let session_response: Value = serde_json::from_str(&body).expect("sign-in reports json");
+    let access = session_response["accessToken"]
+        .as_str()
+        .expect("sign-in issues an access token")
+        .to_owned();
+    let mut replicating = keyed.clone();
+    replicating.insert("authorization".to_owned(), format!("Bearer {access}"));
+    let (status, body) = request(
+        data_port,
+        "POST",
+        &format!("{scope}/collections/{COLLECTION_ID}/replication/pull"),
+        &replicating,
+        Some(&json!({ "schemaVersion": 1, "batchSize": 10 })),
+    );
+    assert!(
+        (200..300).contains(&status),
+        "replication pull failed with {status}: {body}"
+    );
+
     // --- The developer reads it back through the management API. -----------
 
     let session =
         mint_developer_session(&binaries, root, control_port, DEVELOPER_ID, DEVELOPER_EMAIL);
     let reading = BTreeMap::from([("authorization".to_owned(), format!("Bearer {session}"))]);
-    let path = format!("{scope}/observability/auth-events?limit=50");
+    // Each signal names something only this test could have produced, so a
+    // page that merely arrives is not mistaken for the record being reported.
+    for (signal, described, marker) in [
+        ("auth-events", "authentication event", "application_signin"),
+        (
+            "usage",
+            "replication usage record",
+            "replication_requests_per_minute",
+        ),
+    ] {
+        await_signal(
+            control_port,
+            &reading,
+            &format!("{scope}/observability/{signal}?limit=50"),
+            described,
+            marker,
+        );
+    }
+}
 
+/// Poll one observability signal until a record arrives.
+fn await_signal(
+    control_port: u16,
+    reading: &BTreeMap<String, String>,
+    path: &str,
+    described: &str,
+    marker: &str,
+) {
     let deadline = Instant::now() + DELIVERY_TIMEOUT;
     // Assigned on every path that reaches the deadline check.
     let mut last;
     loop {
-        let (status, body) = request(control_port, "GET", &path, &reading, None);
+        let (status, body) = request(control_port, "GET", path, reading, None);
         if status == 200 {
-            let page: Value = serde_json::from_str(&body).expect("observability page");
-            let items = page["items"].as_array().map_or(0, Vec::len);
-            if items > 0 {
-                // The record has to be the one this test caused, not any record.
-                let carries_auth = page["items"].as_array().is_some_and(|items| {
-                    items.iter().any(|item| {
-                        item["payload"]["signal"] == "authentication_event"
-                            || item["payload"].get("category").is_some()
-                    })
-                });
-                assert!(
-                    carries_auth,
-                    "the page carries no authentication event: {body}"
-                );
+            // The response has to be a well-formed page before its contents
+            // mean anything.
+            serde_json::from_str::<Value>(&body).expect("observability page");
+            // Delivery is batched, so a page can arrive carrying earlier
+            // records before the one this test is waiting for. Keep polling
+            // until the marker shows up rather than judging the first page.
+            if body.contains(marker) {
                 return;
             }
-            last = format!("page was empty: {body}");
+            last = format!("page has not carried {marker} yet: {body}");
         } else {
             last = format!("status {status}: {body}");
         }
         assert!(
             Instant::now() < deadline,
-            "no authentication event reached the management API within {DELIVERY_TIMEOUT:?} ({})",
-            last
+            "no {described} reached the management API within {DELIVERY_TIMEOUT:?} ({last})"
         );
         sleep(Duration::from_millis(500));
     }

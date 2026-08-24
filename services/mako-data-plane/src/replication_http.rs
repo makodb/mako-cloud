@@ -436,7 +436,7 @@ async fn authorize(
         metadata,
     )
     .with_request_id(request.request_id());
-    graph
+    let authorized = graph
         .authorize_replication(tenant, gateway_request)
         .await
         .map_err(|error| match error {
@@ -447,7 +447,35 @@ async fn authorize(
                 let envelope = error.api_error().clone();
                 HttpApiError::from_envelope(status_for(envelope.error.code), envelope)
             }
-        })
+        })?;
+
+    // Authorization is where replication is metered, so it is also where the
+    // work becomes reportable. Only what the gateway actually charged for is
+    // emitted, and only resources the product vocabulary already names.
+    let observed_at = now.saturating_mul(1_000);
+    for (resource, quantity, unit) in [
+        (
+            mako_api::QuotaResource::ReplicationRequestsPerMinute,
+            1,
+            "requests",
+        ),
+        (
+            mako_api::QuotaResource::ReplicationBytesPerMonth,
+            request_bytes.get(),
+            "bytes",
+        ),
+    ] {
+        graph.telemetry().record(mako_api::ObservabilityRecord {
+            tenant: tenant.clone(),
+            timestamp_unix_milliseconds: observed_at,
+            payload: mako_api::ObservabilityPayload::Usage {
+                resource,
+                quantity,
+                unit: unit.to_owned(),
+            },
+        });
+    }
+    Ok(authorized)
 }
 
 fn live_request(request: &HttpRequest) -> Result<LiveStreamRequest, HttpApiError> {
