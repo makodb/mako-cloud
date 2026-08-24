@@ -14,9 +14,9 @@ use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
 
 use crate::{
     AdapterCapabilities, AtomicWrite, Capability, CompareAndWriteResult, Durability, HealthReport,
-    HealthStatus, KeyCondition, KeyValue, KvAdapter, KvSnapshot, KvTransaction, ScanDirection,
-    ScanRequest, SnapshotId, StorageError, StorageErrorKind, StorageResult, TransactionMode,
-    WriteBatch, WriteOperation,
+    HealthStatus, KeyCondition, KeyRange, KeyValue, KvAdapter, KvSnapshot, KvTransaction,
+    ScanDirection, ScanRequest, SnapshotId, StorageError, StorageErrorKind, StorageResult,
+    TransactionMode, WriteBatch, WriteOperation,
 };
 
 pub const CONTROL_SQLITE_FORMAT_VERSION: u32 = 1;
@@ -702,6 +702,26 @@ impl KvAdapter for SqliteAdapter {
             _transaction_guard: transaction_guard,
             _operation: operation,
         }))
+    }
+
+    async fn stored_bytes(&self, range: KeyRange) -> StorageResult<u64> {
+        // SQLite has no size estimate for a key range, so this sums the stored
+        // lengths. Bounded by the range the caller asks for, which is one
+        // tenant rather than the whole database.
+        let _operation = self.begin_operation("stored_bytes")?;
+        let connection = self.open_connection(false)?;
+        let mut statement = connection
+            .prepare(
+                "SELECT COALESCE(SUM(LENGTH(key) + LENGTH(value)), 0) FROM mako_kv \
+                 WHERE key >= ?1 AND key < ?2",
+            )
+            .map_err(|_| sqlite_io_error("stored_bytes", "stored size could not be read"))?;
+        let total: i64 = statement
+            .query_row((&range.start_inclusive, &range.end_exclusive), |row| {
+                row.get(0)
+            })
+            .map_err(|_| sqlite_io_error("stored_bytes", "stored size could not be read"))?;
+        Ok(u64::try_from(total).unwrap_or(0))
     }
 
     async fn health(&self) -> StorageResult<HealthReport> {

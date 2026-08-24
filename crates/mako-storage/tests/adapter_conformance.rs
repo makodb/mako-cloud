@@ -3,10 +3,10 @@ use std::{fs, num::NonZeroUsize, path::PathBuf, sync::Arc, time::Duration};
 use async_trait::async_trait;
 use futures::executor::block_on;
 use mako_storage::{
-    ConformanceCheck, ConformanceFactory, Durability, KvAdapter, MemoryAdapter, ProductionRocksDb,
-    ProductionRocksDbConfig, ProductionVolumeIdentity, RocksDbAdapter, RocksDbConfig,
-    SqliteAdapter, SqliteConfig, StorageResult, provision_production_volume,
-    run_adapter_conformance,
+    ConformanceCheck, ConformanceFactory, Durability, KeyRange, KvAdapter, MemoryAdapter,
+    ProductionRocksDb, ProductionRocksDbConfig, ProductionVolumeIdentity, RocksDbAdapter,
+    RocksDbConfig, SqliteAdapter, SqliteConfig, StorageResult, WriteBatch,
+    provision_production_volume, run_adapter_conformance,
 };
 use tempfile::TempDir;
 
@@ -174,4 +174,71 @@ fn production_rocksdb_configuration_passes_every_conformance_check() {
         report.adapter_capabilities.strongest_durability,
         Durability::Sync
     );
+}
+
+/// Stored size has to mean the same thing on every engine, because a tenant
+/// billed for it must not owe a different amount depending on which one served
+/// them. RocksDB's own size estimate does not satisfy that -- it reads table
+/// statistics that exclude the memtable and reported zero for the data below --
+/// so every adapter sums the range and every adapter must agree.
+#[test]
+fn every_adapter_scopes_stored_size_to_the_requested_range() {
+    block_on(async {
+        let memory = TempDir::new().expect("temporary directory");
+        let rocks = TempDir::new().expect("temporary directory");
+        let sqlite = TempDir::new().expect("temporary directory");
+        let factories: Vec<(&str, Box<dyn ConformanceFactory>)> = vec![
+            ("memory", Box::new(MemoryFactory)),
+            (
+                "rocksdb",
+                Box::new(RocksFactory {
+                    path: rocks.path().join("db"),
+                }),
+            ),
+            (
+                "sqlite",
+                Box::new(SqliteFactory {
+                    path: sqlite.path().join("control.sqlite3"),
+                }),
+            ),
+        ];
+        let _ = memory;
+
+        for (name, factory) in factories {
+            let adapter = factory.open().await.expect("adapter opens");
+            let mut batch = WriteBatch::new();
+            for index in 0..64 {
+                batch.put(format!("tenant-a/{index:04}").into_bytes(), vec![b'x'; 512]);
+            }
+            adapter
+                .write(batch, Durability::Memory)
+                .await
+                .expect("write");
+
+            let occupied = adapter
+                .stored_bytes(
+                    KeyRange::new(b"tenant-a/".to_vec(), b"tenant-a0".to_vec()).expect("range"),
+                )
+                .await
+                .unwrap_or_else(|_| panic!("{name} could not report stored size"));
+            let elsewhere = adapter
+                .stored_bytes(
+                    KeyRange::new(b"tenant-z/".to_vec(), b"tenant-z0".to_vec()).expect("range"),
+                )
+                .await
+                .unwrap_or_else(|_| panic!("{name} could not report stored size"));
+
+            assert_eq!(
+                elsewhere, 0,
+                "{name} reported stored bytes for a range holding nothing"
+            );
+            let expected: u64 = (0..64)
+                .map(|index| (format!("tenant-a/{index:04}").len() + 512) as u64)
+                .sum();
+            assert_eq!(
+                occupied, expected,
+                "{name} disagrees with the other engines about stored size"
+            );
+        }
+    });
 }

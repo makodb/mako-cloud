@@ -20,9 +20,9 @@ use rocksdb::{
 
 use crate::{
     AdapterCapabilities, AtomicWrite, Capability, CompareAndWriteResult, Durability, HealthReport,
-    HealthStatus, KeyCondition, KeyValue, KvAdapter, KvSnapshot, KvTransaction, ScanDirection,
-    ScanRequest, SnapshotId, StorageError, StorageErrorKind, StorageResult, TransactionMode,
-    WriteBatch, WriteOperation,
+    HealthStatus, KeyCondition, KeyRange, KeyValue, KvAdapter, KvSnapshot, KvTransaction,
+    ScanDirection, ScanRequest, SnapshotId, StorageError, StorageErrorKind, StorageResult,
+    TransactionMode, WriteBatch, WriteOperation,
 };
 
 const DEFAULT_MAXIMUM_BATCH_OPERATIONS: usize = 10_000;
@@ -356,6 +356,38 @@ impl KvAdapter for RocksDbAdapter {
             "begin_transaction",
             "local adapter exposes atomic compare-and-write transactions",
         ))
+    }
+
+    async fn stored_bytes(&self, range: KeyRange) -> StorageResult<u64> {
+        // get_approximate_sizes was the obvious answer and is the wrong one: it
+        // reads table statistics that exclude the memtable, so it reported zero
+        // for thirty-two kilobytes of freshly written data. A tenant would be
+        // measured as holding nothing until a flush happened to occur.
+        //
+        // So this walks the range instead. It is the reason this is a sampled
+        // measurement rather than one taken per request.
+        let mut options = ReadOptions::default();
+        options.set_iterate_lower_bound(range.start_inclusive.clone());
+        options.set_iterate_upper_bound(range.end_exclusive.clone());
+        let mut iterator = self.db.raw_iterator_opt(options);
+        iterator.seek(&range.start_inclusive);
+        let mut total: u64 = 0;
+        while iterator.valid() {
+            if let (Some(key), Some(value)) = (iterator.key(), iterator.value()) {
+                total = total
+                    .saturating_add(u64::try_from(key.len() + value.len()).unwrap_or(u64::MAX));
+            }
+            iterator.next();
+        }
+        iterator.status().map_err(|_| {
+            StorageError::new(
+                StorageErrorKind::Unavailable,
+                "stored_bytes",
+                true,
+                "stored size could not be read",
+            )
+        })?;
+        Ok(total)
     }
 
     async fn health(&self) -> StorageResult<HealthReport> {

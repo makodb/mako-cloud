@@ -450,3 +450,45 @@ proptest! {
         );
     }
 }
+
+/// The control database answers stored size by summing the range, because
+/// SQLite has no estimate to ask for. What matters is that it is scoped to the
+/// range and not the whole database.
+#[test]
+fn stored_bytes_is_scoped_to_the_requested_range() {
+    block_on(async {
+        let directory = TempDir::new().expect("temporary directory");
+        let adapter = SqliteAdapter::open(config(&directory)).expect("open SQLite");
+
+        let mut batch = WriteBatch::new();
+        batch.put(b"tenant-a/one", b"payload");
+        batch.put(b"tenant-b/one", b"much larger payload");
+        adapter.write(batch, Durability::Sync).await.expect("write");
+
+        let a = adapter
+            .stored_bytes(
+                KeyRange::new(b"tenant-a/".to_vec(), b"tenant-a0".to_vec()).expect("range"),
+            )
+            .await
+            .expect("size");
+        let b = adapter
+            .stored_bytes(
+                KeyRange::new(b"tenant-b/".to_vec(), b"tenant-b0".to_vec()).expect("range"),
+            )
+            .await
+            .expect("size");
+        let empty = adapter
+            .stored_bytes(
+                KeyRange::new(b"tenant-c/".to_vec(), b"tenant-c0".to_vec()).expect("range"),
+            )
+            .await
+            .expect("size");
+
+        assert_eq!(a, (b"tenant-a/one".len() + b"payload".len()) as u64);
+        assert_eq!(
+            b,
+            (b"tenant-b/one".len() + b"much larger payload".len()) as u64
+        );
+        assert_eq!(empty, 0, "a range holding nothing reported stored bytes");
+    });
+}

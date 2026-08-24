@@ -9,9 +9,9 @@ use async_trait::async_trait;
 
 use crate::{
     AdapterCapabilities, AtomicWrite, Capability, CompareAndWriteResult, Durability, HealthReport,
-    HealthStatus, KeyCondition, KeyValue, KvAdapter, KvSnapshot, KvTransaction, ScanDirection,
-    ScanRequest, SnapshotId, StorageError, StorageErrorKind, StorageResult, TransactionMode,
-    WriteBatch, WriteOperation,
+    HealthStatus, KeyCondition, KeyRange, KeyValue, KvAdapter, KvSnapshot, KvTransaction,
+    ScanDirection, ScanRequest, SnapshotId, StorageError, StorageErrorKind, StorageResult,
+    TransactionMode, WriteBatch, WriteOperation,
 };
 
 const DEFAULT_MAXIMUM_BATCH_OPERATIONS: usize = 10_000;
@@ -272,6 +272,18 @@ impl KvAdapter for MemoryAdapter {
         }))
     }
 
+    async fn stored_bytes(&self, range: KeyRange) -> StorageResult<u64> {
+        // Exact here, which still satisfies "approximate": this adapter holds
+        // everything in memory, so summing the range costs no more than a scan
+        // the caller would otherwise write itself.
+        let state = self.state.read().map_err(|_| lock_error("stored_bytes"))?;
+        Ok(state
+            .values
+            .range(range.start_inclusive.clone()..range.end_exclusive.clone())
+            .map(|(key, value)| u64::try_from(key.len() + value.len()).unwrap_or(u64::MAX))
+            .sum())
+    }
+
     async fn health(&self) -> StorageResult<HealthReport> {
         self.maybe_fail(FailurePoint::BeforeHealth)?;
         let _guard = self.state.read().map_err(|_| lock_error("health"))?;
@@ -495,6 +507,54 @@ mod tests {
             direction,
             NonZeroUsize::new(10).expect("non-zero"),
         )
+    }
+
+    #[test]
+    fn stored_bytes_counts_only_the_requested_range() {
+        block_on(async {
+            let adapter = MemoryAdapter::new();
+            adapter
+                .write(put(b"tenant-a/one", b"payload"), Durability::Memory)
+                .await
+                .expect("write");
+            adapter
+                .write(
+                    put(b"tenant-b/one", b"much larger payload"),
+                    Durability::Memory,
+                )
+                .await
+                .expect("write");
+
+            let a = adapter
+                .stored_bytes(
+                    KeyRange::new(b"tenant-a/".to_vec(), b"tenant-a0".to_vec()).expect("range"),
+                )
+                .await
+                .expect("size");
+            let b = adapter
+                .stored_bytes(
+                    KeyRange::new(b"tenant-b/".to_vec(), b"tenant-b0".to_vec()).expect("range"),
+                )
+                .await
+                .expect("size");
+
+            // One tenant's stored size must not include another's, which is
+            // the whole reason this is asked per range rather than per database.
+            assert_eq!(a, (b"tenant-a/one".len() + b"payload".len()) as u64);
+            assert_eq!(
+                b,
+                (b"tenant-b/one".len() + b"much larger payload".len()) as u64
+            );
+            assert!(b > a);
+
+            let empty = adapter
+                .stored_bytes(
+                    KeyRange::new(b"tenant-c/".to_vec(), b"tenant-c0".to_vec()).expect("range"),
+                )
+                .await
+                .expect("size");
+            assert_eq!(empty, 0, "a range holding nothing reported stored bytes");
+        });
     }
 
     fn put(key: &[u8], value: &[u8]) -> WriteBatch {

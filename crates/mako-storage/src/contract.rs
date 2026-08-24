@@ -378,6 +378,20 @@ pub trait KvAdapter: Send + Sync {
         mode: TransactionMode,
     ) -> StorageResult<Box<dyn KvTransaction>>;
 
+    /// Stored bytes held in a half-open key range.
+    ///
+    /// Sums the stored length of every entry in the range, so it walks it. That
+    /// is the reason this is a sampled measurement rather than one taken per
+    /// request, and the reason the range should be one tenant rather than a
+    /// whole database.
+    ///
+    /// RocksDB's own size estimate was tried first and is not usable for this:
+    /// it reads table statistics that exclude the memtable, so it reported zero
+    /// for thirty-two kilobytes of freshly written data. Every engine sums, so
+    /// every engine agrees -- which matters when the number is what a tenant is
+    /// billed on.
+    async fn stored_bytes(&self, range: KeyRange) -> StorageResult<u64>;
+
     async fn health(&self) -> StorageResult<HealthReport>;
 
     fn capabilities(&self) -> AdapterCapabilities;
