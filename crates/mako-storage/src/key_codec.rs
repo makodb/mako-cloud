@@ -83,6 +83,15 @@ impl TenantKeyspace {
         })
     }
 
+    /// Every key this tenant owns, as one half-open range.
+    ///
+    /// Tenant separation is enforced by the encoded prefix, so this is what
+    /// makes "how much does this tenant store" answerable without reading
+    /// another tenant's keys.
+    pub fn tenant_range(&self) -> Result<KeyRange, KeyCodecError> {
+        prefix_range(&self.prefix)
+    }
+
     #[must_use]
     pub fn project(&self) -> &[u8] {
         &self.project

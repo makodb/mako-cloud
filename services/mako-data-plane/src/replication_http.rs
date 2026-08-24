@@ -449,6 +449,11 @@ async fn authorize(
             }
         })?;
 
+    // A push changes stored size; a pull does not.
+    if matches!(operation, ReplicationOperation::Push) {
+        graph.storage_sampler().mark(tenant);
+    }
+
     // Authorization is where replication is metered, so it is also where the
     // work becomes reportable. Only what the gateway actually charged for is
     // emitted, and only resources the product vocabulary already names.

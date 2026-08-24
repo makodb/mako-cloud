@@ -128,6 +128,7 @@ impl StorageOwner {
 struct DataPlaneComponents {
     documents: DocumentEngine,
     telemetry: Arc<crate::telemetry::TelemetryEmitter>,
+    storage_sampler: Arc<crate::telemetry::StorageSampler>,
     quotas: Arc<GatewayQuotaEngine>,
     quota_policy: GatewayQuotaPolicy,
     audit: AuditStore,
@@ -293,6 +294,7 @@ impl DataPlaneGraph {
                     secret.expose_secret(),
                     "mako.data-plane",
                 )),
+                storage_sampler: Arc::new(crate::telemetry::StorageSampler::new()),
                 documents,
                 quotas,
                 quota_policy,
@@ -328,6 +330,16 @@ impl DataPlaneGraph {
     #[must_use]
     pub fn telemetry(&self) -> &Arc<crate::telemetry::TelemetryEmitter> {
         &self.components.telemetry
+    }
+
+    #[must_use]
+    pub fn storage_adapter(&self) -> &Arc<dyn KvAdapter> {
+        &self.adapter
+    }
+
+    #[must_use]
+    pub fn storage_sampler(&self) -> &Arc<crate::telemetry::StorageSampler> {
+        &self.components.storage_sampler
     }
 
     #[must_use]

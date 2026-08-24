@@ -18,6 +18,14 @@ use mako_service_runtime::{
     HttpTransportConfig, ReadinessProbe, serve_http_transport_with_readiness,
 };
 
+/// Seconds since the epoch, or zero if the clock is before it.
+fn now_unix_seconds() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_secs())
+        .unwrap_or_default()
+}
+
 fn main() -> ExitCode {
     start(ServiceKind::DataPlane)
 }
@@ -64,8 +72,14 @@ fn start(service: ServiceKind) -> ExitCode {
             let telemetry_worker = {
                 let stopping = Arc::clone(&stopping);
                 let emitter = Arc::clone(graph.telemetry());
+                let sampler = Arc::clone(graph.storage_sampler());
+                let adapter = Arc::clone(graph.storage_adapter());
                 thread::spawn(move || {
                     while !stopping.load(Ordering::Acquire) {
+                        // Stored size is measured here rather than on the
+                        // write that changed it, because measuring walks the
+                        // tenant's range.
+                        block_on(sampler.sample_due(&adapter, &emitter, now_unix_seconds()));
                         while emitter.flush_once() > 0 {}
                         thread::park_timeout(Duration::from_secs(2));
                     }

@@ -192,6 +192,36 @@ fn observed_events_and_usage_reach_the_management_api() {
         "replication pull failed with {status}: {body}"
     );
 
+    // A push changes stored size, which is what makes the tenant due for a
+    // measurement. Nothing else in this test would produce one.
+    let mut pushing = replicating.clone();
+    pushing.insert(
+        "idempotency-key".to_owned(),
+        "telemetry-push-000001".to_owned(),
+    );
+    let (status, body) = request(
+        data_port,
+        "POST",
+        &format!("{scope}/collections/{COLLECTION_ID}/replication/push"),
+        &pushing,
+        Some(&json!({
+            "schemaVersion": 1,
+            "rows": [{
+                "mutationId": "telemetry-mutation-000001",
+                "newDocumentState": {
+                    "id": "telemetry-1",
+                    "ownerId": "telemetry-user",
+                    "title": "stored so the tenant has a size",
+                    "updatedAt": 1,
+                },
+            }],
+        })),
+    );
+    assert!(
+        (200..300).contains(&status),
+        "replication push failed with {status}: {body}"
+    );
+
     // --- The developer reads it back through the management API. -----------
 
     let session =
@@ -206,6 +236,7 @@ fn observed_events_and_usage_reach_the_management_api() {
             "replication usage record",
             "replication_requests_per_minute",
         ),
+        ("usage", "stored size sample", "storage_bytes"),
     ] {
         await_signal(
             control_port,
