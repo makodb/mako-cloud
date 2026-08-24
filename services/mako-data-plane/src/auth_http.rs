@@ -123,6 +123,8 @@ fn handle_signup(
                 }
                 _ => unavailable(request, "sign-up is unavailable"),
             })?;
+        // A new user changes the count this tenant is measured on.
+        graph.storage_sampler().mark_users(&tenant);
         append_audit(
             graph,
             &tenant,

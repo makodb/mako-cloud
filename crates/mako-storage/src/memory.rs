@@ -284,6 +284,17 @@ impl KvAdapter for MemoryAdapter {
             .sum())
     }
 
+    async fn count_keys(&self, range: KeyRange) -> StorageResult<u64> {
+        let state = self.state.read().map_err(|_| lock_error("count_keys"))?;
+        Ok(u64::try_from(
+            state
+                .values
+                .range(range.start_inclusive.clone()..range.end_exclusive.clone())
+                .count(),
+        )
+        .unwrap_or(u64::MAX))
+    }
+
     async fn health(&self) -> StorageResult<HealthReport> {
         self.maybe_fail(FailurePoint::BeforeHealth)?;
         let _guard = self.state.read().map_err(|_| lock_error("health"))?;

@@ -392,6 +392,13 @@ pub trait KvAdapter: Send + Sync {
     /// billed on.
     async fn stored_bytes(&self, range: KeyRange) -> StorageResult<u64>;
 
+    /// How many entries a half-open key range holds.
+    ///
+    /// Walks the range for the same reason `stored_bytes` does, and carries the
+    /// same expectation: ask it about one tenant on a schedule, not on a
+    /// request path.
+    async fn count_keys(&self, range: KeyRange) -> StorageResult<u64>;
+
     async fn health(&self) -> StorageResult<HealthReport>;
 
     fn capabilities(&self) -> AdapterCapabilities;

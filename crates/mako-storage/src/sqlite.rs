@@ -724,6 +724,20 @@ impl KvAdapter for SqliteAdapter {
         Ok(u64::try_from(total).unwrap_or(0))
     }
 
+    async fn count_keys(&self, range: KeyRange) -> StorageResult<u64> {
+        let _operation = self.begin_operation("count_keys")?;
+        let connection = self.open_connection(false)?;
+        let mut statement = connection
+            .prepare("SELECT COUNT(*) FROM mako_kv WHERE key >= ?1 AND key < ?2")
+            .map_err(|_| sqlite_io_error("count_keys", "stored count could not be read"))?;
+        let total: i64 = statement
+            .query_row((&range.start_inclusive, &range.end_exclusive), |row| {
+                row.get(0)
+            })
+            .map_err(|_| sqlite_io_error("count_keys", "stored count could not be read"))?;
+        Ok(u64::try_from(total).unwrap_or(0))
+    }
+
     async fn health(&self) -> StorageResult<HealthReport> {
         let started = Instant::now();
         let signals = self.health_signals()?;

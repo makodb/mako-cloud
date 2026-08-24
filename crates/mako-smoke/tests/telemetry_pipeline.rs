@@ -237,6 +237,7 @@ fn observed_events_and_usage_reach_the_management_api() {
             "replication_requests_per_minute",
         ),
         ("usage", "stored size sample", "storage_bytes"),
+        ("usage", "application user count", "application_users"),
     ] {
         await_signal(
             control_port,

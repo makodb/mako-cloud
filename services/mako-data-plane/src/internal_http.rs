@@ -441,7 +441,21 @@ async fn execute_operation(
         | IdentityAdminOperation::RevokeSession
         | IdentityAdminOperation::RevokeAllSessions
         | IdentityAdminOperation::DeleteUser => {
-            execute_user_operation(graph, request, tenant, command, now).await
+            let result = execute_user_operation(graph, request, tenant, command, now).await;
+            // An operation that adds or removes a user changes the count this
+            // tenant is measured on. Marking only on success keeps a rejected
+            // call from scheduling work.
+            if result.is_ok()
+                && matches!(
+                    command.operation,
+                    IdentityAdminOperation::CreateUser
+                        | IdentityAdminOperation::InviteUser
+                        | IdentityAdminOperation::DeleteUser
+                )
+            {
+                graph.storage_sampler().mark_users(tenant);
+            }
+            result
         }
         IdentityAdminOperation::ListProjectCredentials
         | IdentityAdminOperation::InspectProjectCredential

@@ -390,6 +390,28 @@ impl KvAdapter for RocksDbAdapter {
         Ok(total)
     }
 
+    async fn count_keys(&self, range: KeyRange) -> StorageResult<u64> {
+        let mut options = ReadOptions::default();
+        options.set_iterate_lower_bound(range.start_inclusive.clone());
+        options.set_iterate_upper_bound(range.end_exclusive.clone());
+        let mut iterator = self.db.raw_iterator_opt(options);
+        iterator.seek(&range.start_inclusive);
+        let mut total: u64 = 0;
+        while iterator.valid() {
+            total = total.saturating_add(1);
+            iterator.next();
+        }
+        iterator.status().map_err(|_| {
+            StorageError::new(
+                StorageErrorKind::Unavailable,
+                "count_keys",
+                true,
+                "stored count could not be read",
+            )
+        })?;
+        Ok(total)
+    }
+
     async fn health(&self) -> StorageResult<HealthReport> {
         let started = Instant::now();
         self.db

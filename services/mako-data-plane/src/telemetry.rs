@@ -26,9 +26,25 @@ const STORAGE_SAMPLE_INTERVAL: Duration = Duration::from_secs(300);
 /// Bounded so a burst across many tenants cannot grow this without limit.
 const MAX_PENDING_SAMPLES: usize = 4_096;
 
+/// What a tenant can be due to have re-measured.
+///
+/// Both are levels rather than counts of events, so both are sampled rather
+/// than emitted per request, and each is marked by the events that can change
+/// it: writes move stored size, and identity lifecycle moves the user count.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Measurement {
+    StoredBytes,
+    ApplicationUsers,
+}
+
+/// One tenant, identified the way its keyspace is.
+type TenantKey = (String, String);
+/// What is due for a tenant, and when it was noticed.
+type SampleKey = (Measurement, TenantKey);
+
 pub struct StorageSampler {
-    due: Mutex<HashMap<(String, String), Instant>>,
-    last_sampled: Mutex<HashMap<(String, String), Instant>>,
+    due: Mutex<HashMap<SampleKey, Instant>>,
+    last_sampled: Mutex<HashMap<SampleKey, Instant>>,
 }
 
 impl Default for StorageSampler {
@@ -48,7 +64,16 @@ impl StorageSampler {
 
     /// Note that a tenant's stored size may have changed.
     pub fn mark(&self, tenant: &TenantScope) {
-        let key = tenant_key(tenant);
+        self.mark_measurement(Measurement::StoredBytes, tenant);
+    }
+
+    /// Note that a tenant's application-user count may have changed.
+    pub fn mark_users(&self, tenant: &TenantScope) {
+        self.mark_measurement(Measurement::ApplicationUsers, tenant);
+    }
+
+    fn mark_measurement(&self, measurement: Measurement, tenant: &TenantScope) {
+        let key = (measurement, tenant_key(tenant));
         if let Ok(last) = self.last_sampled.lock()
             && last
                 .get(&key)
@@ -65,14 +90,14 @@ impl StorageSampler {
         due.entry(key).or_insert_with(Instant::now);
     }
 
-    fn take_due(&self) -> Vec<(String, String)> {
+    fn take_due(&self) -> Vec<SampleKey> {
         let Ok(mut due) = self.due.lock() else {
             return Vec::new();
         };
         due.drain().map(|(key, _)| key).collect()
     }
 
-    fn record_sampled(&self, key: (String, String)) {
+    fn record_sampled(&self, key: SampleKey) {
         if let Ok(mut last) = self.last_sampled.lock() {
             last.insert(key, Instant::now());
         }
@@ -88,30 +113,43 @@ impl StorageSampler {
     ) -> usize {
         let mut sampled = 0;
         for key in self.take_due() {
-            let Ok(keyspace) = TenantKeyspace::new(key.0.as_bytes(), key.1.as_bytes()) else {
+            let (measurement, tenant) = key.clone();
+            let Ok(keyspace) = TenantKeyspace::new(tenant.0.as_bytes(), tenant.1.as_bytes()) else {
                 continue;
             };
-            let Ok(range) = keyspace.tenant_range() else {
-                continue;
+            let measured = match measurement {
+                Measurement::StoredBytes => match keyspace.tenant_range() {
+                    Ok(range) => adapter.stored_bytes(range).await.ok(),
+                    Err(_) => None,
+                },
+                // One entry per user, so counting the range counts the users.
+                Measurement::ApplicationUsers => match keyspace.normalized_email_owners_range() {
+                    Ok(range) => adapter.count_keys(range).await.ok(),
+                    Err(_) => None,
+                },
             };
-            let Ok(bytes) = adapter.stored_bytes(range).await else {
-                // Leave it unmarked so the next write marks it again rather
-                // than recording a sample that never happened.
+            let Some(quantity) = measured else {
+                // Left unmarked, so the next change marks it again rather than
+                // recording a sample that never happened.
                 continue;
             };
             let (Ok(project), Ok(environment)) = (
-                ProjectId::parse(key.0.clone()),
-                EnvironmentId::parse(key.1.clone()),
+                ProjectId::parse(tenant.0.clone()),
+                EnvironmentId::parse(tenant.1.clone()),
             ) else {
                 continue;
+            };
+            let (resource, unit) = match measurement {
+                Measurement::StoredBytes => (QuotaResource::StorageBytes, "bytes"),
+                Measurement::ApplicationUsers => (QuotaResource::ApplicationUsers, "users"),
             };
             emitter.record(ObservabilityRecord {
                 tenant: TenantScope::new(project, environment),
                 timestamp_unix_milliseconds: now_unix_seconds.saturating_mul(1_000),
                 payload: ObservabilityPayload::Usage {
-                    resource: QuotaResource::StorageBytes,
-                    quantity: bytes,
-                    unit: "bytes".to_owned(),
+                    resource,
+                    quantity,
+                    unit: unit.to_owned(),
                 },
             });
             self.record_sampled(key);
@@ -121,7 +159,7 @@ impl StorageSampler {
     }
 }
 
-fn tenant_key(tenant: &TenantScope) -> (String, String) {
+fn tenant_key(tenant: &TenantScope) -> TenantKey {
     (
         tenant.project_id().as_str().to_owned(),
         tenant.environment_id().as_str().to_owned(),
@@ -149,6 +187,30 @@ mod tests {
             "0123456789abcdef0123456789abcdef",
             "mako.test",
         )
+    }
+
+    #[test]
+    fn stored_size_and_user_count_are_marked_and_sampled_independently() {
+        block_on(async {
+            let adapter: Arc<dyn KvAdapter> = Arc::new(MemoryAdapter::new());
+            let sampler = StorageSampler::new();
+            let emitter = emitter();
+
+            // A write says nothing about how many users a tenant has, and a
+            // signup says nothing about how much it stores, so one must not
+            // schedule the other's measurement.
+            sampler.mark(&tenant());
+            assert_eq!(sampler.sample_due(&adapter, &emitter, 1).await, 1);
+            assert_eq!(emitter.buffered(), 1);
+
+            sampler.mark_users(&tenant());
+            assert_eq!(
+                sampler.sample_due(&adapter, &emitter, 2).await,
+                1,
+                "a user-count change was not measured because storage had just been"
+            );
+            assert_eq!(emitter.buffered(), 2);
+        });
     }
 
     #[test]
