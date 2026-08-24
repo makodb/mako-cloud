@@ -1,85 +1,54 @@
 {
   "schemaVersion": 1,
-  "startedAt": "2026-08-13T16:47:18.579-04:00",
-  "completedAt": "2026-08-13T17:47:18.579-04:00",
+  "startedAt": "2026-08-24T00:25:46.937Z",
+  "completedAt": "2026-08-24T01:56:55.120Z",
   "environment": "public-beta",
   "vmId": 124,
   "address": "130.245.173.11",
   "publicOrigin": "https://cloud-test.makodb.com",
   "planHash": "d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073",
-  "releaseDigest": "a5ccdaabff7d6ef30da512330dab38b60e32ae034f621ee4d4eed2b49e976000",
-  "sourceDigest": "c05ba9d874f211e6d08ed74b75fec3ccea0fba5e7b90f44785b6539b2f3bf5c9",
+  "releaseDigest": "d5e4f15f286c35740f0ba889a4ed1a081df7e9f28c09d8cc384097119ae7fd15",
+  "sourceDigest": "04f2199fb5aadde3f05366e4d5e54890f6db59208aaf3ef241611373bebd14d4",
   "runtimeDigest": "b0e4ea7b66166492c3c29910858dc5d1b7f9786df81aed7057d80f34a1ad2abd",
-  "dependencyDigest": "e470026153038551cc39c37afdca492ad6947f75596bb38ccb456ba1b4c5aef0",
-  "artifactDigest": "2629ebf6b726f18213f1adab901d7869570758c44328143b3c5762e2449f2490",
+  "dependencyDigest": "245c4d15294f7f68f92b02de90d897b79ad5d82734314d86ad792cf3b5fcb0a9",
+  "artifactDigest": "cdd7e06e3298aa9cd9b43df572f7b06a679b040418ea4ca96aabd5a177049ad0",
   "selectedReleaseVerifiedBeforeAndAfter": true,
   "publicAdmissionEnabled": false,
-  "publicAdmissionMode": "pre_gate",
-  "sourceDelta": {
-    "changedFiles": [
-      "crates/mako-storage/src/control_migration.rs",
-      "crates/mako-storage/src/control_sqlite_backup.rs",
-      "crates/mako-storage/tests/control_sqlite_recovery.rs",
-      "infra/ansible/roles/runtime/files/mako-release-operation",
-      "infra/ansible/roles/runtime/tasks/main.yml",
-      "scripts/validate-public-beta-infrastructure.js"
-    ],
-    "validated": true,
-    "runtimeArtifactsUnchanged": false,
-    "serviceConsoleEdgeAndTenantStorageArtifactsUnchanged": true,
-    "controlStorageOperationsQualifiedSeparately": true
-  },
   "suites": [
     {
       "name": "auth",
       "passed": true,
-      "qualificationReleaseDigest": "d2cc7002a8c25555fb1b57cbfd3088d716ad765b19e2fac1c61801354fcedfef",
-      "carriedForwardByIdenticalRuntimeArtifacts": true,
-      "log": ".local/qualification/public-beta-d2cc7002a8c2-auth.log"
+      "log": ".local/qualification/public-beta-d5e4f15f286c-auth.log"
     },
     {
       "name": "policy",
       "passed": true,
-      "qualificationReleaseDigest": "d2cc7002a8c25555fb1b57cbfd3088d716ad765b19e2fac1c61801354fcedfef",
-      "carriedForwardByIdenticalRuntimeArtifacts": true,
-      "log": ".local/qualification/public-beta-d2cc7002a8c2-policy.log"
+      "log": ".local/qualification/public-beta-d5e4f15f286c-policy.log"
     },
     {
       "name": "rxdb-chaos",
       "passed": true,
-      "qualificationReleaseDigest": "d2cc7002a8c25555fb1b57cbfd3088d716ad765b19e2fac1c61801354fcedfef",
-      "carriedForwardByIdenticalRuntimeArtifacts": true,
-      "log": ".local/qualification/public-beta-d2cc7002a8c2-rxdb-chaos.log"
+      "log": ".local/qualification/public-beta-d5e4f15f286c-rxdb-chaos.log"
     },
     {
       "name": "tenant-boundaries",
       "passed": true,
-      "qualificationReleaseDigest": "d2cc7002a8c25555fb1b57cbfd3088d716ad765b19e2fac1c61801354fcedfef",
-      "carriedForwardByIdenticalRuntimeArtifacts": true,
-      "log": ".local/qualification/public-beta-d2cc7002a8c2-tenant-boundaries.log"
+      "log": ".local/qualification/public-beta-d5e4f15f286c-tenant-boundaries.log"
     },
     {
       "name": "edge-runtime",
       "passed": true,
-      "qualificationReleaseDigest": "d2cc7002a8c25555fb1b57cbfd3088d716ad765b19e2fac1c61801354fcedfef",
-      "carriedForwardByIdenticalRuntimeArtifacts": true,
-      "log": ".local/qualification/public-beta-d2cc7002a8c2-edge-runtime.log"
+      "log": ".local/qualification/public-beta-d5e4f15f286c-edge-runtime.log"
     },
     {
       "name": "dependency-pins",
       "passed": true,
-      "qualificationReleaseDigest": "d2cc7002a8c25555fb1b57cbfd3088d716ad765b19e2fac1c61801354fcedfef",
-      "carriedForwardByIdenticalDependencies": true,
-      "log": ".local/qualification/public-beta-d2cc7002a8c2-dependency-pins.log"
+      "log": ".local/qualification/public-beta-d5e4f15f286c-dependency-pins.log"
     },
     {
-      "name": "production-storage",
+      "name": "production-rocksdb",
       "passed": true,
-      "qualificationReleaseDigest": "fc7811e24f02cca05da42df109c129e77ffd2303eba2cf0fc571e0d2cda4570e",
-      "carriedForwardByIdenticalStorageArtifact": true,
-      "soakIterations": 25,
-      "propertyTracesPerSoakCycle": 1,
-      "log": ".local/qualification/public-beta-f215b7d5232c-production-rocksdb-soak25.log"
+      "log": ".local/qualification/public-beta-d5e4f15f286c-production-rocksdb.log"
     }
   ],
   "hostedCompositionProbes": [
@@ -134,5 +103,5 @@
   ],
   "servicesActive": true,
   "passed": true,
-  "scope": "Exact-release storage and composition qualification plus security suites carried forward only across byte-identical runtime, dependency, and artifact digests; the backup-orchestrator-only source delta is identified and separately validated."
+  "scope": "security and durability suites from the exact deployed source plus private loopback composition probes; trusted public HTTPS remains a separate gate"
 }

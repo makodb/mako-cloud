@@ -1,12 +1,14 @@
 use std::{
+    collections::HashMap,
     error::Error,
     fmt,
     net::{IpAddr, Ipv4Addr, SocketAddr},
     num::{NonZeroU64, NonZeroUsize},
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicBool, Ordering},
     },
+    time::{Duration, Instant},
 };
 
 use async_trait::async_trait;
@@ -88,10 +90,123 @@ impl StorageOwner {
     }
 }
 
+/// How long a resolved route may be reused.
+///
+/// Short enough that promoting, rolling back, or retiring a function takes
+/// effect within it, and comfortably inside the ten-second validity stamped
+/// onto regional deployment health.
+const ROUTE_CACHE_TTL: Duration = Duration::from_secs(5);
+/// Bounded so a tenant cannot grow this without limit by invoking many names.
+const ROUTE_CACHE_CAPACITY: usize = 1_024;
+
+/// Keyed by project reference and function name.
+type RouteKey = (String, String);
+/// One resolution gate per function.
+type RouteGates = Arc<Mutex<HashMap<RouteKey, Arc<Mutex<()>>>>>;
+
+#[derive(Clone)]
+struct CachedRoute {
+    resolved_at: Instant,
+    organization_id: String,
+    function_name: String,
+    active_version: u64,
+    selected_regions: Vec<String>,
+    verify_jwt: bool,
+    request_limit_bytes: u64,
+    response_limit_bytes: u64,
+}
+
+/// Resolves a function's routing configuration from the control plane.
+///
+/// Resolution used to run on every single invocation, and the internal-RPC
+/// client opens a fresh TCP connection per call, so sustained function traffic
+/// filled the ephemeral port range with TIME-WAIT sockets until connections
+/// started failing and the gateway answered "function routing is unavailable".
+/// Measured at 64 concurrent invocations, more than half were failing and the
+/// rate worsened with each burst.
+///
+/// Routing configuration changes rarely, so it is cached for a bounded
+/// interval. Nothing secret is cached: the resolution response carries function
+/// secrets, and this deliberately keeps none of them.
 #[derive(Clone)]
 pub(crate) struct PrivateRouteResolver {
     client: EdgeToControlClient,
     region: String,
+    cache: Arc<Mutex<HashMap<RouteKey, CachedRoute>>>,
+    /// One gate per function, so concurrent invocations of the same function
+    /// resolve it once between them instead of all at once.
+    resolving: RouteGates,
+}
+
+impl PrivateRouteResolver {
+    fn new(client: EdgeToControlClient, region: String) -> Self {
+        Self {
+            client,
+            region,
+            cache: Arc::new(Mutex::new(HashMap::new())),
+            resolving: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+
+    fn gate(&self, key: &RouteKey) -> Option<Arc<Mutex<()>>> {
+        let mut resolving = self.resolving.lock().ok()?;
+        if resolving.len() > ROUTE_CACHE_CAPACITY {
+            resolving.retain(|_, gate| Arc::strong_count(gate) > 1);
+        }
+        Some(Arc::clone(
+            resolving
+                .entry(key.clone())
+                .or_insert_with(|| Arc::new(Mutex::new(()))),
+        ))
+    }
+
+    fn cached(&self, key: &RouteKey) -> Option<CachedRoute> {
+        let mut cache = self.cache.lock().ok()?;
+        let entry = cache.get(key)?;
+        if entry.resolved_at.elapsed() > ROUTE_CACHE_TTL {
+            cache.remove(key);
+            return None;
+        }
+        Some(entry.clone())
+    }
+
+    fn remember(&self, key: RouteKey, route: CachedRoute) {
+        let Ok(mut cache) = self.cache.lock() else {
+            return;
+        };
+        if cache.len() >= ROUTE_CACHE_CAPACITY {
+            cache.retain(|_, entry| entry.resolved_at.elapsed() <= ROUTE_CACHE_TTL);
+            if cache.len() >= ROUTE_CACHE_CAPACITY {
+                return;
+            }
+        }
+        cache.insert(key, route);
+    }
+
+    /// Deployment health carries its own validity stamp, so it is rebuilt on
+    /// every hit rather than served from a cached moment in the past.
+    fn route_from(&self, tenant: TenantScope, cached: CachedRoute) -> ResolvedFunctionRoute {
+        let regional_deployments = cached
+            .selected_regions
+            .iter()
+            .map(|region| RegionalDeploymentHealth {
+                region: region.clone(),
+                healthy: region == &self.region,
+                valid_until_unix_seconds: now_unix_seconds().saturating_add(10),
+            })
+            .collect();
+        ResolvedFunctionRoute {
+            tenant,
+            organization_id: cached.organization_id,
+            function_name: cached.function_name,
+            active_version: cached.active_version,
+            selected_regions: cached.selected_regions,
+            regional_deployments,
+            verify_jwt: cached.verify_jwt,
+            request_limit_bytes: cached.request_limit_bytes,
+            response_limit_bytes: cached.response_limit_bytes,
+        }
+    }
 }
 
 #[async_trait]
@@ -102,6 +217,21 @@ impl FunctionRouteResolver for PrivateRouteResolver {
         function_name: &str,
     ) -> Result<Option<ResolvedFunctionRoute>, FunctionRouteError> {
         let tenant = tenant_from_project_ref(project_ref).ok_or(FunctionRouteError::Unavailable)?;
+        let key = (project_ref.to_owned(), function_name.to_owned());
+        if let Some(cached) = self.cached(&key) {
+            return Ok(Some(self.route_from(tenant, cached)));
+        }
+        // A cold entry used to let every concurrent invocation of the same
+        // function resolve it simultaneously. Measured on the public beta, a
+        // burst of 32 identical invocations against an expired entry failed a
+        // third of the time while the same burst against a warm one was clean.
+        // Whichever thread takes this gate resolves once; the rest find the
+        // result already cached when they take their turn.
+        let gate = self.gate(&key);
+        let _resolving = gate.as_ref().map(|gate| gate.lock());
+        if let Some(cached) = self.cached(&key) {
+            return Ok(Some(self.route_from(tenant, cached)));
+        }
         let request_id = internal_request_id("route", project_ref, function_name);
         let response: FunctionSecretResolutionResponse = match self.client.resolve(
             &tenant,
@@ -130,26 +260,18 @@ impl FunctionRouteResolver for PrivateRouteResolver {
         {
             return Err(FunctionRouteError::Unavailable);
         }
-        let regional_deployments = response
-            .selected_regions
-            .iter()
-            .map(|region| RegionalDeploymentHealth {
-                region: region.clone(),
-                healthy: region == &self.region,
-                valid_until_unix_seconds: now_unix_seconds().saturating_add(10),
-            })
-            .collect();
-        Ok(Some(ResolvedFunctionRoute {
-            tenant,
+        let cached = CachedRoute {
+            resolved_at: Instant::now(),
             organization_id,
             function_name: response.function_name,
             active_version: response.version,
             selected_regions: response.selected_regions,
-            regional_deployments,
             verify_jwt: response.verify_jwt,
             request_limit_bytes: response.request_limit_bytes,
             response_limit_bytes: response.response_limit_bytes,
-        }))
+        };
+        self.remember(key, cached.clone());
+        Ok(Some(self.route_from(tenant, cached)))
     }
 }
 
@@ -383,10 +505,7 @@ impl EdgeGatewayGraph {
         Ok(Self {
             _storage: storage,
             adapter,
-            routes: PrivateRouteResolver {
-                client: control_client.clone(),
-                region: config.region.clone(),
-            },
+            routes: PrivateRouteResolver::new(control_client.clone(), config.region.clone()),
             tokens: PrivateTokenVerifier {
                 client: data_client.clone(),
             },
@@ -523,6 +642,61 @@ mod tests {
     use tempfile::{Builder, TempDir};
 
     use super::*;
+
+    /// Resolution ran on every invocation and the internal-RPC client opens a
+    /// connection per call, so sustained function traffic exhausted the
+    /// ephemeral port range and the gateway started answering "function routing
+    /// is unavailable". These are the properties the cache has to hold for that
+    /// not to come back, and for a promotion to still take effect promptly.
+    #[test]
+    fn resolved_routes_are_reused_briefly_and_never_serve_stale_deployment_health() {
+        let directory = local_tempdir("edge-gateway-route-cache");
+        let config = config_for(directory.path(), DeploymentEnvironment::Local);
+        let graph = EdgeGatewayGraph::open(&config).expect("edge graph");
+        let resolver = &graph.routes;
+        let key = (
+            "prj_example00--env_example00".to_owned(),
+            "hello".to_owned(),
+        );
+        let entry = CachedRoute {
+            resolved_at: Instant::now(),
+            organization_id: "org_example00".to_owned(),
+            function_name: "hello".to_owned(),
+            active_version: 7,
+            selected_regions: vec![config.region.clone()],
+            verify_jwt: true,
+            request_limit_bytes: 1_024,
+            response_limit_bytes: 2_048,
+        };
+
+        resolver.remember(key.clone(), entry.clone());
+        let hit = resolver.cached(&key).expect("a fresh entry is reused");
+        assert_eq!(hit.active_version, 7);
+
+        // Deployment health carries its own validity window, so a hit must
+        // stamp a new one rather than replay the moment it was resolved.
+        let tenant = tenant_from_project_ref(&key.0).expect("tenant");
+        let route = resolver.route_from(tenant, hit);
+        assert!(
+            route
+                .regional_deployments
+                .iter()
+                .all(|deployment| deployment.valid_until_unix_seconds > now_unix_seconds()),
+            "a cache hit served deployment health that had already expired"
+        );
+
+        // Past the interval the entry is not reused, so a promotion, rollback,
+        // or retirement takes effect.
+        let stale = CachedRoute {
+            resolved_at: Instant::now() - (ROUTE_CACHE_TTL + Duration::from_secs(1)),
+            ..entry
+        };
+        resolver.remember(key.clone(), stale);
+        assert!(
+            resolver.cached(&key).is_none(),
+            "an entry older than the cache interval was still reused"
+        );
+    }
 
     #[test]
     fn local_graph_registers_only_the_stable_invocation_contract() {

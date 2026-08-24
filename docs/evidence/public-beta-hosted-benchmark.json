@@ -1,13 +1,11 @@
 {
   "schemaVersion": 1,
-  "recordedAt": "2026-08-13T21:31:02.704Z",
+  "recordedAt": "2026-08-23T23:58:29.375Z",
   "environment": "public-beta",
   "vmId": 124,
   "publicOrigin": "https://cloud-test.makodb.com",
   "planHash": "d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073",
-  "releaseDigest": "a5ccdaabff7d6ef30da512330dab38b60e32ae034f621ee4d4eed2b49e976000",
-  "qualificationReleaseDigest": "f215b7d5232c1f8dad5e8046b38f359fe97f81de06f2080a15f66461e7cfe6af",
-  "carriedForwardByIdenticalRuntimeArtifacts": true,
+  "releaseDigest": "d5e4f15f286c35740f0ba889a4ed1a081df7e9f28c09d8cc384097119ae7fd15",
   "publicAdmissionMode": "restricted-pre-gate",
   "qualificationMode": "existing-isolated-fixture",
   "managementControlCoveredBy": "docs/evidence/public-beta-hosted-qualification.json",
@@ -20,23 +18,23 @@
   "latencyMilliseconds": {
     "authSignIn": {
       "samples": 10,
-      "p50": 247.8914010000001,
-      "p95": 341.92343000000005,
-      "maximum": 341.92343000000005
+      "p50": 240.8969709999999,
+      "p95": 440.38465899999994,
+      "maximum": 440.38465899999994
     },
     "rxdbPushBatch": {
       "samples": 4,
-      "p50": 323.8113400000002,
-      "p95": 385.49941999999965,
-      "maximum": 385.49941999999965
+      "p50": 413.154485,
+      "p95": 796.1797160000001,
+      "maximum": 796.1797160000001
     },
-    "rxdbPullBeforeRecovery": 1604.8523670000004,
-    "rxdbLiveFirstEvent": 52.25101300000006,
+    "rxdbPullBeforeRecovery": 1603.300472,
+    "rxdbLiveFirstEvent": 92.48001399999976,
     "controlRead": null,
-    "coldFunction": 439.4438310000005,
-    "warmFunction": 441.0257550000006,
-    "recoveryToReady": 1086.1317720000006,
-    "rxdbPullAfterRecovery": 5453.2733979999975
+    "coldFunction": 822.0949570000012,
+    "warmFunction": 272.46015799999986,
+    "recoveryToReady": 1369.6805969999987,
+    "rxdbPullAfterRecovery": 1785.436053999998
   },
   "workload": {
     "acknowledgedDocuments": 32,
@@ -50,8 +48,8 @@
     "target": {
       "concurrency": 16,
       "requests": 64,
-      "elapsedMilliseconds": 3685.264622999999,
-      "requestsPerSecond": 17.366421248670818,
+      "elapsedMilliseconds": 3214.9276569999984,
+      "requestsPerSecond": 19.907085965570595,
       "failedRequests": 0,
       "serverErrors": 0,
       "rateLimitedRequests": 0,
@@ -70,30 +68,30 @@
       "latencyMilliseconds": {
         "authUser": {
           "samples": 32,
-          "p50": 527.6918299999998,
-          "p95": 3352.440714000002,
-          "maximum": 3593.2939619999997
+          "p50": 463.002751,
+          "p95": 3054.9634810000007,
+          "maximum": 3136.5456730000024
         },
         "control": null,
         "function": {
           "samples": 16,
-          "p50": 650.5493470000001,
-          "p95": 1254.8180890000003,
-          "maximum": 1254.8180890000003
+          "p50": 472.0104790000005,
+          "p95": 875.747351,
+          "maximum": 875.747351
         },
         "pull": {
           "samples": 16,
-          "p50": 263.8390069999987,
-          "p95": 840.3155529999985,
-          "maximum": 840.3155529999985
+          "p50": 297.07859800000006,
+          "p95": 673.7430850000001,
+          "maximum": 673.7430850000001
         }
       }
     },
     "requiredHeadroom": {
       "concurrency": 24,
       "requests": 96,
-      "elapsedMilliseconds": 5212.147240000002,
-      "requestsPerSecond": 18.418508214637974,
+      "elapsedMilliseconds": 4863.5979609999995,
+      "requestsPerSecond": 19.738466860281168,
       "failedRequests": 0,
       "serverErrors": 0,
       "rateLimitedRequests": 0,
@@ -112,33 +110,33 @@
       "latencyMilliseconds": {
         "authUser": {
           "samples": 48,
-          "p50": 543.0798969999996,
-          "p95": 5005.106201999999,
-          "maximum": 5207.379608000003
+          "p50": 459.85653399999865,
+          "p95": 4667.998458999999,
+          "maximum": 4861.93808
         },
         "control": null,
         "function": {
           "samples": 24,
-          "p50": 662.6392450000021,
-          "p95": 1291.003254000003,
-          "maximum": 1356.2979900000028
+          "p50": 605.2077009999994,
+          "p95": 1558.5473200000015,
+          "maximum": 1947.836793999999
         },
         "pull": {
           "samples": 24,
-          "p50": 318.23191399999996,
-          "p95": 845.9641059999994,
-          "maximum": 1149.1380480000007
+          "p50": 264.56034100000034,
+          "p95": 868.202781,
+          "maximum": 1969.7625709999993
         }
       }
     },
     "saturationProbe": {
       "concurrency": 64,
       "requests": 256,
-      "elapsedMilliseconds": 15774.692596,
-      "requestsPerSecond": 16.228523928420866,
-      "failedRequests": 2,
+      "elapsedMilliseconds": 16862.926238,
+      "requestsPerSecond": 15.181230873599013,
+      "failedRequests": 0,
       "serverErrors": 0,
-      "rateLimitedRequests": 2,
+      "rateLimitedRequests": 0,
       "statusCounts": {
         "authUser": {
           "200": 128
@@ -148,33 +146,32 @@
           "200": 64
         },
         "pull": {
-          "200": 62,
-          "429": 2
+          "200": 64
         }
       },
       "latencyMilliseconds": {
         "authUser": {
           "samples": 128,
-          "p50": 1654.2665669999988,
-          "p95": 14752.867656000002,
-          "maximum": 15772.138090999997
+          "p50": 1497.4266749999988,
+          "p95": 15804.894947000004,
+          "maximum": 16583.674707000002
         },
         "control": null,
         "function": {
           "samples": 64,
-          "p50": 1003.6989880000001,
-          "p95": 4528.715225999997,
-          "maximum": 7203.6995849999985
+          "p50": 757.8257489999996,
+          "p95": 7103.747924000003,
+          "maximum": 10552.421999000002
         },
         "pull": {
           "samples": 64,
-          "p50": 467.40718800000104,
-          "p95": 6131.478536999999,
-          "maximum": 8802.104593
+          "p50": 494.20204100000046,
+          "p95": 7848.703289999998,
+          "maximum": 10597.558910000003
         }
       }
     },
-    "saturationConcurrencyLowerBound": 24
+    "saturationConcurrencyLowerBound": 64
   },
   "passed": true
 }
