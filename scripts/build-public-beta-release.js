@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { createHash } from "node:crypto";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import {
   chmod,
   copyFile,
@@ -144,6 +144,21 @@ function isGeneratedDirectory(name) {
 }
 
 async function collectArtifacts() {
+  // The candidate packages target/release verbatim, so compile it here:
+  // a candidate quietly staged from yesterday's binaries once shipped a
+  // release whose services did not contain the sources it claimed to.
+  await new Promise((resolvePromise, rejectPromise) => {
+    const build = spawn("cargo", ["build", "--release", "--workspace", "--bins"], {
+      cwd: repositoryRoot,
+      stdio: ["ignore", "inherit", "inherit"],
+    });
+    build.on("error", rejectPromise);
+    build.on("exit", (code) =>
+      code === 0
+        ? resolvePromise()
+        : rejectPromise(new Error(`cargo build --release exited with ${code}`)),
+    );
+  });
   const files = [];
   for (const binary of [
     "mako-control-plane",
