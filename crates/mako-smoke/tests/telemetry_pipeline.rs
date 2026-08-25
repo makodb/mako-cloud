@@ -246,6 +246,7 @@ fn observed_events_and_usage_reach_the_management_api() {
         bill["totalMicroDollars"], 0,
         "a free organization was billed money: {body}"
     );
+    assert_eq!(bill["creditsMicroDollars"], 0);
     assert_eq!(bill["balanceMicroDollars"], 0);
     assert!(
         bill["notice"]

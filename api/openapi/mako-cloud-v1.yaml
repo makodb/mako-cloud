@@ -92,6 +92,7 @@ paths:
                   - baseMicroDollars
                   - lineItems
                   - totalMicroDollars
+                  - creditsMicroDollars
                   - balanceMicroDollars
                   - collectable
                   - notice
@@ -115,6 +116,7 @@ paths:
                         overage: {type: integer, format: int64, minimum: 0}
                         amountMicroDollars: {type: integer, format: int64}
                   totalMicroDollars: {type: integer, format: int64}
+                  creditsMicroDollars: {type: integer, format: int64}
                   balanceMicroDollars: {type: integer, format: int64}
                   collectable: {type: boolean}
                   notice: {type: string}
@@ -3195,6 +3197,40 @@ paths:
                     maxItems: 16
                     items:
                       $ref: "#/components/schemas/PlanException"
+        default: {$ref: "#/components/responses/ApiError"}
+  /v1/operator/organizations/{organizationId}/credits:
+    post:
+      tags: [Operator]
+      operationId: grantOrganizationCredit
+      summary: Grant an organization a credit
+      description: >-
+        Moves the shown balance and nothing else. Exactly-once per credit id:
+        replaying the same id conflicts rather than granting twice. A credit
+        cannot be negative -- taking money away is not a credit.
+      security:
+        - operatorSessionCookie: []
+        - operatorBearer: []
+      parameters:
+        - $ref: "#/components/parameters/OrganizationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [id, amountMicroDollars, reason]
+              properties:
+                id: {type: string, pattern: "^crd_[A-Za-z0-9_-]{4,64}$"}
+                amountMicroDollars: {type: integer, format: int64, minimum: 1}
+                reason: {type: string, minLength: 8, maxLength: 500}
+      responses:
+        "201":
+          description: The granted credit
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Credit"
         default: {$ref: "#/components/responses/ApiError"}
   /v1/operator/projects/{projectId}/quota-overrides:
     get:
@@ -7264,6 +7300,17 @@ components:
                     - checkpoint_expired
                     - authorization_epoch_changed
                     - service_failover
+    Credit:
+      type: object
+      additionalProperties: false
+      required: [id, organizationId, amountMicroDollars, reason, operatorId, grantedAtUnixSeconds]
+      properties:
+        id: {type: string}
+        organizationId: {$ref: "#/components/schemas/OrganizationId"}
+        amountMicroDollars: {type: integer, format: int64, minimum: 1}
+        reason: {type: string}
+        operatorId: {type: string}
+        grantedAtUnixSeconds: {type: integer, format: int64}
     PlanException:
       type: object
       additionalProperties: false

@@ -906,6 +906,11 @@ fn handle_organization_bill(
         }
 
         let rated = mako_billing::rating::rate_period(&plan, &card, &usage);
+        let credits = graph
+            .operator_service()
+            .credit_total(&organization_id)
+            .await
+            .map_err(|_| unavailable(request, "credits are unavailable"))?;
         json(
             request,
             200,
@@ -917,9 +922,11 @@ fn handle_organization_bill(
                 "baseMicroDollars": rated.base_micro_dollars,
                 "lineItems": rated.line_items,
                 "totalMicroDollars": rated.total_micro_dollars,
-                // Credits minus charges; with no credits and nothing
-                // collected, accrued charges read negative.
-                "balanceMicroDollars": -rated.total_micro_dollars,
+                "creditsMicroDollars": credits,
+                // Credits minus charges; accrued use beyond credit reads
+                // negative, and nothing clamps it at zero -- hiding the number
+                // is the one thing this surface must not do.
+                "balanceMicroDollars": credits.saturating_sub(rated.total_micro_dollars),
                 "collectable": false,
                 "notice": "This bill is informational. Nothing is payable and no charge will be made during the beta.",
             }),

@@ -1790,6 +1790,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/operator/organizations/{organizationId}/credits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Grant an organization a credit
+         * @description Moves the shown balance and nothing else. Exactly-once per credit id: replaying the same id conflicts rather than granting twice. A credit cannot be negative -- taking money away is not a credit.
+         */
+        post: operations["grantOrganizationCredit"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/operator/projects/{projectId}/quota-overrides": {
         parameters: {
             query?: never;
@@ -3948,6 +3968,16 @@ export interface components {
                 reason: "reconnected" | "stream_gap" | "checkpoint_expired" | "authorization_epoch_changed" | "service_failover";
             };
         };
+        Credit: {
+            id: string;
+            organizationId: components["schemas"]["OrganizationId"];
+            /** Format: int64 */
+            amountMicroDollars: number;
+            reason: string;
+            operatorId: string;
+            /** Format: int64 */
+            grantedAtUnixSeconds: number;
+        };
         PlanException: {
             resource: components["schemas"]["QuotaResource"];
             /** Format: int64 */
@@ -4589,6 +4619,8 @@ export interface operations {
                         }[];
                         /** Format: int64 */
                         totalMicroDollars: number;
+                        /** Format: int64 */
+                        creditsMicroDollars: number;
                         /** Format: int64 */
                         balanceMicroDollars: number;
                         collectable: boolean;
@@ -8338,6 +8370,38 @@ export interface operations {
                         organizationId: components["schemas"]["OrganizationId"];
                         exceptions: components["schemas"]["PlanException"][];
                     };
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    grantOrganizationCredit: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    id: string;
+                    /** Format: int64 */
+                    amountMicroDollars: number;
+                    reason: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The granted credit */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Credit"];
                 };
             };
             default: components["responses"]["ApiError"];

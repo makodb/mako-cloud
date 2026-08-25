@@ -282,6 +282,22 @@ impl ControlKeyspace {
         system_key(ORGANIZATIONS, id.as_str())
     }
 
+    /// One operator-granted credit. Keyed by its id, so granting is
+    /// exactly-once under a conditional create.
+    pub fn organization_credit_key(
+        id: &OrganizationId,
+        credit_id: &str,
+    ) -> Result<Vec<u8>, ControlKeyspaceError> {
+        TenantKeyspace::system_key(credit_domain(id), credit_id).map_err(ControlKeyspaceError)
+    }
+
+    /// Every credit an organization holds.
+    pub fn organization_credits_range(
+        id: &OrganizationId,
+    ) -> Result<KeyRange, ControlKeyspaceError> {
+        TenantKeyspace::system_domain_range(credit_domain(id)).map_err(ControlKeyspaceError)
+    }
+
     /// The operator-recorded exceptions to an organization's plan.
     pub fn organization_plan_exceptions_key(
         id: &OrganizationId,
@@ -625,6 +641,10 @@ impl Error for ControlKeyspaceError {
 
 fn system_key(domain: &[u8], item: &str) -> Result<Vec<u8>, ControlKeyspaceError> {
     TenantKeyspace::system_key(domain, item).map_err(ControlKeyspaceError)
+}
+
+fn credit_domain(organization_id: &OrganizationId) -> Vec<u8> {
+    format!("control/organization-credits/{}", organization_id.as_str()).into_bytes()
 }
 
 fn membership_domain(organization_id: &OrganizationId) -> Vec<u8> {

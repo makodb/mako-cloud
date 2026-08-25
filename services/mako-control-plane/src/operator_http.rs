@@ -8,12 +8,12 @@ use std::{
 use futures::executor::block_on;
 use mako_api::{ErrorCode, ProjectId, RetryAdvice, TenantScope};
 use mako_control_plane::{
-    AbuseResponseId, AbuseTarget, GuardedMutation, IncidentSearch, IncidentState, InventoryKind,
-    NewAbuseResponse, NewQuotaOverride, NewSupportSession, OperatorControlCenterError,
-    OperatorEntitlementAdminInput, OperatorEntitlementChangeKind, OperatorError,
-    OperatorPasswordAuthenticationError, OperatorPermission, OrganizationId, QuotaOverrideId,
-    QuotaResource, RecoveryJobState, RecoveryRequest, SupportPermission, SupportSessionId,
-    TenantSearch,
+    AbuseResponseId, AbuseTarget, CreditId, GuardedMutation, IncidentSearch, IncidentState,
+    InventoryKind, NewAbuseResponse, NewQuotaOverride, NewSupportSession,
+    OperatorControlCenterError, OperatorEntitlementAdminInput, OperatorEntitlementChangeKind,
+    OperatorError, OperatorPasswordAuthenticationError, OperatorPermission, OrganizationId,
+    QuotaOverrideId, QuotaResource, RecoveryJobState, RecoveryRequest, SupportPermission,
+    SupportSessionId, TenantSearch,
 };
 use mako_provisioning::{OperatorRepairAction, ProvisioningWorkflowId};
 use mako_service_runtime::{
@@ -200,6 +200,11 @@ pub(crate) fn add_operator_routes(
             HttpMethod::Put,
             "/v1/operator/organizations/{organizationId}/plan-exceptions",
             handle_set_plan_exceptions,
+        ),
+        (
+            HttpMethod::Post,
+            "/v1/operator/organizations/{organizationId}/credits",
+            handle_grant_credit,
         ),
         (
             HttpMethod::Post,
@@ -1292,6 +1297,38 @@ fn handle_set_plan_exceptions(
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct PlanExceptionsWire {
     exceptions: Vec<mako_billing::PlanException>,
+    reason: String,
+}
+
+fn handle_grant_credit(
+    graph: &Arc<ControlPlaneGraph>,
+    request: &HttpRequest,
+) -> Result<HttpResponse, HttpApiError> {
+    let (actor, now) = authorize_operator(graph, request, true)?;
+    no_query(request)?;
+    require_json(request)?;
+    let body: CreditWire = parse_json(request)?;
+    let organization =
+        OrganizationId::parse(request.path_parameter("organizationId").unwrap_or_default())
+            .map_err(|_| invalid(request, "organization path is invalid"))?;
+    let id = CreditId::parse(body.id).map_err(|_| invalid(request, "credit id is invalid"))?;
+    let record = block_on(graph.operator_service().grant_credit(
+        &actor,
+        &organization,
+        id,
+        body.amount_micro_dollars,
+        &body.reason,
+        now,
+    ))
+    .map_err(|error| operator_error(request, error))?;
+    public_json(request, 201, &record)
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct CreditWire {
+    id: String,
+    amount_micro_dollars: u64,
     reason: String,
 }
 

@@ -70,14 +70,14 @@ pub use observability::{
     ObservabilityService, ObservabilitySignal, RetentionWindow,
 };
 pub use operator::{
-    AbuseResponseId, AbuseResponseRecord, AbuseTarget, NewAbuseResponse, NewQuotaOverride,
-    NewSupportSession, OperatorAuditAction, OperatorAuditEvent, OperatorAuditOutcome,
-    OperatorAuditSink, OperatorAuthenticationError, OperatorAuthenticator, OperatorError,
-    OperatorId, OperatorIdentityProvider, OperatorIdentityProviderError, OperatorPermission,
-    OperatorPrincipal, OperatorProjectView, OperatorRecordEvent, OperatorRecordState, OperatorRole,
-    OperatorService, OperatorSessionClaims, OperatorSessionToken, QuotaOverrideId,
-    QuotaOverrideRecord, SupportPermission, SupportSessionId, SupportSessionRecord,
-    SupportSessionState, VerifiedSupportAccess,
+    AbuseResponseId, AbuseResponseRecord, AbuseTarget, CreditId, CreditRecord, NewAbuseResponse,
+    NewQuotaOverride, NewSupportSession, OperatorAuditAction, OperatorAuditEvent,
+    OperatorAuditOutcome, OperatorAuditSink, OperatorAuthenticationError, OperatorAuthenticator,
+    OperatorError, OperatorId, OperatorIdentityProvider, OperatorIdentityProviderError,
+    OperatorPermission, OperatorPrincipal, OperatorProjectView, OperatorRecordEvent,
+    OperatorRecordState, OperatorRole, OperatorService, OperatorSessionClaims,
+    OperatorSessionToken, QuotaOverrideId, QuotaOverrideRecord, SupportPermission,
+    SupportSessionId, SupportSessionRecord, SupportSessionState, VerifiedSupportAccess,
 };
 pub use operator_authentication::{
     AuthenticatedOperatorSession, BootstrapDeveloperAdmissionRepairInput,

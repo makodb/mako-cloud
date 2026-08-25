@@ -184,6 +184,7 @@ export const OPERATOR_OPERATIONS = [
   "repairOperatorProvisioning",
   "changeOrganizationPlan",
   "setOrganizationPlanExceptions",
+  "grantOrganizationCredit",
   "createOperatorQuotaOverride",
   "createOperatorAbuseResponse",
   "createSupportSession",
@@ -2558,6 +2559,20 @@ export class MakoOperatorClient {
       await this.#client.PUT("/v1/operator/organizations/{organizationId}/plan-exceptions", {
         params: { path: { organizationId } },
         body: { exceptions, reason },
+      }),
+    );
+  }
+
+  async grantOrganizationCredit(
+    organizationId: string,
+    id: string,
+    amountMicroDollars: number,
+    reason: string,
+  ): Promise<components["schemas"]["Credit"]> {
+    return unwrap(
+      await this.#client.POST("/v1/operator/organizations/{organizationId}/credits", {
+        params: { path: { organizationId } },
+        body: { id, amountMicroDollars, reason },
       }),
     );
   }

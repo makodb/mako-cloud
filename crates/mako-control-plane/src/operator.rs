@@ -60,6 +60,7 @@ macro_rules! operator_identifier {
 
 operator_identifier!(OperatorId, "opr_");
 operator_identifier!(QuotaOverrideId, "qov_");
+operator_identifier!(CreditId, "crd_");
 operator_identifier!(AbuseResponseId, "abr_");
 operator_identifier!(SupportSessionId, "sup_");
 
@@ -409,6 +410,17 @@ pub struct OperatorRecordEvent {
     pub at_unix_seconds: u64,
 }
 
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct CreditRecord {
+    pub id: CreditId,
+    pub organization_id: OrganizationId,
+    pub amount_micro_dollars: u64,
+    pub reason: String,
+    pub operator_id: OperatorId,
+    pub granted_at_unix_seconds: u64,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NewQuotaOverride {
     pub id: QuotaOverrideId,
@@ -558,6 +570,7 @@ pub enum OperatorAuditAction {
     QuotaOverride,
     PlanChange,
     PlanException,
+    CreditGrant,
     AbuseResponse,
     SupportSessionCreate,
     SupportSessionUse,
@@ -581,6 +594,7 @@ impl OperatorAuditAction {
             Self::QuotaOverride => "operator_quota_override",
             Self::PlanChange => "operator_plan_change",
             Self::PlanException => "operator_plan_exception",
+            Self::CreditGrant => "operator_credit_grant",
             Self::AbuseResponse => "operator_abuse_response",
             Self::SupportSessionCreate => "operator_support_session_create",
             Self::SupportSessionUse => "operator_support_session_use",
@@ -963,6 +977,86 @@ impl OperatorService {
             .into_iter()
             .filter(|exception| exception.applies_at(now_unix_seconds))
             .collect())
+    }
+
+    /// Grant an organization a credit, exactly once per credit id.
+    ///
+    /// A credit moves the shown balance and nothing else: it does not change
+    /// limits, does not cause collection, and cannot be negative -- taking
+    /// money away is not a credit, and a mechanism that could would need its
+    /// own name and its own review.
+    pub async fn grant_credit(
+        &self,
+        actor: &OperatorPrincipal,
+        organization_id: &OrganizationId,
+        credit_id: CreditId,
+        amount_micro_dollars: u64,
+        reason: &str,
+        now_unix_seconds: u64,
+    ) -> Result<CreditRecord, OperatorError> {
+        validate_reason(reason)?;
+        if amount_micro_dollars == 0 {
+            return Err(OperatorError::InvalidInput);
+        }
+        let audit_scope = ProjectId::parse(mako_internal_rpc::OPERATOR_ADMIN_PROJECT_ID)
+            .map_err(|_| OperatorError::InvalidInput)?;
+        self.require(
+            actor,
+            OperatorPermission::QuotaOverride,
+            OperatorAuditAction::CreditGrant,
+            &audit_scope,
+            reason,
+            now_unix_seconds,
+        )?;
+        let organization_key = ControlKeyspace::organization_key(organization_id)?;
+        if self.adapter.get(&organization_key).await?.is_none() {
+            return Err(OperatorError::NotFound);
+        }
+        let record = CreditRecord {
+            id: credit_id,
+            organization_id: organization_id.clone(),
+            amount_micro_dollars,
+            reason: reason.to_owned(),
+            operator_id: actor.id().clone(),
+            granted_at_unix_seconds: now_unix_seconds,
+        };
+        let key = ControlKeyspace::organization_credit_key(organization_id, record.id.as_str())?;
+        // Conditional create is the exactly-once: replaying the same credit id
+        // conflicts instead of granting twice.
+        self.create(key, serde_json::to_vec(&record)?).await?;
+        self.allowed(
+            actor,
+            OperatorAuditAction::CreditGrant,
+            &audit_scope,
+            organization_id.as_str(),
+            reason,
+            now_unix_seconds,
+        );
+        Ok(record)
+    }
+
+    /// Everything an organization has been credited, in micro-dollars.
+    pub async fn credit_total(
+        &self,
+        organization_id: &OrganizationId,
+    ) -> Result<i64, OperatorError> {
+        let range = ControlKeyspace::organization_credits_range(organization_id)?;
+        let limit = self
+            .adapter
+            .capabilities()
+            .maximum_scan_items
+            .min(NonZeroUsize::new(256).expect("scan limit"));
+        let entries = self
+            .adapter
+            .scan(ScanRequest::new(range, ScanDirection::Forward, limit))
+            .await?;
+        let mut total: i64 = 0;
+        for entry in entries {
+            let record: CreditRecord = serde_json::from_slice(&entry.value)?;
+            total = total
+                .saturating_add(i64::try_from(record.amount_micro_dollars).unwrap_or(i64::MAX));
+        }
+        Ok(total)
     }
 
     pub async fn respond_to_abuse(
@@ -2068,6 +2162,104 @@ mod tests {
                     )
                     .await,
                 Err(OperatorError::Forbidden)
+            ));
+        });
+    }
+
+    #[test]
+    fn a_credit_is_granted_exactly_once_and_totals_are_the_sum_of_grants() {
+        futures::executor::block_on(async {
+            let adapter: Arc<dyn KvAdapter> = Arc::new(MemoryAdapter::new());
+            let projects =
+                ProjectStore::new(adapter.clone(), Durability::Memory).expect("projects");
+            let provisioning = Provisioner::new(
+                mako_provisioning::ProvisioningStore::new(adapter.clone(), Durability::Memory)
+                    .expect("provisioning"),
+            );
+            let organization_id = OrganizationId::parse("org_credits000").expect("organization");
+            let record =
+                OrganizationRecord::new(organization_id.clone(), "Mako", 1).expect("organization");
+            let mut batch = WriteBatch::new();
+            batch.put(
+                ControlKeyspace::organization_key(&organization_id).expect("key"),
+                serde_json::to_vec(&record).expect("json"),
+            );
+            adapter
+                .write(batch, Durability::Memory)
+                .await
+                .expect("seed");
+            let audit = Arc::new(Audit::default());
+            let service = OperatorService::new(
+                adapter,
+                Durability::Memory,
+                projects,
+                provisioning,
+                audit.clone(),
+            )
+            .expect("service");
+            let actor = OperatorPrincipal::for_test(
+                OperatorId::parse("opr_credit0000").expect("operator"),
+                [OperatorPermission::QuotaOverride],
+            );
+
+            service
+                .grant_credit(
+                    &actor,
+                    &organization_id,
+                    CreditId::parse("crd_beta000001").expect("id"),
+                    5_000_000,
+                    "beta goodwill credit",
+                    10,
+                )
+                .await
+                .expect("grant");
+            // Replaying the same id must conflict, not grant twice: the id is
+            // the exactly-once, and a retried request is the normal case it
+            // exists for.
+            assert!(
+                service
+                    .grant_credit(
+                        &actor,
+                        &organization_id,
+                        CreditId::parse("crd_beta000001").expect("id"),
+                        5_000_000,
+                        "beta goodwill credit",
+                        11,
+                    )
+                    .await
+                    .is_err()
+            );
+            service
+                .grant_credit(
+                    &actor,
+                    &organization_id,
+                    CreditId::parse("crd_beta000002").expect("id"),
+                    2_500_000,
+                    "second goodwill credit",
+                    12,
+                )
+                .await
+                .expect("second grant");
+
+            assert_eq!(
+                service.credit_total(&organization_id).await.expect("total"),
+                7_500_000,
+                "the total is the sum of distinct grants, unmoved by the replay"
+            );
+
+            // Zero is not a credit.
+            assert!(matches!(
+                service
+                    .grant_credit(
+                        &actor,
+                        &organization_id,
+                        CreditId::parse("crd_beta000003").expect("id"),
+                        0,
+                        "an empty gesture",
+                        13,
+                    )
+                    .await,
+                Err(OperatorError::InvalidInput)
             ));
         });
     }
