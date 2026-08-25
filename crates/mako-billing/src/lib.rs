@@ -133,6 +133,19 @@ pub fn effective_entitlements(
     effective
 }
 
+/// The plan as it applies to one organization right now: its subscribed plan
+/// with any operator-recorded exception laid over it. Everything downstream --
+/// enforcement and rating alike -- consumes the result, so an exception
+/// changes the limits and the bill together rather than one drifting from the
+/// other.
+#[must_use]
+pub fn effective_plan(plan: &Plan, exceptions: &[PlanException], now_unix_seconds: u64) -> Plan {
+    Plan {
+        entitlements: effective_entitlements(plan, exceptions, now_unix_seconds),
+        ..plan.clone()
+    }
+}
+
 /// Every plan carries these regardless of price: they exist to keep one
 /// customer's burst from becoming everyone's outage.
 #[must_use]

@@ -557,6 +557,7 @@ pub enum OperatorAuditAction {
     ProvisioningRepair,
     QuotaOverride,
     PlanChange,
+    PlanException,
     AbuseResponse,
     SupportSessionCreate,
     SupportSessionUse,
@@ -579,6 +580,7 @@ impl OperatorAuditAction {
             Self::ProvisioningRepair => "operator_provisioning_repair",
             Self::QuotaOverride => "operator_quota_override",
             Self::PlanChange => "operator_plan_change",
+            Self::PlanException => "operator_plan_exception",
             Self::AbuseResponse => "operator_abuse_response",
             Self::SupportSessionCreate => "operator_support_session_create",
             Self::SupportSessionUse => "operator_support_session_use",
@@ -883,6 +885,84 @@ impl OperatorService {
             now_unix_seconds,
         );
         Ok(record)
+    }
+
+    /// Replace the set of exceptions to an organization's plan.
+    ///
+    /// Replace-the-set, not append: the operator states what is exceptional
+    /// right now, and an empty set clears everything. That keeps one route and
+    /// one audit event describing the whole decision, instead of a trail of
+    /// additions and removals to reconstruct.
+    pub async fn set_plan_exceptions(
+        &self,
+        actor: &OperatorPrincipal,
+        organization_id: &OrganizationId,
+        exceptions: Vec<mako_billing::PlanException>,
+        reason: &str,
+        now_unix_seconds: u64,
+    ) -> Result<Vec<mako_billing::PlanException>, OperatorError> {
+        validate_reason(reason)?;
+        if exceptions.len() > 16 {
+            return Err(OperatorError::InvalidInput);
+        }
+        for exception in &exceptions {
+            if exception.reason.trim().is_empty()
+                || exception.reason.len() > 500
+                || exception
+                    .expires_at_unix_seconds
+                    .is_some_and(|expires| expires <= now_unix_seconds)
+            {
+                return Err(OperatorError::InvalidInput);
+            }
+        }
+        let audit_scope = ProjectId::parse(mako_internal_rpc::OPERATOR_ADMIN_PROJECT_ID)
+            .map_err(|_| OperatorError::InvalidInput)?;
+        self.require(
+            actor,
+            OperatorPermission::QuotaOverride,
+            OperatorAuditAction::PlanException,
+            &audit_scope,
+            reason,
+            now_unix_seconds,
+        )?;
+        let organization_key = ControlKeyspace::organization_key(organization_id)?;
+        if self.adapter.get(&organization_key).await?.is_none() {
+            return Err(OperatorError::NotFound);
+        }
+        let key = ControlKeyspace::organization_plan_exceptions_key(organization_id)?;
+        let mut batch = WriteBatch::new();
+        batch.put(key, serde_json::to_vec(&exceptions)?);
+        self.adapter.write(batch, self.durability).await?;
+        self.allowed(
+            actor,
+            OperatorAuditAction::PlanException,
+            &audit_scope,
+            organization_id.as_str(),
+            reason,
+            now_unix_seconds,
+        );
+        Ok(exceptions)
+    }
+
+    /// The exceptions currently in force for an organization.
+    ///
+    /// Expired entries are filtered here, so no caller has to remember to --
+    /// a forgotten override quietly becoming permanent is the failure this
+    /// type exists to prevent.
+    pub async fn plan_exceptions(
+        &self,
+        organization_id: &OrganizationId,
+        now_unix_seconds: u64,
+    ) -> Result<Vec<mako_billing::PlanException>, OperatorError> {
+        let key = ControlKeyspace::organization_plan_exceptions_key(organization_id)?;
+        let Some(stored) = self.adapter.get(&key).await? else {
+            return Ok(Vec::new());
+        };
+        let exceptions: Vec<mako_billing::PlanException> = serde_json::from_slice(&stored)?;
+        Ok(exceptions
+            .into_iter()
+            .filter(|exception| exception.applies_at(now_unix_seconds))
+            .collect())
     }
 
     pub async fn respond_to_abuse(
@@ -1989,6 +2069,114 @@ mod tests {
                     .await,
                 Err(OperatorError::Forbidden)
             ));
+        });
+    }
+
+    #[test]
+    fn plan_exceptions_replace_as_a_set_and_expired_ones_are_not_in_force() {
+        futures::executor::block_on(async {
+            let adapter: Arc<dyn KvAdapter> = Arc::new(MemoryAdapter::new());
+            let projects =
+                ProjectStore::new(adapter.clone(), Durability::Memory).expect("projects");
+            let provisioning = Provisioner::new(
+                mako_provisioning::ProvisioningStore::new(adapter.clone(), Durability::Memory)
+                    .expect("provisioning"),
+            );
+            let organization_id = OrganizationId::parse("org_exceptions0").expect("organization");
+            let record =
+                OrganizationRecord::new(organization_id.clone(), "Mako", 1).expect("organization");
+            let mut batch = WriteBatch::new();
+            batch.put(
+                ControlKeyspace::organization_key(&organization_id).expect("key"),
+                serde_json::to_vec(&record).expect("json"),
+            );
+            adapter
+                .write(batch, Durability::Memory)
+                .await
+                .expect("seed");
+            let audit = Arc::new(Audit::default());
+            let service = OperatorService::new(
+                adapter,
+                Durability::Memory,
+                projects,
+                provisioning,
+                audit.clone(),
+            )
+            .expect("service");
+            let actor = OperatorPrincipal::for_test(
+                OperatorId::parse("opr_except0000").expect("operator"),
+                [OperatorPermission::QuotaOverride],
+            );
+
+            let exception = |expires| mako_billing::PlanException {
+                resource: mako_api::QuotaResource::ReplicationBytesPerMonth,
+                included: 999,
+                overage_billed: true,
+                reason: "raised for a launch".to_owned(),
+                expires_at_unix_seconds: expires,
+            };
+
+            // One that has already run out is refused at recording time: an
+            // exception born expired is a mistake, not a decision.
+            assert!(matches!(
+                service
+                    .set_plan_exceptions(
+                        &actor,
+                        &organization_id,
+                        vec![exception(Some(5))],
+                        "expired on arrival",
+                        10,
+                    )
+                    .await,
+                Err(OperatorError::InvalidInput)
+            ));
+
+            service
+                .set_plan_exceptions(
+                    &actor,
+                    &organization_id,
+                    vec![exception(Some(100))],
+                    "launch window",
+                    10,
+                )
+                .await
+                .expect("record");
+            assert_eq!(
+                service
+                    .plan_exceptions(&organization_id, 50)
+                    .await
+                    .expect("read")
+                    .len(),
+                1
+            );
+            // Past its expiry it is simply not in force -- no cleanup step to
+            // forget, no override quietly outliving its reason.
+            assert!(
+                service
+                    .plan_exceptions(&organization_id, 200)
+                    .await
+                    .expect("read")
+                    .is_empty()
+            );
+
+            // Replacing with the empty set clears everything.
+            service
+                .set_plan_exceptions(
+                    &actor,
+                    &organization_id,
+                    Vec::new(),
+                    "cleared after launch",
+                    60,
+                )
+                .await
+                .expect("clear");
+            assert!(
+                service
+                    .plan_exceptions(&organization_id, 61)
+                    .await
+                    .expect("read")
+                    .is_empty()
+            );
         });
     }
 

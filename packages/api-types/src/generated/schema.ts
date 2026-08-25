@@ -1770,6 +1770,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/operator/organizations/{organizationId}/plan-exceptions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Replace the exceptions to an organization's plan
+         * @description The operator states what is exceptional right now; an empty set clears everything. Each exception names one resource, carries a reason, and may expire, after which the organization is back on its plan. The limits every environment is held to are reinstalled before the change is reported.
+         */
+        put: operations["setOrganizationPlanExceptions"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/operator/projects/{projectId}/quota-overrides": {
         parameters: {
             query?: never;
@@ -3927,6 +3947,15 @@ export interface components {
                 /** @enum {string} */
                 reason: "reconnected" | "stream_gap" | "checkpoint_expired" | "authorization_epoch_changed" | "service_failover";
             };
+        };
+        PlanException: {
+            resource: components["schemas"]["QuotaResource"];
+            /** Format: int64 */
+            included: number;
+            overageBilled: boolean;
+            reason: string;
+            /** Format: int64 */
+            expiresAtUnixSeconds?: number;
         };
         /** @enum {string} */
         QuotaResource: "environments" | "collections_per_environment" | "storage_bytes" | "replication_requests_per_minute" | "replication_bytes_per_month" | "application_users" | "edge_functions" | "edge_invocations_per_month" | "edge_compute_milliseconds_per_month" | "log_bytes_per_month";
@@ -8275,6 +8304,39 @@ export interface operations {
                         planId: string;
                         /** Format: date-time */
                         updatedAt: string;
+                    };
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    setOrganizationPlanExceptions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    reason: string;
+                    exceptions: components["schemas"]["PlanException"][];
+                };
+            };
+        };
+        responses: {
+            /** @description The exceptions now in force */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        organizationId: components["schemas"]["OrganizationId"];
+                        exceptions: components["schemas"]["PlanException"][];
                     };
                 };
             };

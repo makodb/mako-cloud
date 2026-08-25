@@ -719,7 +719,7 @@ fn handle_create_environment(
         // A new environment starts on its organization's plan. Without this it
         // would be served under the deployment default instead, which is not
         // what anyone subscribed to.
-        install_plan_limits(graph, request, &actor, &tenant).await?;
+        install_plan_limits(graph, request, &actor, &tenant, now).await?;
         enqueue(
             graph,
             request,
@@ -745,6 +745,7 @@ async fn install_plan_limits(
     request: &HttpRequest,
     actor: &DeveloperPrincipal,
     tenant: &TenantScope,
+    now: u64,
 ) -> Result<(), HttpApiError> {
     let project = graph
         .project_store()
@@ -758,7 +759,12 @@ async fn install_plan_limits(
         .await
         .map_err(|_| unavailable(request, "organization is unavailable"))?
         .ok_or_else(|| not_found(request, "organization was not found"))?;
-    let policy = resolve_plan_policy(request, organization.plan_id())?;
+    let exceptions = graph
+        .operator_service()
+        .plan_exceptions(project.organization_id(), now)
+        .await
+        .map_err(|_| unavailable(request, "plan exceptions are unavailable"))?;
+    let policy = resolve_plan_policy(request, organization.plan_id(), &exceptions, now)?;
     crate::identity_admin_http::install_quota_policy(
         graph,
         request,
@@ -773,11 +779,14 @@ async fn install_plan_limits(
 pub(crate) fn resolve_plan_policy(
     request: &HttpRequest,
     plan_id: &str,
+    exceptions: &[mako_billing::PlanException],
+    now_unix_seconds: u64,
 ) -> Result<serde_json::Value, HttpApiError> {
     // An organization on a plan the catalog no longer names is a deployment
     // bug, and inventing limits for it would hide that.
     let plan = mako_billing::plan(plan_id)
         .ok_or_else(|| internal(request, "the organization's plan is not in the catalog"))?;
+    let plan = mako_billing::effective_plan(&plan, exceptions, now_unix_seconds);
     let policy = mako_billing::enforcement_policy(&plan.entitlements)
         .map_err(|_| internal(request, "plan limits could not be resolved"))?;
     serde_json::to_value(&policy).map_err(|_| internal(request, "plan limits could not be encoded"))
@@ -809,6 +818,12 @@ fn handle_organization_bill(
             .ok_or_else(|| forbidden(request, "organization access is forbidden"))?;
         let plan = mako_billing::plan(organization.plan_id())
             .ok_or_else(|| internal(request, "the organization's plan is not in the catalog"))?;
+        let exceptions = graph
+            .operator_service()
+            .plan_exceptions(&organization_id, now)
+            .await
+            .map_err(|_| unavailable(request, "plan exceptions are unavailable"))?;
+        let plan = mako_billing::effective_plan(&plan, &exceptions, now);
         let card = mako_billing::rating::default_rate_card();
 
         // The period is the current calendar month so far. Nothing closes

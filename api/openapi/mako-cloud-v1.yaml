@@ -3148,6 +3148,54 @@ paths:
                   planId: {type: string}
                   updatedAt: {type: string, format: date-time}
         default: {$ref: "#/components/responses/ApiError"}
+  /v1/operator/organizations/{organizationId}/plan-exceptions:
+    put:
+      tags: [Operator]
+      operationId: setOrganizationPlanExceptions
+      summary: Replace the exceptions to an organization's plan
+      description: >-
+        The operator states what is exceptional right now; an empty set clears
+        everything. Each exception names one resource, carries a reason, and
+        may expire, after which the organization is back on its plan. The
+        limits every environment is held to are reinstalled before the change
+        is reported.
+      security:
+        - operatorSessionCookie: []
+        - operatorBearer: []
+      parameters:
+        - $ref: "#/components/parameters/OrganizationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [exceptions, reason]
+              properties:
+                reason: {type: string, minLength: 1, maxLength: 500}
+                exceptions:
+                  type: array
+                  maxItems: 16
+                  items:
+                    $ref: "#/components/schemas/PlanException"
+      responses:
+        "200":
+          description: The exceptions now in force
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [organizationId, exceptions]
+                properties:
+                  organizationId: {$ref: "#/components/schemas/OrganizationId"}
+                  exceptions:
+                    type: array
+                    maxItems: 16
+                    items:
+                      $ref: "#/components/schemas/PlanException"
+        default: {$ref: "#/components/responses/ApiError"}
   /v1/operator/projects/{projectId}/quota-overrides:
     get:
       tags: [Operator]
@@ -7216,6 +7264,16 @@ components:
                     - checkpoint_expired
                     - authorization_epoch_changed
                     - service_failover
+    PlanException:
+      type: object
+      additionalProperties: false
+      required: [resource, included, overageBilled, reason]
+      properties:
+        resource: {$ref: "#/components/schemas/QuotaResource"}
+        included: {type: integer, format: int64, minimum: 0}
+        overageBilled: {type: boolean}
+        reason: {type: string, minLength: 1, maxLength: 500}
+        expiresAtUnixSeconds: {type: integer, format: int64, minimum: 1}
     QuotaResource:
       type: string
       enum:

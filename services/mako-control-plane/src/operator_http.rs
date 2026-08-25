@@ -197,6 +197,11 @@ pub(crate) fn add_operator_routes(
             handle_change_plan,
         ),
         (
+            HttpMethod::Put,
+            "/v1/operator/organizations/{organizationId}/plan-exceptions",
+            handle_set_plan_exceptions,
+        ),
+        (
             HttpMethod::Post,
             "/v1/operator/projects/{projectId}/abuse-responses",
             handle_abuse_response,
@@ -1166,6 +1171,35 @@ fn handle_quota_override(
     public_json(request, 201, &record)
 }
 
+/// Reinstall what every environment of an organization is held to.
+///
+/// Shared by the plan change and the exception change, because both alter the
+/// same resolved limits, and failing mid-way leaves the record ahead of
+/// enforcement -- which a retry converges.
+fn reinstall_organization_limits(
+    graph: &Arc<ControlPlaneGraph>,
+    request: &HttpRequest,
+    actor_id: &str,
+    organization: &OrganizationId,
+    policy: &serde_json::Value,
+) -> Result<(), HttpApiError> {
+    let limit = NonZeroUsize::new(100).expect("listing limit");
+    let projects = block_on(graph.project_store().list_projects(organization, limit))
+        .map_err(|_| unavailable(request, "the organization's projects are unavailable"))?;
+    for project in &projects {
+        let environments =
+            block_on(graph.project_store().list_environments(project.id(), limit))
+                .map_err(|_| unavailable(request, "the project's environments are unavailable"))?;
+        for environment in &environments {
+            let tenant = TenantScope::new(project.id().clone(), environment.id().clone());
+            block_on(crate::identity_admin_http::install_quota_policy(
+                graph, request, actor_id, &tenant, policy,
+            ))?;
+        }
+    }
+    Ok(())
+}
+
 fn handle_change_plan(
     graph: &Arc<ControlPlaneGraph>,
     request: &HttpRequest,
@@ -1191,25 +1225,11 @@ fn handle_change_plan(
     // Failing here leaves the record ahead of enforcement, which a retry
     // converges -- the same direction every other propagation in this service
     // takes.
-    let policy = crate::management_http::resolve_plan_policy(request, record.plan_id())?;
-    let limit = NonZeroUsize::new(100).expect("listing limit");
-    let projects = block_on(graph.project_store().list_projects(&organization, limit))
-        .map_err(|_| unavailable(request, "the organization's projects are unavailable"))?;
-    for project in &projects {
-        let environments =
-            block_on(graph.project_store().list_environments(project.id(), limit))
-                .map_err(|_| unavailable(request, "the project's environments are unavailable"))?;
-        for environment in &environments {
-            let tenant = TenantScope::new(project.id().clone(), environment.id().clone());
-            block_on(crate::identity_admin_http::install_quota_policy(
-                graph,
-                request,
-                actor.id().as_str(),
-                &tenant,
-                &policy,
-            ))?;
-        }
-    }
+    let exceptions = block_on(graph.operator_service().plan_exceptions(&organization, now))
+        .map_err(|error| operator_error(request, error))?;
+    let policy =
+        crate::management_http::resolve_plan_policy(request, record.plan_id(), &exceptions, now)?;
+    reinstall_organization_limits(graph, request, actor.id().as_str(), &organization, &policy)?;
 
     public_json(
         request,
@@ -1226,6 +1246,52 @@ fn handle_change_plan(
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct PlanChangeWire {
     plan_id: String,
+    reason: String,
+}
+
+fn handle_set_plan_exceptions(
+    graph: &Arc<ControlPlaneGraph>,
+    request: &HttpRequest,
+) -> Result<HttpResponse, HttpApiError> {
+    let (actor, now) = authorize_operator(graph, request, true)?;
+    no_query(request)?;
+    require_json(request)?;
+    let body: PlanExceptionsWire = parse_json(request)?;
+    let organization =
+        OrganizationId::parse(request.path_parameter("organizationId").unwrap_or_default())
+            .map_err(|_| invalid(request, "organization path is invalid"))?;
+    let stored = block_on(graph.operator_service().set_plan_exceptions(
+        &actor,
+        &organization,
+        body.exceptions,
+        &body.reason,
+        now,
+    ))
+    .map_err(|error| operator_error(request, error))?;
+
+    // The exceptions change what the plan resolves to, so what every
+    // environment is held to is reinstalled before the change is reported.
+    let record = block_on(graph.organization_store().get_organization(&organization))
+        .map_err(|_| unavailable(request, "organization is unavailable"))?
+        .ok_or_else(|| not_found(request, "organization was not found"))?;
+    let policy =
+        crate::management_http::resolve_plan_policy(request, record.plan_id(), &stored, now)?;
+    reinstall_organization_limits(graph, request, actor.id().as_str(), &organization, &policy)?;
+
+    public_json(
+        request,
+        200,
+        &serde_json::json!({
+            "organizationId": organization.as_str(),
+            "exceptions": stored,
+        }),
+    )
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct PlanExceptionsWire {
+    exceptions: Vec<mako_billing::PlanException>,
     reason: String,
 }
 

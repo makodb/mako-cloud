@@ -282,6 +282,13 @@ impl ControlKeyspace {
         system_key(ORGANIZATIONS, id.as_str())
     }
 
+    /// The operator-recorded exceptions to an organization's plan.
+    pub fn organization_plan_exceptions_key(
+        id: &OrganizationId,
+    ) -> Result<Vec<u8>, ControlKeyspaceError> {
+        system_key(b"control/organization-plan-exceptions", id.as_str())
+    }
+
     pub fn developer_organization_key(
         developer_id: &DeveloperIdentityId,
         organization_id: &OrganizationId,

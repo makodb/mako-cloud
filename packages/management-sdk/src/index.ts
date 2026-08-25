@@ -183,6 +183,7 @@ export const OPERATOR_OPERATIONS = [
   "getOperatorProject",
   "repairOperatorProvisioning",
   "changeOrganizationPlan",
+  "setOrganizationPlanExceptions",
   "createOperatorQuotaOverride",
   "createOperatorAbuseResponse",
   "createSupportSession",
@@ -2542,6 +2543,21 @@ export class MakoOperatorClient {
       await this.#client.POST("/v1/operator/organizations/{organizationId}/plan", {
         params: { path: { organizationId } },
         body: { planId, reason },
+      }),
+    );
+  }
+
+  async setOrganizationPlanExceptions(
+    organizationId: string,
+    exceptions: components["schemas"]["PlanException"][],
+    reason: string,
+  ): Promise<
+    operations["setOrganizationPlanExceptions"]["responses"]["200"]["content"]["application/json"]
+  > {
+    return unwrap(
+      await this.#client.PUT("/v1/operator/organizations/{organizationId}/plan-exceptions", {
+        params: { path: { organizationId } },
+        body: { exceptions, reason },
       }),
     );
   }
