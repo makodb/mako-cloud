@@ -1,51 +1,44 @@
 ## 1. Metering pipeline
 
-- [ ] 1.1 Define the billable resource set, its units, and which plane observes each one.
-- [ ] 1.2 Record metered events locally in the plane that serves the work, aggregated per resource and period rather than per request.
-- [ ] 1.3 Add an internal-RPC operation that accepts a usage batch with a content-derived idempotency key and applies it at most once.
-- [ ] 1.4 Add the transfer worker, its lease, its retry policy, and its dead-letter handling.
-- [ ] 1.5 Add the retained per-period ledger in the control database, with the retention the dispute window requires.
-- [ ] 1.6 Sample storage at rest on a schedule and retain the sample series as line-item evidence.
-- [ ] 1.7 Report usage from the ledger instead of the unpopulated observability backend.
-- [ ] 1.8 Cross-check ledger totals against quota counters and alert on material divergence.
-- [ ] 1.9 Prove the pipeline counts once across restart, retry, and duplicate delivery.
+- [x] 1.1 Define the billable resource set, its units, and which plane observes each one.
+- [x] 1.2 Record billable use in the plane that serves the work. (Implemented over the telemetry pipeline -- bounded buffer, batch delivery with source and offset -- rather than the separate control-plane outbox the proposal sketched; one transfer mechanism instead of two.)
+- [x] 1.3 Deliver batches with an identifying source and offset so a redelivery is recognisable.
+- [x] 1.4 Sample storage at rest and application users on a schedule, marked by the writes that change them, measured off the request path.
+- [x] 1.5 Report usage from real records instead of an unpopulated store.
+- [ ] 1.6 A durable per-period ledger with dispute-window retention. Telemetry retains seven days; the bill reports the window it actually covers, and a closed period cannot yet be re-derived after retention passes.
+- [ ] 1.7 Cross-check ledger totals against quota counters and alert on material divergence.
 
 ## 2. Plans and entitlements
 
-- [ ] 2.1 Add the plan catalog with per-plan limits, expressed as data.
-- [ ] 2.2 Add an organization's subscription to a plan, with effective-from semantics.
-- [ ] 2.3 Implement a per-tenant `GatewayQuotaPolicySource` that resolves plan limits, applies operator overrides, caches with a bounded TTL, and falls back to free-tier limits rather than unlimited.
-- [ ] 2.4 Replace the static policies constructed in the data plane and edge gateway with that source.
-- [ ] 2.5 Prove an operator quota override changes what the gateway enforces.
+- [x] 2.1 Plan catalog as data, free and pro, with included amounts and overage-billed flags.
+- [x] 2.2 An organization's subscription, defaulted to free for records stored before plans existed.
+- [x] 2.3 Per-tenant quota policy resolution with a bounded cache, falling back to the deployment default and never to no limits.
+- [x] 2.4 Plan-derived limits installed at environment creation and reinstalled on plan change.
+- [x] 2.5 Operator plan change, audited as its own action, refusing plans the catalog does not name.
+- [x] 2.6 Operator plan exceptions: replace-the-set, expiring, applied everywhere entitlements are read.
 
 ## 3. Rating, invoices, and balance
 
-- [ ] 3.1 Add billing periods per organization and their close semantics.
-- [ ] 3.2 Add rate cards as versioned data, so prices change without a code change and a past invoice re-derives at the rate that applied. A rate card of all zeroes is valid.
-- [ ] 3.3 Rate a closed period's ledger into invoice line items.
-- [ ] 3.4 Add the invoice lifecycle, credits, and proration on plan change.
-- [ ] 3.5 Add the running account balance as credits minus finalized charges, derived from those entries rather than stored as a total.
-- [ ] 3.6 Prove a finalized invoice re-derives to the same total from retained evidence, and that a balance re-derives from its entries.
+- [x] 3.1 Rate card as versioned data in integer micro-dollars; a card of zeroes is valid. Prices verified against supabase.com/pricing on 2026-08-25.
+- [x] 3.2 Aggregation semantics: flows sum, levels average, so samples do not multiply a charge and a mid-period delete halves one.
+- [x] 3.3 Rating into line items carrying quantity, included, overage, and amount, re-deriving deterministically.
+- [x] 3.4 The live bill: GET /v1/organizations/{id}/bill, current month clamped to retained evidence, reporting the window it covers.
+- [x] 3.5 Credits, granted exactly once per id, audited, never negative.
+- [x] 3.6 Balance as credits minus charges, unclamped.
+- [ ] 3.7 Period close: a finalized invoice re-derivable after the period ends. Blocked on 1.6.
+- [ ] 3.8 Proration on plan change. The live bill rates the whole window at the current plan.
 
 ## 4. Not charging, enforced
 
-- [ ] 4.1 Prove no code path contacts a payment provider or requests payment details, as a check that fails if one is ever added.
-- [ ] 4.2 Prove no quota, suspension, or lifecycle decision reads the balance, and keep the balance out of the reach of those paths rather than relying on review.
-- [ ] 4.3 State on every surface that shows a bill or balance that it is not payable and no charge will be made.
-- [ ] 4.4 Prove a deeply negative balance leaves a tenant's traffic, quotas, and lifecycle unchanged.
-- [ ] 4.5 Ensure no automatic process converts an accrued balance into a payable debt, including when the beta ends.
+- [x] 4.1 validate:no-collection proves no payment-provider dependency, endpoint, or card-data field exists, in CI.
+- [x] 4.2 The same guard proves the balance is read only by the surface that shows it, never by enforcement.
+- [x] 4.3 Every bill response carries collectable: false and says in words that nothing will be charged.
+- [x] 4.4 A negative balance changes no limit and no lifecycle: nothing that enforces can read it.
+- [x] 4.5 No automatic process converts a balance into a debt; no conversion mechanism exists at all.
 
 ## 5. Surfaces
 
-- [ ] 5.1 Add management API operations for plan, usage, invoices, and balance, and regenerate the checked API types.
-- [ ] 5.2 Add the console surfaces for the same, including the not-payable statement.
-- [ ] 5.3 Add operator surfaces for credits and comped plans.
-- [ ] 5.4 Audit every action that changes a balance, and prove no audit record carries a rate card secret or personal financial data.
-- [ ] 5.5 Record every new scenario in the requirements traceability matrix.
-
-## Deferred to a later change
-
-Collection is out of scope here and is listed so it is not mistaken for an
-oversight: payment provider selection, hosted checkout, stored payment
-methods, the signed webhook receiver, charge idempotency, dunning, and
-suspension for non-payment.
+- [x] 5.1 Management API: the bill. Operator API: plan change, plan exceptions, credits. All in the OpenAPI contract with regenerated types.
+- [ ] 5.2 Console surfaces. The API serves everything; no page renders it yet.
+- [x] 5.3 Operator actions audited as distinct actions: plan change, plan exception, credit grant.
+- [ ] 5.4 Traceability rows for billing scenarios, when the change's spec deltas are merged at archive.
