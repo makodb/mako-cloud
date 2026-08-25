@@ -269,8 +269,11 @@ async function pullAll(token, expected) {
         expected: [200, 429],
       });
       if (response.status === 200) break;
+      // Honor the platform's own retry contract in full: the rate window is
+      // a minute, so a wait capped below it can burn every attempt inside
+      // one exhausted window and report a healthy limiter as a failure.
       const retryAfterSeconds = Number(response.headers.get("retry-after") ?? "1");
-      await delay(Math.min(Math.max(retryAfterSeconds, 0.25), 5) * 1_000);
+      await delay(Math.min(Math.max(retryAfterSeconds, 0.25), 61) * 1_000);
     }
     assert(response?.status === 200, "RxDB pull remained rate limited after bounded retries");
     assert(Array.isArray(response.body?.documents), "RxDB pull documents are invalid");
