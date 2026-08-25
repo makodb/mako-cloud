@@ -9,6 +9,7 @@ use mako_control_plane::{
     OrganizationRecord, OrganizationRole, OrganizationServiceError, ProjectRecord,
     ProjectStoreError,
 };
+use mako_internal_rpc::IdentityAdminOperation;
 use mako_provisioning::{
     ProvisioningOperation, ProvisioningResource, ProvisioningWorkflowError, ProvisioningWorkflowId,
 };
@@ -710,17 +711,56 @@ fn handle_create_environment(
             }
             Err(error) => return Err(project_error(request, error)),
         };
+        let tenant = TenantScope::new(project_id, id);
+        // A new environment starts on its organization's plan. Without this it
+        // would be served under the deployment default instead, which is not
+        // what anyone subscribed to.
+        install_plan_limits(graph, request, &actor, &tenant).await?;
         enqueue(
             graph,
             request,
             &idempotency,
-            ProvisioningResource::Environment(TenantScope::new(project_id, id)),
+            ProvisioningResource::Environment(tenant),
             ProvisioningOperation::Create,
             now,
         )
         .await?;
         json(request, 202, &environment_wire(request, &record)?)
     })
+}
+
+/// Resolve what an organization is entitled to and install the limits that
+/// follow into the data plane that serves the environment.
+///
+/// The plan and any exception made to it are control-plane state; the limits
+/// they imply are what the gateway enforces. Translating here keeps that in one
+/// place, so the data plane holds what it was given rather than a second copy
+/// of the rules.
+async fn install_plan_limits(
+    graph: &Arc<ControlPlaneGraph>,
+    request: &HttpRequest,
+    actor: &DeveloperPrincipal,
+    tenant: &TenantScope,
+) -> Result<(), HttpApiError> {
+    // Nothing sells a different plan yet, so every organization is on the free
+    // one. When subscriptions exist this is where they are read.
+    let plan = mako_billing::plan("free")
+        .ok_or_else(|| internal(request, "the free plan is missing from the catalog"))?;
+    let policy = mako_billing::enforcement_policy(&plan.entitlements)
+        .map_err(|_| internal(request, "plan limits could not be resolved"))?;
+    let encoded = serde_json::to_value(&policy)
+        .map_err(|_| internal(request, "plan limits could not be encoded"))?;
+    let _: serde_json::Value = crate::identity_admin_http::administer(
+        graph,
+        request,
+        actor,
+        tenant,
+        IdentityAdminOperation::InstallQuotaPolicy,
+        serde_json::json!({ "policy": encoded }),
+        true,
+    )
+    .await?;
+    Ok(())
 }
 
 fn handle_get_environment(

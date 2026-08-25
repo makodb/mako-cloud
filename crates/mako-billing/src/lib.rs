@@ -406,6 +406,24 @@ mod tests {
         );
     }
 
+    /// The control plane resolves a plan into limits and sends them as JSON;
+    /// the data plane parses them back. Nothing else checks that those two
+    /// agree, and a mismatch would not be loud: the gateway would simply fail
+    /// to read the policy it was given.
+    #[test]
+    fn resolved_limits_survive_the_trip_between_the_planes() {
+        for plan in catalog() {
+            let resolved = enforcement_policy(&plan.entitlements).expect("policy");
+            let sent = serde_json::to_vec(&resolved).expect("serialize");
+            let received: GatewayQuotaPolicy = serde_json::from_slice(&sent).expect("deserialize");
+            assert_eq!(
+                received, resolved,
+                "the {} plan's limits did not survive being sent",
+                plan.id
+            );
+        }
+    }
+
     #[test]
     fn a_resource_the_gateway_cannot_refuse_is_not_pretended_to_be_capped() {
         // Stored bytes is measured on a schedule, not decided per request, so

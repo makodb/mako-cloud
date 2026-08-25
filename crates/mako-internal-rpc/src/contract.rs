@@ -226,6 +226,12 @@ pub enum IdentityAdminOperation {
     AdvanceExplorerEpoch,
     ImportDataJobBatch,
     ExportDataJobPage,
+    /// Install the quota policy a tenant is held to.
+    ///
+    /// The control plane owns plans and the exceptions made to them, and
+    /// resolves both into limits. The data plane enforces what it is given, so
+    /// the translation lives in one place rather than on both sides.
+    InstallQuotaPolicy,
     /// Install a collection index in the data plane that serves the
     /// environment, and build it. Document queries are refused unless an
     /// active index covers them, and only the data plane holds the documents
@@ -276,6 +282,13 @@ pub struct InstallCollectionInput {
 /// A document policy propagated to the data plane. `policy` is the policy
 /// model's own encoding, so the data plane validates it with the same codec it
 /// reads back rather than a parallel wire schema that could drift.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct InstallQuotaPolicyInput {
+    /// The resolved gateway policy, already translated from the plan.
+    pub policy: Value,
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct InstallIndexInput {

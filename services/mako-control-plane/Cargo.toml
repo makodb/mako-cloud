@@ -33,6 +33,7 @@ ed25519-dalek.workspace = true
 futures.workspace = true
 lettre.workspace = true
 mako-api = { path = "../../crates/mako-api" }
+mako-billing = { path = "../../crates/mako-billing" }
 mako-audit = { path = "../../crates/mako-audit" }
 mako-config = { path = "../../crates/mako-config" }
 mako-control-plane = { path = "../../crates/mako-control-plane" }

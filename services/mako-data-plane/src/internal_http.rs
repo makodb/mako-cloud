@@ -481,6 +481,9 @@ async fn execute_operation(
         IdentityAdminOperation::InstallPolicy => {
             execute_policy_operation(graph, request, tenant, command, now).await
         }
+        IdentityAdminOperation::InstallQuotaPolicy => {
+            execute_quota_policy_install(graph, request, tenant, command, now).await
+        }
         IdentityAdminOperation::InstallIndex => {
             execute_index_install(graph, request, tenant, command, now).await
         }
@@ -507,6 +510,52 @@ const INDEX_BUILD_PAGE: usize = 512;
 /// that exhausts the budget stays `building` and resumes on the next call,
 /// because every page commits its progress marker with its entries.
 const INDEX_BUILD_MAX_PAGES: usize = 4_096;
+
+/// Record the limits this tenant is held to.
+///
+/// The policy arrives already resolved: the control plane owns the plan and any
+/// exception made to it, so translating those into limits happens there and
+/// this only has to store what it was given. Written durably, because a tenant
+/// silently reverting to the deployment default after a restart would be a
+/// customer quietly losing what they pay for.
+async fn execute_quota_policy_install(
+    graph: &Arc<DataPlaneGraph>,
+    request: &HttpRequest,
+    tenant: &mako_api::TenantScope,
+    command: &IdentityAdminCommand,
+    now: u64,
+) -> Result<Vec<u8>, HttpApiError> {
+    require_permission(
+        graph,
+        request,
+        tenant,
+        command,
+        IdentityAdminPermission::ManageCollections,
+        "quota_policy_install",
+        "quotas",
+        now,
+    )
+    .await?;
+    let input: mako_internal_rpc::InstallQuotaPolicyInput = parse_input(request, &command.input)?;
+    let encoded = serde_json::to_vec(&input.policy)
+        .map_err(|_| auth_http::invalid(request, "quota policy is invalid"))?;
+    // Decoded before it is stored, so a policy the gateway could not read is
+    // rejected here rather than on the request path of every later call.
+    let _: mako_gateway::GatewayQuotaPolicy = serde_json::from_slice(&encoded)
+        .map_err(|_| auth_http::invalid(request, "quota policy is invalid"))?;
+    let key = mako_gateway::PersistentQuotaPolicySource::policy_key(tenant)
+        .map_err(|_| auth_http::invalid(request, "tenant scope is invalid"))?;
+    let mut batch = mako_storage::WriteBatch::new();
+    batch.put(key, encoded);
+    graph
+        .storage_adapter()
+        .write(batch, Durability::Sync)
+        .await
+        .map_err(|_| auth_http::unavailable(request, "quota policy could not be recorded"))?;
+
+    serde_json::to_vec(&serde_json::json!({ "installed": true }))
+        .map_err(|_| auth_http::unavailable(request, "quota response could not be encoded"))
+}
 
 async fn execute_index_install(
     graph: &Arc<DataPlaneGraph>,
@@ -2020,6 +2069,7 @@ const fn operation_name(operation: IdentityAdminOperation) -> &'static str {
         IdentityAdminOperation::InstallCollection => "install_collection",
         IdentityAdminOperation::InstallPolicy => "install_policy",
         IdentityAdminOperation::InstallIndex => "install_index",
+        IdentityAdminOperation::InstallQuotaPolicy => "install_quota_policy",
         IdentityAdminOperation::InspectIndex => "inspect_index",
         IdentityAdminOperation::SearchUsers => "search_users",
         IdentityAdminOperation::InspectUser => "inspect_user",

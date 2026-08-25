@@ -1155,6 +1155,7 @@ dependencies = [
  "lettre",
  "mako-api",
  "mako-audit",
+ "mako-billing",
  "mako-config",
  "mako-control-plane",
  "mako-documents",
