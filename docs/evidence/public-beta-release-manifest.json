@@ -1,12 +1,8 @@
 {
   "schemaVersion": 1,
   "storageCompatibility": {
-    "controlSqlite": [
-      1
-    ],
-    "tenantRocksDb": [
-      1
-    ]
+    "controlSqlite": [1],
+    "tenantRocksDb": [1]
   },
   "planHash": "d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073",
   "source": {

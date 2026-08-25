@@ -64,12 +64,37 @@ month so far against the organization's effective plan and the rate card,
 whose prices were verified against supabase.com/pricing on 2026-08-25. Money
 is integer micro-dollars end to end; only the display divides. Credits are
 operator-granted, exactly-once per credit id, and the balance is credits
-minus charges, unclamped. The console renders the bill on the organization
-page with the non-payable notice ahead of any number.
+minus all charges -- every closed period plus the live month -- unclamped.
+The console renders the bill on the organization page with the non-payable
+notice ahead of any number.
+
+### Proration
+
+A period that spanned a plan change is rated stretch by stretch. Each
+stretch is rated under the plan that held during it: the base fee and a
+flow's included allowance take the stretch's share of the period, while a
+level -- a height like stored bytes -- compares its stretch average against
+the full included level and prorates the resulting charge by time held. Use
+under a free stretch stays uncharged, because a plan that cannot bill
+overage cannot start billing it retroactively. One plan for the whole period
+rates identically to the unsegmented arithmetic. Time before the
+organization existed is covered by the free plan's zero-priced terms, which
+is what prorates a mid-month signup's base fee by construction.
+
+### Period close
+
+Ended months are closed on any bill read while their evidence is still
+inside the ninety-day telemetry retention: the period is derived, stored as
+an invoice under a conditional create -- exactly once, first derivation
+wins -- and never rewritten. `?period=YYYY-MM` serves a closed month's
+invoice, marked `finalized` with the instant it closed; the response's
+period start reports where retained evidence actually began when it was
+derived, so a month whose usage evidence had partly aged out says so instead
+of pretending. A past-period response's balance counts credits against
+closed periods only; the live bill adds the current month on top.
 
 ## What is deliberately absent
 
 Payment collection, stored payment methods, provider webhooks, dunning, and
 suspension for non-payment do not exist, and converting an accrued balance
-into a payable debt has no mechanism. Period close snapshots and proration
-are tracked in `openspec/changes/add-billing/tasks.md`.
+into a payable debt has no mechanism.

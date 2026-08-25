@@ -219,6 +219,160 @@ pub fn rate_period(
     }
 }
 
+/// One stretch of a period during which a single plan applied, with the usage
+/// measured inside that stretch. `usage` carries `period_quantity` values
+/// computed from the records whose timestamps fell in the stretch.
+#[derive(Clone, Debug)]
+pub struct PlanSegment {
+    pub plan: Plan,
+    pub milliseconds: u64,
+    pub usage: BTreeMap<QuotaResource, u64>,
+}
+
+/// Rate a period whose plan changed partway through.
+///
+/// Each stretch is rated under its own plan's terms, prorated by how long it
+/// held. Flows compare a stretch's total against the stretch's share of the
+/// included amount; levels compare a stretch's average against the full
+/// included level -- a level is a height, and half a month at nine stored
+/// gigabytes is half a month's charge, not a comparison against half the
+/// allowance -- and the resulting charge takes the stretch's share of the
+/// period. The base fee takes each plan's share of the period too. One
+/// segment covering the whole period rates exactly like [`rate_period`].
+///
+/// Answers `None` when there are no segments or no time: a period of nothing
+/// has no plan to rate under, and inventing one would misstate the bill.
+#[must_use]
+pub fn rate_period_prorated(card: &RateCard, segments: &[PlanSegment]) -> Option<RatedPeriod> {
+    let period_milliseconds: u64 = segments.iter().fold(0, |total, segment| {
+        total.saturating_add(segment.milliseconds)
+    });
+    let current = segments.last()?;
+    if period_milliseconds == 0 {
+        return None;
+    }
+
+    let base = segments.iter().fold(0_i64, |total, segment| {
+        let plan_base = card
+            .base_micro_dollars
+            .get(&segment.plan.id)
+            .copied()
+            .unwrap_or(0);
+        total.saturating_add(prorate_amount(
+            plan_base,
+            segment.milliseconds,
+            period_milliseconds,
+        ))
+    });
+
+    let mut resources = std::collections::BTreeSet::new();
+    for segment in segments {
+        resources.extend(segment.plan.entitlements.keys().copied());
+    }
+
+    let mut line_items = Vec::new();
+    let mut total = base;
+    for resource in resources {
+        let rate = card.overage.get(&resource);
+        let mut quantity_weighted: u128 = 0;
+        let mut quantity_summed: u64 = 0;
+        let mut included_weighted: u128 = 0;
+        let mut overage_flow: u64 = 0;
+        let mut overage_weighted: u128 = 0;
+        let mut amount: MicroDollars = 0;
+        for segment in segments {
+            let used = segment.usage.get(&resource).copied().unwrap_or(0);
+            let entitlement = segment.plan.entitlement(resource);
+            let included = entitlement.map_or(0, |entitlement| entitlement.included);
+            let billed = entitlement.is_some_and(|entitlement| entitlement.overage_billed);
+            match aggregation(resource) {
+                Aggregation::SumOfRecords => {
+                    let included_share =
+                        prorate_quantity(included, segment.milliseconds, period_milliseconds);
+                    let overage = if billed {
+                        used.saturating_sub(included_share)
+                    } else {
+                        0
+                    };
+                    quantity_summed = quantity_summed.saturating_add(used);
+                    included_weighted += u128::from(included) * u128::from(segment.milliseconds);
+                    overage_flow = overage_flow.saturating_add(overage);
+                    amount = amount.saturating_add(rate.map_or(0, |rate| rate.charge(overage)));
+                }
+                Aggregation::AverageOfSamples => {
+                    let overage = if billed {
+                        used.saturating_sub(included)
+                    } else {
+                        0
+                    };
+                    quantity_weighted += u128::from(used) * u128::from(segment.milliseconds);
+                    included_weighted += u128::from(included) * u128::from(segment.milliseconds);
+                    overage_weighted += u128::from(overage) * u128::from(segment.milliseconds);
+                    amount = amount.saturating_add(prorate_amount(
+                        rate.map_or(0, |rate| rate.charge(overage)),
+                        segment.milliseconds,
+                        period_milliseconds,
+                    ));
+                }
+            }
+        }
+        let (quantity, overage) = match aggregation(resource) {
+            Aggregation::SumOfRecords => (quantity_summed, overage_flow),
+            Aggregation::AverageOfSamples => (
+                weighted_average(quantity_weighted, period_milliseconds),
+                weighted_average(overage_weighted, period_milliseconds),
+            ),
+        };
+        total = total.saturating_add(amount);
+        line_items.push(LineItem {
+            resource,
+            quantity,
+            included: weighted_average(included_weighted, period_milliseconds),
+            overage,
+            amount_micro_dollars: amount,
+        });
+    }
+
+    Some(RatedPeriod {
+        plan_id: current.plan.id.clone(),
+        plan_version: current.plan.version,
+        rate_card_version: card.version,
+        base_micro_dollars: base,
+        line_items,
+        total_micro_dollars: total,
+    })
+}
+
+/// A non-negative amount's share of the period, rounded down.
+fn prorate_amount(
+    amount: MicroDollars,
+    milliseconds: u64,
+    period_milliseconds: u64,
+) -> MicroDollars {
+    if period_milliseconds == 0 {
+        return 0;
+    }
+    let share =
+        i128::from(amount.max(0)) * i128::from(milliseconds) / i128::from(period_milliseconds);
+    i64::try_from(share).unwrap_or(i64::MAX)
+}
+
+/// A quantity's share of the period, rounded down.
+fn prorate_quantity(quantity: u64, milliseconds: u64, period_milliseconds: u64) -> u64 {
+    if period_milliseconds == 0 {
+        return 0;
+    }
+    let share = u128::from(quantity) * u128::from(milliseconds) / u128::from(period_milliseconds);
+    u64::try_from(share).unwrap_or(u64::MAX)
+}
+
+fn weighted_average(weighted: u128, period_milliseconds: u64) -> u64 {
+    if period_milliseconds == 0 {
+        return 0;
+    }
+    u64::try_from(weighted / u128::from(period_milliseconds)).unwrap_or(u64::MAX)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -339,5 +493,125 @@ mod tests {
                 .iter()
                 .any(|item| item.resource == QuotaResource::StorageBytes && item.overage > 0)
         );
+    }
+
+    /// Proration must vanish when there is nothing to prorate: one plan for
+    /// the whole period has to rate to the identical bill, line for line, or
+    /// every unchanged organization's bill moved the day proration landed.
+    #[test]
+    fn one_segment_covering_the_period_rates_exactly_like_the_unsegmented_period() {
+        let usage = BTreeMap::from([
+            (QuotaResource::StorageBytes, 10 * GIB + GIB / 2),
+            (QuotaResource::EdgeInvocationsPerMonth, 3_500_000),
+        ]);
+        let whole = rate_period(&pro(), &default_rate_card(), &usage);
+        let segmented = rate_period_prorated(
+            &default_rate_card(),
+            &[PlanSegment {
+                plan: pro(),
+                milliseconds: 30 * 24 * 60 * 60 * 1_000,
+                usage,
+            }],
+        )
+        .expect("rated");
+        assert_eq!(segmented, whole);
+    }
+
+    /// An upgrade partway through the month must charge each plan for its
+    /// share: the base fee prorates by time, a flow's allowance prorates the
+    /// same way, and use under the free stretch stays uncharged because a
+    /// plan that cannot bill overage cannot start billing it retroactively.
+    #[test]
+    fn an_upgrade_mid_month_prorates_the_base_and_the_flow_allowances() {
+        const MONTH: u64 = 30 * 24 * 60 * 60 * 1_000;
+        let free = plan("free").expect("free plan");
+        let free_invocations = free
+            .entitlement(QuotaResource::EdgeInvocationsPerMonth)
+            .expect("free entitlement");
+        assert!(!free_invocations.overage_billed);
+        let pro_included = pro()
+            .entitlement(QuotaResource::EdgeInvocationsPerMonth)
+            .expect("pro entitlement")
+            .included;
+
+        // Ten days free, twenty days pro. The pro stretch served included
+        // invocations plus exactly three million beyond its share.
+        let pro_use = pro_included * 2 / 3 + 3_000_000;
+        let rated = rate_period_prorated(
+            &default_rate_card(),
+            &[
+                PlanSegment {
+                    plan: free,
+                    milliseconds: MONTH / 3,
+                    usage: BTreeMap::from([(QuotaResource::EdgeInvocationsPerMonth, 100_000)]),
+                },
+                PlanSegment {
+                    plan: pro(),
+                    milliseconds: MONTH * 2 / 3,
+                    usage: BTreeMap::from([(QuotaResource::EdgeInvocationsPerMonth, pro_use)]),
+                },
+            ],
+        )
+        .expect("rated");
+
+        // Two thirds of the month on pro is two thirds of the base fee.
+        assert_eq!(rated.base_micro_dollars, 25_000_000 * 2 / 3);
+        assert_eq!(rated.plan_id, "pro", "the bill names the current plan");
+        let invocations = rated
+            .line_items
+            .iter()
+            .find(|item| item.resource == QuotaResource::EdgeInvocationsPerMonth)
+            .expect("invocations line");
+        // The free stretch's use is uncharged; the pro stretch owes for three
+        // million beyond its prorated allowance, at $2 per million.
+        assert_eq!(invocations.overage, 3_000_000);
+        assert_eq!(invocations.amount_micro_dollars, 3 * 2_000_000);
+        assert_eq!(
+            rated.total_micro_dollars,
+            rated.base_micro_dollars + 3 * 2_000_000
+        );
+    }
+
+    /// A level is a height, so a changed plan splits its charge by time held,
+    /// not by comparing against a shrunken allowance: nine gigabytes above
+    /// the included level for half the pro stretch is half that stretch's
+    /// charge.
+    #[test]
+    fn a_level_prorates_its_charge_by_the_time_it_was_held() {
+        const MONTH: u64 = 30 * 24 * 60 * 60 * 1_000;
+        // Pro for the whole month, but measured as two equal stretches to
+        // prove the split arithmetic: 16 GiB stored in one half, 8 GiB (the
+        // included level) in the other.
+        let rated = rate_period_prorated(
+            &default_rate_card(),
+            &[
+                PlanSegment {
+                    plan: pro(),
+                    milliseconds: MONTH / 2,
+                    usage: BTreeMap::from([(QuotaResource::StorageBytes, 16 * GIB)]),
+                },
+                PlanSegment {
+                    plan: pro(),
+                    milliseconds: MONTH / 2,
+                    usage: BTreeMap::from([(QuotaResource::StorageBytes, 8 * GIB)]),
+                },
+            ],
+        )
+        .expect("rated");
+        let storage = rated
+            .line_items
+            .iter()
+            .find(|item| item.resource == QuotaResource::StorageBytes)
+            .expect("storage line");
+        // Eight gigabytes over included, held for half the period: half of
+        // eight priced units.
+        assert_eq!(storage.amount_micro_dollars, 8 * 125_000 / 2);
+        assert_eq!(
+            storage.quantity,
+            12 * GIB,
+            "the shown level is the time-weighted average"
+        );
+        // No time at all is not a period; rating refuses to invent one.
+        assert!(rate_period_prorated(&default_rate_card(), &[]).is_none());
     }
 }

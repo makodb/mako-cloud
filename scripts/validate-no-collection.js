@@ -67,6 +67,10 @@ const allowedBalanceReaders = new Set([
   "services/mako-control-plane/src/management_http.rs",
   "crates/mako-smoke/tests/telemetry_pipeline.rs",
   "packages/management-sdk/src/index.ts",
+  // The console page that shows the bill is the surface the balance exists
+  // for; its e2e spec asserts what that page renders.
+  "apps/console/src/billing.tsx",
+  "apps/console/test-e2e/management-workflows.spec.ts",
 ]);
 for (const path of balanceReaders) {
   if (!allowedBalanceReaders.has(path)) {

@@ -799,10 +799,21 @@ fn handle_organization_bill(
     graph: &Arc<ControlPlaneGraph>,
     request: &HttpRequest,
 ) -> Result<HttpResponse, HttpApiError> {
-    no_payload(request)?;
+    if !request.body().is_empty() {
+        return Err(invalid(request, "request body is not supported"));
+    }
     let organization_id =
         OrganizationId::parse(request.path_parameter("organizationId").unwrap_or_default())
             .map_err(|_| invalid(request, "organization path is invalid"))?;
+    // The only query this endpoint understands is a past period to show.
+    let requested_period = match request.query() {
+        [] => None,
+        [(name, value)] if name == "period" => Some(
+            parse_billing_period(value)
+                .ok_or_else(|| invalid(request, "period must be a calendar month as YYYY-MM"))?,
+        ),
+        _ => return Err(invalid(request, "unexpected query parameters")),
+    };
     with_developer(graph, request, |actor, now| async move {
         let organization = graph
             .organization_store()
@@ -816,140 +827,387 @@ fn handle_organization_bill(
             .await
             .map_err(|_| unavailable(request, "membership is unavailable"))?
             .ok_or_else(|| forbidden(request, "organization access is forbidden"))?;
-        let plan = mako_billing::plan(organization.plan_id())
-            .ok_or_else(|| internal(request, "the organization's plan is not in the catalog"))?;
         let exceptions = graph
             .operator_service()
             .plan_exceptions(&organization_id, now)
             .await
             .map_err(|_| unavailable(request, "plan exceptions are unavailable"))?;
-        let plan = mako_billing::effective_plan(&plan, &exceptions, now);
-        let card = mako_billing::rating::default_rate_card();
 
-        // The period is the current calendar month so far. Nothing closes
-        // periods yet; this is the live view the beta shows. Telemetry retains
-        // less than a month, so the rated window starts at whichever is later:
-        // the month, or the oldest evidence -- and the response reports the
-        // start actually used rather than pretending to a window it cannot
-        // have seen.
         let now_milliseconds = now.saturating_mul(1_000);
-        let mut period_start = current_month_start_milliseconds(now);
+        let (current_year, current_month) = year_and_month(now);
+        let current_start = month_start_milliseconds(current_year, current_month);
 
-        // Levels average per environment and then sum across them: two
-        // environments each storing a gigabyte are two stored gigabytes, but
-        // twelve samples of one environment's gigabyte are still one.
-        let limit = NonZeroUsize::new(100).expect("listing limit");
-        let mut usage: std::collections::BTreeMap<mako_api::QuotaResource, u64> =
-            std::collections::BTreeMap::new();
-        let projects = graph
-            .project_store()
-            .list_projects(&organization_id, limit)
-            .await
-            .map_err(|_| unavailable(request, "the organization's projects are unavailable"))?;
-        for project in &projects {
-            let environments = graph
-                .project_store()
-                .list_environments(project.id(), limit)
+        // Ended months still inside the closable horizon are closed before
+        // anything is answered, so the balance below counts every period and
+        // evidence is snapshotted before retention can take it.
+        for months_back in (1..=CLOSABLE_MONTHS_BACK).rev() {
+            let (year, month) = months_before(current_year, current_month, months_back);
+            let period_start = month_start_milliseconds(year, month);
+            let period_end = month_end_milliseconds(year, month);
+            if period_end <= organization.created_at_unix_seconds().saturating_mul(1_000) {
+                continue;
+            }
+            if graph
+                .organization_store()
+                .get_invoice(&organization_id, period_start)
                 .await
-                .map_err(|_| unavailable(request, "the project's environments are unavailable"))?;
-            for environment in &environments {
-                let tenant = TenantScope::new(project.id().clone(), environment.id().clone());
-                let mut per_tenant: std::collections::BTreeMap<mako_api::QuotaResource, Vec<u64>> =
-                    std::collections::BTreeMap::new();
-                let mut cursor: Option<String> = None;
-                for _page in 0..16 {
-                    // No `from` bound: the retention boundary is recomputed by
-                    // the store on every call, and chasing it loses the race.
-                    // The whole retained window is fetched and the period is
-                    // applied here, where the clock stands still.
-                    let page = graph
-                        .observability_service()
-                        .query_usage(
-                            &actor,
-                            &tenant,
-                            &mako_api::ObservabilityQuery {
-                                cursor: cursor.clone(),
-                                from_unix_milliseconds: None,
-                                until_unix_milliseconds: None,
-                                limit: 1_000,
-                            },
-                            now_milliseconds,
-                        )
-                        .await
-                        .map_err(|_| unavailable(request, "usage records are unavailable"))?;
-                    // The bill covers the evidence that still exists; when
-                    // retention is shorter than the month, the reported period
-                    // start says so instead of pretending.
-                    period_start = period_start.max(page.retention.retained_from_unix_milliseconds);
-                    for record in &page.items {
-                        if record.timestamp_unix_milliseconds < period_start {
-                            continue;
-                        }
-                        if let mako_api::ObservabilityPayload::Usage {
-                            resource, quantity, ..
-                        } = &record.payload
-                        {
-                            per_tenant.entry(*resource).or_default().push(*quantity);
-                        }
-                    }
-                    cursor = page.next_cursor;
-                    if cursor.is_none() {
-                        break;
-                    }
-                }
-                for (resource, records) in per_tenant {
-                    let quantity = mako_billing::rating::period_quantity(resource, &records);
-                    let entry = usage.entry(resource).or_insert(0);
-                    *entry = entry.saturating_add(quantity);
-                }
+                .map_err(|_| unavailable(request, "closed periods are unavailable"))?
+                .is_some()
+            {
+                continue;
+            }
+            let (rated, derived_from) = derive_rated_period(
+                graph,
+                &actor,
+                request,
+                &organization,
+                &exceptions,
+                period_start,
+                period_end,
+                now,
+            )
+            .await?;
+            let invoice = mako_control_plane::InvoiceRecord {
+                organization_id: organization_id.clone(),
+                period_start_unix_milliseconds: period_start,
+                period_end_unix_milliseconds: period_end,
+                derived_from_unix_milliseconds: derived_from,
+                rated,
+                closed_at_unix_seconds: now,
+            };
+            match graph.organization_store().close_invoice(&invoice).await {
+                Ok(()) => {}
+                // Another read closed it first; theirs is the invoice.
+                Err(mako_control_plane::OrganizationStoreError::Conflict) => {}
+                Err(_) => return Err(unavailable(request, "the period could not be closed")),
             }
         }
 
-        let rated = mako_billing::rating::rate_period(&plan, &card, &usage);
+        let invoices = graph
+            .organization_store()
+            .list_invoices(&organization_id)
+            .await
+            .map_err(|_| unavailable(request, "closed periods are unavailable"))?;
+        let closed_total = invoices.iter().fold(0_i64, |total, invoice| {
+            total.saturating_add(invoice.rated.total_micro_dollars)
+        });
         let credits = graph
             .operator_service()
             .credit_total(&organization_id)
             .await
             .map_err(|_| unavailable(request, "credits are unavailable"))?;
-        json(
-            request,
-            200,
-            &serde_json::json!({
-                "organizationId": organization_id.as_str(),
-                "planId": rated.plan_id,
-                "periodStart": format_timestamp(request, period_start / 1_000)?,
-                "observedAt": format_timestamp(request, now)?,
-                "baseMicroDollars": rated.base_micro_dollars,
-                "lineItems": rated.line_items,
-                "totalMicroDollars": rated.total_micro_dollars,
-                "creditsMicroDollars": credits,
-                // Credits minus charges; accrued use beyond credit reads
-                // negative, and nothing clamps it at zero -- hiding the number
-                // is the one thing this surface must not do.
-                "balanceMicroDollars": credits.saturating_sub(rated.total_micro_dollars),
-                "collectable": false,
-                "notice": "This bill is informational. Nothing is payable and no charge will be made during the beta.",
-            }),
-        )
+
+        match requested_period {
+            // The live view: the current month so far, never finalized.
+            None => {
+                let (rated, derived_from) = derive_rated_period(
+                    graph,
+                    &actor,
+                    request,
+                    &organization,
+                    &exceptions,
+                    current_start,
+                    now_milliseconds,
+                    now,
+                )
+                .await?;
+                let balance = credits
+                    .saturating_sub(closed_total)
+                    .saturating_sub(rated.total_micro_dollars);
+                bill_response(
+                    request,
+                    &organization_id,
+                    &rated,
+                    derived_from,
+                    now_milliseconds,
+                    now,
+                    credits,
+                    balance,
+                    None,
+                )
+            }
+            Some((year, month)) => {
+                let period_start = month_start_milliseconds(year, month);
+                if period_start >= now_milliseconds {
+                    return Err(invalid(request, "the requested period has not started"));
+                }
+                if period_start == current_start {
+                    return Err(invalid(
+                        request,
+                        "the current month is the bill itself; request it without a period",
+                    ));
+                }
+                // Past months answer from what was closed. One that was never
+                // closed while its evidence existed cannot be reconstructed,
+                // and saying so beats inventing a number.
+                let invoice = graph
+                    .organization_store()
+                    .get_invoice(&organization_id, period_start)
+                    .await
+                    .map_err(|_| unavailable(request, "closed periods are unavailable"))?
+                    .ok_or_else(|| {
+                        not_found(request, "no invoice was closed for the requested period")
+                    })?;
+                let balance = credits.saturating_sub(closed_total);
+                bill_response(
+                    request,
+                    &organization_id,
+                    &invoice.rated,
+                    invoice.derived_from_unix_milliseconds,
+                    invoice.period_end_unix_milliseconds,
+                    now,
+                    credits,
+                    balance,
+                    Some(invoice.closed_at_unix_seconds),
+                )
+            }
+        }
     })
 }
 
-/// Midnight UTC on the first of the current month, in milliseconds.
-fn current_month_start_milliseconds(now_unix_seconds: u64) -> u64 {
+/// Ended months this many back are closed on any bill read. Three keeps every
+/// month whose end can still be inside the ninety-day telemetry retention.
+const CLOSABLE_MONTHS_BACK: u32 = 3;
+
+/// Derive the rated period for one window of an organization's history.
+///
+/// The window is split into stretches by the organization's recorded plan
+/// changes, usage records are bucketed into the stretch their timestamp fell
+/// in, and each stretch is rated under its own plan's terms prorated by how
+/// long it held. Returns the rated period and where retained evidence
+/// actually began -- the calendar window start when everything was still on
+/// record, later when part of it had aged out.
+#[allow(clippy::too_many_arguments)]
+async fn derive_rated_period(
+    graph: &Arc<ControlPlaneGraph>,
+    actor: &mako_control_plane::DeveloperPrincipal,
+    request: &HttpRequest,
+    organization: &mako_control_plane::OrganizationRecord,
+    exceptions: &[mako_billing::PlanException],
+    period_start: u64,
+    period_end: u64,
+    now: u64,
+) -> Result<(mako_billing::rating::RatedPeriod, u64), HttpApiError> {
+    let now_milliseconds = now.saturating_mul(1_000);
+    // Which plan held when, as stretch starts in milliseconds clipped to the
+    // window. Weights come from the calendar window, not from retention: the
+    // base fee covers time subscribed, which no telemetry needs to prove.
+    let stretches = organization.plan_stretches(period_start / 1_000);
+    let mut segments: Vec<(String, u64)> = Vec::new();
+    for (plan_id, from_unix_seconds) in stretches {
+        let from = from_unix_seconds.saturating_mul(1_000).max(period_start);
+        if from >= period_end {
+            break;
+        }
+        segments.push((plan_id, from));
+    }
+    if segments.is_empty() {
+        segments.push((organization.plan_id().to_owned(), period_start));
+    }
+    let segment_end = |index: usize| segments.get(index + 1).map_or(period_end, |next| next.1);
+
+    // Usage per stretch. Levels average per environment and then sum across
+    // them: two environments each storing a gigabyte are two stored
+    // gigabytes, but twelve samples of one environment's gigabyte are one.
+    let mut usage_by_segment: Vec<std::collections::BTreeMap<mako_api::QuotaResource, u64>> =
+        vec![std::collections::BTreeMap::new(); segments.len()];
+    let mut evidence_start = period_start;
+    let limit = NonZeroUsize::new(100).expect("listing limit");
+    let projects = graph
+        .project_store()
+        .list_projects(organization.id(), limit)
+        .await
+        .map_err(|_| unavailable(request, "the organization's projects are unavailable"))?;
+    for project in &projects {
+        let environments = graph
+            .project_store()
+            .list_environments(project.id(), limit)
+            .await
+            .map_err(|_| unavailable(request, "the project's environments are unavailable"))?;
+        for environment in &environments {
+            let tenant = TenantScope::new(project.id().clone(), environment.id().clone());
+            let mut per_segment: Vec<
+                std::collections::BTreeMap<mako_api::QuotaResource, Vec<u64>>,
+            > = vec![std::collections::BTreeMap::new(); segments.len()];
+            let mut cursor: Option<String> = None;
+            for _page in 0..16 {
+                // No `from` bound: the retention boundary is recomputed by
+                // the store on every call, and chasing it loses the race.
+                // The whole retained window is fetched and the period is
+                // applied here, where the clock stands still.
+                let page = graph
+                    .observability_service()
+                    .query_usage(
+                        actor,
+                        &tenant,
+                        &mako_api::ObservabilityQuery {
+                            cursor: cursor.clone(),
+                            from_unix_milliseconds: None,
+                            until_unix_milliseconds: None,
+                            limit: 1_000,
+                        },
+                        now_milliseconds,
+                    )
+                    .await
+                    .map_err(|_| unavailable(request, "usage records are unavailable"))?;
+                // The bill covers the evidence that still exists; when
+                // retention starts inside the window, the reported start
+                // says so instead of pretending.
+                evidence_start = evidence_start.max(page.retention.retained_from_unix_milliseconds);
+                for record in &page.items {
+                    let at = record.timestamp_unix_milliseconds;
+                    if at < evidence_start || at >= period_end {
+                        continue;
+                    }
+                    if let mako_api::ObservabilityPayload::Usage {
+                        resource, quantity, ..
+                    } = &record.payload
+                    {
+                        let index = segments
+                            .iter()
+                            .rposition(|(_, from)| *from <= at)
+                            .unwrap_or(0);
+                        per_segment[index]
+                            .entry(*resource)
+                            .or_default()
+                            .push(*quantity);
+                    }
+                }
+                cursor = page.next_cursor;
+                if cursor.is_none() {
+                    break;
+                }
+            }
+            for (index, resources) in per_segment.into_iter().enumerate() {
+                for (resource, records) in resources {
+                    let quantity = mako_billing::rating::period_quantity(resource, &records);
+                    let entry = usage_by_segment[index].entry(resource).or_insert(0);
+                    *entry = entry.saturating_add(quantity);
+                }
+            }
+        }
+    }
+
+    let card = mako_billing::rating::default_rate_card();
+    let mut rated_segments = Vec::with_capacity(segments.len());
+    for (index, (plan_id, from)) in segments.iter().enumerate() {
+        let plan = mako_billing::plan(plan_id)
+            .ok_or_else(|| internal(request, "the organization's plan is not in the catalog"))?;
+        rated_segments.push(mako_billing::rating::PlanSegment {
+            plan: mako_billing::effective_plan(&plan, exceptions, now),
+            milliseconds: segment_end(index).saturating_sub(*from),
+            usage: std::mem::take(&mut usage_by_segment[index]),
+        });
+    }
+    let rated = mako_billing::rating::rate_period_prorated(&card, &rated_segments)
+        .ok_or_else(|| internal(request, "the period has no time to rate"))?;
+    // Evidence beginning after the window ended means none of it remained;
+    // the clamp records that as an empty window rather than an inverted one.
+    Ok((rated, evidence_start.min(period_end)))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn bill_response(
+    request: &HttpRequest,
+    organization_id: &OrganizationId,
+    rated: &mako_billing::rating::RatedPeriod,
+    period_start: u64,
+    period_end: u64,
+    now: u64,
+    credits: i64,
+    balance: i64,
+    closed_at_unix_seconds: Option<u64>,
+) -> Result<HttpResponse, HttpApiError> {
+    json(
+        request,
+        200,
+        &serde_json::json!({
+            "organizationId": organization_id.as_str(),
+            "planId": rated.plan_id,
+            "periodStart": format_timestamp(request, period_start / 1_000)?,
+            "periodEnd": format_timestamp(request, period_end / 1_000)?,
+            "observedAt": format_timestamp(request, now)?,
+            "finalized": closed_at_unix_seconds.is_some(),
+            "closedAt": closed_at_unix_seconds
+                .map(|at| format_timestamp(request, at))
+                .transpose()?,
+            "baseMicroDollars": rated.base_micro_dollars,
+            "lineItems": rated.line_items,
+            "totalMicroDollars": rated.total_micro_dollars,
+            "creditsMicroDollars": credits,
+            // Credits minus charges; accrued use beyond credit reads
+            // negative, and nothing clamps it at zero -- hiding the number
+            // is the one thing this surface must not do.
+            "balanceMicroDollars": balance,
+            "collectable": false,
+            "notice": "This bill is informational. Nothing is payable and no charge will be made during the beta.",
+        }),
+    )
+}
+
+/// `YYYY-MM`, strictly: four digits, a dash, a month `01..=12`.
+fn parse_billing_period(value: &str) -> Option<(i64, u32)> {
+    let (year, month) = value.split_once('-')?;
+    if year.len() != 4 || month.len() != 2 {
+        return None;
+    }
+    let year = year.parse::<i64>().ok()?;
+    let month = month
+        .parse::<u32>()
+        .ok()
+        .filter(|month| (1..=12).contains(month))?;
+    (year >= 1970).then_some((year, month))
+}
+
+/// The civil year and month `now` falls in, UTC.
+fn year_and_month(now_unix_seconds: u64) -> (i64, u32) {
     const DAY: u64 = 24 * 60 * 60;
-    let days = now_unix_seconds / DAY;
-    // Civil-date arithmetic (Howard Hinnant's algorithm).
-    let z = i64::try_from(days).unwrap_or(0) + 719_468;
+    // Civil-date arithmetic (Howard Hinnant's algorithms).
+    let z = i64::try_from(now_unix_seconds / DAY).unwrap_or(0) + 719_468;
+    let era = z.div_euclid(146_097);
     let doe = z.rem_euclid(146_097);
     let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
     let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
     let mp = (5 * doy + 2) / 153;
-    let day_of_month = doy - (153 * mp + 2) / 5;
-    let first_of_month_days = z - 719_468 - day_of_month;
-    u64::try_from(first_of_month_days)
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = yoe + era * 400 + i64::from(month <= 2);
+    (year, u32::try_from(month).unwrap_or(1))
+}
+
+/// Midnight UTC on the first of the month, in milliseconds.
+fn month_start_milliseconds(year: i64, month: u32) -> u64 {
+    const DAY: u64 = 24 * 60 * 60;
+    let year = year - i64::from(month <= 2);
+    let era = year.div_euclid(400);
+    let yoe = year.rem_euclid(400);
+    let month = i64::from(month);
+    let mp = if month > 2 { month - 3 } else { month + 9 };
+    let doy = (153 * mp + 2) / 5;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146_097 + doe - 719_468;
+    u64::try_from(days)
         .unwrap_or(0)
         .saturating_mul(DAY)
         .saturating_mul(1_000)
+}
+
+/// The instant the month ends: the start of the next one.
+fn month_end_milliseconds(year: i64, month: u32) -> u64 {
+    let (year, month) = if month == 12 {
+        (year + 1, 1)
+    } else {
+        (year, month + 1)
+    };
+    month_start_milliseconds(year, month)
+}
+
+/// The year and month `months` before the given one.
+fn months_before(year: i64, month: u32, months: u32) -> (i64, u32) {
+    let total = year * 12 + i64::from(month) - 1 - i64::from(months);
+    (
+        total.div_euclid(12),
+        u32::try_from(total.rem_euclid(12)).unwrap_or(0) + 1,
+    )
 }
 
 fn handle_get_environment(
@@ -1729,4 +1987,65 @@ struct EnvironmentWire {
     deletion_deadline: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     failure_diagnostic: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Calendar arithmetic the biller stands on: a month's start must invert
+    /// the year-and-month read, the end must be the next month's start across
+    /// a year boundary, and stepping back must borrow through January.
+    #[test]
+    fn billing_month_arithmetic_is_civil_and_inverts_itself() {
+        // 2026-08-01T00:00:00Z.
+        const AUGUST_FIRST: u64 = 1_785_542_400;
+        assert_eq!(year_and_month(AUGUST_FIRST + 24 * 24 * 60 * 60), (2026, 8));
+        assert_eq!(month_start_milliseconds(2026, 8), AUGUST_FIRST * 1_000);
+        assert_eq!(
+            month_end_milliseconds(2026, 8),
+            (AUGUST_FIRST + 31 * 24 * 60 * 60) * 1_000,
+            "August ends where September begins"
+        );
+        assert_eq!(
+            month_end_milliseconds(2026, 12),
+            month_start_milliseconds(2027, 1)
+        );
+        assert_eq!(months_before(2026, 1, 1), (2025, 12));
+        assert_eq!(months_before(2026, 8, 3), (2026, 5));
+        // Every month of a leap and a common year round-trips.
+        for year in [2024_i64, 2026] {
+            for month in 1..=12 {
+                let start = month_start_milliseconds(year, month);
+                assert_eq!(year_and_month(start / 1_000), (year, month));
+                assert!(month_end_milliseconds(year, month) > start);
+            }
+        }
+    }
+
+    /// The period parameter is a wire input; anything but a strict calendar
+    /// month must be refused rather than guessed at.
+    #[test]
+    fn a_billing_period_parses_strictly_or_not_at_all() {
+        assert_eq!(parse_billing_period("2026-07"), Some((2026, 7)));
+        assert_eq!(parse_billing_period("2026-12"), Some((2026, 12)));
+        for rejected in [
+            "2026-13",
+            "2026-00",
+            "2026-7",
+            "26-07",
+            "2026/07",
+            "2026-07-01",
+            "-2026-07",
+            "1969-12",
+            "",
+            "yyyy-mm",
+        ] {
+            assert_eq!(
+                parse_billing_period(rejected),
+                None,
+                "{rejected} was accepted"
+            );
+        }
+    }
 }

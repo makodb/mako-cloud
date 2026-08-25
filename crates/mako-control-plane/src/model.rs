@@ -265,6 +265,12 @@ pub struct OrganizationRecord {
     /// organization already stored is on the free plan rather than on nothing.
     #[serde(default = "free_plan_id")]
     plan_id: String,
+    /// Every plan change, oldest first, so a billing period that spans one
+    /// can be rated stretch by stretch. Empty means the plan above has held
+    /// since the organization was created -- which is also what records
+    /// written before the history existed correctly mean.
+    #[serde(default)]
+    plan_history: Vec<PlanChangeRecord>,
     created_at_unix_seconds: u64,
     updated_at_unix_seconds: u64,
     deletion_deadline_unix_seconds: Option<u64>,
@@ -273,6 +279,18 @@ pub struct OrganizationRecord {
 fn free_plan_id() -> String {
     "free".to_owned()
 }
+
+/// One recorded plan change: which plan the organization moved to, and when.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct PlanChangeRecord {
+    pub plan_id: String,
+    pub at_unix_seconds: u64,
+}
+
+/// Plan changes an organization keeps. Rating only ever looks a period or two
+/// back, so the tail is enough; the audit log keeps the full story.
+const PLAN_HISTORY_LIMIT: usize = 32;
 
 impl OrganizationRecord {
     pub fn new(
@@ -287,6 +305,7 @@ impl OrganizationRecord {
             name,
             lifecycle: LifecycleState::Active,
             plan_id: free_plan_id(),
+            plan_history: Vec::new(),
             created_at_unix_seconds: now_unix_seconds,
             updated_at_unix_seconds: now_unix_seconds,
             deletion_deadline_unix_seconds: None,
@@ -314,9 +333,37 @@ impl OrganizationRecord {
     ) -> Result<(), ControlModelError> {
         let plan_id = plan_id.into();
         validate_text("plan id", &plan_id, 1, 64)?;
+        self.plan_history.push(PlanChangeRecord {
+            plan_id: plan_id.clone(),
+            at_unix_seconds: now_unix_seconds,
+        });
+        if self.plan_history.len() > PLAN_HISTORY_LIMIT {
+            self.plan_history.remove(0);
+        }
         self.plan_id = plan_id;
         self.updated_at_unix_seconds = now_unix_seconds;
         Ok(())
+    }
+
+    /// The plans this organization held across a window, oldest first, as
+    /// `(plan id, from unix seconds)` stretches. The first entry starts at or
+    /// before the window; each later entry starts a new stretch inside it.
+    #[must_use]
+    pub fn plan_stretches(&self, from_unix_seconds: u64) -> Vec<(String, u64)> {
+        // The plan in force at the window's start is the last change at or
+        // before it -- or the original plan, which for every organization is
+        // the free plan the record was created on.
+        let mut initial = free_plan_id();
+        let mut stretches = Vec::new();
+        for change in &self.plan_history {
+            if change.at_unix_seconds <= from_unix_seconds {
+                initial = change.plan_id.clone();
+            } else {
+                stretches.push((change.plan_id.clone(), change.at_unix_seconds));
+            }
+        }
+        stretches.insert(0, (initial, from_unix_seconds));
+        stretches
     }
 
     #[must_use]
@@ -1081,6 +1128,38 @@ mod tests {
         // And once written back, the field is explicit.
         let rewritten = serde_json::to_string(&record).expect("serialize");
         assert!(rewritten.contains("\"planId\":\"free\""));
+        // A record without a history has held its plan since creation.
+        assert_eq!(record.plan_stretches(5), vec![("free".to_owned(), 5)]);
+    }
+
+    /// Rating a period needs to know which plan held when, so a change must
+    /// leave a stretch boundary behind, and the plan in force at a window's
+    /// start must be the last change at or before it.
+    #[test]
+    fn plan_changes_leave_stretches_a_billing_period_can_be_split_by() {
+        let mut record = OrganizationRecord::new(
+            OrganizationId::parse("org_stretches01").expect("id"),
+            "Stretches",
+            10,
+        )
+        .expect("record");
+        record.change_plan("pro", 100).expect("upgrade");
+        record.change_plan("free", 200).expect("downgrade");
+
+        // A window opening mid-way starts on the plan then in force.
+        assert_eq!(
+            record.plan_stretches(150),
+            vec![("pro".to_owned(), 150), ("free".to_owned(), 200)]
+        );
+        // A window opening before any change starts on the original plan.
+        assert_eq!(
+            record.plan_stretches(50),
+            vec![
+                ("free".to_owned(), 50),
+                ("pro".to_owned(), 100),
+                ("free".to_owned(), 200)
+            ]
+        );
     }
 
     #[test]

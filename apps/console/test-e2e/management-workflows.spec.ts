@@ -231,7 +231,10 @@ class ManagementApiHarness {
         organizationId: ORGANIZATION_ID,
         planId: "free",
         periodStart: "2026-08-01T00:00:00Z",
+        periodEnd: NOW,
         observedAt: NOW,
+        finalized: false,
+        closedAt: null,
         baseMicroDollars: 0,
         lineItems: [
           {

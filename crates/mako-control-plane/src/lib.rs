@@ -62,7 +62,7 @@ pub use model::{
     ControlModelError, DeveloperIdentity, DeveloperIdentityId, DeveloperIdentityStatus,
     EnvironmentRecord, InvitationId, InvitationInput, InvitationRecord, InvitationStatus,
     LifecycleState, MembershipRecord, OrganizationId, OrganizationRecord, OrganizationRole,
-    ProjectDataPermission, ProjectRecord, QuotaSet,
+    PlanChangeRecord, ProjectDataPermission, ProjectRecord, QuotaSet,
 };
 pub use observability::{
     EventOutcome, HealthState, ObservabilityBackend, ObservabilityBackendError, ObservabilityError,
@@ -109,7 +109,7 @@ pub use operator_control_center::{
 };
 pub use organization::{
     ControlAuditAction, ControlAuditEvent, ControlAuditOutcome, ControlAuditSink, InvitationToken,
-    IssuedInvitation, NewInvitation, OrganizationService, OrganizationServiceError,
+    InvoiceRecord, IssuedInvitation, NewInvitation, OrganizationService, OrganizationServiceError,
     OrganizationStore, OrganizationStoreError,
 };
 pub use policy::{

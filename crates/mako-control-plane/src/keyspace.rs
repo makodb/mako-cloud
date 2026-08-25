@@ -298,6 +298,27 @@ impl ControlKeyspace {
         TenantKeyspace::system_domain_range(credit_domain(id)).map_err(ControlKeyspaceError)
     }
 
+    /// One closed billing period. Keyed by the period's start, so closing is
+    /// exactly-once under a conditional create and listing walks the months
+    /// in order.
+    pub fn organization_invoice_key(
+        id: &OrganizationId,
+        period_start_unix_milliseconds: u64,
+    ) -> Result<Vec<u8>, ControlKeyspaceError> {
+        TenantKeyspace::system_key(
+            invoice_domain(id),
+            format!("{period_start_unix_milliseconds:020}"),
+        )
+        .map_err(ControlKeyspaceError)
+    }
+
+    /// Every closed period an organization has.
+    pub fn organization_invoices_range(
+        id: &OrganizationId,
+    ) -> Result<KeyRange, ControlKeyspaceError> {
+        TenantKeyspace::system_domain_range(invoice_domain(id)).map_err(ControlKeyspaceError)
+    }
+
     /// The operator-recorded exceptions to an organization's plan.
     pub fn organization_plan_exceptions_key(
         id: &OrganizationId,
@@ -645,6 +666,10 @@ fn system_key(domain: &[u8], item: &str) -> Result<Vec<u8>, ControlKeyspaceError
 
 fn credit_domain(organization_id: &OrganizationId) -> Vec<u8> {
     format!("control/organization-credits/{}", organization_id.as_str()).into_bytes()
+}
+
+fn invoice_domain(organization_id: &OrganizationId) -> Vec<u8> {
+    format!("control/organization-invoices/{}", organization_id.as_str()).into_bytes()
 }
 
 fn membership_domain(organization_id: &OrganizationId) -> Vec<u8> {

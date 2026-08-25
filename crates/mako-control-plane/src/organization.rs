@@ -6,13 +6,31 @@ use mako_storage::{
     ScanRequest, StorageError, WriteBatch,
 };
 use rand_core::{OsRng, RngCore};
-use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 use crate::{
     ControlKeyspace, ControlKeyspaceError, ControlModelError, DeveloperIdentityId,
     DeveloperPrincipal, InvitationId, InvitationInput, InvitationRecord, InvitationStatus,
     MembershipRecord, OrganizationId, OrganizationRecord, OrganizationRole,
 };
+
+/// A closed billing period, stored the first time it is derived after the
+/// period ends and never rewritten.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct InvoiceRecord {
+    pub organization_id: OrganizationId,
+    pub period_start_unix_milliseconds: u64,
+    pub period_end_unix_milliseconds: u64,
+    /// Where retained evidence actually began when this was derived. Equal to
+    /// the period start when the whole month was still on record; later when
+    /// part of it had already aged out; equal to the period end when nothing
+    /// remained and the invoice records that honestly rather than a zero that
+    /// pretends to knowledge.
+    pub derived_from_unix_milliseconds: u64,
+    pub rated: mako_billing::rating::RatedPeriod,
+    pub closed_at_unix_seconds: u64,
+}
 
 #[derive(Clone)]
 pub struct OrganizationStore {
@@ -270,6 +288,61 @@ impl OrganizationStore {
             durability: self.durability,
         })
         .await
+    }
+
+    /// Close a billing period: store its invoice, exactly once.
+    ///
+    /// The conditional create is the immutability: a period that has been
+    /// closed conflicts instead of being rewritten, so whichever derivation
+    /// got there first is the invoice forever, and a re-derivation that
+    /// disagrees is a bug to investigate rather than silently absorb.
+    pub async fn close_invoice(
+        &self,
+        invoice: &InvoiceRecord,
+    ) -> Result<(), OrganizationStoreError> {
+        if invoice.period_end_unix_milliseconds <= invoice.period_start_unix_milliseconds {
+            return Err(OrganizationStoreError::RecordScopeMismatch);
+        }
+        let key = ControlKeyspace::organization_invoice_key(
+            &invoice.organization_id,
+            invoice.period_start_unix_milliseconds,
+        )?;
+        let mut batch = WriteBatch::new();
+        batch.put(&key, serde_json::to_vec(invoice)?);
+        self.apply_create(vec![key], batch).await
+    }
+
+    pub async fn get_invoice(
+        &self,
+        organization_id: &OrganizationId,
+        period_start_unix_milliseconds: u64,
+    ) -> Result<Option<InvoiceRecord>, OrganizationStoreError> {
+        let key = ControlKeyspace::organization_invoice_key(
+            organization_id,
+            period_start_unix_milliseconds,
+        )?;
+        self.read(&key).await
+    }
+
+    /// Every closed period, oldest first.
+    pub async fn list_invoices(
+        &self,
+        organization_id: &OrganizationId,
+    ) -> Result<Vec<InvoiceRecord>, OrganizationStoreError> {
+        let range = ControlKeyspace::organization_invoices_range(organization_id)?;
+        let limit = self
+            .adapter
+            .capabilities()
+            .maximum_scan_items
+            .min(NonZeroUsize::new(256).expect("scan limit"));
+        let entries = self
+            .adapter
+            .scan(ScanRequest::new(range, ScanDirection::Forward, limit))
+            .await?;
+        entries
+            .iter()
+            .map(|entry| serde_json::from_slice(&entry.value).map_err(OrganizationStoreError::from))
+            .collect()
     }
 
     async fn read<T: DeserializeOwned>(
@@ -1370,5 +1443,70 @@ mod tests {
         assert_eq!(format!("{token:?}"), "InvitationToken([REDACTED])");
         assert!(InvitationToken::parse(token.expose_once()).is_ok());
         assert!(InvitationToken::parse("not-a-token").is_err());
+    }
+
+    /// A closed period is closed once: whoever derives it first writes the
+    /// invoice, a second closing conflicts instead of rewriting history, and
+    /// the stored record reads back byte-for-byte what was closed.
+    #[test]
+    fn an_invoice_closes_exactly_once_and_reads_back_unchanged() {
+        futures::executor::block_on(async {
+            let store = OrganizationStore::new(
+                Arc::new(MemoryAdapter::new()),
+                mako_storage::Durability::Memory,
+            )
+            .expect("store");
+            let organization_id = OrganizationId::parse("org_invoices0001").expect("id");
+            let usage = std::collections::BTreeMap::from([(
+                mako_api::QuotaResource::EdgeInvocationsPerMonth,
+                3_000_000_u64,
+            )]);
+            let rated = mako_billing::rating::rate_period(
+                &mako_billing::plan("pro").expect("plan"),
+                &mako_billing::rating::default_rate_card(),
+                &usage,
+            );
+            let invoice = InvoiceRecord {
+                organization_id: organization_id.clone(),
+                period_start_unix_milliseconds: 1_000,
+                period_end_unix_milliseconds: 2_000,
+                derived_from_unix_milliseconds: 1_000,
+                rated: rated.clone(),
+                closed_at_unix_seconds: 3,
+            };
+            store.close_invoice(&invoice).await.expect("first close");
+
+            let mut rewrite = invoice.clone();
+            rewrite.rated.total_micro_dollars = 0;
+            assert!(
+                matches!(
+                    store.close_invoice(&rewrite).await,
+                    Err(OrganizationStoreError::Conflict)
+                ),
+                "a closed period was closed again"
+            );
+
+            assert_eq!(
+                store
+                    .get_invoice(&organization_id, 1_000)
+                    .await
+                    .expect("read")
+                    .as_ref(),
+                Some(&invoice),
+                "the stored invoice is not what was closed"
+            );
+            assert_eq!(
+                store
+                    .list_invoices(&organization_id)
+                    .await
+                    .expect("list")
+                    .len(),
+                1
+            );
+            // A period of no time cannot close.
+            let mut degenerate = invoice;
+            degenerate.period_end_unix_milliseconds = 1_000;
+            assert!(store.close_invoice(&degenerate).await.is_err());
+        });
     }
 }

@@ -25,8 +25,8 @@
 - [x] 3.4 The live bill: GET /v1/organizations/{id}/bill, current month clamped to retained evidence, reporting the window it covers.
 - [x] 3.5 Credits, granted exactly once per id, audited, never negative.
 - [x] 3.6 Balance as credits minus charges, unclamped.
-- [ ] 3.7 Period close: a finalized invoice re-derivable after the period ends. Unblocked: production retention is 90 days.
-- [ ] 3.8 Proration on plan change. The live bill rates the whole window at the current plan.
+- [x] 3.7 Period close: ended months close on any bill read while evidence is retained, stored exactly-once under a conditional create, never rewritten, served via `?period=YYYY-MM` marked finalized; the balance counts every closed period.
+- [x] 3.8 Proration on plan change: recorded plan history splits a period into stretches, each rated under its own plan's terms -- base and flow allowances by time share, level charges by time held -- reducing exactly to the unsegmented arithmetic when nothing changed.
 
 ## 4. Not charging, enforced
 

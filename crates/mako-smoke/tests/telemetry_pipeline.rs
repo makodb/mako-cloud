@@ -254,6 +254,32 @@ fn observed_events_and_usage_reach_the_management_api() {
             .is_some_and(|notice| notice.contains("no charge")),
         "the bill does not say nothing will be charged: {body}"
     );
+    assert_eq!(
+        bill["finalized"], false,
+        "the live current month claimed to be a closed invoice: {body}"
+    );
+
+    // A month before the organization existed has no invoice to show, and a
+    // malformed period is refused rather than guessed at.
+    let (status, body) = request(
+        control_port,
+        "GET",
+        "/v1/organizations/org_localboot/bill?period=2020-01",
+        &reading,
+        None,
+    );
+    assert_eq!(
+        status, 404,
+        "a period before the organization answered something: {body}"
+    );
+    let (status, body) = request(
+        control_port,
+        "GET",
+        "/v1/organizations/org_localboot/bill?period=2020-13",
+        &reading,
+        None,
+    );
+    assert_eq!(status, 400, "a nonsense period was accepted: {body}");
 
     // A refused replication request must surface as a replication error:
     // this is what a developer debugging a client that cannot sync reads.

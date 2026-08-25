@@ -68,17 +68,28 @@ paths:
     get:
       tags: [Management]
       operationId: getOrganizationBill
-      summary: The organization's informational bill for the current period
+      summary: The organization's informational bill
       description: >-
         What the organization's metered use would cost under its plan and the
-        current rate card, and the balance it implies. Informational only:
-        nothing is payable and no charge is made during the beta, and the
-        response says so explicitly.
+        current rate card, and the balance it implies. Without a period, the
+        live current month; with one, the finalized invoice of a closed past
+        month. Ended months are closed on read while their evidence is still
+        retained, exactly once, and a closed period never changes. A period
+        that spanned a plan change is rated stretch by stretch, prorated by
+        time. Informational only: nothing is payable and no charge is made
+        during the beta, and the response says so explicitly.
       parameters:
         - $ref: "#/components/parameters/OrganizationId"
+        - name: period
+          in: query
+          required: false
+          description: A closed calendar month to show, as YYYY-MM.
+          schema:
+            type: string
+            pattern: "^[0-9]{4}-[0-9]{2}$"
       responses:
         "200":
-          description: The rated current period and resulting balance
+          description: The rated period and resulting balance
           content:
             application/json:
               schema:
@@ -88,7 +99,9 @@ paths:
                   - organizationId
                   - planId
                   - periodStart
+                  - periodEnd
                   - observedAt
+                  - finalized
                   - baseMicroDollars
                   - lineItems
                   - totalMicroDollars
@@ -100,7 +113,16 @@ paths:
                   organizationId: {$ref: "#/components/schemas/OrganizationId"}
                   planId: {type: string}
                   periodStart: {type: string, format: date-time}
+                  periodEnd: {type: string, format: date-time}
                   observedAt: {type: string, format: date-time}
+                  finalized:
+                    type: boolean
+                    description: >-
+                      Whether this is a closed period's immutable invoice
+                      rather than the live view of the current month.
+                  closedAt:
+                    type: [string, "null"]
+                    format: date-time
                   baseMicroDollars: {type: integer, format: int64}
                   lineItems:
                     type: array

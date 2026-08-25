@@ -30,8 +30,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * The organization's informational bill for the current period
-         * @description What the organization's metered use would cost under its plan and the current rate card, and the balance it implies. Informational only: nothing is payable and no charge is made during the beta, and the response says so explicitly.
+         * The organization's informational bill
+         * @description What the organization's metered use would cost under its plan and the current rate card, and the balance it implies. Without a period, the live current month; with one, the finalized invoice of a closed past month. Ended months are closed on read while their evidence is still retained, exactly once, and a closed period never changes. A period that spanned a plan change is rated stretch by stretch, prorated by time. Informational only: nothing is payable and no charge is made during the beta, and the response says so explicitly.
          */
         get: operations["getOrganizationBill"];
         put?: never;
@@ -4582,7 +4582,10 @@ export interface operations {
     };
     getOrganizationBill: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description A closed calendar month to show, as YYYY-MM. */
+                period?: string;
+            };
             header?: never;
             path: {
                 organizationId: components["parameters"]["OrganizationId"];
@@ -4591,7 +4594,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description The rated current period and resulting balance */
+            /** @description The rated period and resulting balance */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -4603,7 +4606,13 @@ export interface operations {
                         /** Format: date-time */
                         periodStart: string;
                         /** Format: date-time */
+                        periodEnd: string;
+                        /** Format: date-time */
                         observedAt: string;
+                        /** @description Whether this is a closed period's immutable invoice rather than the live view of the current month. */
+                        finalized: boolean;
+                        /** Format: date-time */
+                        closedAt?: string | null;
                         /** Format: int64 */
                         baseMicroDollars: number;
                         lineItems: {

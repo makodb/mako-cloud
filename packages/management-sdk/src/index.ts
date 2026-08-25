@@ -417,10 +417,14 @@ export class MakoManagementClient {
 
   async getOrganizationBill(
     organizationId: string,
+    period?: string,
   ): Promise<operations["getOrganizationBill"]["responses"]["200"]["content"]["application/json"]> {
     return unwrap(
       await this.#client.GET("/v1/organizations/{organizationId}/bill", {
-        params: { path: { organizationId } },
+        params: {
+          path: { organizationId },
+          query: period === undefined ? {} : { period },
+        },
       }),
     );
   }
