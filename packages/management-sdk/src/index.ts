@@ -180,6 +180,7 @@ export const OPERATOR_OPERATIONS = [
   "applyOperatorEntitlementChange",
   "getOperatorProject",
   "repairOperatorProvisioning",
+  "changeOrganizationPlan",
   "createOperatorQuotaOverride",
   "createOperatorAbuseResponse",
   "createSupportSession",
@@ -2517,6 +2518,19 @@ export class MakoOperatorClient {
           body: input,
         },
       ),
+    );
+  }
+
+  async changeOrganizationPlan(
+    organizationId: string,
+    planId: string,
+    reason: string,
+  ): Promise<{ organizationId: string; planId: string; updatedAt: string }> {
+    return unwrap(
+      await this.#client.POST("/v1/operator/organizations/{organizationId}/plan", {
+        params: { path: { organizationId } },
+        body: { planId, reason },
+      }),
     );
   }
 

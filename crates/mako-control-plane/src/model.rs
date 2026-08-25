@@ -259,9 +259,19 @@ pub struct OrganizationRecord {
     id: OrganizationId,
     name: String,
     lifecycle: LifecycleState,
+    /// Which plan this organization subscribes to.
+    ///
+    /// Defaulted for records written before plans existed, so every
+    /// organization already stored is on the free plan rather than on nothing.
+    #[serde(default = "free_plan_id")]
+    plan_id: String,
     created_at_unix_seconds: u64,
     updated_at_unix_seconds: u64,
     deletion_deadline_unix_seconds: Option<u64>,
+}
+
+fn free_plan_id() -> String {
+    "free".to_owned()
 }
 
 impl OrganizationRecord {
@@ -276,6 +286,7 @@ impl OrganizationRecord {
             id,
             name,
             lifecycle: LifecycleState::Active,
+            plan_id: free_plan_id(),
             created_at_unix_seconds: now_unix_seconds,
             updated_at_unix_seconds: now_unix_seconds,
             deletion_deadline_unix_seconds: None,
@@ -285,6 +296,27 @@ impl OrganizationRecord {
     #[must_use]
     pub fn id(&self) -> &OrganizationId {
         &self.id
+    }
+
+    #[must_use]
+    pub fn plan_id(&self) -> &str {
+        &self.plan_id
+    }
+
+    /// Move this organization to another plan.
+    ///
+    /// Whether the plan exists is the caller's to check against the catalog;
+    /// this only refuses shapes that could not name one.
+    pub fn change_plan(
+        &mut self,
+        plan_id: impl Into<String>,
+        now_unix_seconds: u64,
+    ) -> Result<(), ControlModelError> {
+        let plan_id = plan_id.into();
+        validate_text("plan id", &plan_id, 1, 64)?;
+        self.plan_id = plan_id;
+        self.updated_at_unix_seconds = now_unix_seconds;
+        Ok(())
     }
 
     #[must_use]
@@ -1028,6 +1060,28 @@ fn transition_lifecycle(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Organizations stored before plans existed have no planId field. They
+    /// must come back on the free plan, not fail to load -- a deployment's
+    /// existing customers losing their organizations on upgrade would be far
+    /// worse than any plan bug.
+    #[test]
+    fn an_organization_stored_before_plans_existed_is_on_the_free_plan() {
+        let stored = r#"{
+            "id": "org_prehistoric0",
+            "name": "Stored Before Plans",
+            "lifecycle": "active",
+            "createdAtUnixSeconds": 1,
+            "updatedAtUnixSeconds": 1,
+            "deletionDeadlineUnixSeconds": null
+        }"#;
+        let record: OrganizationRecord = serde_json::from_str(stored).expect("old record loads");
+        assert_eq!(record.plan_id(), "free");
+
+        // And once written back, the field is explicit.
+        let rewritten = serde_json::to_string(&record).expect("serialize");
+        assert!(rewritten.contains("\"planId\":\"free\""));
+    }
 
     #[test]
     fn role_capabilities_preserve_viewer_and_owner_boundaries() {

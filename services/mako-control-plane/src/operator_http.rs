@@ -6,13 +6,14 @@ use std::{
 };
 
 use futures::executor::block_on;
-use mako_api::{ErrorCode, ProjectId, RetryAdvice};
+use mako_api::{ErrorCode, ProjectId, RetryAdvice, TenantScope};
 use mako_control_plane::{
     AbuseResponseId, AbuseTarget, GuardedMutation, IncidentSearch, IncidentState, InventoryKind,
     NewAbuseResponse, NewQuotaOverride, NewSupportSession, OperatorControlCenterError,
     OperatorEntitlementAdminInput, OperatorEntitlementChangeKind, OperatorError,
-    OperatorPasswordAuthenticationError, OperatorPermission, QuotaOverrideId, QuotaResource,
-    RecoveryJobState, RecoveryRequest, SupportPermission, SupportSessionId, TenantSearch,
+    OperatorPasswordAuthenticationError, OperatorPermission, OrganizationId, QuotaOverrideId,
+    QuotaResource, RecoveryJobState, RecoveryRequest, SupportPermission, SupportSessionId,
+    TenantSearch,
 };
 use mako_provisioning::{OperatorRepairAction, ProvisioningWorkflowId};
 use mako_service_runtime::{
@@ -189,6 +190,11 @@ pub(crate) fn add_operator_routes(
             HttpMethod::Post,
             "/v1/operator/projects/{projectId}/quota-overrides",
             handle_quota_override,
+        ),
+        (
+            HttpMethod::Post,
+            "/v1/operator/organizations/{organizationId}/plan",
+            handle_change_plan,
         ),
         (
             HttpMethod::Post,
@@ -1158,6 +1164,69 @@ fn handle_quota_override(
     ))
     .map_err(|error| operator_error(request, error))?;
     public_json(request, 201, &record)
+}
+
+fn handle_change_plan(
+    graph: &Arc<ControlPlaneGraph>,
+    request: &HttpRequest,
+) -> Result<HttpResponse, HttpApiError> {
+    let (actor, now) = authorize_operator(graph, request, true)?;
+    no_query(request)?;
+    require_json(request)?;
+    let body: PlanChangeWire = parse_json(request)?;
+    let organization =
+        OrganizationId::parse(request.path_parameter("organizationId").unwrap_or_default())
+            .map_err(|_| invalid(request, "organization path is invalid"))?;
+    let record = block_on(graph.operator_service().change_organization_plan(
+        &actor,
+        &organization,
+        &body.plan_id,
+        &body.reason,
+        now,
+    ))
+    .map_err(|error| operator_error(request, error))?;
+
+    // The record has changed; what each environment is actually held to has
+    // not, until the resolved limits reach the data plane that enforces them.
+    // Failing here leaves the record ahead of enforcement, which a retry
+    // converges -- the same direction every other propagation in this service
+    // takes.
+    let policy = crate::management_http::resolve_plan_policy(request, record.plan_id())?;
+    let limit = NonZeroUsize::new(100).expect("listing limit");
+    let projects = block_on(graph.project_store().list_projects(&organization, limit))
+        .map_err(|_| unavailable(request, "the organization's projects are unavailable"))?;
+    for project in &projects {
+        let environments =
+            block_on(graph.project_store().list_environments(project.id(), limit))
+                .map_err(|_| unavailable(request, "the project's environments are unavailable"))?;
+        for environment in &environments {
+            let tenant = TenantScope::new(project.id().clone(), environment.id().clone());
+            block_on(crate::identity_admin_http::install_quota_policy(
+                graph,
+                request,
+                actor.id().as_str(),
+                &tenant,
+                &policy,
+            ))?;
+        }
+    }
+
+    public_json(
+        request,
+        200,
+        &serde_json::json!({
+            "organizationId": record.id().as_str(),
+            "planId": record.plan_id(),
+            "updatedAt": crate::management_http::format_timestamp(request, record.updated_at_unix_seconds())?,
+        }),
+    )
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct PlanChangeWire {
+    plan_id: String,
+    reason: String,
 }
 
 fn handle_abuse_response(

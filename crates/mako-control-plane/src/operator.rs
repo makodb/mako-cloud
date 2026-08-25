@@ -14,7 +14,8 @@ use serde::{Deserialize, Deserializer, Serialize, de};
 
 use crate::{
     ControlKeyspace, ControlKeyspaceError, ControlModelError, DeveloperIdentityId,
-    EnvironmentRecord, ProjectRecord, ProjectStore, ProjectStoreError,
+    EnvironmentRecord, OrganizationId, OrganizationRecord, ProjectRecord, ProjectStore,
+    ProjectStoreError,
 };
 
 const MAX_SUPPORT_SESSION_SECONDS: u64 = 8 * 60 * 60;
@@ -555,6 +556,7 @@ pub enum OperatorAuditAction {
     ProjectionRebuild,
     ProvisioningRepair,
     QuotaOverride,
+    PlanChange,
     AbuseResponse,
     SupportSessionCreate,
     SupportSessionUse,
@@ -576,6 +578,7 @@ impl OperatorAuditAction {
             Self::ProjectionRebuild => "operator_projection_rebuild",
             Self::ProvisioningRepair => "operator_provisioning_repair",
             Self::QuotaOverride => "operator_quota_override",
+            Self::PlanChange => "operator_plan_change",
             Self::AbuseResponse => "operator_abuse_response",
             Self::SupportSessionCreate => "operator_support_session_create",
             Self::SupportSessionUse => "operator_support_session_use",
@@ -820,6 +823,64 @@ impl OperatorService {
             record.id.as_str(),
             &record.reason,
             input.now_unix_seconds,
+        );
+        Ok(record)
+    }
+
+    /// Move an organization to another plan.
+    ///
+    /// This is the beta's comped plan change: nothing sells plans, so an
+    /// operator granting one is the only way onto a paid tier. It is gated by
+    /// the same permission as a quota override, because that is what it is --
+    /// a decision about what limits a tenant is held to -- and refusing a plan
+    /// the catalog does not name keeps a typo from becoming a subscription to
+    /// nothing.
+    ///
+    /// The record changes here; what each of the organization's environments
+    /// is held to is reinstalled by the caller, which owns the channel to the
+    /// data plane.
+    pub async fn change_organization_plan(
+        &self,
+        actor: &OperatorPrincipal,
+        organization_id: &OrganizationId,
+        plan_id: &str,
+        reason: &str,
+        now_unix_seconds: u64,
+    ) -> Result<OrganizationRecord, OperatorError> {
+        validate_reason(reason)?;
+        if mako_billing::plan(plan_id).is_none() {
+            return Err(OperatorError::InvalidInput);
+        }
+        // Organization actions have no single project; the synthetic operator
+        // admin scope is what non-project operator work is audited under.
+        let audit_scope = ProjectId::parse(mako_internal_rpc::OPERATOR_ADMIN_PROJECT_ID)
+            .map_err(|_| OperatorError::InvalidInput)?;
+        self.require(
+            actor,
+            OperatorPermission::QuotaOverride,
+            OperatorAuditAction::PlanChange,
+            &audit_scope,
+            reason,
+            now_unix_seconds,
+        )?;
+        let key = ControlKeyspace::organization_key(organization_id)?;
+        let stored = self
+            .adapter
+            .get(&key)
+            .await?
+            .ok_or(OperatorError::NotFound)?;
+        let mut record: OrganizationRecord = serde_json::from_slice(&stored)?;
+        record.change_plan(plan_id, now_unix_seconds)?;
+        let mut batch = WriteBatch::new();
+        batch.put(key, serde_json::to_vec(&record)?);
+        self.adapter.write(batch, self.durability).await?;
+        self.allowed(
+            actor,
+            OperatorAuditAction::PlanChange,
+            &audit_scope,
+            organization_id.as_str(),
+            reason,
+            now_unix_seconds,
         );
         Ok(record)
     }
@@ -1833,6 +1894,102 @@ mod tests {
             ),
             Err(OperatorAuthenticationError::InvalidClaims)
         ));
+    }
+
+    #[test]
+    fn a_comped_plan_change_is_audited_and_a_plan_the_catalog_lacks_is_refused() {
+        futures::executor::block_on(async {
+            let adapter: Arc<dyn KvAdapter> = Arc::new(MemoryAdapter::new());
+            let projects =
+                ProjectStore::new(adapter.clone(), Durability::Memory).expect("projects");
+            let provisioning = Provisioner::new(
+                mako_provisioning::ProvisioningStore::new(adapter.clone(), Durability::Memory)
+                    .expect("provisioning"),
+            );
+            let organization_id = OrganizationId::parse("org_planchange0").expect("organization");
+            let record =
+                OrganizationRecord::new(organization_id.clone(), "Mako", 1).expect("organization");
+            assert_eq!(record.plan_id(), "free", "a new organization is on free");
+            let mut batch = WriteBatch::new();
+            batch.put(
+                ControlKeyspace::organization_key(&organization_id).expect("key"),
+                serde_json::to_vec(&record).expect("json"),
+            );
+            adapter
+                .write(batch, Durability::Memory)
+                .await
+                .expect("seed");
+            let audit = Arc::new(Audit::default());
+            let service = OperatorService::new(
+                adapter.clone(),
+                Durability::Memory,
+                projects,
+                provisioning,
+                audit.clone(),
+            )
+            .expect("service");
+            let actor = OperatorPrincipal::for_test(
+                OperatorId::parse("opr_plans00000").expect("operator"),
+                [OperatorPermission::QuotaOverride],
+            );
+
+            // A plan the catalog does not name must be refused, or a typo
+            // becomes a subscription to nothing.
+            assert!(matches!(
+                service
+                    .change_organization_plan(&actor, &organization_id, "gold", "typo", 5)
+                    .await,
+                Err(OperatorError::InvalidInput)
+            ));
+
+            let changed = service
+                .change_organization_plan(&actor, &organization_id, "pro", "comped for the beta", 6)
+                .await
+                .expect("plan change");
+            assert_eq!(changed.plan_id(), "pro");
+
+            // Durable: reading it back shows the change, not the seed.
+            let stored = adapter
+                .get(&ControlKeyspace::organization_key(&organization_id).expect("key"))
+                .await
+                .expect("read")
+                .expect("record");
+            let reread: OrganizationRecord = serde_json::from_slice(&stored).expect("json");
+            assert_eq!(reread.plan_id(), "pro");
+
+            // Audited as its own action, so a reviewer can tell a plan change
+            // from a quota override. Scoped, because the next call records its
+            // refusal into the same sink this guard would be holding.
+            {
+                let events = audit.0.lock().expect("audit");
+                assert!(
+                    events
+                        .iter()
+                        .any(|event| event.action == OperatorAuditAction::PlanChange
+                            && event.target == organization_id.as_str()),
+                    "the plan change left no audit event naming the organization"
+                );
+            }
+
+            // Without the permission, nothing changes and the refusal is
+            // audited too.
+            let unentitled = OperatorPrincipal::for_test(
+                OperatorId::parse("opr_plans00001").expect("operator"),
+                [OperatorPermission::TenantRead],
+            );
+            assert!(matches!(
+                service
+                    .change_organization_plan(
+                        &unentitled,
+                        &organization_id,
+                        "free",
+                        "should be refused",
+                        7,
+                    )
+                    .await,
+                Err(OperatorError::Forbidden)
+            ));
+        });
     }
 
     #[test]

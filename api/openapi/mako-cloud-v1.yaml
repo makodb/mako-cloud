@@ -3053,6 +3053,46 @@ paths:
                 $ref: "#/components/schemas/ProvisioningWorkflow"
         default:
           $ref: "#/components/responses/ApiError"
+  /v1/operator/organizations/{organizationId}/plan:
+    post:
+      tags: [Operator]
+      operationId: changeOrganizationPlan
+      summary: Move an organization to another plan
+      description: >-
+        The beta's comped plan change: nothing sells plans, so an operator
+        granting one is the only way onto a paid tier. The change is audited,
+        and the limits each of the organization's environments is held to are
+        reinstalled before the change is reported.
+      security:
+        - operatorSessionCookie: []
+        - operatorBearer: []
+      parameters:
+        - $ref: "#/components/parameters/OrganizationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [planId, reason]
+              properties:
+                planId: {type: string, minLength: 1, maxLength: 64}
+                reason: {type: string, minLength: 1, maxLength: 500}
+      responses:
+        "200":
+          description: The organization's plan after the change
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [organizationId, planId, updatedAt]
+                properties:
+                  organizationId: {$ref: "#/components/schemas/OrganizationId"}
+                  planId: {type: string}
+                  updatedAt: {type: string, format: date-time}
+        default: {$ref: "#/components/responses/ApiError"}
   /v1/operator/projects/{projectId}/quota-overrides:
     get:
       tags: [Operator]

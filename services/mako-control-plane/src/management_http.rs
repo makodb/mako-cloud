@@ -9,7 +9,6 @@ use mako_control_plane::{
     OrganizationRecord, OrganizationRole, OrganizationServiceError, ProjectRecord,
     ProjectStoreError,
 };
-use mako_internal_rpc::IdentityAdminOperation;
 use mako_provisioning::{
     ProvisioningOperation, ProvisioningResource, ProvisioningWorkflowError, ProvisioningWorkflowId,
 };
@@ -742,25 +741,41 @@ async fn install_plan_limits(
     actor: &DeveloperPrincipal,
     tenant: &TenantScope,
 ) -> Result<(), HttpApiError> {
-    // Nothing sells a different plan yet, so every organization is on the free
-    // one. When subscriptions exist this is where they are read.
-    let plan = mako_billing::plan("free")
-        .ok_or_else(|| internal(request, "the free plan is missing from the catalog"))?;
-    let policy = mako_billing::enforcement_policy(&plan.entitlements)
-        .map_err(|_| internal(request, "plan limits could not be resolved"))?;
-    let encoded = serde_json::to_value(&policy)
-        .map_err(|_| internal(request, "plan limits could not be encoded"))?;
-    let _: serde_json::Value = crate::identity_admin_http::administer(
+    let project = graph
+        .project_store()
+        .get_project(tenant.project_id())
+        .await
+        .map_err(|_| unavailable(request, "project authorization is unavailable"))?
+        .ok_or_else(|| not_found(request, "project resource was not found"))?;
+    let organization = graph
+        .organization_store()
+        .get_organization(project.organization_id())
+        .await
+        .map_err(|_| unavailable(request, "organization is unavailable"))?
+        .ok_or_else(|| not_found(request, "organization was not found"))?;
+    let policy = resolve_plan_policy(request, organization.plan_id())?;
+    crate::identity_admin_http::install_quota_policy(
         graph,
         request,
-        actor,
+        actor.identity_id().as_str(),
         tenant,
-        IdentityAdminOperation::InstallQuotaPolicy,
-        serde_json::json!({ "policy": encoded }),
-        true,
+        &policy,
     )
-    .await?;
-    Ok(())
+    .await
+}
+
+/// The limits an organization's plan implies, as the gateway will store them.
+pub(crate) fn resolve_plan_policy(
+    request: &HttpRequest,
+    plan_id: &str,
+) -> Result<serde_json::Value, HttpApiError> {
+    // An organization on a plan the catalog no longer names is a deployment
+    // bug, and inventing limits for it would hide that.
+    let plan = mako_billing::plan(plan_id)
+        .ok_or_else(|| internal(request, "the organization's plan is not in the catalog"))?;
+    let policy = mako_billing::enforcement_policy(&plan.entitlements)
+        .map_err(|_| internal(request, "plan limits could not be resolved"))?;
+    serde_json::to_value(&policy).map_err(|_| internal(request, "plan limits could not be encoded"))
 }
 
 fn handle_get_environment(

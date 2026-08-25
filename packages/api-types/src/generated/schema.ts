@@ -1730,6 +1730,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/operator/organizations/{organizationId}/plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Move an organization to another plan
+         * @description The beta's comped plan change: nothing sells plans, so an operator granting one is the only way onto a paid tier. The change is audited, and the limits each of the organization's environments is held to are reinstalled before the change is reported.
+         */
+        post: operations["changeOrganizationPlan"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/operator/projects/{projectId}/quota-overrides": {
         parameters: {
             query?: never;
@@ -8152,6 +8172,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProvisioningWorkflow"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    changeOrganizationPlan: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    planId: string;
+                    reason: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The organization's plan after the change */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        organizationId: components["schemas"]["OrganizationId"];
+                        planId: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                    };
                 };
             };
             default: components["responses"]["ApiError"];

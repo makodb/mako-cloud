@@ -16,6 +16,7 @@ mako-audit = { path = "../mako-audit" }
 mako-documents = { path = "../mako-documents" }
 mako-edge-runtime-protocol = { path = "../mako-edge-runtime-protocol" }
 mako-identity = { path = "../mako-identity" }
+mako-billing = { path = "../mako-billing" }
 mako-internal-rpc = { path = "../mako-internal-rpc" }
 mako-object-store = { path = "../mako-object-store" }
 mako-policy = { path = "../mako-policy" }
