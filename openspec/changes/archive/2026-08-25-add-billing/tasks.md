@@ -41,4 +41,4 @@
 - [x] 5.1 Management API: the bill. Operator API: plan change, plan exceptions, credits. All in the OpenAPI contract with regenerated types.
 - [x] 5.2 Console surfaces. The organization page renders the bill: notice first, line items, credits, balance (negative allowed). Mocked e2e asserts notice text, metered quantity, and balance.
 - [x] 5.3 Operator actions audited as distinct actions: plan change, plan exception, credit grant.
-- [ ] 5.4 Traceability rows for billing scenarios, when the change's spec deltas are merged at archive.
+- [x] 5.4 Traceability rows for billing scenarios: the three billing capability specs are indexed in the matrix (BM, BP, BI) and a new control-plane scenario row, all enforced by validate:traceability.

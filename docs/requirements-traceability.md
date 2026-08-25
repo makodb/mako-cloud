@@ -1,6 +1,6 @@
 # Requirements-to-test traceability
 
-This matrix is the release-facing index from every scenario in the eight capability specs named in `scripts/validate-requirements-traceability.js` to its primary evidence. The remaining capability specs under `openspec/specs/` are not indexed here. `Automated` means the cited test executes in the repository test suites. Supporting tests may exercise more behavior than the scenario named here.
+This matrix is the release-facing index from every scenario in the eleven capability specs named in `scripts/validate-requirements-traceability.js` to its primary evidence. The remaining capability specs under `openspec/specs/` are not indexed here. `Automated` means the cited test executes in the repository test suites. Supporting tests may exercise more behavior than the scenario named here.
 
 Evidence marked `(mocked backend)` runs against intercepted HTTP responses rather than a running service, so it proves client behavior and not that the server implements the scenario. Evidence marked `(end-to-end)` drives the real service binaries. A scenario whose only evidence is mocked has no automated proof that the server side works.
 
@@ -32,10 +32,48 @@ Run `npm run validate:traceability` whenever a scenario or row changes. The vali
 | CP-20 | Support operator inspects a user | `crates/mako-control-plane/src/application_user.rs::organization_roles_become_identity_permissions_and_core_service_audits_denials` | Automated |
 | CP-21 | Developer promotes a function version | `crates/mako-control-plane/src/function.rs::deploy_promote_rollback_test_logs_and_delete_follow_safe_lifecycle` | Automated |
 | CP-22 | Project reaches a hard quota | `crates/mako-gateway/src/quota.rs::hard_limits_rate_limits_and_retry_advice_are_stable` | Automated |
-| CP-23 | Policy version is activated | `crates/mako-control-plane/src/policy.rs::draft_validation_testing_activation_and_rollback_report_epochs` | Automated |
-| CP-24 | Operator opens support access | `crates/mako-control-plane/src/operator.rs::operator_permissions_scope_repairs_abuse_and_expiring_support` | Automated |
-| CP-25 | Project deletion is requested | `crates/mako-control-plane/src/deletion.rs::deletion_revokes_restores_and_destroys_in_durable_order` | Automated |
-| CP-26 | Grace period expires | `crates/mako-control-plane/src/deletion.rs::deletion_revokes_restores_and_destroys_in_durable_order` | Automated |
+| CP-23 | A member inspects usage for a period | `crates/mako-smoke/tests/telemetry_pipeline.rs::observed_events_and_usage_reach_the_management_api` (end-to-end) | Automated |
+| CP-24 | Policy version is activated | `crates/mako-control-plane/src/policy.rs::draft_validation_testing_activation_and_rollback_report_epochs` | Automated |
+| CP-25 | Operator opens support access | `crates/mako-control-plane/src/operator.rs::operator_permissions_scope_repairs_abuse_and_expiring_support` | Automated |
+| CP-26 | Project deletion is requested | `crates/mako-control-plane/src/deletion.rs::deletion_revokes_restores_and_destroys_in_durable_order` | Automated |
+| CP-27 | Grace period expires | `crates/mako-control-plane/src/deletion.rs::deletion_revokes_restores_and_destroys_in_durable_order` | Automated |
+
+## Billing / metering
+
+| ID | Scenario | Primary automated evidence | Status |
+| --- | --- | --- | --- |
+| BM-01 | A batch is delivered twice | `services/mako-telemetry-query/src/main.rs::durable_source_offsets_are_idempotent_and_conflict_on_changed_replay` | Automated |
+| BM-02 | The ledger store is unavailable | `services/mako-data-plane/src/telemetry.rs::stored_size_and_user_count_are_marked_and_sampled_independently` (records against an unreachable endpoint) and `crates/mako-smoke/tests/telemetry_pipeline.rs::observed_events_and_usage_reach_the_management_api` (end-to-end) | Automated |
+| BM-03 | Use is lost under pressure | `services/mako-telemetry-query/src/main.rs::a_checkpoint_is_compared_against_the_ledger_and_material_divergence_alerts` | Automated |
+| BM-04 | Storage is billed for a period | `crates/mako-billing/src/rating.rs::samples_of_a_level_average_instead_of_multiplying_the_charge` | Automated |
+| BM-05 | An idle tenant is not resampled | `services/mako-data-plane/src/telemetry.rs::a_marked_tenant_is_sampled_once_and_not_again_until_the_interval_passes` | Automated |
+| BM-06 | A developer reads their usage | `crates/mako-smoke/tests/telemetry_pipeline.rs::observed_events_and_usage_reach_the_management_api` (end-to-end) | Automated |
+| BM-07 | The two disagree | `services/mako-telemetry-query/src/main.rs::a_checkpoint_is_compared_against_the_ledger_and_material_divergence_alerts` and `services/mako-telemetry-query/src/main.rs::a_replayed_checkpoint_batch_does_not_alert_twice` | Automated |
+
+## Billing / plans and entitlements
+
+| ID | Scenario | Primary automated evidence | Status |
+| --- | --- | --- | --- |
+| BP-01 | A plan's terms change | `crates/mako-control-plane/src/organization.rs::an_invoice_closes_exactly_once_and_reads_back_unchanged` | Automated |
+| BP-02 | An organization changes plan mid-period | `crates/mako-control-plane/src/model.rs::plan_changes_leave_stretches_a_billing_period_can_be_split_by` and `crates/mako-billing/src/rating.rs::an_upgrade_mid_month_prorates_the_base_and_the_flow_allowances` | Automated |
+| BP-03 | Two tenants on different plans | `crates/mako-gateway/src/quota.rs::an_installed_policy_applies_to_one_tenant_and_the_default_to_the_rest` | Automated |
+| BP-04 | An operator raises a tenant's limit | `crates/mako-control-plane/src/operator.rs::plan_exceptions_replace_as_a_set_and_expired_ones_are_not_in_force` | Automated |
+| BP-05 | Plan resolution fails | `crates/mako-gateway/src/quota.rs::an_installed_policy_applies_to_one_tenant_and_the_default_to_the_rest` | Automated |
+
+## Billing / invoicing and balance
+
+| ID | Scenario | Primary automated evidence | Status |
+| --- | --- | --- | --- |
+| BI-01 | A finalized invoice is recomputed | `crates/mako-billing/src/rating.rs::one_segment_covering_the_period_rates_exactly_like_the_unsegmented_period` and `crates/mako-control-plane/src/organization.rs::an_invoice_closes_exactly_once_and_reads_back_unchanged` | Automated |
+| BI-02 | Prices change after a period closes | `crates/mako-control-plane/src/organization.rs::an_invoice_closes_exactly_once_and_reads_back_unchanged` | Automated |
+| BI-03 | The plan changed mid-period | `crates/mako-billing/src/rating.rs::an_upgrade_mid_month_prorates_the_base_and_the_flow_allowances` and `crates/mako-billing/src/rating.rs::a_level_prorates_its_charge_by_the_time_it_was_held` | Automated |
+| BI-04 | Use accrues beyond any credit | `apps/console/test-e2e/management-workflows.spec.ts` (mocked backend) -- asserts the negative balance is shown and marked, never clamped | Automated |
+| BI-05 | A balance is explained | `crates/mako-smoke/tests/telemetry_pipeline.rs::observed_events_and_usage_reach_the_management_api` (end-to-end; live bill and period queries) | Automated |
+| BI-06 | An operator grants credit | `crates/mako-control-plane/src/operator.rs::a_credit_is_granted_exactly_once_and_totals_are_the_sum_of_grants` | Automated |
+| BI-07 | A bill is displayed | `crates/mako-smoke/tests/telemetry_pipeline.rs::observed_events_and_usage_reach_the_management_api` (end-to-end) and `apps/console/test-e2e/management-workflows.spec.ts` (mocked backend) | Automated |
+| BI-08 | A tenant's balance is deeply negative | `scripts/validate-no-collection.js` (proves no enforcement path reads the balance) | Automated |
+| BI-09 | A component attempts collection | `scripts/validate-no-collection.js` | Automated |
+| BI-10 | The beta ends | `scripts/validate-no-collection.js` (no conversion mechanism exists to find) | Automated |
 
 ## Developer registration and wait list
 

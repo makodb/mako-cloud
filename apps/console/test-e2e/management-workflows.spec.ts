@@ -60,12 +60,17 @@ test("role management, provisioning health, and deletion grace run through the A
   await expect(page.getByRole("heading", { name: "Mako Test Organization" })).toBeVisible();
 
   // The bill renders with its non-payable notice before any number, shows the
-  // metered quantities, and a positive balance from credits.
+  // metered quantities, and a balance that has gone negative -- shown, marked,
+  // and never clamped, because hiding the number is the one thing this
+  // surface must not do.
   await expect(page.getByRole("heading", { name: "Billing" })).toBeVisible();
   await expect(page.getByText("no charge will be made during the beta")).toBeVisible();
   await expect(page.getByRole("cell", { name: "storage bytes" })).toBeVisible();
   await expect(page.getByRole("cell", { name: "120.0 MiB" })).toBeVisible();
-  await expect(page.getByText("$2.50")).toHaveCount(2);
+  await expect(page.getByText("$2.50")).toBeVisible();
+  const negativeBalance = page.getByText("-$22.50");
+  await expect(negativeBalance).toBeVisible();
+  await expect(negativeBalance).toHaveAttribute("data-negative", "true");
 
   const memberRole = page.getByLabel("Role for dev_member01");
   await memberRole.selectOption("viewer");
@@ -229,13 +234,13 @@ class ManagementApiHarness {
     } else if (path === `/v1/organizations/${ORGANIZATION_ID}/bill` && method === "GET") {
       await json(route, {
         organizationId: ORGANIZATION_ID,
-        planId: "free",
+        planId: "pro",
         periodStart: "2026-08-01T00:00:00Z",
         periodEnd: NOW,
         observedAt: NOW,
         finalized: false,
         closedAt: null,
-        baseMicroDollars: 0,
+        baseMicroDollars: 25_000_000,
         lineItems: [
           {
             resource: "storage_bytes",
@@ -252,9 +257,9 @@ class ManagementApiHarness {
             amountMicroDollars: 0,
           },
         ],
-        totalMicroDollars: 0,
+        totalMicroDollars: 25_000_000,
         creditsMicroDollars: 2_500_000,
-        balanceMicroDollars: 2_500_000,
+        balanceMicroDollars: -22_500_000,
         collectable: false,
         notice:
           "This bill is informational. Nothing is payable and no charge will be made during the beta.",

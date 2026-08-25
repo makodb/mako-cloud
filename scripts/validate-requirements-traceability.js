@@ -5,6 +5,9 @@ const root = resolve(import.meta.dirname, "..");
 const matrixPath = "docs/requirements-traceability.md";
 const capabilities = [
   ["CP", "openspec/specs/cloud/control-plane/spec.md"],
+  ["BM", "openspec/specs/billing/metering/spec.md"],
+  ["BP", "openspec/specs/billing/plans-and-entitlements/spec.md"],
+  ["BI", "openspec/specs/billing/invoicing-and-balance/spec.md"],
   ["ER", "openspec/specs/functions/edge-runtime/spec.md"],
   ["PA", "openspec/specs/identity/project-auth/spec.md"],
   ["DP", "openspec/specs/security/document-policies/spec.md"],

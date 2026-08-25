@@ -1,19 +1,25 @@
+# Invoicing and Balance Specification
+
 ## Purpose
 
 Turn a closed period's measured use into a bill an organization can read, and keep a running account balance that shows what that use would have cost — without collecting it.
 
-## ADDED Requirements
+## Requirements
 
 ### Requirement: A bill is derived from retained evidence
-Closing a billing period SHALL rate the period's ledger into invoice line items using the rate card version that applied during the period. A finalized invoice MUST re-derive to the same total from retained evidence, and every line item MUST identify the resource, quantity, rate, and period it came from.
+Closing a billing period SHALL rate the period's ledger into invoice line items, each identifying the resource, quantity, included allowance, overage, and amount, with the plan and rate-card versions the period was rated under. Rating MUST be deterministic -- the same evidence and versions always produce the same total -- and a finalized invoice MUST be stored exactly once and never rewritten. A period that spanned a plan change MUST rate each plan's stretch under its own terms, prorated by time.
 
 #### Scenario: A finalized invoice is recomputed
-- **WHEN** a finalized invoice is recomputed from the retained ledger and rate card version
-- **THEN** the resulting total equals the finalized total
+- **WHEN** a closed period's rating is re-derived from the same evidence and versions
+- **THEN** the resulting total equals the finalized total, and the stored invoice is untouched
 
 #### Scenario: Prices change after a period closes
 - **WHEN** the rate card is revised after a period was invoiced
-- **THEN** the closed invoice is unaffected and the new rates apply only to periods opened after the revision
+- **THEN** the closed invoice is unaffected, because it is stored rather than re-rated, and new rates apply only to later derivations
+
+#### Scenario: The plan changed mid-period
+- **WHEN** a period that spanned a plan change is rated
+- **THEN** each plan's stretch is rated under its own terms with base fees and allowances prorated by time, and an unchanged plan rates identically to the unsegmented arithmetic
 
 ### Requirement: An organization has a running balance that may be negative
 Each organization SHALL have an account balance equal to its credits minus its finalized charges. A balance MUST be permitted to go negative, meaning the organization has accrued more use than credit, and MUST be derivable from the retained invoices and credit entries that produced it.
@@ -24,7 +30,7 @@ Each organization SHALL have an account balance equal to its credits minus its f
 
 #### Scenario: A balance is explained
 - **WHEN** an authorized member inspects the balance
-- **THEN** every entry that contributed to it identifies its invoice or credit, its amount, and when it was applied
+- **THEN** each closed period behind it is retrievable as a finalized invoice and the live month derives on read
 
 #### Scenario: An operator grants credit
 - **WHEN** an operator applies a credit with a reason and an unused idempotency key
