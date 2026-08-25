@@ -10,9 +10,9 @@ use mako_documents::{
     SchemaCompatibility, TrustedQuery,
 };
 use mako_gateway::{
-    GatewayQuotaCharge, GatewayQuotaDecision, GatewayQuotaResource, PresentedServiceCredential,
-    ServiceBypassGateway, ServiceBypassGatewayError, ServiceBypassGatewayRequest,
-    VerifiedAccessIdentity,
+    GatewayQuotaCharge, GatewayQuotaDecision, GatewayQuotaPolicySource, GatewayQuotaResource,
+    PresentedServiceCredential, ServiceBypassGateway, ServiceBypassGatewayError,
+    ServiceBypassGatewayRequest, VerifiedAccessIdentity,
 };
 use mako_policy::{
     AuditRequestId, CompiledPolicySet, DocumentOperation, DocumentPolicyAuthorizer,
@@ -741,7 +741,13 @@ async fn charge_document(
             tenant,
             &reservation,
             &charges,
-            graph.quota_policy(),
+            // Resolved per tenant, so an operator override or a plan actually
+            // changes what this tenant is held to.
+            &graph
+                .quota_policies()
+                .policy_for(tenant)
+                .await
+                .map_err(|_| unavailable(request, "quota authority is unavailable"))?,
             now.saturating_mul(1_000),
         )
         .await

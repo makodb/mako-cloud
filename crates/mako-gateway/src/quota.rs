@@ -1,11 +1,11 @@
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, HashMap},
     error::Error,
     fmt,
     num::{NonZeroU64, NonZeroUsize},
-    sync::Arc,
+    sync::{Arc, Mutex},
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use async_trait::async_trait;
@@ -17,6 +17,7 @@ use mako_storage::{
 use serde::{Deserialize, Serialize};
 
 const COUNTER_DOMAIN_PREFIX: &str = "mako:gateway-quota:counter:v1";
+const POLICY_DOMAIN_PREFIX: &str = "mako:gateway-quota:policy:v1";
 const RESERVATION_DOMAIN_PREFIX: &str = "mako:gateway-quota:reservation:v1";
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
@@ -410,6 +411,98 @@ pub trait GatewayQuotaPolicySource: Send + Sync {
     ) -> Result<GatewayQuotaPolicy, GatewayQuotaPolicyError>;
 }
 
+/// Resolves the limits a tenant is actually held to.
+///
+/// The only implementation of this trait used to be the static policy itself,
+/// which ignored the tenant, so every tenant in the deployment was held to one
+/// set of limits and the operator quota overrides recorded in the control plane
+/// never reached the gateway that would enforce them.
+///
+/// A policy installed for a tenant is stored by the control plane, which owns
+/// plans and overrides. Reading it is on the request path, so it is cached for
+/// a bounded interval, and a tenant with nothing installed falls back to the
+/// deployment default rather than to no limits at all.
+pub struct PersistentQuotaPolicySource {
+    adapter: Arc<dyn KvAdapter>,
+    fallback: GatewayQuotaPolicy,
+    cache: Mutex<HashMap<String, (Instant, GatewayQuotaPolicy)>>,
+    ttl: Duration,
+}
+
+impl fmt::Debug for PersistentQuotaPolicySource {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("PersistentQuotaPolicySource")
+            .field("ttl", &self.ttl)
+            .finish_non_exhaustive()
+    }
+}
+
+impl PersistentQuotaPolicySource {
+    #[must_use]
+    pub fn new(adapter: Arc<dyn KvAdapter>, fallback: GatewayQuotaPolicy, ttl: Duration) -> Self {
+        Self {
+            adapter,
+            fallback,
+            cache: Mutex::new(HashMap::new()),
+            ttl,
+        }
+    }
+
+    /// Where a tenant's installed policy lives.
+    pub fn policy_key(tenant: &TenantScope) -> Result<Vec<u8>, GatewayQuotaError> {
+        TenantKeyspace::system_key(tenant_domain(POLICY_DOMAIN_PREFIX, tenant), "current")
+            .map_err(|_| GatewayQuotaError::InvalidRequest)
+    }
+
+    fn cache_key(tenant: &TenantScope) -> String {
+        format!("{}:{}", tenant.project_id(), tenant.environment_id())
+    }
+
+    fn cached(&self, tenant: &TenantScope) -> Option<GatewayQuotaPolicy> {
+        let key = Self::cache_key(tenant);
+        let mut cache = self.cache.lock().ok()?;
+        let (stored_at, policy) = cache.get(&key)?;
+        if stored_at.elapsed() > self.ttl {
+            cache.remove(&key);
+            return None;
+        }
+        Some(policy.clone())
+    }
+
+    fn remember(&self, tenant: &TenantScope, policy: &GatewayQuotaPolicy) {
+        if let Ok(mut cache) = self.cache.lock() {
+            cache.insert(Self::cache_key(tenant), (Instant::now(), policy.clone()));
+        }
+    }
+}
+
+#[async_trait]
+impl GatewayQuotaPolicySource for PersistentQuotaPolicySource {
+    async fn policy_for(
+        &self,
+        tenant: &TenantScope,
+    ) -> Result<GatewayQuotaPolicy, GatewayQuotaPolicyError> {
+        if let Some(policy) = self.cached(tenant) {
+            return Ok(policy);
+        }
+        let key = Self::policy_key(tenant).map_err(|_| GatewayQuotaPolicyError::Unavailable)?;
+        let stored = self
+            .adapter
+            .get(&key)
+            .await
+            .map_err(|_| GatewayQuotaPolicyError::Unavailable)?;
+        // No installed policy means the deployment default, never no limits.
+        let policy = match stored {
+            Some(bytes) => serde_json::from_slice::<GatewayQuotaPolicy>(&bytes)
+                .map_err(|_| GatewayQuotaPolicyError::Unavailable)?,
+            None => self.fallback.clone(),
+        };
+        self.remember(tenant, &policy);
+        Ok(policy)
+    }
+}
+
 #[async_trait]
 impl GatewayQuotaPolicySource for GatewayQuotaPolicy {
     async fn policy_for(
@@ -574,6 +667,63 @@ mod tests {
     use tempfile::TempDir;
 
     use super::*;
+
+    /// Two tenants on the same deployment must be able to be held to different
+    /// limits. Until this existed the only policy source ignored the tenant it
+    /// was asked about, so every operator quota override recorded in the
+    /// control plane was inert.
+    #[test]
+    fn an_installed_policy_applies_to_one_tenant_and_the_default_to_the_rest() {
+        block_on(async {
+            let adapter: Arc<dyn KvAdapter> = Arc::new(MemoryAdapter::new());
+            let fallback = GatewayQuotaPolicy::new([(
+                GatewayQuotaResource::ReplicationRequests,
+                GatewayQuotaLimit {
+                    hard: None,
+                    rate: Some(window(1, 60_000)),
+                },
+            )])
+            .expect("fallback");
+            let raised = GatewayQuotaPolicy::new([(
+                GatewayQuotaResource::ReplicationRequests,
+                GatewayQuotaLimit {
+                    hard: None,
+                    rate: Some(window(100, 60_000)),
+                },
+            )])
+            .expect("raised");
+
+            let lifted = quota_tenant("example01", "example01");
+            let ordinary = quota_tenant("example02", "example02");
+            let mut batch = WriteBatch::new();
+            batch.put(
+                PersistentQuotaPolicySource::policy_key(&lifted).expect("key"),
+                serde_json::to_vec(&raised).expect("policy json"),
+            );
+            adapter
+                .write(batch, Durability::Memory)
+                .await
+                .expect("install");
+
+            let source = PersistentQuotaPolicySource::new(
+                Arc::clone(&adapter),
+                fallback.clone(),
+                Duration::from_secs(5),
+            );
+
+            assert_eq!(
+                source.policy_for(&lifted).await.expect("policy"),
+                raised,
+                "the tenant with a policy installed was not held to it"
+            );
+            // A tenant nobody has decided anything about still has limits.
+            assert_eq!(
+                source.policy_for(&ordinary).await.expect("policy"),
+                fallback,
+                "a tenant without an installed policy was not held to the default"
+            );
+        });
+    }
 
     #[test]
     fn hard_limits_rate_limits_and_retry_advice_are_stable() {

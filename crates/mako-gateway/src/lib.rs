@@ -12,6 +12,7 @@ pub use quota::{
     GatewayQuotaCharge, GatewayQuotaDecision, GatewayQuotaEngine, GatewayQuotaEngineConfig,
     GatewayQuotaError, GatewayQuotaLimit, GatewayQuotaPolicy, GatewayQuotaPolicyError,
     GatewayQuotaPolicySource, GatewayQuotaResource, GatewayQuotaWindow,
+    PersistentQuotaPolicySource,
 };
 pub use replication::{
     AuthorizedReplicationRequest, GatewayReplicationQuotaEnforcer, QuotaCheckError,

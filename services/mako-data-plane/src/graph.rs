@@ -1,4 +1,4 @@
-use std::{error::Error, fmt, num::NonZeroU64, num::NonZeroUsize, sync::Arc};
+use std::{error::Error, fmt, num::NonZeroU64, num::NonZeroUsize, sync::Arc, time::Duration};
 
 use futures::executor::block_on;
 use mako_api::{CollectionScope, ExplorerCapabilityKey, ExplorerCapabilityKeyRing, TenantScope};
@@ -13,7 +13,8 @@ use mako_gateway::{
     GatewayAccessTokenVerifier, GatewayAuthorizationEpochResolver, GatewayQuotaEngine,
     GatewayQuotaEngineConfig, GatewayQuotaLimit, GatewayQuotaPolicy, GatewayQuotaResource,
     GatewayQuotaWindow, GatewayReplicationQuotaEnforcer, GatewaySessionResolver,
-    ReplicationGateway, ReplicationGatewayError, ReplicationGatewayRequest, VerifiedAccessIdentity,
+    PersistentQuotaPolicySource, ReplicationGateway, ReplicationGatewayError,
+    ReplicationGatewayRequest, VerifiedAccessIdentity,
 };
 use mako_identity::{
     AccessAuthorizationEpochs, AccessToken, AccessTokenConfig, AccessTokenError, AccessTokenInput,
@@ -131,6 +132,7 @@ struct DataPlaneComponents {
     storage_sampler: Arc<crate::telemetry::StorageSampler>,
     quotas: Arc<GatewayQuotaEngine>,
     quota_policy: GatewayQuotaPolicy,
+    quota_policies: Arc<PersistentQuotaPolicySource>,
     audit: AuditStore,
     redactor: TelemetryRedactor,
     password_service: PasswordService,
@@ -282,6 +284,14 @@ impl DataPlaneGraph {
             adapter: Arc::clone(&adapter),
         };
 
+        // Built before the adapter is moved into the graph.
+        let quota_policies = Arc::new(PersistentQuotaPolicySource::new(
+            Arc::clone(&adapter),
+            quota_policy.clone(),
+            // Short, because an operator raising a tenant's limit during an
+            // incident should take effect promptly.
+            Duration::from_secs(10),
+        ));
         Ok(Self {
             storage,
             adapter,
@@ -297,6 +307,7 @@ impl DataPlaneGraph {
                 storage_sampler: Arc::new(crate::telemetry::StorageSampler::new()),
                 documents,
                 quotas,
+                quota_policies,
                 quota_policy,
                 audit,
                 redactor,
@@ -345,6 +356,11 @@ impl DataPlaneGraph {
     #[must_use]
     pub fn quota_engine(&self) -> &Arc<GatewayQuotaEngine> {
         &self.components.quotas
+    }
+
+    #[must_use]
+    pub fn quota_policies(&self) -> &Arc<PersistentQuotaPolicySource> {
+        &self.components.quota_policies
     }
 
     #[must_use]

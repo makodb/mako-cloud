@@ -7,7 +7,8 @@ use mako_audit::{
     ResourceReference, SafeAttributes, SignalContext, SignalScope,
 };
 use mako_gateway::{
-    GatewayQuotaCharge, GatewayQuotaDecision, GatewayQuotaResource, VerifiedAccessIdentity,
+    GatewayQuotaCharge, GatewayQuotaDecision, GatewayQuotaPolicySource, GatewayQuotaResource,
+    VerifiedAccessIdentity,
 };
 use mako_identity::{
     AppUserStatus, AuthenticationAuditError, AuthenticationAuditEvent, AuthenticationAuditOutcome,
@@ -448,7 +449,13 @@ async fn charge_auth(
             tenant,
             &reservation,
             &charges,
-            graph.quota_policy(),
+            // Resolved per tenant, so an operator override or a plan actually
+            // changes what this tenant is held to.
+            &graph
+                .quota_policies()
+                .policy_for(tenant)
+                .await
+                .map_err(|_| unavailable(request, "quota authority is unavailable"))?,
             now_unix_seconds.saturating_mul(1_000),
         )
         .await
