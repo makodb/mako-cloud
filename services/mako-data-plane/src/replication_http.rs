@@ -445,6 +445,20 @@ async fn authorize(
             }
             ReplicationAuthorizationError::Gateway(error) => {
                 let envelope = error.api_error().clone();
+                // A refused replication request is what a developer debugging a
+                // client that cannot sync needs to see, so it is reported as
+                // well as returned.
+                graph.telemetry().record(mako_api::ObservabilityRecord {
+                    tenant: tenant.clone(),
+                    timestamp_unix_milliseconds: now.saturating_mul(1_000),
+                    payload: mako_api::ObservabilityPayload::ReplicationError {
+                        collection_id: collection_id.as_str().to_owned(),
+                        category: format!("{:?}", envelope.error.code),
+                        retryable: !matches!(envelope.error.retry, mako_api::RetryAdvice::Never),
+                        message: envelope.error.message.clone(),
+                        correlation_id: request.request_id().to_owned(),
+                    },
+                });
                 HttpApiError::from_envelope(status_for(envelope.error.code), envelope)
             }
         })?;

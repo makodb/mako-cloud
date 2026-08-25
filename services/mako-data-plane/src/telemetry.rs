@@ -43,20 +43,16 @@ type TenantKey = (String, String);
 type SampleKey = (Measurement, TenantKey);
 
 pub struct StorageSampler {
+    region: String,
     due: Mutex<HashMap<SampleKey, Instant>>,
     last_sampled: Mutex<HashMap<SampleKey, Instant>>,
 }
 
-impl Default for StorageSampler {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl StorageSampler {
     #[must_use]
-    pub fn new() -> Self {
+    pub fn new(region: impl Into<String>) -> Self {
         Self {
+            region: region.into(),
             due: Mutex::new(HashMap::new()),
             last_sampled: Mutex::new(HashMap::new()),
         }
@@ -128,15 +124,35 @@ impl StorageSampler {
                     Err(_) => None,
                 },
             };
-            let Some(quantity) = measured else {
-                // Left unmarked, so the next change marks it again rather than
-                // recording a sample that never happened.
-                continue;
-            };
             let (Ok(project), Ok(environment)) = (
                 ProjectId::parse(tenant.0.clone()),
                 EnvironmentId::parse(tenant.1.clone()),
             ) else {
+                continue;
+            };
+            let scope = TenantScope::new(project.clone(), environment.clone());
+            // Measuring is also observing: a tenant whose storage answered is
+            // healthy at this moment, and one whose storage did not is what a
+            // developer asking "is my project healthy" needs to see.
+            emitter.record(ObservabilityRecord {
+                tenant: scope.clone(),
+                timestamp_unix_milliseconds: now_unix_seconds.saturating_mul(1_000),
+                payload: ObservabilityPayload::Health {
+                    service: "mako-data-plane".to_owned(),
+                    region: self.region.clone(),
+                    status: if measured.is_some() {
+                        mako_api::HealthState::Healthy
+                    } else {
+                        mako_api::HealthState::Degraded
+                    },
+                    diagnostic: measured
+                        .is_none()
+                        .then(|| "storage measurement failed".to_owned()),
+                },
+            });
+            let Some(quantity) = measured else {
+                // Left unmarked, so the next change marks it again rather than
+                // recording a sample that never happened.
                 continue;
             };
             let (resource, unit) = match measurement {
@@ -144,7 +160,7 @@ impl StorageSampler {
                 Measurement::ApplicationUsers => (QuotaResource::ApplicationUsers, "users"),
             };
             emitter.record(ObservabilityRecord {
-                tenant: TenantScope::new(project, environment),
+                tenant: scope,
                 timestamp_unix_milliseconds: now_unix_seconds.saturating_mul(1_000),
                 payload: ObservabilityPayload::Usage {
                     resource,
@@ -193,7 +209,7 @@ mod tests {
     fn stored_size_and_user_count_are_marked_and_sampled_independently() {
         block_on(async {
             let adapter: Arc<dyn KvAdapter> = Arc::new(MemoryAdapter::new());
-            let sampler = StorageSampler::new();
+            let sampler = StorageSampler::new("local");
             let emitter = emitter();
 
             // A write says nothing about how many users a tenant has, and a
@@ -201,7 +217,8 @@ mod tests {
             // schedule the other's measurement.
             sampler.mark(&tenant());
             assert_eq!(sampler.sample_due(&adapter, &emitter, 1).await, 1);
-            assert_eq!(emitter.buffered(), 1);
+            // Each sample carries a health record with its measurement.
+            assert_eq!(emitter.buffered(), 2);
 
             sampler.mark_users(&tenant());
             assert_eq!(
@@ -209,7 +226,7 @@ mod tests {
                 1,
                 "a user-count change was not measured because storage had just been"
             );
-            assert_eq!(emitter.buffered(), 2);
+            assert_eq!(emitter.buffered(), 4);
         });
     }
 
@@ -232,7 +249,7 @@ mod tests {
                 .await
                 .expect("write");
 
-            let sampler = StorageSampler::new();
+            let sampler = StorageSampler::new("local");
             let emitter = emitter();
 
             // Nothing is measured until a write says the size may have moved.
@@ -240,7 +257,8 @@ mod tests {
 
             sampler.mark(&tenant());
             assert_eq!(sampler.sample_due(&adapter, &emitter, 1).await, 1);
-            assert_eq!(emitter.buffered(), 1);
+            // Each sample carries a health record with its measurement.
+            assert_eq!(emitter.buffered(), 2);
 
             // A tenant that keeps writing is not re-measured on every write:
             // measuring walks its range, and the answer barely moves.
@@ -251,7 +269,8 @@ mod tests {
                 0,
                 "a tenant was re-measured inside the sampling interval"
             );
-            assert_eq!(emitter.buffered(), 1);
+            // Each sample carries a health record with its measurement.
+            assert_eq!(emitter.buffered(), 2);
         });
     }
 }

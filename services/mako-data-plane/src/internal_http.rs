@@ -626,6 +626,15 @@ async fn execute_index_install(
         }
     }
     let state = build_index(&scoped, request, &name, version).await?;
+    report_index_state(
+        graph,
+        tenant,
+        &input.collection_id,
+        &input.name,
+        input.version,
+        state,
+        now,
+    );
     index_response(request, &input.name, input.version, state)
 }
 
@@ -659,7 +668,44 @@ async fn execute_index_inspect(
     // Reading also advances an unfinished build, so an index that ran out of
     // page budget converges instead of waiting for another write.
     let state = build_index(&scoped, request, &name, version).await?;
+    report_index_state(
+        graph,
+        tenant,
+        &input.collection_id,
+        &input.name,
+        input.version,
+        state,
+        now,
+    );
     index_response(request, &input.name, input.version, state)
+}
+
+/// An index's state deciding whether queries are answerable is exactly what
+/// the index-state signal exists to show, and this is where that state is
+/// computed.
+fn report_index_state(
+    graph: &Arc<DataPlaneGraph>,
+    tenant: &mako_api::TenantScope,
+    collection_id: &str,
+    index_name: &str,
+    index_version: u64,
+    state: &str,
+    now: u64,
+) {
+    graph.telemetry().record(mako_api::ObservabilityRecord {
+        tenant: tenant.clone(),
+        timestamp_unix_milliseconds: now.saturating_mul(1_000),
+        payload: mako_api::ObservabilityPayload::IndexState {
+            collection_id: collection_id.to_owned(),
+            index_name: index_name.to_owned(),
+            index_version,
+            state: state.to_owned(),
+            // Progress in percent is not something the build reports; claiming
+            // a number would be invention. Done and not-done are true.
+            progress_percent: if state == "active" { 100 } else { 0 },
+            message: None,
+        },
+    });
 }
 
 fn index_target(

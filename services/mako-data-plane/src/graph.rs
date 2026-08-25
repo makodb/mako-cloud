@@ -304,7 +304,9 @@ impl DataPlaneGraph {
                     secret.expose_secret(),
                     "mako.data-plane",
                 )),
-                storage_sampler: Arc::new(crate::telemetry::StorageSampler::new()),
+                storage_sampler: Arc::new(crate::telemetry::StorageSampler::new(
+                    config.region.clone(),
+                )),
                 documents,
                 quotas,
                 quota_policies,

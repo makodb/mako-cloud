@@ -254,6 +254,50 @@ fn observed_events_and_usage_reach_the_management_api() {
         "the bill does not say nothing will be charged: {body}"
     );
 
+    // A refused replication request must surface as a replication error:
+    // this is what a developer debugging a client that cannot sync reads.
+    let mut bad = keyed.clone();
+    bad.insert(
+        "authorization".to_owned(),
+        format!("Bearer {}", "x".repeat(64)),
+    );
+    let (status, _) = request(
+        data_port,
+        "POST",
+        &format!("{scope}/collections/{COLLECTION_ID}/replication/pull"),
+        &bad,
+        Some(&json!({ "schemaVersion": 1, "batchSize": 10 })),
+    );
+    assert!(
+        !(200..300).contains(&status),
+        "a garbage token was accepted for replication"
+    );
+
+    // An index built through the management API must surface as an
+    // index-state record: the state deciding whether queries are answerable is
+    // the thing this signal exists to show.
+    let mut indexing = reading.clone();
+    indexing.insert(
+        "idempotency-key".to_owned(),
+        "telemetry-index-000001".to_owned(),
+    );
+    let (status, body) = request(
+        control_port,
+        "POST",
+        &format!("{scope}/collections/{COLLECTION_ID}/indexes"),
+        &indexing,
+        Some(&json!({
+            "name": "owner_index",
+            "version": 1,
+            "kind": "non_unique",
+            "fields": [{ "path": "ownerId", "direction": "ascending" }],
+        })),
+    );
+    assert!(
+        (200..300).contains(&status),
+        "index creation failed with {status}: {body}"
+    );
+
     // Each signal names something only this test could have produced, so a
     // page that merely arrives is not mistaken for the record being reported.
     for (signal, described, marker) in [
@@ -265,6 +309,9 @@ fn observed_events_and_usage_reach_the_management_api() {
         ),
         ("usage", "stored size sample", "storage_bytes"),
         ("usage", "application user count", "application_users"),
+        ("health", "tenant health record", "mako-data-plane"),
+        ("index-states", "index state record", "owner_index"),
+        ("replication-errors", "replication error record", "todos"),
     ] {
         await_signal(
             control_port,
