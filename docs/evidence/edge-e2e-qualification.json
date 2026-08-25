@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "qualification": "hosted-edge-function-invocation",
   "status": "passed",
-  "startedAt": "2026-08-17T20:22:46Z",
-  "completedAt": "2026-08-17T20:22:54Z",
+  "startedAt": "2026-08-25T15:47:08Z",
+  "completedAt": "2026-08-25T15:47:18Z",
   "host": {
     "kernel": "Linux",
     "release": "7.0.14-5-pve",

@@ -9,6 +9,7 @@
       "**/*.json",
       "**/*.jsonc",
       "!packages/api-types/src/generated/schema.ts",
+      "!docs/evidence/public-beta-release-manifest.json",
       "!**/dist",
       "!**/web-dist",
       "!.playwright-tmp",

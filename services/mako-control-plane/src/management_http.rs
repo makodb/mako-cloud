@@ -898,7 +898,11 @@ fn handle_organization_bill(
             .map_err(|_| unavailable(request, "credits are unavailable"))?;
 
         match requested_period {
-            // The live view: the current month so far, never finalized.
+            // The live view: the current month so far, never finalized. The
+            // window's exclusive end reaches one second past now so a usage
+            // record stamped in the second the bill is read still counts --
+            // timestamps carry whole seconds, and a sample that observability
+            // already serves must not be missing from the bill read alongside.
             None => {
                 let (rated, derived_from) = derive_rated_period(
                     graph,
@@ -907,7 +911,7 @@ fn handle_organization_bill(
                     &organization,
                     &exceptions,
                     current_start,
-                    now_milliseconds,
+                    now_milliseconds.saturating_add(1_000),
                     now,
                 )
                 .await?;
