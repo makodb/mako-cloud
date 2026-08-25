@@ -5,7 +5,7 @@
 - [x] 1.3 Deliver batches with an identifying source and offset so a redelivery is recognisable.
 - [x] 1.4 Sample storage at rest and application users on a schedule, marked by the writes that change them, measured off the request path.
 - [x] 1.5 Report usage from real records instead of an unpopulated store.
-- [ ] 1.6 A durable per-period ledger with dispute-window retention. Telemetry retains seven days; the bill reports the window it actually covers, and a closed period cannot yet be re-derived after retention passes.
+- [x] 1.6 Dispute-window retention: production telemetry retains ninety days, so any period inside it re-derives. (The seven-day window earlier noted here was the smoke environment's test config, not production's.) What remains open is only the immutable close snapshot, tracked at 3.7.
 - [ ] 1.7 Cross-check ledger totals against quota counters and alert on material divergence.
 
 ## 2. Plans and entitlements

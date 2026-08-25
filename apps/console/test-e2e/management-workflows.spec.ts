@@ -58,6 +58,15 @@ test("role management, provisioning health, and deletion grace run through the A
 
   await page.goto(`/organizations/${ORGANIZATION_ID}`);
   await expect(page.getByRole("heading", { name: "Mako Test Organization" })).toBeVisible();
+
+  // The bill renders with its non-payable notice before any number, shows the
+  // metered quantities, and a positive balance from credits.
+  await expect(page.getByRole("heading", { name: "Billing" })).toBeVisible();
+  await expect(page.getByText("no charge will be made during the beta")).toBeVisible();
+  await expect(page.getByRole("cell", { name: "storage bytes" })).toBeVisible();
+  await expect(page.getByRole("cell", { name: "120.0 MiB" })).toBeVisible();
+  await expect(page.getByText("$2.50")).toHaveCount(2);
+
   const memberRole = page.getByLabel("Role for dev_member01");
   await memberRole.selectOption("viewer");
   await expect(memberRole).toHaveValue("viewer");
@@ -217,6 +226,36 @@ class ManagementApiHarness {
       await json(route, { items: [organizationFixture()] });
     } else if (path === `/v1/organizations/${ORGANIZATION_ID}` && method === "GET") {
       await json(route, organizationFixture());
+    } else if (path === `/v1/organizations/${ORGANIZATION_ID}/bill` && method === "GET") {
+      await json(route, {
+        organizationId: ORGANIZATION_ID,
+        planId: "free",
+        periodStart: "2026-08-01T00:00:00Z",
+        observedAt: NOW,
+        baseMicroDollars: 0,
+        lineItems: [
+          {
+            resource: "storage_bytes",
+            quantity: 120 * 1024 * 1024,
+            included: 500 * 1024 * 1024,
+            overage: 0,
+            amountMicroDollars: 0,
+          },
+          {
+            resource: "edge_invocations_per_month",
+            quantity: 1200,
+            included: 500000,
+            overage: 0,
+            amountMicroDollars: 0,
+          },
+        ],
+        totalMicroDollars: 0,
+        creditsMicroDollars: 2_500_000,
+        balanceMicroDollars: 2_500_000,
+        collectable: false,
+        notice:
+          "This bill is informational. Nothing is payable and no charge will be made during the beta.",
+      });
     } else if (path === `/v1/organizations/${ORGANIZATION_ID}/members` && method === "GET") {
       await json(route, { items: this.members });
     } else if (

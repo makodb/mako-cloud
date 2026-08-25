@@ -10,6 +10,7 @@ import type {
 import { ApiFailureNotice, type ConsoleApiFailure, toConsoleApiFailure } from "./api-error.js";
 import { useDeveloperAuth } from "./auth.js";
 import { useManagementClient } from "./management.js";
+import { BillingPanel } from "./billing.js";
 import { ProjectsPanel } from "./projects.js";
 import { confirmDestructiveAction, OneTimeSecretValue } from "./safety.js";
 
@@ -133,6 +134,7 @@ export function OrganizationScreen({
         />
         <InvitationPanel organizationId={organizationId} canManage={canManage} onChanged={reload} />
         <ProjectsPanel organizationId={organizationId} onOpen={onOpenProject} />
+        <BillingPanel organizationId={organizationId} />
       </div>
     </section>
   );

@@ -10,6 +10,7 @@ changing this index or a published guide.
 | Area | Guide | Primary tested flow |
 | --- | --- | --- |
 | Local development | [Local development](local-development.md) and [configuration](configuration.md) | Workspace preparation, typed configuration, retained RocksDB directories, and local dependencies |
+| Billing | [Billing](billing.md) | Meters, plans, exceptions, credits, the informational bill, and the guard proving nothing collects |
 | Deployment | [Deployment](deployment.md) | Mixed SQLite/RocksDB volumes, fail-closed startup, readiness, graceful shutdown, and qualification |
 | Operations | [Control-plane SQLite](control-plane-sqlite.md), [Production RocksDB operations](production-rocksdb-operations.md), [observability](observability.md), [rollback qualification](rollback-qualification.md), and [runbooks](runbooks/README.md) | Backup, restore, rollback, capacity, recovery, alerts, and incident response |
 | Security | [Threat model](threat-model.md) and [qualification reports](#qualification-evidence) | Tenant boundaries, auth, policies, edge isolation, and dependency auditing |
