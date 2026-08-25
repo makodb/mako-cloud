@@ -4,13 +4,13 @@
   "persistence": "until-manually-paused",
   "operatorIdentity": "msmummy@gmail.com",
   "planHash": "d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073",
-  "releaseDigest": "d5e4f15f286c35740f0ba889a4ed1a081df7e9f28c09d8cc384097119ae7fd15",
+  "releaseDigest": "2ccab5fb3f0d4c69dbf41aee35040b6c82d8ea1253f0a8bcaf505577055cbc0d",
   "blockers": [
     "complete the 30-day resource, capacity, availability, and cost window with provider or facility evidence",
     "measured auth, RxDB pull, and RxDB push latency exceed their single-region beta p95 budgets"
   ],
   "blockerDigest": "b8492baa802b961ba5cd240e211e0fccc87498d7fd589370dde5f44c8ef7e6a8",
-  "acceptedAt": "2026-08-24T16:35:34.422Z",
+  "acceptedAt": "2026-08-25T07:33:49.871Z",
   "expiresAt": null,
   "nonWaivableSafeguards": {
     "trustedHttpsAndHsts": true,
@@ -22,5 +22,5 @@
     "serviceReadiness": true,
     "emergencyAdmissionStop": true
   },
-  "typedConfirmation": "ACCEPT_PERSISTENT_PUBLIC_PREVIEW_RISK:d5e4f15f286c35740f0ba889a4ed1a081df7e9f28c09d8cc384097119ae7fd15:d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073:b8492baa802b961ba5cd240e211e0fccc87498d7fd589370dde5f44c8ef7e6a8"
+  "typedConfirmation": "ACCEPT_PERSISTENT_PUBLIC_PREVIEW_RISK:2ccab5fb3f0d4c69dbf41aee35040b6c82d8ea1253f0a8bcaf505577055cbc0d:d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073:b8492baa802b961ba5cd240e211e0fccc87498d7fd589370dde5f44c8ef7e6a8"
 }
