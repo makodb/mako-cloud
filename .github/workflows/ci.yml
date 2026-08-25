@@ -39,6 +39,8 @@ jobs:
         run: npm run validate:release-gates
       - name: Check rollback qualification
         run: npm run validate:rollback
+      - name: Verify nothing collects payment and no enforcement reads the balance
+        run: npm run validate:no-collection
       - name: Check Rust formatting
         run: cargo fmt --all -- --check
       - name: Lint Rust

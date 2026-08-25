@@ -105,9 +105,10 @@ impl OverageRate {
 
 /// The default rate card, shaped after Supabase's published pricing.
 ///
-/// The specific numbers are transcribed from their pricing page as of this
-/// writing and should be confirmed against it before anything is presented as
-/// a real price -- and until the beta ends nothing is collected regardless.
+/// Verified against supabase.com/pricing on 2026-08-25: Pro at $25/month,
+/// storage $0.125/GB beyond 8 GB, egress $0.09/GB beyond 250 GB, $0.00325 per
+/// monthly active user beyond 100,000, and $2 per million invocations beyond
+/// two million. Until the beta ends nothing is collected regardless.
 #[must_use]
 pub fn default_rate_card() -> RateCard {
     const GIB: u64 = 1024 * 1024 * 1024;
