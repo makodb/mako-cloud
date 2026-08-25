@@ -20,8 +20,9 @@ pub use explorer::{
 pub use explorer_contract::*;
 pub use observability::{
     EventOutcome, HealthState, ObservabilityPage, ObservabilityPayload, ObservabilityQuery,
-    ObservabilityQueryError, ObservabilityRecord, ObservabilitySignal, QuotaResource,
-    RetentionWindow, TELEMETRY_AUTHORIZATION_HEADER, TELEMETRY_HEALTH_PATH, TELEMETRY_INGEST_PATH,
+    ObservabilityQueryError, ObservabilityRecord, ObservabilitySignal,
+    QUOTA_CHECKPOINT_WINDOW_MILLISECONDS, QuotaResource, RetentionWindow,
+    TELEMETRY_AUTHORIZATION_HEADER, TELEMETRY_HEALTH_PATH, TELEMETRY_INGEST_PATH,
     TELEMETRY_PROTOCOL_VERSION, TELEMETRY_QUERY_PATH, TELEMETRY_REQUEST_ID_HEADER,
     TELEMETRY_VERSION_HEADER, TelemetryIngestRequest, TelemetryIngestResponse,
 };

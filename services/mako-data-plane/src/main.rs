@@ -69,24 +69,35 @@ fn start(service: ServiceKind) -> ExitCode {
             // Records are buffered on the request path and shipped here, so a
             // telemetry outage costs observability rather than availability.
             let stopping = Arc::new(AtomicBool::new(false));
-            let telemetry_worker = {
-                let stopping = Arc::clone(&stopping);
-                let emitter = Arc::clone(graph.telemetry());
-                let sampler = Arc::clone(graph.storage_sampler());
-                let adapter = Arc::clone(graph.storage_adapter());
-                thread::spawn(move || {
-                    while !stopping.load(Ordering::Acquire) {
-                        // Stored size is measured here rather than on the
-                        // write that changed it, because measuring walks the
-                        // tenant's range.
-                        block_on(sampler.sample_due(&adapter, &emitter, now_unix_seconds()));
+            let telemetry_worker =
+                {
+                    let stopping = Arc::clone(&stopping);
+                    let emitter = Arc::clone(graph.telemetry());
+                    let sampler = Arc::clone(graph.storage_sampler());
+                    let adapter = Arc::clone(graph.storage_adapter());
+                    let worker_graph = Arc::clone(&graph);
+                    thread::spawn(move || {
+                        while !stopping.load(Ordering::Acquire) {
+                            // Stored size is measured here rather than on the
+                            // write that changed it, because measuring walks the
+                            // tenant's range.
+                            block_on(sampler.sample_due(&adapter, &emitter, now_unix_seconds()));
+                            // Enforcement's counters are summarized here for the
+                            // billing cross-check, off the request path like every
+                            // other measurement.
+                            block_on(worker_graph.checkpoint_quota_counters(
+                                now_unix_seconds().saturating_mul(1_000),
+                            ));
+                            while emitter.flush_once() > 0 {}
+                            thread::park_timeout(Duration::from_secs(2));
+                        }
+                        // The graph must not outlive serving in this thread, or
+                        // shutdown could not reclaim sole ownership of it.
+                        drop(worker_graph);
+                        // Drain what is already buffered before the process exits.
                         while emitter.flush_once() > 0 {}
-                        thread::park_timeout(Duration::from_secs(2));
-                    }
-                    // Drain what is already buffered before the process exits.
-                    while emitter.flush_once() > 0 {}
-                })
-            };
+                    })
+                };
 
             let runtime = serve_http_transport_with_readiness(transport, router, readiness_probe);
             stopping.store(true, Ordering::Release);

@@ -271,6 +271,33 @@ impl GatewayQuotaEngine {
         Err(GatewayQuotaError::ConcurrentUpdate)
     }
 
+    /// How much of a resource this rate window's counter has recorded.
+    ///
+    /// This is a read for reconciliation, not enforcement: billing's usage
+    /// ledger is cross-checked against what enforcement counted, and this is
+    /// the enforcement side of that comparison. `window_start` may be any
+    /// instant inside the window; it is aligned the same way charging aligns.
+    /// An untouched window answers zero, because a counter that was never
+    /// charged was never written.
+    pub async fn rate_counter_used(
+        &self,
+        tenant: &TenantScope,
+        resource: GatewayQuotaResource,
+        window: GatewayQuotaWindow,
+        window_start_unix_milliseconds: u64,
+    ) -> Result<u64, GatewayQuotaError> {
+        let state = self
+            .counter_state(
+                tenant,
+                resource,
+                CounterKind::Rate,
+                window,
+                window_start_unix_milliseconds,
+            )
+            .await?;
+        Ok(state.used)
+    }
+
     async fn counter_state(
         &self,
         tenant: &TenantScope,
@@ -1040,6 +1067,80 @@ mod tests {
                 maximum_charges_per_request: NonZeroUsize::new(8).expect("non-zero"),
             },
         )
+    }
+
+    /// The reconciliation read must answer with exactly what charging wrote,
+    /// window by window, and zero for a window nothing charged -- otherwise
+    /// the billing cross-check would compare the ledger against noise.
+    #[test]
+    fn the_rate_counter_read_reports_what_was_charged_in_that_window_only() {
+        block_on(async {
+            let engine = engine();
+            let tenant = quota_tenant("counter01", "counter01");
+            let rate = window(100, 60_000);
+            let policy = GatewayQuotaPolicy::new([(
+                GatewayQuotaResource::ReplicationBytes,
+                GatewayQuotaLimit {
+                    hard: None,
+                    rate: Some(rate),
+                },
+            )])
+            .expect("policy");
+
+            for (reservation, at) in [("req_cwin1", 60_000), ("req_cwin2", 90_000)] {
+                let decision = engine
+                    .check_and_reserve(
+                        &tenant,
+                        reservation,
+                        &[charge(GatewayQuotaResource::ReplicationBytes, 7)],
+                        &policy,
+                        at,
+                    )
+                    .await
+                    .expect("charge");
+                assert_eq!(decision, GatewayQuotaDecision::Allowed);
+            }
+
+            assert_eq!(
+                engine
+                    .rate_counter_used(
+                        &tenant,
+                        GatewayQuotaResource::ReplicationBytes,
+                        rate,
+                        60_000
+                    )
+                    .await
+                    .expect("read"),
+                14,
+                "the window both charges landed in did not report their sum"
+            );
+            // An instant inside the window aligns to the same counter.
+            assert_eq!(
+                engine
+                    .rate_counter_used(
+                        &tenant,
+                        GatewayQuotaResource::ReplicationBytes,
+                        rate,
+                        90_000
+                    )
+                    .await
+                    .expect("aligned read"),
+                14,
+            );
+            assert_eq!(
+                engine
+                    .rate_counter_used(
+                        &tenant,
+                        GatewayQuotaResource::ReplicationBytes,
+                        rate,
+                        120_000
+                    )
+                    .await
+                    .expect("empty read"),
+                0,
+                "a window nothing charged must answer zero, not fail"
+            );
+        });
     }
 
     fn window(limit: u64, width: u64) -> GatewayQuotaWindow {

@@ -472,6 +472,9 @@ async fn authorize(
     // work becomes reportable. Only what the gateway actually charged for is
     // emitted, and only resources the product vocabulary already names.
     let observed_at = now.saturating_mul(1_000);
+    // The same admission charged the quota counters, so the minute it landed
+    // in becomes worth summarizing for the ledger cross-check.
+    graph.quota_checkpoints().mark(tenant, observed_at);
     for (resource, quantity, unit) in [
         (
             mako_api::QuotaResource::ReplicationRequestsPerMinute,

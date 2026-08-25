@@ -26,6 +26,21 @@ are one overage, not twelve, and a mid-period delete halves the storage
 charge. Production telemetry retains ninety days, so any period inside that
 window re-derives.
 
+### The ledger is cross-checked against enforcement
+
+The usage ledger and the gateway's quota counters watch the same admitted
+requests through different mechanisms: the counter is written transactionally
+with admission, while the ledger travels a bounded buffer that sheds under
+pressure. The data plane therefore summarizes its replication counters for
+every settled minute a tenant was active in as `quota` telemetry records, and
+the telemetry store compares each summary against the sum of the usage
+records it kept for the same minute. A material difference -- past an
+absolute floor and five percent of the larger side -- means one of billing or
+enforcement is wrong, and is reported as a degraded health record for the
+tenant plus an operator-visible log line. The comparison samples; it does not
+gate ingest, and a cross-check that cannot run is a missed sample rather than
+an error.
+
 ## Plans
 
 `mako-billing` defines the catalog as data: a free tier that caps and a pro

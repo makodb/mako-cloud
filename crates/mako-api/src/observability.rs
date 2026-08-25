@@ -29,6 +29,14 @@ fn safe_text(value: &str, max: usize) -> bool {
     !value.is_empty() && value.len() <= max && !value.chars().any(char::is_control)
 }
 
+/// How long the enforcement window behind a `Quota` checkpoint record is.
+///
+/// A checkpoint's timestamp is the start of the window it summarizes, and the
+/// window's length is this constant on both sides of the wire: the plane that
+/// reads its quota counters and the store that compares them against the
+/// usage ledger must agree on it, or the comparison sums the wrong minute.
+pub const QUOTA_CHECKPOINT_WINDOW_MILLISECONDS: u64 = 60_000;
+
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum QuotaResource {

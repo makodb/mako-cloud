@@ -6,7 +6,7 @@
 - [x] 1.4 Sample storage at rest and application users on a schedule, marked by the writes that change them, measured off the request path.
 - [x] 1.5 Report usage from real records instead of an unpopulated store.
 - [x] 1.6 Dispute-window retention: production telemetry retains ninety days, so any period inside it re-derives. (The seven-day window earlier noted here was the smoke environment's test config, not production's.) What remains open is only the immutable close snapshot, tracked at 3.7.
-- [ ] 1.7 Cross-check ledger totals against quota counters and alert on material divergence.
+- [x] 1.7 Cross-check ledger totals against quota counters, alerting on material divergence: the data plane checkpoints each settled minute's replication counters as `quota` records, and the telemetry store compares them against its usage ledger, degrading tenant health and logging when they part.
 
 ## 2. Plans and entitlements
 
@@ -25,7 +25,7 @@
 - [x] 3.4 The live bill: GET /v1/organizations/{id}/bill, current month clamped to retained evidence, reporting the window it covers.
 - [x] 3.5 Credits, granted exactly once per id, audited, never negative.
 - [x] 3.6 Balance as credits minus charges, unclamped.
-- [ ] 3.7 Period close: a finalized invoice re-derivable after the period ends. Blocked on 1.6.
+- [ ] 3.7 Period close: a finalized invoice re-derivable after the period ends. Unblocked: production retention is 90 days.
 - [ ] 3.8 Proration on plan change. The live bill rates the whole window at the current plan.
 
 ## 4. Not charging, enforced
@@ -39,6 +39,6 @@
 ## 5. Surfaces
 
 - [x] 5.1 Management API: the bill. Operator API: plan change, plan exceptions, credits. All in the OpenAPI contract with regenerated types.
-- [ ] 5.2 Console surfaces. The API serves everything; no page renders it yet.
+- [x] 5.2 Console surfaces. The organization page renders the bill: notice first, line items, credits, balance (negative allowed). Mocked e2e asserts notice text, metered quantity, and balance.
 - [x] 5.3 Operator actions audited as distinct actions: plan change, plan exception, credit grant.
 - [ ] 5.4 Traceability rows for billing scenarios, when the change's spec deltas are merged at archive.

@@ -16,7 +16,7 @@ use futures::executor::block_on;
 use mako_api::TenantScope;
 use mako_audit::TelemetryRedactor;
 use mako_control_plane::{
-    ObservabilityPage, ObservabilityPayload, ObservabilityRecord, ObservabilitySignal,
+    HealthState, ObservabilityPage, ObservabilityPayload, ObservabilityRecord, ObservabilitySignal,
     RetentionWindow, TELEMETRY_AUTHORIZATION_HEADER, TELEMETRY_HEALTH_PATH, TELEMETRY_INGEST_PATH,
     TELEMETRY_PROTOCOL_VERSION, TELEMETRY_QUERY_PATH, TELEMETRY_VERSION_HEADER, TelemetryHealth,
     TelemetryIngestRequest, TelemetryIngestResponse, TelemetryQueryRequest, TelemetryQueryResponse,
@@ -39,6 +39,9 @@ const MAX_REQUEST_BODY_BYTES: usize = 1024 * 1024;
 const MAX_INGEST_RECORDS: usize = 256;
 const MAX_QUERY_ITEMS: usize = 1_000;
 const MAX_CLOCK_SKEW_MILLISECONDS: u64 = 30_000;
+/// More usage records in one checkpointed minute than this and the
+/// cross-check abstains rather than compare a truncated sum.
+const MAX_CROSS_CHECK_RECORDS: usize = 20_000;
 const KEYSPACE: &[u8] = b"\0mako/telemetry/v1/";
 const CHECKPOINT_KEYSPACE: &[u8] = b"\0mako/telemetry-checkpoint/v1/";
 
@@ -283,6 +286,14 @@ impl TelemetryStore {
         if applied != CompareAndWriteResult::Applied {
             return Err(ServiceError::Conflict);
         }
+        // A quota checkpoint summarizes what enforcement counted for a closed
+        // window. Its source delivers in emission order, so by the time the
+        // checkpoint is durable, every usage record the plane emitted for
+        // that window is too -- which makes this the moment the ledger can be
+        // held against it. A replayed batch returned above and is never
+        // compared twice.
+        self.cross_check_quota_checkpoints(&request.records, now)
+            .await;
         Ok(TelemetryIngestResponse {
             protocol_version: TELEMETRY_PROTOCOL_VERSION,
             request_id: request.request_id,
@@ -382,6 +393,141 @@ impl TelemetryStore {
             .saturating_sub(retention_milliseconds(self.retention))
             .max(1)
     }
+
+    /// Hold the usage ledger against what enforcement counted.
+    ///
+    /// Each `Quota` record in an accepted batch summarizes one closed minute
+    /// of one tenant's counters. The ledger's answer for the same minute is
+    /// the sum of the usage records this store kept. A material difference
+    /// means one of billing or enforcement is wrong, and is reported as a
+    /// degraded health record for the tenant plus an operator-visible log
+    /// line. Nothing here may fail the ingest that triggered it: the batch
+    /// is already durable, and a cross-check that cannot run is a missed
+    /// sample, not an error.
+    async fn cross_check_quota_checkpoints(&self, records: &[ObservabilityRecord], now: u64) {
+        for record in records {
+            let ObservabilityPayload::Quota {
+                resource,
+                consumed,
+                retry_after_unix_milliseconds: None,
+                ..
+            } = &record.payload
+            else {
+                continue;
+            };
+            let window_start = record.timestamp_unix_milliseconds;
+            let Ok(Some(ledger)) = self
+                .ledger_window_total(&record.tenant, *resource, window_start)
+                .await
+            else {
+                continue;
+            };
+            if !material_divergence(*resource, ledger, *consumed) {
+                continue;
+            }
+            let resource_name = quota_resource_name(*resource);
+            eprintln!(
+                "telemetry meter cross-check divergence project={} environment={} resource={resource_name} ledger={ledger} enforcement_counter={consumed} window_start_unix_milliseconds={window_start}",
+                record.tenant.project_id(),
+                record.tenant.environment_id(),
+            );
+            let alert = ObservabilityRecord {
+                tenant: record.tenant.clone(),
+                timestamp_unix_milliseconds: now,
+                payload: ObservabilityPayload::Health {
+                    service: "mako-telemetry-query".to_owned(),
+                    region: self.region.clone(),
+                    status: HealthState::Degraded,
+                    diagnostic: Some(format!(
+                        "meter cross-check diverged for {resource_name}: the usage ledger says {ledger}, the enforcement counter says {consumed}, for the minute starting {window_start}"
+                    )),
+                },
+            };
+            let Ok(value) = serde_json::to_vec(&alert) else {
+                continue;
+            };
+            let mut batch = WriteBatch::with_capacity(1);
+            batch.put(record_key(&alert), value);
+            let _ = self.storage.write(batch, self.durability).await;
+        }
+    }
+
+    /// What the ledger holds for one tenant, resource, and checkpoint window.
+    /// Answers `None` when the window holds more records than a bounded scan
+    /// may visit, because a truncated sum would cry divergence falsely.
+    async fn ledger_window_total(
+        &self,
+        tenant: &TenantScope,
+        resource: mako_api::QuotaResource,
+        window_start: u64,
+    ) -> Result<Option<u64>, ServiceError> {
+        let prefix = record_prefix(tenant, ObservabilitySignal::Usage)?;
+        let mut start = timestamp_key(&prefix, window_start);
+        let end = timestamp_key(
+            &prefix,
+            window_start.saturating_add(mako_api::QUOTA_CHECKPOINT_WINDOW_MILLISECONDS),
+        );
+        // Every storage engine bounds a single scan, so the window is walked
+        // in pages the engines all accept.
+        let page_limit = NonZeroUsize::new(MAX_QUERY_ITEMS).ok_or(ServiceError::InvalidRequest)?;
+        let mut visited = 0_usize;
+        let mut total: u64 = 0;
+        loop {
+            let range = KeyRange::new(start.clone(), end.clone())
+                .map_err(|_| ServiceError::InvalidRequest)?;
+            let rows = self
+                .storage
+                .scan(ScanRequest::new(range, ScanDirection::Forward, page_limit))
+                .await
+                .map_err(|_| ServiceError::Unavailable)?;
+            let page_full = rows.len() >= page_limit.get();
+            visited = visited.saturating_add(rows.len());
+            if visited > MAX_CROSS_CHECK_RECORDS {
+                return Ok(None);
+            }
+            let next_start = rows.last().map(|row| {
+                let mut key = row.key.clone();
+                key.push(0);
+                key
+            });
+            for row in rows {
+                let Ok(record) = serde_json::from_slice::<ObservabilityRecord>(&row.value) else {
+                    continue;
+                };
+                if let ObservabilityPayload::Usage {
+                    resource: recorded,
+                    quantity,
+                    ..
+                } = record.payload
+                    && recorded == resource
+                {
+                    total = total.saturating_add(quantity);
+                }
+            }
+            match next_start {
+                Some(key) if page_full => start = key,
+                _ => return Ok(Some(total)),
+            }
+        }
+    }
+}
+
+/// Whether a ledger/counter difference is worth an alert. Small differences
+/// are expected -- an admitted request whose usage record was retried, or one
+/// straddling a settle edge -- so an alert needs both an absolute floor and a
+/// share of the larger side.
+fn material_divergence(resource: mako_api::QuotaResource, ledger: u64, counter: u64) -> bool {
+    let floor = match resource {
+        mako_api::QuotaResource::ReplicationBytesPerMonth => 1024 * 1024,
+        _ => 2,
+    };
+    ledger.abs_diff(counter) > floor.max(ledger.max(counter) / 20)
+}
+
+fn quota_resource_name(resource: mako_api::QuotaResource) -> String {
+    serde_json::to_string(&resource)
+        .map(|name| name.trim_matches('"').to_owned())
+        .unwrap_or_else(|_| format!("{resource:?}"))
 }
 
 struct TelemetryReadiness {
@@ -989,5 +1135,147 @@ mod tests {
         }))
         .expect("second page");
         assert_eq!(second.page.items.len(), 1);
+    }
+
+    fn usage(tenant: TenantScope, timestamp: u64, quantity: u64) -> ObservabilityRecord {
+        ObservabilityRecord {
+            tenant,
+            timestamp_unix_milliseconds: timestamp,
+            payload: ObservabilityPayload::Usage {
+                resource: mako_api::QuotaResource::ReplicationRequestsPerMinute,
+                quantity,
+                unit: "requests".to_owned(),
+            },
+        }
+    }
+
+    fn checkpoint(tenant: TenantScope, window_start: u64, consumed: u64) -> ObservabilityRecord {
+        ObservabilityRecord {
+            tenant,
+            timestamp_unix_milliseconds: window_start,
+            payload: ObservabilityPayload::Quota {
+                resource: mako_api::QuotaResource::ReplicationRequestsPerMinute,
+                limit: 120,
+                consumed,
+                retry_after_unix_milliseconds: None,
+            },
+        }
+    }
+
+    fn health_alerts(store: &TelemetryStore, tenant: TenantScope, now: u64) -> Vec<String> {
+        block_on(store.query(TelemetryQueryRequest {
+            protocol_version: TELEMETRY_PROTOCOL_VERSION,
+            request_id: "req_query_alerts1".to_owned(),
+            tenant,
+            signal: ObservabilitySignal::Health,
+            query: ObservabilityQuery {
+                cursor: None,
+                from_unix_milliseconds: None,
+                until_unix_milliseconds: Some(now),
+                limit: 10,
+            },
+            observed_at_unix_milliseconds: now,
+        }))
+        .expect("health query")
+        .page
+        .items
+        .into_iter()
+        .map(|record| match record.payload {
+            ObservabilityPayload::Health {
+                status, diagnostic, ..
+            } => {
+                assert_eq!(status, HealthState::Degraded);
+                diagnostic.unwrap_or_default()
+            }
+            other => panic!("expected a health record, got {other:?}"),
+        })
+        .collect()
+    }
+
+    /// The ledger and the enforcement counters watch the same admitted
+    /// requests; when a checkpoint arrives, the store must compare and only
+    /// call out a difference that matters. An agreeing checkpoint must stay
+    /// silent, or the alert would train everyone to ignore it.
+    #[test]
+    fn a_checkpoint_is_compared_against_the_ledger_and_material_divergence_alerts() {
+        let adapter = MemoryAdapter::new();
+        let store = store(adapter);
+        let now = now_milliseconds().expect("clock");
+        let window = (now - 180_000) / 60_000 * 60_000;
+        let alpha = tenant("alpha");
+
+        // Three admitted requests in the window, as the plane reported them.
+        block_on(store.ingest(
+            TelemetryIngestRequest {
+                records: vec![
+                    usage(alpha.clone(), window, 1),
+                    usage(alpha.clone(), window + 1_000, 1),
+                    usage(alpha.clone(), window + 59_999, 1),
+                    // The neighboring minute must not leak into the sum.
+                    usage(alpha.clone(), window + 60_000, 1),
+                ],
+                ..ingest(alpha.clone(), window, 1, "unused")
+            },
+            now,
+        ))
+        .expect("usage ingest");
+
+        // Enforcement counted the same three: no alert.
+        block_on(store.ingest(
+            TelemetryIngestRequest {
+                records: vec![checkpoint(alpha.clone(), window, 3)],
+                ..ingest(alpha.clone(), window, 2, "unused")
+            },
+            now,
+        ))
+        .expect("agreeing checkpoint");
+        assert_eq!(
+            health_alerts(&store, alpha.clone(), now),
+            Vec::<String>::new(),
+            "an agreeing checkpoint raised an alert"
+        );
+
+        // Enforcement counted far more than the ledger kept: the ledger is
+        // losing records, and someone must hear about it.
+        block_on(store.ingest(
+            TelemetryIngestRequest {
+                records: vec![checkpoint(alpha.clone(), window, 50)],
+                ..ingest(alpha.clone(), window, 3, "unused")
+            },
+            now,
+        ))
+        .expect("divergent checkpoint");
+        let alerts = health_alerts(&store, alpha, now);
+        assert_eq!(alerts.len(), 1, "material divergence did not alert");
+        assert!(
+            alerts[0].contains("cross-check")
+                && alerts[0].contains("ledger says 3")
+                && alerts[0].contains("counter says 50"),
+            "the alert does not say what diverged: {}",
+            alerts[0]
+        );
+    }
+
+    /// Replaying a checkpoint batch must not repeat its alert: redelivery is
+    /// the transfer protocol working as designed, not a second divergence.
+    #[test]
+    fn a_replayed_checkpoint_batch_does_not_alert_twice() {
+        let adapter = MemoryAdapter::new();
+        let store = store(adapter);
+        let now = now_milliseconds().expect("clock");
+        let window = (now - 180_000) / 60_000 * 60_000;
+        let alpha = tenant("alpha");
+        let divergent = TelemetryIngestRequest {
+            records: vec![checkpoint(alpha.clone(), window, 50)],
+            ..ingest(alpha.clone(), window, 1, "unused")
+        };
+        block_on(store.ingest(divergent.clone(), now)).expect("first delivery");
+        let replay = block_on(store.ingest(divergent, now)).expect("redelivery");
+        assert!(replay.replayed);
+        assert_eq!(
+            health_alerts(&store, alpha, now).len(),
+            1,
+            "a replayed batch was compared and alerted again"
+        );
     }
 }

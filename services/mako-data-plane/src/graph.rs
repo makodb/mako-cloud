@@ -130,6 +130,7 @@ struct DataPlaneComponents {
     documents: DocumentEngine,
     telemetry: Arc<mako_telemetry_client::TelemetryEmitter>,
     storage_sampler: Arc<crate::telemetry::StorageSampler>,
+    quota_checkpoints: Arc<crate::telemetry::QuotaCheckpointer>,
     quotas: Arc<GatewayQuotaEngine>,
     quota_policy: GatewayQuotaPolicy,
     quota_policies: Arc<PersistentQuotaPolicySource>,
@@ -307,6 +308,7 @@ impl DataPlaneGraph {
                 storage_sampler: Arc::new(crate::telemetry::StorageSampler::new(
                     config.region.clone(),
                 )),
+                quota_checkpoints: Arc::new(crate::telemetry::QuotaCheckpointer::new()),
                 documents,
                 quotas,
                 quota_policies,
@@ -353,6 +355,26 @@ impl DataPlaneGraph {
     #[must_use]
     pub fn storage_sampler(&self) -> &Arc<crate::telemetry::StorageSampler> {
         &self.components.storage_sampler
+    }
+
+    #[must_use]
+    pub fn quota_checkpoints(&self) -> &Arc<crate::telemetry::QuotaCheckpointer> {
+        &self.components.quota_checkpoints
+    }
+
+    /// Summarize the quota counters of every settled minute a tenant was
+    /// admitted in, into the telemetry buffer. Driven from the telemetry
+    /// worker, never from a request thread.
+    pub async fn checkpoint_quota_counters(&self, now_unix_milliseconds: u64) -> usize {
+        self.components
+            .quota_checkpoints
+            .checkpoint_due(
+                &self.components.quotas,
+                self.components.quota_policies.as_ref(),
+                &self.components.telemetry,
+                now_unix_milliseconds,
+            )
+            .await
     }
 
     #[must_use]

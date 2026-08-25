@@ -5,14 +5,16 @@
 //! owns, and knowing when measuring it is worth the walk.
 
 use std::{
-    collections::HashMap,
+    collections::{BTreeSet, HashMap},
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 
 use mako_api::{
-    EnvironmentId, ObservabilityPayload, ObservabilityRecord, ProjectId, QuotaResource, TenantScope,
+    EnvironmentId, ObservabilityPayload, ObservabilityRecord, ProjectId,
+    QUOTA_CHECKPOINT_WINDOW_MILLISECONDS, QuotaResource, TenantScope,
 };
+use mako_gateway::{GatewayQuotaEngine, GatewayQuotaPolicySource, GatewayQuotaResource};
 use mako_storage::{KvAdapter, TenantKeyspace};
 use mako_telemetry_client::TelemetryEmitter;
 
@@ -182,9 +184,186 @@ fn tenant_key(tenant: &TenantScope) -> TenantKey {
     )
 }
 
+/// A checkpoint is only taken once a window has been closed this long, so a
+/// request that read its clock just before the boundary has finished emitting
+/// its usage record before the window it charged is summarized.
+const QUOTA_CHECKPOINT_SETTLE: u64 = 10_000;
+/// A window nobody managed to checkpoint within this horizon is abandoned:
+/// the cross-check samples, it does not owe completeness.
+const QUOTA_CHECKPOINT_HORIZON: u64 = 10 * 60_000;
+/// Bounded so a burst across many tenants cannot grow this without limit.
+const MAX_TRACKED_QUOTA_TENANTS: usize = 4_096;
+/// Windows per tenant awaiting checkpoint; passes run every couple of
+/// seconds, so more than a handful pending means the worker is stalled.
+const MAX_PENDING_QUOTA_WINDOWS: usize = 8;
+
+/// The metered resources whose quota counters are worth cross-checking: the
+/// two replication charges, because they are exactly what the usage ledger
+/// records per admitted request under these product names.
+const CHECKPOINTED_RESOURCES: [(GatewayQuotaResource, QuotaResource); 2] = [
+    (
+        GatewayQuotaResource::ReplicationRequests,
+        QuotaResource::ReplicationRequestsPerMinute,
+    ),
+    (
+        GatewayQuotaResource::ReplicationBytes,
+        QuotaResource::ReplicationBytesPerMonth,
+    ),
+];
+
+/// Report what enforcement counted, so the ledger can be checked against it.
+///
+/// The usage ledger and the quota counters observe the same admitted requests
+/// through different mechanisms: the counter is written transactionally with
+/// admission, the ledger travels a bounded buffer that sheds under pressure.
+/// If they disagree materially, one of billing or enforcement is wrong. This
+/// side reads the counters for each closed minute a tenant was active in and
+/// reports them as `Quota` records; the ledger's holder does the comparing.
+pub struct QuotaCheckpointer {
+    pending: Mutex<HashMap<TenantKey, BTreeSet<u64>>>,
+}
+
+impl QuotaCheckpointer {
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            pending: Mutex::new(HashMap::new()),
+        }
+    }
+
+    /// Note that an admitted request charged this tenant's counters at this
+    /// instant, so the minute it landed in becomes worth summarizing.
+    pub fn mark(&self, tenant: &TenantScope, now_unix_milliseconds: u64) {
+        let window = now_unix_milliseconds / QUOTA_CHECKPOINT_WINDOW_MILLISECONDS
+            * QUOTA_CHECKPOINT_WINDOW_MILLISECONDS;
+        let Ok(mut pending) = self.pending.lock() else {
+            return;
+        };
+        let key = tenant_key(tenant);
+        if !pending.contains_key(&key) && pending.len() >= MAX_TRACKED_QUOTA_TENANTS {
+            return;
+        }
+        let windows = pending.entry(key).or_default();
+        if windows.len() >= MAX_PENDING_QUOTA_WINDOWS {
+            // Keep the newest windows: the oldest is the closest to falling
+            // off the horizon unemitted anyway.
+            windows.pop_first();
+        }
+        windows.insert(window);
+    }
+
+    fn take_closed(&self, now_unix_milliseconds: u64) -> Vec<(TenantKey, Vec<u64>)> {
+        let Ok(mut pending) = self.pending.lock() else {
+            return Vec::new();
+        };
+        let mut closed = Vec::new();
+        pending.retain(|tenant, windows| {
+            let mut due = Vec::new();
+            windows.retain(|window| {
+                let closed_at = window.saturating_add(QUOTA_CHECKPOINT_WINDOW_MILLISECONDS);
+                if now_unix_milliseconds < closed_at.saturating_add(QUOTA_CHECKPOINT_SETTLE) {
+                    return true;
+                }
+                if now_unix_milliseconds < window.saturating_add(QUOTA_CHECKPOINT_HORIZON) {
+                    due.push(*window);
+                }
+                false
+            });
+            if !due.is_empty() {
+                closed.push((tenant.clone(), due));
+            }
+            !windows.is_empty()
+        });
+        closed
+    }
+
+    /// Summarize every settled window a marked tenant charged, as one `Quota`
+    /// record per cross-checked resource, timestamped at the window's start.
+    /// Returns how many records were emitted.
+    pub async fn checkpoint_due(
+        &self,
+        engine: &GatewayQuotaEngine,
+        policies: &dyn GatewayQuotaPolicySource,
+        emitter: &TelemetryEmitter,
+        now_unix_milliseconds: u64,
+    ) -> usize {
+        let mut emitted = 0;
+        for ((project, environment), windows) in self.take_closed(now_unix_milliseconds) {
+            let (Ok(project), Ok(environment)) =
+                (ProjectId::parse(project), EnvironmentId::parse(environment))
+            else {
+                continue;
+            };
+            let tenant = TenantScope::new(project, environment);
+            // The tenant's installed policy names the limit the counters were
+            // held to; without it the counter cannot be read, because the
+            // window length is part of the counter's identity.
+            let Ok(policy) = policies.policy_for(&tenant).await else {
+                continue;
+            };
+            for record in checkpoint_records(engine, &policy, &tenant, &windows).await {
+                emitter.record(record);
+                emitted += 1;
+            }
+        }
+        emitted
+    }
+}
+
+/// One `Quota` record per cross-checked resource per window, carrying what
+/// the counter held. Separate from the emitting loop so a test can look at
+/// the records themselves rather than count buffer entries.
+async fn checkpoint_records(
+    engine: &GatewayQuotaEngine,
+    policy: &mako_gateway::GatewayQuotaPolicy,
+    tenant: &TenantScope,
+    windows: &[u64],
+) -> Vec<ObservabilityRecord> {
+    let mut records = Vec::new();
+    for window_start in windows {
+        for (gateway_resource, resource) in CHECKPOINTED_RESOURCES {
+            let Some(rate) = policy.limit(gateway_resource).and_then(|limit| limit.rate) else {
+                continue;
+            };
+            if rate.window_milliseconds.get() != QUOTA_CHECKPOINT_WINDOW_MILLISECONDS {
+                continue;
+            }
+            let Ok(consumed) = engine
+                .rate_counter_used(tenant, gateway_resource, rate, *window_start)
+                .await
+            else {
+                continue;
+            };
+            records.push(ObservabilityRecord {
+                tenant: tenant.clone(),
+                timestamp_unix_milliseconds: *window_start,
+                payload: ObservabilityPayload::Quota {
+                    resource,
+                    limit: rate.limit.get(),
+                    consumed,
+                    retry_after_unix_milliseconds: None,
+                },
+            });
+        }
+    }
+    records
+}
+
+impl Default for QuotaCheckpointer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use std::num::{NonZeroU64, NonZeroUsize};
+
     use futures::executor::block_on;
+    use mako_gateway::{
+        GatewayQuotaCharge, GatewayQuotaEngineConfig, GatewayQuotaLimit, GatewayQuotaPolicy,
+        GatewayQuotaWindow, PersistentQuotaPolicySource,
+    };
     use mako_storage::{Durability, MemoryAdapter, WriteBatch};
 
     use super::*;
@@ -271,6 +450,159 @@ mod tests {
             );
             // Each sample carries a health record with its measurement.
             assert_eq!(emitter.buffered(), 2);
+        });
+    }
+
+    fn quota_engine(adapter: &Arc<dyn KvAdapter>) -> GatewayQuotaEngine {
+        GatewayQuotaEngine::new(
+            Arc::clone(adapter),
+            GatewayQuotaEngineConfig {
+                durability: Durability::Memory,
+                maximum_conflict_retries: NonZeroUsize::new(8).expect("non-zero"),
+                maximum_charges_per_request: NonZeroUsize::new(8).expect("non-zero"),
+            },
+        )
+    }
+
+    fn replication_policy() -> GatewayQuotaPolicy {
+        let rate = |limit: u64| GatewayQuotaLimit {
+            hard: None,
+            rate: Some(GatewayQuotaWindow {
+                limit: NonZeroU64::new(limit).expect("non-zero"),
+                window_milliseconds: NonZeroU64::new(QUOTA_CHECKPOINT_WINDOW_MILLISECONDS)
+                    .expect("non-zero"),
+            }),
+        };
+        GatewayQuotaPolicy::new([
+            (GatewayQuotaResource::ReplicationRequests, rate(120)),
+            (
+                GatewayQuotaResource::ReplicationBytes,
+                rate(64 * 1024 * 1024),
+            ),
+        ])
+        .expect("policy")
+    }
+
+    /// The checkpoint must say exactly what the counters hold for the window
+    /// it names, and must not be taken before the window has settled: a
+    /// summary racing the requests it summarizes would cry divergence where
+    /// there is none.
+    #[test]
+    fn a_charged_window_is_checkpointed_after_it_settles_with_what_the_counter_holds() {
+        block_on(async {
+            let adapter: Arc<dyn KvAdapter> = Arc::new(MemoryAdapter::new());
+            let engine = quota_engine(&adapter);
+            let policies = PersistentQuotaPolicySource::new(
+                Arc::clone(&adapter),
+                replication_policy(),
+                Duration::from_secs(5),
+            );
+            let emitter = emitter();
+            let checkpoints = QuotaCheckpointer::new();
+
+            // Two admitted requests inside the same minute.
+            for (reservation, at, bytes) in
+                [("req_qcheck01", 60_000, 300), ("req_qcheck02", 90_000, 200)]
+            {
+                engine
+                    .check_and_reserve(
+                        &tenant(),
+                        reservation,
+                        &[
+                            GatewayQuotaCharge {
+                                resource: GatewayQuotaResource::ReplicationRequests,
+                                amount: NonZeroU64::MIN,
+                            },
+                            GatewayQuotaCharge {
+                                resource: GatewayQuotaResource::ReplicationBytes,
+                                amount: NonZeroU64::new(bytes).expect("non-zero"),
+                            },
+                        ],
+                        &replication_policy(),
+                        at,
+                    )
+                    .await
+                    .expect("charge");
+                checkpoints.mark(&tenant(), at);
+            }
+
+            // The window closes at 120s but must settle before it is read.
+            assert_eq!(
+                checkpoints
+                    .checkpoint_due(&engine, &policies, &emitter, 125_000)
+                    .await,
+                0,
+                "a window was summarized before requests straddling its edge could land"
+            );
+
+            let records =
+                checkpoint_records(&engine, &replication_policy(), &tenant(), &[60_000]).await;
+            let consumed: Vec<_> = records
+                .iter()
+                .map(|record| match record.payload {
+                    ObservabilityPayload::Quota {
+                        resource, consumed, ..
+                    } => (resource, consumed, record.timestamp_unix_milliseconds),
+                    _ => panic!("a checkpoint emitted something other than a quota record"),
+                })
+                .collect();
+            assert_eq!(
+                consumed,
+                vec![
+                    (QuotaResource::ReplicationRequestsPerMinute, 2, 60_000),
+                    (QuotaResource::ReplicationBytesPerMonth, 500, 60_000),
+                ],
+                "the checkpoint does not carry what enforcement counted"
+            );
+
+            assert_eq!(
+                checkpoints
+                    .checkpoint_due(&engine, &policies, &emitter, 130_000)
+                    .await,
+                2,
+                "a settled window was not summarized"
+            );
+            assert_eq!(emitter.buffered(), 2);
+            // Once summarized, the window is done; nothing repeats it.
+            assert_eq!(
+                checkpoints
+                    .checkpoint_due(&engine, &policies, &emitter, 200_000)
+                    .await,
+                0
+            );
+        });
+    }
+
+    /// A window nobody summarized in time is abandoned rather than reported
+    /// arbitrarily late: the cross-check samples recent minutes, and a stale
+    /// summary would race the ledger's retention.
+    #[test]
+    fn a_window_past_the_horizon_is_dropped_without_a_checkpoint() {
+        block_on(async {
+            let adapter: Arc<dyn KvAdapter> = Arc::new(MemoryAdapter::new());
+            let engine = quota_engine(&adapter);
+            let policies = PersistentQuotaPolicySource::new(
+                Arc::clone(&adapter),
+                replication_policy(),
+                Duration::from_secs(5),
+            );
+            let emitter = emitter();
+            let checkpoints = QuotaCheckpointer::new();
+
+            checkpoints.mark(&tenant(), 60_000);
+            assert_eq!(
+                checkpoints
+                    .checkpoint_due(
+                        &engine,
+                        &policies,
+                        &emitter,
+                        60_000 + QUOTA_CHECKPOINT_HORIZON
+                    )
+                    .await,
+                0,
+                "a stale window was summarized anyway"
+            );
+            assert_eq!(emitter.buffered(), 0);
         });
     }
 }
