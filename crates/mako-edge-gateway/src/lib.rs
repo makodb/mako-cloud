@@ -436,6 +436,24 @@ pub trait FunctionInvocationAuditSink: Send + Sync {
     fn record(&self, event: FunctionInvocationAuditEvent);
 }
 
+/// One completed invocation, measured where the response actually arrived.
+///
+/// Separate from the audit event because admission is audited before the
+/// runtime runs, and latency does not exist yet at that point.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FunctionMetricEvent {
+    pub tenant: TenantScope,
+    pub function_name: String,
+    pub version: u64,
+    pub region: String,
+    pub response_status: u16,
+    pub elapsed_milliseconds: u64,
+}
+
+pub trait FunctionMetricsSink: Send + Sync {
+    fn record(&self, event: FunctionMetricEvent);
+}
+
 pub type RuntimeResponseStream =
     Pin<Box<dyn Stream<Item = Result<Vec<u8>, RuntimeInvocationError>> + Send>>;
 
@@ -493,6 +511,7 @@ impl fmt::Debug for FunctionGatewayResponse {
 pub struct FunctionGateway;
 
 impl FunctionGateway {
+    #[allow(clippy::too_many_arguments)]
     pub async fn invoke(
         &self,
         request: FunctionGatewayRequest,
@@ -500,6 +519,7 @@ impl FunctionGateway {
         tokens: &dyn FunctionAccessTokenVerifier,
         admission: &dyn FunctionInvocationAdmission,
         audit: &dyn FunctionInvocationAuditSink,
+        metrics: &dyn FunctionMetricsSink,
         runtime: &dyn FunctionRuntimeInvoker,
     ) -> Result<FunctionGatewayResponse, FunctionGatewayError> {
         let request_id = request.request_id.clone();
@@ -616,6 +636,11 @@ impl FunctionGateway {
             }
             _ => stable_path.function_path().to_owned(),
         };
+        let invocation_started = std::time::Instant::now();
+        let metric_tenant = route.tenant.clone();
+        let metric_name = route.function_name.clone();
+        let metric_version = route.active_version;
+        let metric_region = selected_region.region.clone();
         let runtime_response = runtime
             .invoke(RuntimeFunctionInvocation {
                 tenant: route.tenant,
@@ -641,6 +666,15 @@ impl FunctionGateway {
                 });
                 FunctionGatewayError::runtime(&request_id, error)
             })?;
+        metrics.record(FunctionMetricEvent {
+            tenant: metric_tenant,
+            function_name: metric_name,
+            version: metric_version,
+            region: metric_region,
+            response_status: runtime_response.status,
+            elapsed_milliseconds: u64::try_from(invocation_started.elapsed().as_millis())
+                .unwrap_or(u64::MAX),
+        });
         if !(200..=599).contains(&runtime_response.status)
             || !headers_are_valid(&runtime_response.headers)
         {
@@ -1169,6 +1203,15 @@ mod tests {
     }
 
     #[derive(Default)]
+    struct Metrics(std::sync::Mutex<Vec<FunctionMetricEvent>>);
+
+    impl FunctionMetricsSink for Metrics {
+        fn record(&self, event: FunctionMetricEvent) {
+            self.0.lock().expect("metrics").push(event);
+        }
+    }
+
+    #[derive(Default)]
     struct Audit {
         events: Mutex<Vec<FunctionInvocationAuditEvent>>,
     }
@@ -1223,6 +1266,41 @@ mod tests {
     }
 
     #[test]
+    fn a_completed_invocation_is_measured_where_its_response_arrived() {
+        futures::executor::block_on(async {
+            let tenant_scope = tenant("prj_abcdefgh");
+            let (token, jwks) = access_token(&tenant_scope);
+            let state = AccessState;
+            let verifier = GatewayAccessTokenVerifier::new(
+                &jwks,
+                &state,
+                &state,
+                AccessTokenVerificationConfig::new("https://issuer.test", "mako-functions", 30)
+                    .expect("config"),
+            );
+            let metrics = Metrics::default();
+            FunctionGateway
+                .invoke(
+                    request(&token, b"request".to_vec()),
+                    &routes(tenant_scope.clone(), 1024),
+                    &verifier,
+                    &Admission(FunctionAdmissionDecision::Allowed),
+                    &Audit::default(),
+                    &metrics,
+                    &Runtime::default(),
+                )
+                .await
+                .expect("invocation");
+            let events = metrics.0.lock().expect("metrics");
+            assert_eq!(events.len(), 1, "one invocation is one metric event");
+            let event = &events[0];
+            assert_eq!(event.tenant, tenant_scope);
+            assert_eq!(event.response_status, 201);
+            assert_eq!(event.version, 7, "the metric names the version that served");
+        });
+    }
+
+    #[test]
     fn protected_request_routes_explicit_version_and_preserves_streaming() {
         futures::executor::block_on(async {
             let tenant_scope = tenant("prj_abcdefgh");
@@ -1244,6 +1322,7 @@ mod tests {
                     &verifier,
                     &Admission(FunctionAdmissionDecision::Allowed),
                     &audit,
+                    &Metrics::default(),
                     &runtime,
                 )
                 .await
@@ -1321,6 +1400,7 @@ mod tests {
                     &verifier,
                     &Admission(FunctionAdmissionDecision::Allowed),
                     &audit,
+                    &Metrics::default(),
                     &runtime,
                 )
                 .await
@@ -1335,6 +1415,7 @@ mod tests {
                     &verifier,
                     &Admission(FunctionAdmissionDecision::Allowed),
                     &audit,
+                    &Metrics::default(),
                     &runtime,
                 )
                 .await
@@ -1349,6 +1430,7 @@ mod tests {
                     &verifier,
                     &Admission(FunctionAdmissionDecision::Allowed),
                     &audit,
+                    &Metrics::default(),
                     &runtime,
                 )
                 .await
@@ -1382,6 +1464,7 @@ mod tests {
                     &verifier,
                     &Admission(FunctionAdmissionDecision::Allowed),
                     &audit,
+                    &Metrics::default(),
                     &runtime,
                 )
                 .await
@@ -1413,6 +1496,7 @@ mod tests {
                         retry_after_milliseconds: 2_000,
                     }),
                     &audit,
+                    &Metrics::default(),
                     &throttled_runtime,
                 )
                 .await
@@ -1441,6 +1525,7 @@ mod tests {
                         resource: "function_invocations".to_owned(),
                     }),
                     &audit,
+                    &Metrics::default(),
                     &hard_limit_runtime,
                 )
                 .await
@@ -1501,6 +1586,7 @@ mod tests {
                     &verifier,
                     &Admission(FunctionAdmissionDecision::Allowed),
                     &audit,
+                    &Metrics::default(),
                     &runtime,
                 )
                 .await
@@ -1520,6 +1606,7 @@ mod tests {
                     &verifier,
                     &Admission(FunctionAdmissionDecision::Allowed),
                     &audit,
+                    &Metrics::default(),
                     &rejected_runtime,
                 )
                 .await

@@ -22,9 +22,9 @@ use mako_audit::{
 use mako_config::{DeploymentEnvironment, ServiceConfig, ServiceKind};
 use mako_edge_gateway::{
     FunctionAccessTokenVerifier, FunctionInvocationActor, FunctionInvocationAuditEvent,
-    FunctionInvocationAuditOutcome, FunctionInvocationAuditSink, FunctionRouteError,
-    FunctionRouteResolver, GatewayFunctionInvocationAdmission, RegionalDeploymentHealth,
-    ResolvedFunctionRoute,
+    FunctionInvocationAuditOutcome, FunctionInvocationAuditSink, FunctionMetricEvent,
+    FunctionMetricsSink, FunctionRouteError, FunctionRouteResolver,
+    GatewayFunctionInvocationAdmission, RegionalDeploymentHealth, ResolvedFunctionRoute,
 };
 use mako_gateway::{
     AccessTokenVerificationError, GatewayQuotaEngine, GatewayQuotaEngineConfig, GatewayQuotaLimit,
@@ -346,6 +346,34 @@ impl PersistentFunctionAudit {
     }
 }
 
+/// Emits one metric record per completed invocation, measured at the gateway.
+///
+/// Compute time is not something the runtime reports separately, so none is
+/// invented: the record carries zero for compute and the measured wall time
+/// for latency, and a reader sees an unmeasured field rather than a made-up
+/// one.
+pub(crate) struct TelemetryFunctionMetrics {
+    telemetry: Arc<TelemetryEmitter>,
+}
+
+impl FunctionMetricsSink for TelemetryFunctionMetrics {
+    fn record(&self, event: FunctionMetricEvent) {
+        self.telemetry.record(mako_api::ObservabilityRecord {
+            tenant: event.tenant,
+            timestamp_unix_milliseconds: now_unix_seconds().max(1).saturating_mul(1_000),
+            payload: mako_api::ObservabilityPayload::FunctionMetric {
+                function_name: event.function_name,
+                version: event.version,
+                region: event.region,
+                invocation_count: 1,
+                error_count: u64::from(event.response_status >= 500),
+                latency_milliseconds: event.elapsed_milliseconds,
+                compute_milliseconds: 0,
+            },
+        });
+    }
+}
+
 impl FunctionInvocationAuditSink for PersistentFunctionAudit {
     fn record(&self, event: FunctionInvocationAuditEvent) {
         let context = &event.context;
@@ -447,6 +475,7 @@ pub struct EdgeGatewayGraph {
     pub(crate) tokens: PrivateTokenVerifier,
     pub(crate) admission: GatewayFunctionInvocationAdmission,
     pub(crate) audit: Arc<PersistentFunctionAudit>,
+    pub(crate) metrics: TelemetryFunctionMetrics,
     pub(crate) runtime: LoopbackRuntimeInvoker,
     data_client: EdgeToDataClient,
     control_client: EdgeToControlClient,
@@ -534,6 +563,9 @@ impl EdgeGatewayGraph {
         Ok(Self {
             _storage: storage,
             adapter,
+            metrics: TelemetryFunctionMetrics {
+                telemetry: Arc::clone(&telemetry),
+            },
             telemetry,
             routes: PrivateRouteResolver::new(control_client.clone(), config.region.clone()),
             tokens: PrivateTokenVerifier {

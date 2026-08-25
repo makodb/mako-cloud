@@ -69,6 +69,7 @@ fn handle_invocation(
         &graph.tokens,
         &graph.admission,
         graph.audit.as_ref(),
+        &graph.metrics,
         &graph.runtime,
     )) {
         Ok(response) => stream_response(request, response.status, response.headers, response.body),
