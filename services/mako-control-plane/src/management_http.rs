@@ -38,6 +38,11 @@ pub(crate) fn add_management_routes(
             handle_list_organizations as Handler,
         ),
         (
+            HttpMethod::Get,
+            "/v1/organizations/{organizationId}/bill",
+            handle_organization_bill,
+        ),
+        (
             HttpMethod::Post,
             "/v1/organizations",
             handle_create_organization,
@@ -776,6 +781,153 @@ pub(crate) fn resolve_plan_policy(
     let policy = mako_billing::enforcement_policy(&plan.entitlements)
         .map_err(|_| internal(request, "plan limits could not be resolved"))?;
     serde_json::to_value(&policy).map_err(|_| internal(request, "plan limits could not be encoded"))
+}
+
+/// The organization's bill for the current period so far, and the balance it
+/// implies. Shown, never collected: the beta charges nobody, and every
+/// response says so rather than leaving it to be inferred.
+fn handle_organization_bill(
+    graph: &Arc<ControlPlaneGraph>,
+    request: &HttpRequest,
+) -> Result<HttpResponse, HttpApiError> {
+    no_payload(request)?;
+    let organization_id =
+        OrganizationId::parse(request.path_parameter("organizationId").unwrap_or_default())
+            .map_err(|_| invalid(request, "organization path is invalid"))?;
+    with_developer(graph, request, |actor, now| async move {
+        let organization = graph
+            .organization_store()
+            .get_organization(&organization_id)
+            .await
+            .map_err(|_| unavailable(request, "organization is unavailable"))?
+            .ok_or_else(|| not_found(request, "organization was not found"))?;
+        graph
+            .organization_store()
+            .get_membership(&organization_id, actor.identity_id())
+            .await
+            .map_err(|_| unavailable(request, "membership is unavailable"))?
+            .ok_or_else(|| forbidden(request, "organization access is forbidden"))?;
+        let plan = mako_billing::plan(organization.plan_id())
+            .ok_or_else(|| internal(request, "the organization's plan is not in the catalog"))?;
+        let card = mako_billing::rating::default_rate_card();
+
+        // The period is the current calendar month so far. Nothing closes
+        // periods yet; this is the live view the beta shows. Telemetry retains
+        // less than a month, so the rated window starts at whichever is later:
+        // the month, or the oldest evidence -- and the response reports the
+        // start actually used rather than pretending to a window it cannot
+        // have seen.
+        let now_milliseconds = now.saturating_mul(1_000);
+        let mut period_start = current_month_start_milliseconds(now);
+
+        // Levels average per environment and then sum across them: two
+        // environments each storing a gigabyte are two stored gigabytes, but
+        // twelve samples of one environment's gigabyte are still one.
+        let limit = NonZeroUsize::new(100).expect("listing limit");
+        let mut usage: std::collections::BTreeMap<mako_api::QuotaResource, u64> =
+            std::collections::BTreeMap::new();
+        let projects = graph
+            .project_store()
+            .list_projects(&organization_id, limit)
+            .await
+            .map_err(|_| unavailable(request, "the organization's projects are unavailable"))?;
+        for project in &projects {
+            let environments = graph
+                .project_store()
+                .list_environments(project.id(), limit)
+                .await
+                .map_err(|_| unavailable(request, "the project's environments are unavailable"))?;
+            for environment in &environments {
+                let tenant = TenantScope::new(project.id().clone(), environment.id().clone());
+                let mut per_tenant: std::collections::BTreeMap<mako_api::QuotaResource, Vec<u64>> =
+                    std::collections::BTreeMap::new();
+                let mut cursor: Option<String> = None;
+                for _page in 0..16 {
+                    // No `from` bound: the retention boundary is recomputed by
+                    // the store on every call, and chasing it loses the race.
+                    // The whole retained window is fetched and the period is
+                    // applied here, where the clock stands still.
+                    let page = graph
+                        .observability_service()
+                        .query_usage(
+                            &actor,
+                            &tenant,
+                            &mako_api::ObservabilityQuery {
+                                cursor: cursor.clone(),
+                                from_unix_milliseconds: None,
+                                until_unix_milliseconds: None,
+                                limit: 1_000,
+                            },
+                            now_milliseconds,
+                        )
+                        .await
+                        .map_err(|_| unavailable(request, "usage records are unavailable"))?;
+                    // The bill covers the evidence that still exists; when
+                    // retention is shorter than the month, the reported period
+                    // start says so instead of pretending.
+                    period_start = period_start.max(page.retention.retained_from_unix_milliseconds);
+                    for record in &page.items {
+                        if record.timestamp_unix_milliseconds < period_start {
+                            continue;
+                        }
+                        if let mako_api::ObservabilityPayload::Usage {
+                            resource, quantity, ..
+                        } = &record.payload
+                        {
+                            per_tenant.entry(*resource).or_default().push(*quantity);
+                        }
+                    }
+                    cursor = page.next_cursor;
+                    if cursor.is_none() {
+                        break;
+                    }
+                }
+                for (resource, records) in per_tenant {
+                    let quantity = mako_billing::rating::period_quantity(resource, &records);
+                    let entry = usage.entry(resource).or_insert(0);
+                    *entry = entry.saturating_add(quantity);
+                }
+            }
+        }
+
+        let rated = mako_billing::rating::rate_period(&plan, &card, &usage);
+        json(
+            request,
+            200,
+            &serde_json::json!({
+                "organizationId": organization_id.as_str(),
+                "planId": rated.plan_id,
+                "periodStart": format_timestamp(request, period_start / 1_000)?,
+                "observedAt": format_timestamp(request, now)?,
+                "baseMicroDollars": rated.base_micro_dollars,
+                "lineItems": rated.line_items,
+                "totalMicroDollars": rated.total_micro_dollars,
+                // Credits minus charges; with no credits and nothing
+                // collected, accrued charges read negative.
+                "balanceMicroDollars": -rated.total_micro_dollars,
+                "collectable": false,
+                "notice": "This bill is informational. Nothing is payable and no charge will be made during the beta.",
+            }),
+        )
+    })
+}
+
+/// Midnight UTC on the first of the current month, in milliseconds.
+fn current_month_start_milliseconds(now_unix_seconds: u64) -> u64 {
+    const DAY: u64 = 24 * 60 * 60;
+    let days = now_unix_seconds / DAY;
+    // Civil-date arithmetic (Howard Hinnant's algorithm).
+    let z = i64::try_from(days).unwrap_or(0) + 719_468;
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day_of_month = doy - (153 * mp + 2) / 5;
+    let first_of_month_days = z - 719_468 - day_of_month;
+    u64::try_from(first_of_month_days)
+        .unwrap_or(0)
+        .saturating_mul(DAY)
+        .saturating_mul(1_000)
 }
 
 fn handle_get_environment(

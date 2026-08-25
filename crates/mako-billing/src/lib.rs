@@ -15,6 +15,8 @@
 //! platform from a burst regardless of what anyone has paid, so every plan
 //! carries them and no amount of money removes them.
 
+pub mod rating;
+
 use std::collections::BTreeMap;
 
 use mako_api::QuotaResource;

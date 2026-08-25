@@ -227,6 +227,33 @@ fn observed_events_and_usage_reach_the_management_api() {
     let session =
         mint_developer_session(&binaries, root, control_port, DEVELOPER_ID, DEVELOPER_EMAIL);
     let reading = BTreeMap::from([("authorization".to_owned(), format!("Bearer {session}"))]);
+    // The bill is derived from the same records, so once usage has arrived it
+    // must show up as billed quantities -- and must say it is not payable.
+    let (status, body) = request(
+        control_port,
+        "GET",
+        "/v1/organizations/org_localboot/bill",
+        &reading,
+        None,
+    );
+    assert_eq!(status, 200, "the bill was not served: {body}");
+    let bill: Value = serde_json::from_str(&body).expect("bill json");
+    assert_eq!(
+        bill["collectable"], false,
+        "the beta bill claims to be collectable"
+    );
+    assert_eq!(
+        bill["totalMicroDollars"], 0,
+        "a free organization was billed money: {body}"
+    );
+    assert_eq!(bill["balanceMicroDollars"], 0);
+    assert!(
+        bill["notice"]
+            .as_str()
+            .is_some_and(|notice| notice.contains("no charge")),
+        "the bill does not say nothing will be charged: {body}"
+    );
+
     // Each signal names something only this test could have produced, so a
     // page that merely arrives is not mistaken for the record being reported.
     for (signal, described, marker) in [
@@ -247,6 +274,31 @@ fn observed_events_and_usage_reach_the_management_api() {
             marker,
         );
     }
+
+    // Once usage has arrived, the bill's quantities must derive from it: the
+    // storage sample this test caused has to show up as a rated quantity, not
+    // just as a telemetry record.
+    let (status, body) = request(
+        control_port,
+        "GET",
+        "/v1/organizations/org_localboot/bill",
+        &reading,
+        None,
+    );
+    assert_eq!(status, 200, "the bill was not served after usage: {body}");
+    let bill: Value = serde_json::from_str(&body).expect("bill json");
+    let stored = bill["lineItems"]
+        .as_array()
+        .expect("line items")
+        .iter()
+        .find(|item| item["resource"] == "storage_bytes")
+        .expect("a storage line item")
+        .clone();
+    assert!(
+        stored["quantity"].as_u64().is_some_and(|value| value > 0),
+        "the bill shows no stored bytes although a sample was reported: {body}"
+    );
+    assert_eq!(bill["totalMicroDollars"], 0, "free stayed free: {body}");
 }
 
 /// Poll one observability signal until a record arrives.

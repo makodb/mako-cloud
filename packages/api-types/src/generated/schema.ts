@@ -22,6 +22,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/organizations/{organizationId}/bill": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The organization's informational bill for the current period
+         * @description What the organization's metered use would cost under its plan and the current rate card, and the balance it implies. Informational only: nothing is payable and no charge is made during the beta, and the response says so explicitly.
+         */
+        get: operations["getOrganizationBill"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/organizations/{organizationId}": {
         parameters: {
             query?: never;
@@ -4496,6 +4516,55 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Organization"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    getOrganizationBill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The rated current period and resulting balance */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        organizationId: components["schemas"]["OrganizationId"];
+                        planId: string;
+                        /** Format: date-time */
+                        periodStart: string;
+                        /** Format: date-time */
+                        observedAt: string;
+                        /** Format: int64 */
+                        baseMicroDollars: number;
+                        lineItems: {
+                            resource: components["schemas"]["QuotaResource"];
+                            /** Format: int64 */
+                            quantity: number;
+                            /** Format: int64 */
+                            included: number;
+                            /** Format: int64 */
+                            overage: number;
+                            /** Format: int64 */
+                            amountMicroDollars: number;
+                        }[];
+                        /** Format: int64 */
+                        totalMicroDollars: number;
+                        /** Format: int64 */
+                        balanceMicroDollars: number;
+                        collectable: boolean;
+                        notice: string;
+                    };
                 };
             };
             default: components["responses"]["ApiError"];

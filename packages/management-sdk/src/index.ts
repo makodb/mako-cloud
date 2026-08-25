@@ -5,6 +5,7 @@ import {
   type ApiError,
   type MakoApiClient,
   type components,
+  type operations,
 } from "@mako-cloud/api-types";
 
 export const PACKAGE_NAME = "@mako-cloud/management-sdk" as const;
@@ -26,6 +27,7 @@ export const MANAGEMENT_OPERATIONS = [
   "listOrganizations",
   "createOrganization",
   "getOrganization",
+  "getOrganizationBill",
   "updateOrganization",
   "requestOrganizationDeletion",
   "restoreOrganization",
@@ -406,6 +408,16 @@ export class MakoManagementClient {
   async getOrganization(organizationId: string): Promise<Organization> {
     return unwrap(
       await this.#client.GET("/v1/organizations/{organizationId}", {
+        params: { path: { organizationId } },
+      }),
+    );
+  }
+
+  async getOrganizationBill(
+    organizationId: string,
+  ): Promise<operations["getOrganizationBill"]["responses"]["200"]["content"]["application/json"]> {
+    return unwrap(
+      await this.#client.GET("/v1/organizations/{organizationId}/bill", {
         params: { path: { organizationId } },
       }),
     );

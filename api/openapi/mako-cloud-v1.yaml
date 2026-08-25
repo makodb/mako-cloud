@@ -64,6 +64,61 @@ paths:
                 $ref: "#/components/schemas/Organization"
         default:
           $ref: "#/components/responses/ApiError"
+  /v1/organizations/{organizationId}/bill:
+    get:
+      tags: [Management]
+      operationId: getOrganizationBill
+      summary: The organization's informational bill for the current period
+      description: >-
+        What the organization's metered use would cost under its plan and the
+        current rate card, and the balance it implies. Informational only:
+        nothing is payable and no charge is made during the beta, and the
+        response says so explicitly.
+      parameters:
+        - $ref: "#/components/parameters/OrganizationId"
+      responses:
+        "200":
+          description: The rated current period and resulting balance
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                  - organizationId
+                  - planId
+                  - periodStart
+                  - observedAt
+                  - baseMicroDollars
+                  - lineItems
+                  - totalMicroDollars
+                  - balanceMicroDollars
+                  - collectable
+                  - notice
+                properties:
+                  organizationId: {$ref: "#/components/schemas/OrganizationId"}
+                  planId: {type: string}
+                  periodStart: {type: string, format: date-time}
+                  observedAt: {type: string, format: date-time}
+                  baseMicroDollars: {type: integer, format: int64}
+                  lineItems:
+                    type: array
+                    maxItems: 32
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required: [resource, quantity, included, overage, amountMicroDollars]
+                      properties:
+                        resource: {$ref: "#/components/schemas/QuotaResource"}
+                        quantity: {type: integer, format: int64, minimum: 0}
+                        included: {type: integer, format: int64, minimum: 0}
+                        overage: {type: integer, format: int64, minimum: 0}
+                        amountMicroDollars: {type: integer, format: int64}
+                  totalMicroDollars: {type: integer, format: int64}
+                  balanceMicroDollars: {type: integer, format: int64}
+                  collectable: {type: boolean}
+                  notice: {type: string}
+        default: {$ref: "#/components/responses/ApiError"}
   /v1/organizations/{organizationId}:
     parameters:
       - $ref: "#/components/parameters/OrganizationId"
