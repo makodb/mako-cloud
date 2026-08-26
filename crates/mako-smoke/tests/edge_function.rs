@@ -20,8 +20,8 @@ use std::{
 };
 
 use mako_smoke::{
-    await_readiness, binary_directory, request, run_bootstrap, scratch_root, service_environment,
-    start_service, try_request,
+    await_readiness, binary_directory, mint_developer_session_with_secret, request, run_bootstrap,
+    scratch_root, service_environment, start_service, try_request,
 };
 
 const PROJECT_ID: &str = "prj_localboot";
@@ -37,7 +37,15 @@ const CONTROL_PLANE_PORT: u16 = 8081;
 const GATEWAY_PORT: u16 = 8082;
 const SUPERVISOR_PORT: u16 = 9000;
 
-const INTERNAL_AUTH_SECRET: &str = "edge-smoke-internal-auth-secret-0123456789";
+// 64 hex characters: the session-minting tool and the internal-auth
+// verifier both require exactly this shape.
+const INTERNAL_AUTH_SECRET: &str =
+    "656467652d736d6f6b652d696e7465726e616c2d617574682d30313233343536";
+const DEVELOPER_ID: &str = "dev_localboot";
+const DEVELOPER_EMAIL: &str = "developer@local.test";
+/// The retained-log assertion spans the collector's fifteen-second cadence
+/// plus batch delivery, so it waits far longer than it usually needs.
+const LOG_DELIVERY_TIMEOUT: Duration = Duration::from_secs(75);
 /// The supervisor requires exactly 32 bytes of hex.
 const RUNTIME_STATE_KEY: &str = "6d616b6f2d656467652d736d6f6b652d73757065727669736f722d6b65793031";
 
@@ -125,6 +133,79 @@ fn deployed_function_is_served_through_the_edge_gateway() {
         "MAKO_INTERNAL_AUTH_SECRET".to_owned(),
         INTERNAL_AUTH_SECRET.to_owned(),
     );
+    // The retained log store: the control plane collects each function's
+    // supervisor buffer into it, and the developer reads it back through the
+    // management API -- which is the loop this test closes.
+    let telemetry_port = {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("free telemetry port");
+        let port = listener.local_addr().expect("telemetry address").port();
+        drop(listener);
+        port
+    };
+    let credential = root.join("telemetry-authorization");
+    fs::write(&credential, INTERNAL_AUTH_SECRET).expect("telemetry credential");
+    fs::create_dir_all(root.join("telemetry")).expect("telemetry directory");
+    let mut telemetry_environment = environment.clone();
+    for (name, value) in [
+        (
+            "MAKO_TELEMETRY_QUERY_BIND".to_owned(),
+            format!("127.0.0.1:{telemetry_port}"),
+        ),
+        ("MAKO_TELEMETRY_REGION".to_owned(), "local".to_owned()),
+        (
+            "MAKO_TELEMETRY_RETENTION_SECONDS".to_owned(),
+            (7 * 24 * 60 * 60).to_string(),
+        ),
+        (
+            "MAKO_TELEMETRY_DATABASE_PATH".to_owned(),
+            root.join("telemetry").to_string_lossy().into_owned(),
+        ),
+        (
+            "MAKO_TELEMETRY_DATABASE_ID".to_owned(),
+            "mako-telemetry-local".to_owned(),
+        ),
+        (
+            "MAKO_TELEMETRY_AUTHORIZATION_FILE".to_owned(),
+            credential.to_string_lossy().into_owned(),
+        ),
+        (
+            "MAKO_DISK_WARNING_FREE_BYTES".to_owned(),
+            "134217728".to_owned(),
+        ),
+        (
+            "MAKO_DISK_CRITICAL_FREE_BYTES".to_owned(),
+            "67108864".to_owned(),
+        ),
+    ] {
+        telemetry_environment.insert(name, value);
+    }
+    let provisioned = Command::new(binaries.join("mako-storage-ops"))
+        .arg("provision")
+        .arg(format!(
+            "--database-path={}",
+            root.join("telemetry").to_string_lossy()
+        ))
+        .arg("--service=mako-telemetry-query")
+        .arg("--database-id=mako-telemetry-local")
+        .arg("--confirm=PROVISION")
+        .output()
+        .expect("storage ops runs");
+    assert!(
+        provisioned.status.success(),
+        "telemetry volume was not provisioned: {}",
+        String::from_utf8_lossy(&provisioned.stderr)
+    );
+    let _telemetry = start_service(
+        "mako-telemetry-query",
+        &binaries,
+        &telemetry_environment,
+        telemetry_port,
+        root.join("telemetry.log"),
+    );
+    environment.insert(
+        "MAKO_TELEMETRY_QUERY_ENDPOINT".to_owned(),
+        format!("127.0.0.1:{telemetry_port}"),
+    );
     // The control plane defaults to 9001 while the gateway compiles in 9000, so
     // the supervisor address has to be pinned to the port the gateway will use.
     environment.insert(
@@ -211,6 +292,46 @@ fn deployed_function_is_served_through_the_edge_gateway() {
     assert_ne!(
         status, 200,
         "a project reference without an environment must not resolve"
+    );
+
+    // The line the function printed must reach the retained log store and be
+    // served through the management API -- with the address and password it
+    // deliberately carries masked, because the store scrubs what customer
+    // code writes before keeping it.
+    let session = mint_developer_session_with_secret(
+        &binaries,
+        root,
+        CONTROL_PLANE_PORT,
+        DEVELOPER_ID,
+        DEVELOPER_EMAIL,
+        INTERNAL_AUTH_SECRET,
+    );
+    let reading = BTreeMap::from([("authorization".to_owned(), format!("Bearer {session}"))]);
+    let logs_path = format!(
+        "/v1/projects/{PROJECT_ID}/environments/{ENVIRONMENT_ID}/observability/logs?limit=50"
+    );
+    let deadline = Instant::now() + LOG_DELIVERY_TIMEOUT;
+    let stored = loop {
+        let (status, body) = request(CONTROL_PLANE_PORT, "GET", &logs_path, &reading, None);
+        // The masked form of the line the function printed: lifecycle
+        // entries (deployment_loaded, invocation_completed) arrive first and
+        // do not count as the printed output this test is about.
+        if status == 200 && body.contains("c***@example.com") {
+            break body;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the function's printed line never reached the retained store (last: {status} {body})"
+        );
+        sleep(Duration::from_secs(2));
+    };
+    assert!(
+        stored.contains("password=[REDACTED]"),
+        "the stored log line was not scrubbed: {stored}"
+    );
+    assert!(
+        !stored.contains("caller@example.com") && !stored.contains("hunter2"),
+        "the raw address or password reached the retained store: {stored}"
     );
 }
 

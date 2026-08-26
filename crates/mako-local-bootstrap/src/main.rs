@@ -68,10 +68,14 @@ const FUNCTION_REGION: &str = "local";
 const RUNTIME_VERSION: &str = "v1.74.3";
 
 /// The function body the bootstrapped tenant deploys. The edge test asserts on
-/// this response, so it stays trivial and self-describing.
+/// this response, so it stays trivial and self-describing. The log line
+/// carries deliberately sensitive-shaped values -- a fake address and
+/// password -- because the edge test asserts they arrive at the retained log
+/// store masked, which is the scrubbing contract demonstrated end to end.
 const FUNCTION_SOURCE: &str = r#"export default {
   fetch(request: Request): Response {
     const url = new URL(request.url);
+    console.log(`serving hello for caller@example.com password=hunter2 path=${url.pathname}`);
     return new Response(
       JSON.stringify({ ok: true, function: "hello", method: request.method, path: url.pathname }),
       { status: 200, headers: { "content-type": "application/json" } },

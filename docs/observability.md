@@ -38,3 +38,20 @@ checkpoint, migration, backup, restore, and restart signals. These series do not
 contain paths, keys, values, emails, credentials, or customer identifiers.
 
 Prometheus also loads the checked release-blocking alert inventory from `infra/local/prometheus-rules`. Every rule links to an operator procedure in the [runbook index](runbooks/README.md); the same validation command checks that inventory and those links.
+
+## Project logs
+
+A function's printed output is collected off the request path: the control
+plane reads each deployed function's runtime-supervisor buffer on a short
+cadence and carries new lines into the retained telemetry store, where they
+are served by the project logs endpoint with the same retention and tenant
+scoping as every other signal. The supervisor's own buffer is bounded and
+in-memory; the telemetry copy is the durable one.
+
+Because log text is written by customer code, it is scrubbed before storage
+— at the store itself, so no producer can bypass it. The scrub masks
+configured secrets, bearer and JWT values, password and cookie assignments,
+platform credential formats, and email addresses (the local part is masked,
+the domain kept). It is best-effort by design: it removes token-, password-,
+and email-shaped text, not every possible secret, and applications should
+still avoid printing sensitive values.

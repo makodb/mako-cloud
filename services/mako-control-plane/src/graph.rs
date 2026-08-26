@@ -122,6 +122,8 @@ impl StorageOwner {
 
 struct ControlPlaneComponents {
     public_origin: String,
+    telemetry_emitter: Arc<mako_telemetry_client::TelemetryEmitter>,
+    function_log_collector: crate::function_logs::FunctionLogCollector,
     audit: SharedControlAudit,
     developer_authenticator: ControlPlaneAuthenticator,
     developer_session_issuer: DeploymentDeveloperSessionIssuer,
@@ -536,6 +538,13 @@ impl ControlPlaneGraph {
         );
         let objects: Arc<dyn ObjectStore> = object_store.clone();
         let deployment_backend: Arc<dyn FunctionDeploymentBackend> = runtime.clone();
+        // The emitting side of the telemetry pipeline for this plane: what
+        // carries collected function logs into the retained store.
+        let telemetry_emitter = Arc::new(mako_telemetry_client::TelemetryEmitter::new(
+            config.telemetry_query_address,
+            secret.expose_secret(),
+            "mako.control-plane",
+        ));
         let functions = FunctionAdminService::new(
             Arc::clone(&adapter),
             Durability::Sync,
@@ -547,6 +556,17 @@ impl ControlPlaneGraph {
             deployment_backend,
         )
         .map_err(|_| ControlPlaneGraphError::Composition("function administration"))?;
+        let function_log_collector = crate::function_logs::FunctionLogCollector::new(
+            Arc::clone(&adapter),
+            organizations.clone(),
+            projects.clone(),
+            Arc::new(functions.clone()),
+            Arc::clone(&telemetry_emitter),
+            Arc::new(
+                TelemetryRedactor::new([secret.expose_secret()])
+                    .map_err(|_| ControlPlaneGraphError::Composition("log scrubbing"))?,
+            ),
+        );
         let observability_backend = Arc::new(
             ProductionObservabilityBackend::new(
                 ProductionObservabilityConfig::loopback(
@@ -619,6 +639,8 @@ impl ControlPlaneGraph {
             adapter,
             components: ControlPlaneComponents {
                 public_origin: public_origin.trim_end_matches('/').to_owned(),
+                telemetry_emitter,
+                function_log_collector,
                 audit,
                 developer_authenticator,
                 developer_session_issuer,
@@ -747,6 +769,20 @@ impl ControlPlaneGraph {
     }
 
     #[must_use]
+    pub fn telemetry_emitter(&self) -> &Arc<mako_telemetry_client::TelemetryEmitter> {
+        &self.components.telemetry_emitter
+    }
+
+    /// One pass of the function-log collector: read every deployed
+    /// function's supervisor buffer and emit what is new, scrubbed. Driven
+    /// from a worker thread, never from a request.
+    pub async fn collect_function_logs(&self, now_unix_milliseconds: u64) -> usize {
+        self.components
+            .function_log_collector
+            .collect_once(now_unix_milliseconds)
+            .await
+    }
+
     pub fn organization_store(&self) -> &OrganizationStore {
         &self.components.organizations
     }

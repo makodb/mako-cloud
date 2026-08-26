@@ -46,6 +46,7 @@ mako-policy = { path = "../../crates/mako-policy" }
 mako-provisioning = { path = "../../crates/mako-provisioning" }
 mako-service-runtime = { path = "../../crates/mako-service-runtime" }
 mako-storage = { path = "../../crates/mako-storage" }
+mako-telemetry-client = { path = "../../crates/mako-telemetry-client" }
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true

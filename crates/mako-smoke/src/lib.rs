@@ -215,8 +215,29 @@ pub fn mint_developer_session(
     identity_id: &str,
     email: &str,
 ) -> String {
+    mint_developer_session_with_secret(
+        binaries,
+        root,
+        control_port,
+        identity_id,
+        email,
+        INTERNAL_AUTH_SECRET,
+    )
+}
+
+/// Like [`mint_developer_session`], for a stack whose internal secret is not
+/// the shared default: the session must be signed with whatever secret the
+/// control plane actually verifies with, or it answers 401.
+pub fn mint_developer_session_with_secret(
+    binaries: &Path,
+    root: &Path,
+    control_port: u16,
+    identity_id: &str,
+    email: &str,
+    internal_secret: &str,
+) -> String {
     let secret = root.join("internal-auth");
-    std::fs::write(&secret, INTERNAL_AUTH_SECRET).expect("secret file");
+    std::fs::write(&secret, internal_secret).expect("secret file");
     std::fs::set_permissions(&secret, std::fs::Permissions::from_mode(0o600))
         .expect("secret file is private");
     // The tool refuses to overwrite an existing session file.

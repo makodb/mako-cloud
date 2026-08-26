@@ -126,6 +126,21 @@ impl TelemetryRedactor {
         RedactedText { text, replacements }
     }
 
+    /// Scrubs a log line written by customer code.
+    ///
+    /// Log text is the one telemetry payload the platform does not shape, so
+    /// it gets everything [`TelemetryRedactor::redact_text`] does plus email
+    /// masking: an address identifies a person, and a debugging surface must
+    /// not become a directory of the tenant's users. The scrub is best-effort
+    /// by design -- it masks token-, password-, and email-shaped text, not
+    /// every possible secret.
+    #[must_use]
+    pub fn scrub_log_text(&self, source: &str) -> RedactedText {
+        let mut redacted = self.redact_text(source);
+        redacted.replacements += mask_email_addresses(&mut redacted.text);
+        redacted
+    }
+
     fn sanitize_attributes(&self, attributes: &mut SafeAttributes) -> RedactionReport {
         let before = attributes.0.len();
         attributes
@@ -252,6 +267,13 @@ fn redact_assignment_values(text: &mut String, marker: &str) -> usize {
             .char_indices()
             .find(|(_, character)| !character.is_whitespace() && *character != '"')
             .map_or(value_start, |(offset, _)| value_start + offset);
+        // A value that is already the redaction marker stays as it is:
+        // records are redacted again on every read, and re-redacting the
+        // marker itself would corrupt it one bracket per pass.
+        if text[value_start..].starts_with(REDACTED) {
+            search_from = value_start + REDACTED.len();
+            continue;
+        }
         let value_end = token_end(text, value_start);
         if value_end <= value_start {
             search_from = value_start;
@@ -288,6 +310,10 @@ fn redact_bearer_values(text: &mut String) -> usize {
             break;
         };
         let start = search_from + relative + "bearer ".len();
+        if text[start..].starts_with(REDACTED) {
+            search_from = start + REDACTED.len();
+            continue;
+        }
         let end = token_end(text, start);
         if end <= start {
             break;
@@ -337,6 +363,59 @@ fn token_end(text: &str, start: usize) -> usize {
                 || matches!(*character, '"' | '\'' | ',' | ';' | ')' | ']' | '}')
         })
         .map_or(text.len(), |(offset, _)| start + offset)
+}
+
+/// Masks the local part of anything shaped like an email address, keeping
+/// the domain: `alice.smith@example.com` becomes `a***@example.com`. The
+/// domain often names the system under discussion and carries no single
+/// person's identity; the local part does.
+fn mask_email_addresses(text: &mut String) -> usize {
+    let mut replacements = 0;
+    let mut search_from = 0;
+    while let Some(relative) = text[search_from..].find('@') {
+        let at = search_from + relative;
+        // The local part: word characters, dots, plus, hyphen, walking back.
+        // The boundary character may be multi-byte -- customer text is
+        // arbitrary UTF-8 -- so the walk advances by its actual width, never
+        // by an assumed single byte.
+        let local_start = text[..at]
+            .char_indices()
+            .rev()
+            .find(|(_, character)| {
+                !(character.is_ascii_alphanumeric() || matches!(character, '.' | '+' | '-' | '_'))
+            })
+            .map_or(0, |(index, character)| index + character.len_utf8());
+        // The domain: at least one dot-separated pair of labels. A trailing
+        // dot is sentence punctuation, not part of the address.
+        let mut domain_end = text[at + 1..]
+            .find(|character: char| {
+                !(character.is_ascii_alphanumeric() || matches!(character, '.' | '-'))
+            })
+            .map_or(text.len(), |index| at + 1 + index);
+        while domain_end > at + 1 && text.as_bytes()[domain_end - 1] == b'.' {
+            domain_end -= 1;
+        }
+        let local = &text[local_start..at];
+        let domain = &text[at + 1..domain_end];
+        let plausible = !local.is_empty()
+            && domain.split('.').count() >= 2
+            && domain
+                .split('.')
+                .all(|label| !label.is_empty() && !label.starts_with('-'));
+        if plausible {
+            let masked = format!(
+                "{}***@{domain}",
+                &local[..local.chars().next().map_or(0, char::len_utf8)]
+            );
+            let end = domain_end;
+            text.replace_range(local_start..end, &masked);
+            replacements += 1;
+            search_from = local_start + masked.len();
+        } else {
+            search_from = at + 1;
+        }
+    }
+    replacements
 }
 
 #[cfg(test)]
@@ -439,5 +518,52 @@ mod tests {
             Some(TraceId::parse("trc_example00").expect("trace")),
         )
         .expect("context")
+    }
+
+    /// A log line is customer-written text, so the scrub must mask what the
+    /// general redaction masks plus anything shaped like an email address --
+    /// while leaving the words a developer needs to debug with untouched.
+    #[test]
+    fn log_scrubbing_masks_emails_and_credentials_but_not_ordinary_text() {
+        let redactor = TelemetryRedactor::new(std::iter::empty::<&str>()).expect("redactor");
+
+        let scrubbed = redactor.scrub_log_text(
+            "checkout failed for alice.smith+test@example.com with password=hunter2 retry req_1a2b3c",
+        );
+        assert_eq!(
+            scrubbed.as_str(),
+            "checkout failed for a***@example.com with password=[REDACTED] retry req_1a2b3c",
+            "the local part, and only the local part, is masked"
+        );
+        assert!(scrubbed.replacements() >= 2);
+
+        // Bearer values and JWTs are masked exactly as the general redaction
+        // masks them; the correlation id and plain words survive.
+        let tokens = redactor.scrub_log_text(
+            "auth Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyIn0.c2lnbmF0dXJlLXZhbHVl trace 4be1",
+        );
+        assert!(!tokens.as_str().contains("eyJ"), "{}", tokens.as_str());
+        assert!(tokens.as_str().contains("trace 4be1"));
+
+        // Not everything with an at-sign is an address.
+        let ordinary = redactor.scrub_log_text("retrying @ 5s; ratio 3@2 improved");
+        assert_eq!(ordinary.as_str(), "retrying @ 5s; ratio 3@2 improved");
+        assert_eq!(ordinary.replacements(), 0);
+
+        // Two addresses on one line are each masked.
+        let pair = redactor.scrub_log_text("cc bob@corp.example and carol@corp.example");
+        assert_eq!(pair.as_str(), "cc b***@corp.example and c***@corp.example");
+
+        // Customer text is arbitrary UTF-8: a multi-byte character standing
+        // right before an address must not break the scrub -- one printed
+        // line panicking here would kill log collection for every tenant.
+        let accented = redactor.scrub_log_text("caf\u{e9} bob@example.com caf\u{e9}");
+        assert_eq!(accented.as_str(), "caf\u{e9} b***@example.com caf\u{e9}");
+        let attached = redactor.scrub_log_text("\u{e9}liane@example.com wrote in");
+        assert_eq!(attached.as_str(), "\u{e9}l***@example.com wrote in");
+
+        // Sentence punctuation after an address is not part of its domain.
+        let sentence = redactor.scrub_log_text("write to bob@example.com.");
+        assert_eq!(sentence.as_str(), "write to b***@example.com.");
     }
 }

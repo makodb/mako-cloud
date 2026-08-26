@@ -1186,6 +1186,28 @@ impl FunctionAdminService {
         })
     }
 
+    /// Read one function's supervisor logs with the same per-version
+    /// secret-value redaction the member-facing endpoint applies, without an
+    /// actor: this is for the platform's own log collector, which must never
+    /// store a line the live view would have masked. Not audited -- it is a
+    /// scheduled platform pass, not a member reading logs.
+    pub async fn collect_logs(
+        &self,
+        tenant: &TenantScope,
+        name: &FunctionName,
+        query: &FunctionLogQuery,
+    ) -> Result<FunctionLogPage, FunctionAdminError> {
+        if query.limit == 0 || query.limit > 1000 {
+            return Err(FunctionAdminError::InvalidLogQuery);
+        }
+        let mut page = self.backend.logs(tenant, name, query).await?;
+        if page.items.len() > query.limit {
+            return Err(FunctionAdminError::InvalidBackendResponse);
+        }
+        self.redact_log_page(tenant, name, &mut page).await?;
+        Ok(page)
+    }
+
     async fn redact_log_page(
         &self,
         tenant: &TenantScope,

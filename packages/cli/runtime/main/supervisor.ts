@@ -42,6 +42,7 @@ declare const Deno: {
   readDir(path: string): AsyncIterable<{ name: string; isFile: boolean }>;
   readTextFile(path: string): Promise<string>;
   remove(path: string, options?: { recursive: boolean }): Promise<void>;
+  stat(path: string): Promise<{ isFile: boolean }>;
   rename(oldPath: string, newPath: string): Promise<void>;
   writeFile(path: string, data: Uint8Array): Promise<void>;
   writeTextFile(path: string, data: string): Promise<void>;
@@ -64,6 +65,16 @@ const MAX_MANAGEMENT_BODY_BYTES = 32 * 1024 * 1024;
 const MAX_BUNDLE_BYTES = 10 * 1024 * 1024;
 const MAX_INVOCATION_BODY_BYTES = 10 * 1024 * 1024;
 const MAX_LOGS_PER_DEPLOYMENT = 4_096;
+// The response header a worker's console shim ships captured lines on. The
+// supervisor consumes and strips it; it must never reach a caller.
+const WORKER_LOG_HEADER = "x-mako-worker-logs";
+const SHIM_MODULE = "__mako_console_shim.ts";
+const MAX_SHIPPED_LOG_LINES = 64;
+const MAX_SHIPPED_LOG_BYTES = 16 * 1024;
+// Total message text retained per deployment. JSON escaping can inflate a
+// character to six bytes, so this keeps the encrypted state far below the
+// 32 MiB restore ceiling even in the worst case.
+const MAX_RETAINED_LOG_CHARS = 1024 * 1024;
 const MAX_LOG_PAGE = 1_000;
 const MAX_RESPONSE_HEADERS = 128;
 
@@ -283,9 +294,21 @@ export class RuntimeSupervisor {
     await Deno.mkdir(this.#workerPath, { recursive: true });
     for await (const entry of Deno.readDir(this.#statePath)) {
       if (!entry.isFile || !entry.name.endsWith(".state")) continue;
-      const source = await Deno.readTextFile(`${this.#statePath}/${entry.name}`);
-      const persisted = await this.#decrypt(source);
-      validatePersisted(persisted);
+      // One deployment's unreadable state must not keep every other
+      // tenant's functions down: quarantine it and keep booting. The
+      // affected function redeploys; the others never notice.
+      let persisted: PersistedDeployment;
+      try {
+        const source = await Deno.readTextFile(`${this.#statePath}/${entry.name}`);
+        persisted = await this.#decrypt(source);
+        validatePersisted(persisted);
+      } catch {
+        await Deno.rename(
+          `${this.#statePath}/${entry.name}`,
+          `${this.#statePath}/${entry.name}.quarantined`,
+        ).catch(() => undefined);
+        continue;
+      }
       const address = flattenAddress(persisted.load.manifest.deployment);
       const expected = `${await sha256Hex(deploymentKey(address))}.state`;
       if (entry.name !== expected) throw new Error("runtime state address mismatch");
@@ -478,9 +501,13 @@ export class RuntimeSupervisor {
       if (responseBody.length > Math.min(MAX_INVOCATION_BODY_BYTES, limits.responseBytes)) {
         throw new Error("response limit exceeded");
       }
+      for (const line of shippedWorkerLogs(response.headers)) {
+        appendLog(record, line.level, line.message, requestId, this.#region);
+      }
       appendLog(record, "info", "invocation_completed", requestId, this.#region);
       await this.#persist(record);
       const responseHeaders = new Headers(response.headers);
+      responseHeaders.delete(WORKER_LOG_HEADER);
       responseHeaders.set("x-mako-request-id", requestId);
       return new Response(source.method === "HEAD" ? null : responseBody, {
         status: response.status,
@@ -585,6 +612,16 @@ async function materializeWorker(
         await Deno.writeTextFile(`${directory}/${path}`, rewritten);
       }
     }
+    // Console output never leaves a worker isolate on its own: the shim
+    // captures it during a request and ships it back on a response header
+    // the supervisor strips and retains. A bundle that carries a module by
+    // this name keeps its own file and simply goes uncaptured.
+    if (archive.modules[SHIM_MODULE] === undefined) {
+      await Deno.writeTextFile(
+        `${directory}/${SHIM_MODULE}`,
+        consoleShimSource(load.manifest.entrypoint),
+      );
+    }
   } else {
     const entrypoint = load.manifest.entrypoint;
     const parent = entrypoint.includes("/") ? entrypoint.slice(0, entrypoint.lastIndexOf("/")) : "";
@@ -611,9 +648,12 @@ async function createWorker(
     ["MAKO_RUNTIME_REGION", region],
   );
   const limits = load.manifest.limits;
+  const entrypoint = (await fileExists(`${directory}/${SHIM_MODULE}`))
+    ? SHIM_MODULE
+    : load.manifest.entrypoint;
   return await EdgeRuntime.userWorkers.create({
     servicePath: directory,
-    maybeEntrypoint: `file://${directory}/${load.manifest.entrypoint}`,
+    maybeEntrypoint: `file://${directory}/${entrypoint}`,
     memoryLimitMb: Math.max(1, Math.ceil(limits.memoryBytes / (1024 * 1024))),
     workerTimeoutMs: limits.wallMilliseconds,
     noModuleCache: false,
@@ -972,6 +1012,7 @@ function safeRequestHeaders(value: [string, string][]): Headers {
         "content-length",
         "host",
         "transfer-encoding",
+        WORKER_LOG_HEADER,
         AUTHORIZATION_HEADER,
         VERSION_HEADER,
         REQUEST_ID_HEADER,
@@ -994,6 +1035,7 @@ function safeResponseHeaders(headers: Headers): [string, string][] {
         "content-length",
         "host",
         "transfer-encoding",
+        WORKER_LOG_HEADER,
         AUTHORIZATION_HEADER,
         VERSION_HEADER,
         REQUEST_ID_HEADER,
@@ -1017,6 +1059,110 @@ function stripRuntimeHeaders(headers: Headers): void {
   headers.delete("host");
 }
 
+async function fileExists(path: string): Promise<boolean> {
+  try {
+    return (await Deno.stat(path)).isFile;
+  } catch {
+    return false;
+  }
+}
+
+/// The captured console lines a worker shipped on its response, decoded and
+/// bounded. Anything malformed is dropped rather than trusted: this header
+/// crosses an isolate boundary from customer code.
+function shippedWorkerLogs(headers: Headers): { level: DeploymentLog["level"]; message: string }[] {
+  const encoded = headers.get(WORKER_LOG_HEADER);
+  if (encoded === null || encoded.length > MAX_SHIPPED_LOG_BYTES * 2) return [];
+  let parsed: unknown;
+  try {
+    const bytes = decodeBase64(encoded, MAX_SHIPPED_LOG_BYTES);
+    parsed = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(parsed)) return [];
+  const lines: { level: DeploymentLog["level"]; message: string }[] = [];
+  for (const value of parsed.slice(0, MAX_SHIPPED_LOG_LINES)) {
+    if (typeof value !== "object" || value === null) continue;
+    const entry = value as { level?: unknown; message?: unknown };
+    const raw = typeof entry.message === "string" ? entry.message.slice(0, 4_096) : "";
+    // Control characters would fail the log page's own wire validation and
+    // wedge collection for the function; spaces keep the line readable.
+    let flattened = "";
+    for (const character of raw) {
+      flattened += character < " " || character === "\u007f" ? " " : character;
+    }
+    const message = flattened.trim();
+    if (message.length === 0) continue;
+    const level = ["debug", "info", "warn", "error"].includes(String(entry.level))
+      ? (entry.level as DeploymentLog["level"])
+      : "info";
+    lines.push({ level, message });
+  }
+  return lines;
+}
+
+/// The module written next to a user bundle's own files. It patches console
+/// to remember what a request printed, forwards every line to the real
+/// console so container logs stay whole, and ships the captured lines back
+/// on the internal header the supervisor strips. Capture must never break
+/// the function: every failure path returns the user's response untouched.
+function consoleShimSource(entrypoint: string): string {
+  return `// Written by the Mako runtime supervisor. Captures this function's console
+// output per request so the platform can retain it; the header it ships on
+// never leaves the runtime.
+import user from "./${entrypoint}";
+type CapturedLine = { level: string; message: string };
+const captured: CapturedLine[] = [];
+const render = (value: unknown): string => {
+  if (typeof value === "string") return value;
+  try {
+    return JSON.stringify(value) ?? String(value);
+  } catch {
+    return String(value);
+  }
+};
+const patch = (level: string, original: (...values: unknown[]) => void) => {
+  return (...values: unknown[]) => {
+    if (captured.length < ${MAX_SHIPPED_LOG_LINES}) {
+      captured.push({ level, message: values.map(render).join(" ").slice(0, 4096) });
+    }
+    original(...values);
+  };
+};
+console.log = patch("info", console.log.bind(console));
+console.info = patch("info", console.info.bind(console));
+console.warn = patch("warn", console.warn.bind(console));
+console.error = patch("error", console.error.bind(console));
+console.debug = patch("debug", console.debug.bind(console));
+export default {
+  async fetch(request: Request): Promise<Response> {
+    // No reset here: concurrent requests in this isolate share the array,
+    // and a reset would wipe a neighbour's captured lines. Draining at ship
+    // time means a line lands on whichever response ships next -- same
+    // function, same tenant, at worst blurred attribution.
+    const response = await user.fetch(request);
+    if (captured.length === 0) return response;
+    try {
+      const bytes = new TextEncoder().encode(JSON.stringify(captured.splice(0)));
+      if (bytes.length > ${MAX_SHIPPED_LOG_BYTES}) return response;
+      let binary = "";
+      for (const byte of bytes) binary += String.fromCharCode(byte);
+      const headers = new Headers(response.headers);
+      headers.set("${WORKER_LOG_HEADER}", btoa(binary));
+      return new Response(response.body, {
+        status: response.status,
+        statusText: response.statusText,
+        headers,
+      });
+    } catch {
+      return response;
+    }
+  },
+};
+`;
+}
+
 function appendLog(
   record: DeploymentRecord,
   level: DeploymentLog["level"],
@@ -1034,6 +1180,17 @@ function appendLog(
   });
   if (record.logs.length > MAX_LOGS_PER_DEPLOYMENT)
     record.logs.splice(0, record.logs.length - MAX_LOGS_PER_DEPLOYMENT);
+  // The entry count alone does not bound the persisted state: shipped lines
+  // carry customer text, and a state file that outgrows the decrypt ceiling
+  // would refuse to restore on the next boot. Evict oldest until the total
+  // retained text fits a budget the ceiling comfortably covers.
+  let retained = 0;
+  for (const entry of record.logs) retained += entry.message.length;
+  while (retained > MAX_RETAINED_LOG_CHARS && record.logs.length > 1) {
+    const evicted = record.logs.shift();
+    if (evicted === undefined) break;
+    retained -= evicted.message.length;
+  }
 }
 
 function flattenAddress(value: ProtocolDeploymentAddress): DeploymentAddress {

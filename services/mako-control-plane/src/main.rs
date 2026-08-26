@@ -156,11 +156,32 @@ fn start(service: ServiceKind) -> ExitCode {
             }
         })
     };
+    // Function logs live in the runtime supervisor's bounded in-memory
+    // buffer until this pass carries them into the retained telemetry store,
+    // scrubbed. Off the request path like every other measurement.
+    let function_log_worker = {
+        let stopping = Arc::clone(&mail_stopping);
+        let graph = Arc::clone(&graph);
+        thread::spawn(move || {
+            while !stopping.load(Ordering::Acquire) {
+                let now_milliseconds = SystemTime::now()
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .map(|elapsed| u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX))
+                    .unwrap_or(0);
+                block_on(graph.collect_function_logs(now_milliseconds));
+                while graph.telemetry_emitter().flush_once() > 0 {}
+                thread::park_timeout(Duration::from_secs(15));
+            }
+            // Ship what is already buffered before the process exits.
+            while graph.telemetry_emitter().flush_once() > 0 {}
+        })
+    };
     let runtime = serve_http_transport_with_readiness(transport, router, readiness_probe);
     mail_stopping.store(true, Ordering::Release);
     operator_maintenance.thread().unpark();
     data_job_worker.thread().unpark();
     provisioning_worker.thread().unpark();
+    function_log_worker.thread().unpark();
     if let Some(worker) = &mail_worker {
         worker.thread().unpark();
     }
@@ -180,6 +201,9 @@ fn start(service: ServiceKind) -> ExitCode {
     let provisioning_worker_shutdown = provisioning_worker
         .join()
         .map_err(|_| "provisioning worker did not stop");
+    let function_log_worker_shutdown = function_log_worker
+        .join()
+        .map_err(|_| "function log worker did not stop");
     let shutdown = Arc::try_unwrap(graph)
         .map_err(|_| "control-plane graph still has active owners")
         .and_then(|graph| {
@@ -192,20 +216,22 @@ fn start(service: ServiceKind) -> ExitCode {
         operator_maintenance_shutdown,
         data_job_worker_shutdown,
         provisioning_worker_shutdown,
+        function_log_worker_shutdown,
     ) {
-        (Ok(()), Ok(()), Ok(_), Ok(()), Ok(()), Ok(())) => ExitCode::SUCCESS,
-        (Err(error), _, _, _, _, _) => {
+        (Ok(()), Ok(()), Ok(_), Ok(()), Ok(()), Ok(()), Ok(())) => ExitCode::SUCCESS,
+        (Err(error), _, _, _, _, _, _) => {
             eprintln!("service runtime failed: {error}");
             ExitCode::FAILURE
         }
-        (_, Err(error), _, _, _, _) => {
+        (_, Err(error), _, _, _, _, _) => {
             eprintln!("service shutdown failed: {error}");
             ExitCode::FAILURE
         }
-        (_, _, Err(error), _, _, _)
-        | (_, _, _, Err(error), _, _)
-        | (_, _, _, _, Err(error), _)
-        | (_, _, _, _, _, Err(error)) => {
+        (_, _, Err(error), _, _, _, _)
+        | (_, _, _, Err(error), _, _, _)
+        | (_, _, _, _, Err(error), _, _)
+        | (_, _, _, _, _, Err(error), _)
+        | (_, _, _, _, _, _, Err(error)) => {
             eprintln!("service shutdown failed: {error}");
             ExitCode::FAILURE
         }

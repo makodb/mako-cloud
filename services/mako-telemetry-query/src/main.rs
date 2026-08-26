@@ -831,7 +831,10 @@ fn redact_record(record: &mut ObservabilityRecord, redactor: &TelemetryRedactor)
         } => {
             redact(source);
             redact(level);
-            redact(message);
+            // Log text is written by customer code, so it gets the log scrub
+            // -- credentials plus email masking -- applied here at the store,
+            // the one choke point no producer can bypass.
+            *message = redactor.scrub_log_text(message).into_string();
             redact(correlation_id);
         }
         ObservabilityPayload::IndexState {
@@ -1253,6 +1256,56 @@ mod tests {
                 && alerts[0].contains("counter says 50"),
             "the alert does not say what diverged: {}",
             alerts[0]
+        );
+    }
+
+    /// A log line is customer-written text; whatever producer sends it, the
+    /// stored copy must have credentials and addresses masked, because the
+    /// store is the one choke point every producer passes through.
+    #[test]
+    fn a_project_log_is_scrubbed_before_it_is_stored() {
+        let adapter = MemoryAdapter::new();
+        let store = store(adapter);
+        let now = now_milliseconds().expect("clock");
+        let alpha = tenant("alpha");
+        block_on(store.ingest(
+            TelemetryIngestRequest {
+                records: vec![ObservabilityRecord {
+                    tenant: alpha.clone(),
+                    timestamp_unix_milliseconds: now - 1_000,
+                    payload: ObservabilityPayload::ProjectLog {
+                        source: "function:checkout".to_owned(),
+                        level: "error".to_owned(),
+                        message: "card declined for bob@example.com password=hunter2".to_owned(),
+                        correlation_id: "req_scrub000001".to_owned(),
+                    },
+                }],
+                ..ingest(alpha.clone(), now - 1_000, 1, "unused")
+            },
+            now,
+        ))
+        .expect("log ingest");
+        let page = block_on(store.query(TelemetryQueryRequest {
+            protocol_version: TELEMETRY_PROTOCOL_VERSION,
+            request_id: "req_query_scrub01".to_owned(),
+            tenant: alpha,
+            signal: ObservabilitySignal::ProjectLog,
+            query: ObservabilityQuery {
+                cursor: None,
+                from_unix_milliseconds: None,
+                until_unix_milliseconds: Some(now),
+                limit: 10,
+            },
+            observed_at_unix_milliseconds: now,
+        }))
+        .expect("log query");
+        assert_eq!(page.page.items.len(), 1);
+        let ObservabilityPayload::ProjectLog { message, .. } = &page.page.items[0].payload else {
+            panic!("expected a project log");
+        };
+        assert_eq!(
+            message, "card declined for b***@example.com password=[REDACTED]",
+            "the stored line still carries the address or the password"
         );
     }
 

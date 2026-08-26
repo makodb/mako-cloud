@@ -92,6 +92,29 @@ impl OrganizationStore {
         .await
     }
 
+    /// Every organization on the deployment, in id order.
+    ///
+    /// For platform maintenance loops that must visit all tenants; anything
+    /// member-facing goes through `list_organizations_for` and its membership
+    /// checks instead.
+    pub async fn all_organizations(
+        &self,
+        limit: NonZeroUsize,
+    ) -> Result<Vec<OrganizationRecord>, OrganizationStoreError> {
+        let entries = self
+            .adapter
+            .scan(ScanRequest::new(
+                ControlKeyspace::organizations_range()?,
+                ScanDirection::Forward,
+                limit,
+            ))
+            .await?;
+        entries
+            .iter()
+            .map(|entry| serde_json::from_slice(&entry.value).map_err(OrganizationStoreError::from))
+            .collect()
+    }
+
     pub async fn get_organization(
         &self,
         organization_id: &OrganizationId,

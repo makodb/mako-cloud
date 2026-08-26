@@ -44,6 +44,11 @@ pub struct TelemetryEmitter {
     credential: String,
     source: String,
     buffered: Mutex<VecDeque<ObservabilityRecord>>,
+    /// A batch that was claimed but not yet accepted by the store. It keeps
+    /// its offset across retries: the store's checkpoint advances one offset
+    /// at a time, so a batch that burns a fresh offset per attempt runs away
+    /// from the checkpoint and the stream never recovers.
+    in_flight: Mutex<Option<(u64, Vec<ObservabilityRecord>)>>,
     offset: AtomicU64,
     dropped: AtomicU64,
     delivered: AtomicU64,
@@ -63,11 +68,22 @@ impl std::fmt::Debug for TelemetryEmitter {
 impl TelemetryEmitter {
     #[must_use]
     pub fn new(endpoint: SocketAddr, credential: impl Into<String>, source: &str) -> Self {
+        // The store's checkpoint for a source survives this process, but the
+        // offset counter here does not, so a reused source name would resume
+        // at one against a checkpoint far ahead and be refused forever. A
+        // per-boot suffix starts a fresh stream instead; the abandoned
+        // checkpoint row is a few bytes of history, not a leak.
+        let boot = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|elapsed| elapsed.as_nanos())
+            .unwrap_or(0);
+        let source = format!("{source}.{:x}-{:x}", std::process::id(), boot);
         Self {
             endpoint,
             credential: credential.into(),
-            source: source.to_owned(),
+            source: source.chars().take(128).collect(),
             buffered: Mutex::new(VecDeque::new()),
+            in_flight: Mutex::new(None),
             offset: AtomicU64::new(0),
             dropped: AtomicU64::new(0),
             delivered: AtomicU64::new(0),
@@ -76,15 +92,24 @@ impl TelemetryEmitter {
 
     /// Buffer a record. Never blocks on the network and never fails a request.
     pub fn record(&self, record: ObservabilityRecord) {
+        let _ = self.try_record(record);
+    }
+
+    /// Buffer a record, saying whether it was actually kept. A producer that
+    /// can wait -- a collector pass, not a request path -- should stop on
+    /// `false` instead of letting its progress mark advance past records
+    /// this buffer shed.
+    pub fn try_record(&self, record: ObservabilityRecord) -> bool {
         let Ok(mut buffered) = self.buffered.lock() else {
             self.dropped.fetch_add(1, Ordering::Relaxed);
-            return;
+            return false;
         };
         if buffered.len() >= MAX_BUFFERED_RECORDS {
             self.dropped.fetch_add(1, Ordering::Relaxed);
-            return;
+            return false;
         }
         buffered.push_back(record);
+        true
     }
 
     #[must_use]
@@ -118,34 +143,28 @@ impl TelemetryEmitter {
         buffered.drain(..take).collect()
     }
 
-    fn requeue(&self, batch: Vec<ObservabilityRecord>) {
-        let Ok(mut buffered) = self.buffered.lock() else {
-            self.dropped
-                .fetch_add(batch.len() as u64, Ordering::Relaxed);
-            return;
-        };
-        // A failed batch goes back in front so ordering survives a retry, but
-        // only as far as the bound allows; the rest is dropped and counted.
-        for record in batch.into_iter().rev() {
-            if buffered.len() >= MAX_BUFFERED_RECORDS {
-                self.dropped.fetch_add(1, Ordering::Relaxed);
-                continue;
-            }
-            buffered.push_front(record);
-        }
-    }
-
     /// Deliver at most one batch. Returns how many records were accepted.
     pub fn flush_once(&self) -> usize {
-        let batch = self.take_batch();
-        if batch.is_empty() {
-            return 0;
-        }
+        // A batch that failed to deliver is retried before anything new is
+        // taken, under the offset it was claimed with: the store recognizes
+        // the redelivery by digest, and the stream stays contiguous.
+        let (offset, batch) = {
+            let Ok(mut in_flight) = self.in_flight.lock() else {
+                return 0;
+            };
+            match in_flight.take() {
+                Some(claimed) => claimed,
+                None => {
+                    let batch = self.take_batch();
+                    if batch.is_empty() {
+                        return 0;
+                    }
+                    (self.offset.fetch_add(1, Ordering::Relaxed) + 1, batch)
+                }
+            }
+        };
         let count = batch.len();
-        // The offset makes a redelivered batch identifiable to the store. It
-        // advances only when a batch is claimed, so a retry reuses its own.
-        let offset = self.offset.fetch_add(1, Ordering::Relaxed) + 1;
-        let request_id = format!("req_dataplane{offset:016x}");
+        let request_id = format!("req_telemetry{offset:016x}");
         let payload = TelemetryIngestRequest {
             protocol_version: TELEMETRY_PROTOCOL_VERSION,
             request_id: request_id.clone(),
@@ -159,7 +178,9 @@ impl TelemetryEmitter {
                 count
             }
             Err(()) => {
-                self.requeue(batch);
+                if let Ok(mut in_flight) = self.in_flight.lock() {
+                    *in_flight = Some((offset, batch));
+                }
                 0
             }
         }
@@ -206,5 +227,112 @@ impl TelemetryEmitter {
         } else {
             Err(())
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        io::{Read, Write},
+        net::TcpListener,
+        sync::mpsc,
+        thread,
+    };
+
+    use mako_api::{
+        EnvironmentId, ObservabilityPayload, ObservabilityRecord, ProjectId, QuotaResource,
+        TenantScope,
+    };
+
+    use super::*;
+
+    fn record() -> ObservabilityRecord {
+        ObservabilityRecord {
+            tenant: TenantScope::new(
+                ProjectId::parse("prj_emitter00001").expect("project"),
+                EnvironmentId::parse("env_emitter00001").expect("environment"),
+            ),
+            timestamp_unix_milliseconds: 1,
+            payload: ObservabilityPayload::Usage {
+                resource: QuotaResource::ReplicationRequestsPerMinute,
+                quantity: 1,
+                unit: "requests".to_owned(),
+            },
+        }
+    }
+
+    /// A failed batch must retry under the offset it was claimed with. If a
+    /// retry claimed a fresh offset, every failure would push the client one
+    /// step further ahead of the store's checkpoint and the stream would
+    /// never deliver again.
+    #[test]
+    fn a_failed_batch_retries_under_its_own_offset() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("listener");
+        let endpoint = listener.local_addr().expect("address");
+        let (sent, seen) = mpsc::channel::<u64>();
+        let server = thread::spawn(move || {
+            // First attempt is refused, second accepted; each reports the
+            // offset it carried.
+            for (index, stream) in listener.incoming().take(2).enumerate() {
+                let mut stream = stream.expect("connection");
+                // Read headers, then exactly the advertised body: the client
+                // holds its socket open for the response, so reading to EOF
+                // would deadlock against it.
+                let mut raw = Vec::new();
+                let mut byte = [0_u8; 1];
+                while !raw.ends_with(b"\r\n\r\n") && matches!(stream.read(&mut byte), Ok(1)) {
+                    raw.push(byte[0]);
+                }
+                let head = String::from_utf8_lossy(&raw).to_string();
+                let length = head
+                    .lines()
+                    .find_map(|line| line.strip_prefix("content-length: "))
+                    .and_then(|value| value.trim().parse::<usize>().ok())
+                    .expect("request advertises a body length");
+                let mut body = vec![0_u8; length];
+                stream.read_exact(&mut body).expect("body");
+                raw.extend_from_slice(&body);
+                let text = String::from_utf8_lossy(&raw);
+                let offset = text
+                    .rfind("\"offset\":")
+                    .map(|at| {
+                        text[at + 9..]
+                            .chars()
+                            .take_while(char::is_ascii_digit)
+                            .collect::<String>()
+                    })
+                    .and_then(|digits| digits.parse::<u64>().ok())
+                    .expect("payload carries an offset");
+                sent.send(offset).expect("report offset");
+                let status = if index == 0 {
+                    "HTTP/1.1 503 Service Unavailable"
+                } else {
+                    "HTTP/1.1 200 OK"
+                };
+                let _ = stream.write_all(
+                    format!("{status}\r\ncontent-length: 0\r\nconnection: close\r\n\r\n")
+                        .as_bytes(),
+                );
+            }
+        });
+
+        let emitter =
+            TelemetryEmitter::new(endpoint, "0123456789abcdef0123456789abcdef", "mako.test");
+        emitter.record(record());
+        assert_eq!(
+            emitter.flush_once(),
+            0,
+            "the refused batch counted as delivered"
+        );
+        assert_eq!(emitter.flush_once(), 1, "the retry was not delivered");
+        server.join().expect("server");
+
+        let first = seen.recv().expect("first offset");
+        let second = seen.recv().expect("second offset");
+        assert_eq!(
+            (first, second),
+            (1, 1),
+            "the retry did not reuse the claimed offset"
+        );
     }
 }

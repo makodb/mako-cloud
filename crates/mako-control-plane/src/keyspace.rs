@@ -584,6 +584,25 @@ impl ControlKeyspace {
             .map_err(ControlKeyspaceError)
     }
 
+    /// Where the function-log collector keeps its high-water mark for one
+    /// function, so a restarted collector does not re-emit what it already
+    /// shipped.
+    pub fn function_log_state_key(
+        project_id: &ProjectId,
+        environment_id: &EnvironmentId,
+        name: &str,
+    ) -> Result<Vec<u8>, ControlKeyspaceError> {
+        TenantKeyspace::system_key(
+            format!(
+                "control/function-log-state/{}/{}",
+                project_id.as_str(),
+                environment_id.as_str()
+            ),
+            name,
+        )
+        .map_err(ControlKeyspaceError)
+    }
+
     pub fn function_version_key(
         project_id: &ProjectId,
         environment_id: &EnvironmentId,

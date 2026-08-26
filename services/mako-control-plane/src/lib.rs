@@ -12,6 +12,7 @@ mod developer_metrics_http;
 mod explorer_http;
 mod explorer_invalidation;
 mod function_http;
+mod function_logs;
 mod function_resolution;
 mod graph;
 mod http_support;
