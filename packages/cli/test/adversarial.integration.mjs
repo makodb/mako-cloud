@@ -69,12 +69,15 @@ test(
     assert.equal(first.output().includes("project-a-secret-canary"), false);
 
     const wall = await fetch(`${first.base}/wall`, { signal: AbortSignal.timeout(10_000) });
-    assert.equal(wall.status, 500);
+    // 500 when the kill resolves inside the invocation, 503 when the request
+    // catches the worker mid-recycle after the previous crash; both are the
+    // runtime refusing honestly, and neither may carry the function's output.
+    assert.ok([500, 503].includes(wall.status), `wall status ${wall.status}`);
     assert.equal((await wall.text()).includes("wall limit failed"), false);
     assert.equal(await responseText(`${first.base}/safe`), "safe:project-a");
 
     const memory = await fetch(`${first.base}/memory`, { signal: AbortSignal.timeout(30_000) });
-    assert.equal(memory.status, 500);
+    assert.ok([500, 503].includes(memory.status), `memory status ${memory.status}`);
     assert.equal(await responseText(`${first.base}/safe`), "safe:project-a");
 
     const crash = await fetch(`${first.base}/crash`, { signal: AbortSignal.timeout(10_000) });
