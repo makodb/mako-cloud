@@ -294,30 +294,31 @@ export class RuntimeSupervisor {
     await Deno.mkdir(this.#workerPath, { recursive: true });
     for await (const entry of Deno.readDir(this.#statePath)) {
       if (!entry.isFile || !entry.name.endsWith(".state")) continue;
-      // One deployment's unreadable state must not keep every other
+      // One deployment's unrestorable state must not keep every other
       // tenant's functions down: quarantine it and keep booting. The
-      // affected function redeploys; the others never notice.
-      let persisted: PersistedDeployment;
+      // affected function redeploys; the others never notice. This covers
+      // the whole restore of the entry -- decrypt, validation, and worker
+      // materialization -- because a boot-time worker error is just as
+      // fatal to the loop as an unreadable file.
       try {
         const source = await Deno.readTextFile(`${this.#statePath}/${entry.name}`);
-        persisted = await this.#decrypt(source);
+        const persisted = await this.#decrypt(source);
         validatePersisted(persisted);
+        const address = flattenAddress(persisted.load.manifest.deployment);
+        const expected = `${await sha256Hex(deploymentKey(address))}.state`;
+        if (entry.name !== expected) throw new Error("runtime state address mismatch");
+        const worker = await materializeWorker(persisted.load, this.#workerPath, this.#region);
+        this.#deployments.set(deploymentKey(address), {
+          ...persisted,
+          worker,
+          activeInvocations: 0,
+        });
       } catch {
         await Deno.rename(
           `${this.#statePath}/${entry.name}`,
           `${this.#statePath}/${entry.name}.quarantined`,
         ).catch(() => undefined);
-        continue;
       }
-      const address = flattenAddress(persisted.load.manifest.deployment);
-      const expected = `${await sha256Hex(deploymentKey(address))}.state`;
-      if (entry.name !== expected) throw new Error("runtime state address mismatch");
-      const worker = await materializeWorker(persisted.load, this.#workerPath, this.#region);
-      this.#deployments.set(deploymentKey(address), {
-        ...persisted,
-        worker,
-        activeInvocations: 0,
-      });
     }
   }
 
@@ -594,6 +595,7 @@ async function materializeWorker(
       throw new Error("invalid source archive");
     }
     let decodedBytes = 0;
+    const entrypointSources = new Map<string, string>();
     for (const [path, encoded] of Object.entries(archive.modules)) {
       if (!validRelativePath(path)) throw new Error("invalid source module path");
       const contents = decodeBase64(encoded, MAX_BUNDLE_BYTES);
@@ -609,14 +611,23 @@ async function materializeWorker(
           path,
           archive.resolvedImports[path] ?? {},
         );
+        if (path === load.manifest.entrypoint) entrypointSources.set(path, rewritten);
         await Deno.writeTextFile(`${directory}/${path}`, rewritten);
       }
     }
     // Console output never leaves a worker isolate on its own: the shim
     // captures it during a request and ships it back on a response header
-    // the supervisor strips and retains. A bundle that carries a module by
-    // this name keeps its own file and simply goes uncaptured.
-    if (archive.modules[SHIM_MODULE] === undefined) {
+    // the supervisor strips and retains. Only an entry module that exports
+    // default can be wrapped -- a Deno.serve-style function registers its
+    // own handler as an import side effect, and importing it from a shim
+    // that then serves nothing is a hard boot error. A bundle that carries
+    // a module by the shim's name keeps its own file and goes uncaptured.
+    const entrySource = entrypointSources.get(load.manifest.entrypoint);
+    if (
+      archive.modules[SHIM_MODULE] === undefined &&
+      entrySource !== undefined &&
+      /(^|\n)\s*export\s+default\b/u.test(entrySource)
+    ) {
       await Deno.writeTextFile(
         `${directory}/${SHIM_MODULE}`,
         consoleShimSource(load.manifest.entrypoint),
