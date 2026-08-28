@@ -24,7 +24,7 @@ are printed by the test so a new one is a visible decision: `/v1/operator*`
 (a separate identity), `/{projectRef}/functions` (invocation, an application
 concern), and the application-runtime routes under an environment (`auth/*`,
 `documents`, `service/*`, `replication/*`), which SDKs and RxDB clients call
-with project credentials. Every other operation — 127 at the time of writing —
+with project credentials. Every other operation — 129 at the time of writing —
 maps to a command.
 
 ## Signing in
@@ -329,8 +329,10 @@ Generated from the command registry; every command also answers `--help` with it
 | `mako projects delete <project-id>` | Start a project's deletion grace period *(confirmed)* |
 | `mako projects get <project-id>` | Show a project |
 | `mako projects list` | List projects in one team, or in every team you belong to |
+| `mako projects rename <project-id> <name>` | Rename a project |
 | `mako projects restore <project-id>` | Restore a suspended project or one in its deletion grace period |
 | `mako projects suspend <project-id>` | Suspend a project; its environments stop serving *(confirmed)* |
+| `mako projects transfer <project-id>` | Move a project to a team you administer, or to your personal space *(confirmed)* |
 
 ### `mako sync`
 

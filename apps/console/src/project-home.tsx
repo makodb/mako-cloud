@@ -44,6 +44,10 @@ const PROJECT_DESTINATIONS: readonly { readonly id: ProjectSection; readonly lab
   { id: "settings", label: "Settings" },
 ];
 
+// The transfer target that names the caller's personal space; the API
+// resolves it when no team is named, so it needs no identifier here.
+const PERSONAL_TARGET = "personal";
+
 const SECTION_EYEBROW: Record<ProjectSection, string> = {
   overview: "Project overview",
   usage: "Project usage",
@@ -170,6 +174,7 @@ export function ProjectHome({
         team={team}
         ownerUnavailable={owner === "unavailable"}
         onAction={(action) => void projectAction(action)}
+        onChanged={reload}
       />
     );
   } else {
@@ -953,11 +958,13 @@ function ProjectSettings({
   team,
   ownerUnavailable,
   onAction,
+  onChanged,
 }: {
   readonly project: Project;
   readonly team: Team | null;
   readonly ownerUnavailable: boolean;
   readonly onAction: (action: ProjectAction) => void;
+  readonly onChanged: () => Promise<void>;
 }) {
   return (
     <>
@@ -1012,13 +1019,8 @@ function ProjectSettings({
           </div>
         </dl>
       </section>
-      <section className="panel full-span project-home-panel" aria-labelledby="ownership-title">
-        <h2 id="ownership-title">Name and ownership</h2>
-        <p>
-          Renaming this project and transferring it between your personal space and the teams you
-          administer are coming soon. Both will require explicit confirmation and will be audited.
-        </p>
-      </section>
+      <RenameProjectPanel project={project} onChanged={onChanged} />
+      <TransferProjectPanel project={project} owner={team} onChanged={onChanged} />
       <section className="panel full-span project-home-panel" aria-labelledby="deletion-title">
         <h2 id="deletion-title">Deletion</h2>
         <p>
@@ -1051,6 +1053,210 @@ function ProjectSettings({
         </div>
       </section>
     </>
+  );
+}
+
+/// Renaming changes the display name only; the identifier, keys, policies,
+/// and data stay. The draft follows the project's current name until the
+/// developer edits it, so a rename that arrives through a reload is shown
+/// rather than overwritten.
+function RenameProjectPanel({
+  project,
+  onChanged,
+}: {
+  readonly project: Project;
+  readonly onChanged: () => Promise<void>;
+}) {
+  const client = useManagementClient();
+  const [draft, setDraft] = useState<string | null>(null);
+  const [failure, setFailure] = useState<ConsoleApiFailure | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+  const name = draft ?? project.name;
+  const nextName = name.trim();
+  const unchanged = nextName === "" || nextName === project.name;
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (unchanged || pending) return;
+    if (
+      !confirmDestructiveAction({
+        action: "Rename",
+        target: `project ${project.name}`,
+        consequence: `The project will be called "${nextName}" everywhere it is listed. Its identifier, keys, policies, and data are unchanged.`,
+      })
+    ) {
+      return;
+    }
+    setPending(true);
+    setFailure(null);
+    setStatus(null);
+    try {
+      const renamed = await client.updateProject(project.id, nextName);
+      await onChanged();
+      setDraft(null);
+      setStatus(`Renamed to ${renamed.name}. The change is audited.`);
+    } catch (error) {
+      setFailure(toConsoleApiFailure(error));
+    } finally {
+      setPending(false);
+    }
+  };
+  return (
+    <section className="panel full-span project-home-panel" aria-labelledby="rename-title">
+      <h2 id="rename-title">Project name</h2>
+      <p>
+        The name appears everywhere the project is listed. Its identifier, keys, policies, and data
+        never change with it. Renaming requires confirmation and is audited.
+      </p>
+      <form className="inline-form project-home-form" onSubmit={(event) => void submit(event)}>
+        <label>
+          Project name
+          <input
+            name="name"
+            value={name}
+            maxLength={200}
+            onChange={(event) => setDraft(event.currentTarget.value)}
+          />
+        </label>
+        <button type="submit" disabled={unchanged || pending}>
+          {pending ? "Renaming…" : "Rename"}
+        </button>
+      </form>
+      <ApiFailureNotice failure={failure} />
+      {status === null ? null : (
+        <p className="notice success" role="status">
+          {status}
+        </p>
+      )}
+    </section>
+  );
+}
+
+/// Transfer offers every team the developer belongs to and the personal
+/// space, less the current owner. The wire type carries no role, so the
+/// console does not guess who administers what: the API refuses a target the
+/// developer does not administer, and that refusal is shown as is.
+function TransferProjectPanel({
+  project,
+  owner,
+  onChanged,
+}: {
+  readonly project: Project;
+  readonly owner: Team | null;
+  readonly onChanged: () => Promise<void>;
+}) {
+  const client = useManagementClient();
+  const load = useCallback((management: MakoManagementClient) => management.listTeams(), []);
+  const teams = useSummary(load);
+  const [selection, setSelection] = useState("");
+  const [failure, setFailure] = useState<ConsoleApiFailure | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+
+  const listed = teams.status === "ready" ? teams.value : [];
+  const ownerIsPersonal =
+    owner?.kind === "personal" ||
+    listed.some((team) => team.kind === "personal" && team.id === project.teamId);
+  const teamTargets = listed.filter((team) => team.kind === "team" && team.id !== project.teamId);
+  const target: Team | typeof PERSONAL_TARGET | null =
+    selection === PERSONAL_TARGET
+      ? ownerIsPersonal
+        ? null
+        : PERSONAL_TARGET
+      : (teamTargets.find((team) => team.id === selection) ?? null);
+
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (target === null || pending) return;
+    const targetName = target === PERSONAL_TARGET ? "your personal space" : target.name;
+    if (
+      !confirmDestructiveAction({
+        action: "Transfer",
+        target: `project ${project.name} to ${
+          target === PERSONAL_TARGET ? targetName : `team ${targetName}`
+        }`,
+        consequence:
+          "Policies, users, data, and keys stay with the project. Usage limits follow the new owner's plan, and access follows the new owner's membership.",
+      })
+    ) {
+      return;
+    }
+    setPending(true);
+    setFailure(null);
+    setStatus(null);
+    try {
+      await client.transferProject(
+        project.id,
+        target === PERSONAL_TARGET ? undefined : target.id,
+        `transfer:${project.id}`,
+      );
+      await onChanged();
+      setSelection("");
+      setStatus(`Transferred to ${targetName}; the move is audited under both owners.`);
+    } catch (error) {
+      setFailure(toConsoleApiFailure(error));
+    } finally {
+      setPending(false);
+    }
+  };
+
+  let form: ReactNode;
+  if (teams.status === "loading") {
+    form = <p aria-busy="true">Loading the teams you belong to…</p>;
+  } else if (teams.status === "unavailable") {
+    form = (
+      <>
+        <p>The teams you belong to could not be listed, so no transfer can be offered right now.</p>
+        <ApiFailureNotice failure={teams.failure} />
+      </>
+    );
+  } else if (ownerIsPersonal && teamTargets.length === 0) {
+    form = (
+      <p>
+        This project is in your personal space and you belong to no team, so there is no owner to
+        transfer it to.
+      </p>
+    );
+  } else {
+    form = (
+      <form className="inline-form project-home-form" onSubmit={(event) => void submit(event)}>
+        <label>
+          Transfer to
+          <select value={selection} onChange={(event) => setSelection(event.currentTarget.value)}>
+            <option value="">Choose the new owner</option>
+            {ownerIsPersonal ? null : (
+              <option value={PERSONAL_TARGET}>Your projects (personal space)</option>
+            )}
+            {teamTargets.map((team) => (
+              <option key={team.id} value={team.id}>
+                {team.name}
+                {team.state === "active" ? "" : ` (${humanize(team.state).toLowerCase()})`}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button type="submit" disabled={target === null || pending}>
+          {pending ? "Transferring…" : "Transfer"}
+        </button>
+      </form>
+    );
+  }
+  return (
+    <section className="panel full-span project-home-panel" aria-labelledby="transfer-title">
+      <h2 id="transfer-title">Transfer ownership</h2>
+      <p>
+        Move this project to your personal space or to a team you administer. Its identifier,
+        environments, policies, users, data, and keys stay as they are; usage limits follow the new
+        owner's plan. A transfer requires confirmation and is audited under both owners.
+      </p>
+      {form}
+      <ApiFailureNotice failure={failure} />
+      {status === null ? null : (
+        <p className="notice success" role="status">
+          {status}
+        </p>
+      )}
+    </section>
   );
 }
 

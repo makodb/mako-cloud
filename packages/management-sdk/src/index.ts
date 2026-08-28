@@ -44,6 +44,8 @@ export const MANAGEMENT_OPERATIONS = [
   "createProject",
   "getProject",
   "requestProjectDeletion",
+  "updateProject",
+  "transferProject",
   "suspendProject",
   "restoreProject",
   "listEnvironments",
@@ -606,6 +608,29 @@ export class MakoManagementClient {
     return unwrap(
       await this.#client.POST("/v1/projects/{projectId}/actions/restore", {
         params: { path: { projectId }, header: { "Idempotency-Key": idempotencyKey } },
+      }),
+    );
+  }
+
+  async updateProject(projectId: string, name: string): Promise<Project> {
+    return unwrap(
+      await this.#client.PATCH("/v1/projects/{projectId}", {
+        params: { path: { projectId } },
+        body: { name },
+      }),
+    );
+  }
+
+  /** Moves a project to `teamId`, or to the caller's personal space when omitted. */
+  async transferProject(
+    projectId: string,
+    teamId: string | undefined,
+    confirmation: string,
+  ): Promise<Project> {
+    return unwrap(
+      await this.#client.POST("/v1/projects/{projectId}/actions/transfer", {
+        params: { path: { projectId }, header: { confirmation } },
+        body: teamId === undefined ? {} : { teamId },
       }),
     );
   }

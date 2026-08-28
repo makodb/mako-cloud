@@ -78,6 +78,9 @@ const allowedBalanceReaders = new Set([
   "apps/console/test-e2e/home-dashboard.spec.ts",
   "apps/console/test-e2e/surfaced-capabilities.spec.ts",
   "apps/console/test-e2e/usage-activity.spec.ts",
+  "packages/cli/test/ownership.test.mjs",
+  // The CLI's bill command repeats the team bill on the terminal; its tests mock it.
+  "packages/cli/src/commands/teams.ts",
 ]);
 for (const path of balanceReaders) {
   if (!allowedBalanceReaders.has(path)) {

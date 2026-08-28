@@ -9,8 +9,8 @@ use serde::{Serialize, de::DeserializeOwned};
 
 use crate::{
     ControlAuditAction, ControlAuditEvent, ControlAuditOutcome, ControlAuditSink, ControlKeyspace,
-    ControlKeyspaceError, ControlModelError, DeveloperPrincipal, EnvironmentRecord, OrganizationId,
-    OrganizationStore, OrganizationStoreError, ProjectRecord,
+    ControlKeyspaceError, ControlModelError, DeveloperPrincipal, EnvironmentRecord, LifecycleState,
+    OrganizationId, OrganizationStore, OrganizationStoreError, ProjectRecord,
 };
 
 #[derive(Clone)]
@@ -121,6 +121,48 @@ impl ProjectStore {
                 KeyCondition::ValueEquals {
                     key: organization_key,
                     value: previous_value,
+                },
+            ],
+            batch,
+            durability: self.durability,
+        })
+        .await
+    }
+
+    /// Moves a project between owners in one write: the record and the new
+    /// owner's index entry are written and the previous owner's entry removed,
+    /// all conditioned on the record being what the caller read.
+    pub async fn transfer_project(
+        &self,
+        previous: &ProjectRecord,
+        next: &ProjectRecord,
+    ) -> Result<(), ProjectStoreError> {
+        if previous.id() != next.id() || previous.organization_id() == next.organization_id() {
+            return Err(ProjectStoreError::RecordScopeMismatch);
+        }
+        let project_key = ControlKeyspace::project_key(previous.id())?;
+        let previous_owner_key =
+            ControlKeyspace::organization_project_key(previous.organization_id(), previous.id())?;
+        let next_owner_key =
+            ControlKeyspace::organization_project_key(next.organization_id(), next.id())?;
+        let previous_value = serde_json::to_vec(previous)?;
+        let next_value = serde_json::to_vec(next)?;
+        let mut batch = WriteBatch::with_capacity(3);
+        batch.put(&project_key, next_value.clone());
+        batch.delete(&previous_owner_key);
+        batch.put(&next_owner_key, next_value);
+        self.apply(AtomicWrite {
+            conditions: vec![
+                KeyCondition::ValueEquals {
+                    key: project_key,
+                    value: previous_value.clone(),
+                },
+                KeyCondition::ValueEquals {
+                    key: previous_owner_key,
+                    value: previous_value,
+                },
+                KeyCondition::Missing {
+                    key: next_owner_key,
                 },
             ],
             batch,
@@ -402,6 +444,114 @@ impl ProjectEnvironmentService {
         .await
     }
 
+    pub async fn rename_project(
+        &self,
+        actor: &DeveloperPrincipal,
+        project_id: &ProjectId,
+        name: String,
+        now_unix_seconds: u64,
+    ) -> Result<ProjectRecord, ProjectStoreError> {
+        self.mutate_project(
+            actor,
+            project_id,
+            ControlAuditAction::ProjectRename,
+            now_unix_seconds,
+            |project| project.rename(name, now_unix_seconds),
+        )
+        .await
+    }
+
+    /// Checks that `actor` may move the project to `target` -- they must
+    /// administer both the current owner and the target, and the target must
+    /// be an active owner that is not already the project's -- and returns the
+    /// project as it stands. Nothing changes; the caller prepares whatever the
+    /// new owner requires (the plan's limits on every environment) and then
+    /// commits with [`Self::commit_transfer`].
+    pub async fn prepare_transfer(
+        &self,
+        actor: &DeveloperPrincipal,
+        project_id: &ProjectId,
+        target: &OrganizationId,
+        now_unix_seconds: u64,
+    ) -> Result<ProjectRecord, ProjectStoreError> {
+        let project = self.project(project_id).await?;
+        self.authorize_administration(
+            actor,
+            project.organization_id(),
+            ControlAuditAction::ProjectTransfer,
+            now_unix_seconds,
+        )
+        .await?;
+        if project.organization_id() == target {
+            return Err(ControlModelError::InvalidField {
+                field: "project owner",
+                reason: "already owns the project",
+            }
+            .into());
+        }
+        self.authorize_administration(
+            actor,
+            target,
+            ControlAuditAction::ProjectTransfer,
+            now_unix_seconds,
+        )
+        .await?;
+        let owner = self
+            .organizations
+            .get_organization(target)
+            .await?
+            .ok_or(ProjectStoreError::NotFound)?;
+        if owner.lifecycle() != LifecycleState::Active {
+            return Err(ControlModelError::InvalidField {
+                field: "project owner",
+                reason: "is not active",
+            }
+            .into());
+        }
+        Ok(project)
+    }
+
+    /// Commits a transfer prepared with [`Self::prepare_transfer`]: the same
+    /// checks run again against the current record, the owner changes in one
+    /// write, and the move is audited under the previous and the new owner.
+    pub async fn commit_transfer(
+        &self,
+        actor: &DeveloperPrincipal,
+        project_id: &ProjectId,
+        target: &OrganizationId,
+        now_unix_seconds: u64,
+    ) -> Result<ProjectRecord, ProjectStoreError> {
+        let previous = self
+            .prepare_transfer(actor, project_id, target, now_unix_seconds)
+            .await?;
+        let mut next = previous.clone();
+        next.transfer_to(target.clone(), now_unix_seconds)?;
+        self.projects.transfer_project(&previous, &next).await?;
+        let record = format!(
+            "{} {} -> {}",
+            project_id.as_str(),
+            previous.organization_id().as_str(),
+            target.as_str()
+        );
+        self.audit(
+            actor,
+            previous.organization_id(),
+            ControlAuditAction::ProjectTransfer,
+            record.as_str(),
+            ControlAuditOutcome::Allowed,
+            now_unix_seconds,
+        );
+        self.audit(
+            actor,
+            target,
+            ControlAuditAction::ProjectTransfer,
+            record.as_str(),
+            ControlAuditOutcome::Allowed,
+            now_unix_seconds,
+        );
+        Ok(next)
+    }
+
     pub async fn create_environment(
         &self,
         actor: &DeveloperPrincipal,
@@ -615,6 +765,33 @@ impl ProjectEnvironmentService {
         Ok(())
     }
 
+    /// Ownership moves need an administrator or owner on the side in
+    /// question; a personal space counts as administered by its developer,
+    /// who holds its only membership as owner.
+    async fn authorize_administration(
+        &self,
+        actor: &DeveloperPrincipal,
+        organization_id: &OrganizationId,
+        action: ControlAuditAction,
+        now_unix_seconds: u64,
+    ) -> Result<(), ProjectStoreError> {
+        let membership = self
+            .require_member(actor, organization_id, action, now_unix_seconds)
+            .await?;
+        if !membership.role().can_manage_members() {
+            self.audit(
+                actor,
+                organization_id,
+                action,
+                "authorization",
+                ControlAuditOutcome::Denied,
+                now_unix_seconds,
+            );
+            return Err(ProjectStoreError::Forbidden);
+        }
+        Ok(())
+    }
+
     async fn require_member(
         &self,
         actor: &DeveloperPrincipal,
@@ -774,6 +951,212 @@ mod tests {
         fn record(&self, event: ControlAuditEvent) {
             self.0.lock().expect("audit lock").push(event);
         }
+    }
+
+    #[test]
+    fn a_project_is_renamed_and_transferred_between_owners_it_administers() {
+        futures::executor::block_on(async {
+            let adapter: Arc<dyn KvAdapter> = Arc::new(MemoryAdapter::new());
+            let organizations =
+                OrganizationStore::new(adapter.clone(), Durability::Memory).expect("org store");
+            let projects = ProjectStore::new(adapter, Durability::Memory).expect("project store");
+            let audit = Arc::new(AuditLog::default());
+            let service = ProjectEnvironmentService::new(
+                projects.clone(),
+                organizations.clone(),
+                audit.clone(),
+            );
+            let limit = NonZeroUsize::new(10).expect("limit");
+            let developer_id = DeveloperIdentityId::parse("dev_owner000").expect("owner id");
+            let developer =
+                DeveloperPrincipal::for_test(developer_id.clone(), "owner@example.test");
+            let colleague_id = DeveloperIdentityId::parse("dev_collea00").expect("colleague id");
+            let colleague =
+                DeveloperPrincipal::for_test(colleague_id.clone(), "colleague@example.test");
+
+            // The developer's personal space and a team they own; a colleague
+            // who merely develops in the team.
+            let personal_id = OrganizationId::parse("org_personal0").expect("personal");
+            let personal =
+                OrganizationRecord::new_personal(personal_id.clone(), "Your projects", 10)
+                    .expect("personal space");
+            organizations
+                .create_organization(
+                    &personal,
+                    &MembershipRecord::new(
+                        personal_id.clone(),
+                        developer_id.clone(),
+                        OrganizationRole::Owner,
+                        10,
+                    ),
+                )
+                .await
+                .expect("create personal space");
+            let team_id = OrganizationId::parse("org_team0000").expect("team");
+            let team = OrganizationRecord::new(team_id.clone(), "Acme", 10).expect("team");
+            organizations
+                .create_organization(
+                    &team,
+                    &MembershipRecord::new(
+                        team_id.clone(),
+                        developer_id.clone(),
+                        OrganizationRole::Owner,
+                        10,
+                    ),
+                )
+                .await
+                .expect("create team");
+            let invitation = InvitationRecord::new(InvitationInput {
+                id: InvitationId::parse("inv_collea00").expect("invitation"),
+                organization_id: team_id.clone(),
+                normalized_email: "colleague@example.test".to_owned(),
+                role: OrganizationRole::Developer,
+                invited_by: developer_id.clone(),
+                token_digest: "12345678901234567890123456789012".to_owned(),
+                created_at_unix_seconds: 11,
+                expires_at_unix_seconds: 100,
+            })
+            .expect("invitation");
+            organizations
+                .create_invitation(&invitation)
+                .await
+                .expect("store invitation");
+            let mut accepted = invitation.clone();
+            accepted.accept(colleague_id.clone(), 12).expect("accept");
+            organizations
+                .accept_invitation(
+                    &invitation,
+                    &accepted,
+                    &MembershipRecord::new(
+                        team_id.clone(),
+                        colleague_id,
+                        OrganizationRole::Developer,
+                        12,
+                    ),
+                )
+                .await
+                .expect("colleague membership");
+
+            let project_id = ProjectId::parse("prj_moving00").expect("project");
+            service
+                .create_project(
+                    &developer,
+                    NewProject {
+                        id: project_id.clone(),
+                        organization_id: personal_id.clone(),
+                        name: "Notes".to_owned(),
+                        region: "local".to_owned(),
+                        now_unix_seconds: 20,
+                    },
+                )
+                .await
+                .expect("create project");
+
+            // A rename changes the name and nothing else, and is audited.
+            let renamed = service
+                .rename_project(&developer, &project_id, "Field Notes".to_owned(), 21)
+                .await
+                .expect("rename");
+            assert_eq!(renamed.name(), "Field Notes");
+            assert_eq!(renamed.organization_id(), &personal_id);
+            assert_eq!(renamed.region(), "local");
+            assert!(audit.0.lock().expect("audit lock").iter().any(|event| {
+                event.action == ControlAuditAction::ProjectRename
+                    && event.organization_id == personal_id
+                    && event.outcome == ControlAuditOutcome::Allowed
+            }));
+            assert!(matches!(
+                service
+                    .rename_project(&developer, &project_id, "".to_owned(), 22)
+                    .await,
+                Err(ProjectStoreError::Model(_))
+            ));
+
+            // A colleague who develops in the team but does not administer it
+            // cannot pull the project in; the developer administering both sides can.
+            assert!(matches!(
+                service
+                    .prepare_transfer(&colleague, &project_id, &team_id, 23)
+                    .await,
+                Err(ProjectStoreError::Forbidden)
+            ));
+            assert!(matches!(
+                service
+                    .prepare_transfer(&developer, &project_id, &personal_id, 23)
+                    .await,
+                Err(ProjectStoreError::Model(_))
+            ));
+            let prepared = service
+                .prepare_transfer(&developer, &project_id, &team_id, 23)
+                .await
+                .expect("prepare");
+            assert_eq!(
+                prepared.organization_id(),
+                &personal_id,
+                "preparing moves nothing"
+            );
+
+            let moved = service
+                .commit_transfer(&developer, &project_id, &team_id, 24)
+                .await
+                .expect("transfer");
+            assert_eq!(moved.id(), &project_id);
+            assert_eq!(moved.organization_id(), &team_id);
+            assert_eq!(moved.name(), "Field Notes");
+            assert_eq!(moved.lifecycle(), renamed.lifecycle());
+
+            // Listed under the team only, by identifier, and read back as moved.
+            let under_team = service
+                .list_projects(&developer, &team_id, limit, 25)
+                .await
+                .expect("team projects");
+            assert_eq!(
+                under_team
+                    .iter()
+                    .map(|p| p.id().clone())
+                    .collect::<Vec<_>>(),
+                vec![project_id.clone()]
+            );
+            let under_personal = service
+                .list_projects(&developer, &personal_id, limit, 25)
+                .await
+                .expect("personal projects");
+            assert!(under_personal.is_empty(), "{under_personal:?}");
+            let read = service
+                .get_project(&developer, &project_id, 25)
+                .await
+                .expect("read moved project");
+            assert_eq!(read.organization_id(), &team_id);
+
+            // Audited under both the previous and the new owner.
+            {
+                let events = audit.0.lock().expect("audit lock");
+                for owner in [&personal_id, &team_id] {
+                    assert!(
+                        events.iter().any(|event| {
+                            event.action == ControlAuditAction::ProjectTransfer
+                                && &event.organization_id == owner
+                                && event.outcome == ControlAuditOutcome::Allowed
+                                && event.target.contains(project_id.as_str())
+                        }),
+                        "transfer audited under {owner:?}"
+                    );
+                }
+            }
+
+            // The colleague, a developer in the team, can now read it there but
+            // still cannot move it out.
+            service
+                .get_project(&colleague, &project_id, 26)
+                .await
+                .expect("colleague reads the team project");
+            assert!(matches!(
+                service
+                    .commit_transfer(&colleague, &project_id, &personal_id, 26)
+                    .await,
+                Err(ProjectStoreError::Forbidden)
+            ));
+        });
     }
 
     #[test]

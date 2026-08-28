@@ -23,9 +23,13 @@ nothing to show.
 A project's home summarises its environments and their readiness, the selected
 environment's API URL, public key, and quickstart, its usage against quota,
 data-plane health, and recent activity, and offers Overview, Usage, Activity,
-and Settings alongside the environment list. Settings show the owner,
-identifiers, region, and the deletion-with-grace action; renaming and transfer
-arrive with the settings-and-ownership change.
+and Settings alongside the environment list. Settings show the owner, region, identifiers, and lifecycle, and offer the three
+changes an owner may make: renaming the project, transferring it between the
+personal space and the teams the developer administers, and requesting deletion
+with its grace period. Each asks for confirmation and is audited; a transfer
+keeps the identifier, environments, data, policies, users, keys, and functions,
+holds every environment to the new owner's plan before the owner changes, and
+is recorded under both the previous and the new owner.
 
 Routes: `/projects/{projectId}` and `/projects/{projectId}/{overview|usage|activity|settings}`.
 

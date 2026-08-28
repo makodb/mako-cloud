@@ -828,6 +828,49 @@ impl ProjectRecord {
         Ok(())
     }
 
+    /// Gives the project a new name; nothing else about it changes.
+    pub fn rename(
+        &mut self,
+        name: impl Into<String>,
+        now_unix_seconds: u64,
+    ) -> Result<(), ControlModelError> {
+        let name = name.into();
+        validate_text("project name", &name, 1, 200)?;
+        if now_unix_seconds < self.updated_at_unix_seconds {
+            return Err(ControlModelError::InvalidField {
+                field: "project timestamp",
+                reason: "cannot move backwards",
+            });
+        }
+        self.name = name;
+        self.updated_at_unix_seconds = now_unix_seconds;
+        Ok(())
+    }
+
+    /// Moves the project to another owner. The identifier, region, lifecycle,
+    /// and everything keyed by the project stay exactly as they were.
+    pub fn transfer_to(
+        &mut self,
+        organization_id: OrganizationId,
+        now_unix_seconds: u64,
+    ) -> Result<(), ControlModelError> {
+        if organization_id == self.organization_id {
+            return Err(ControlModelError::InvalidField {
+                field: "project owner",
+                reason: "already owns the project",
+            });
+        }
+        if now_unix_seconds < self.updated_at_unix_seconds {
+            return Err(ControlModelError::InvalidField {
+                field: "project timestamp",
+                reason: "cannot move backwards",
+            });
+        }
+        self.organization_id = organization_id;
+        self.updated_at_unix_seconds = now_unix_seconds;
+        Ok(())
+    }
+
     pub fn begin_final_deletion(&mut self, now_unix_seconds: u64) -> Result<(), ControlModelError> {
         if self.lifecycle != LifecycleState::DeletionGrace
             || self

@@ -228,7 +228,11 @@ export interface paths {
         delete: operations["requestProjectDeletion"];
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Rename a project
+         * @description Changes the project's name and nothing else; audited under its owner.
+         */
+        patch: operations["updateProject"];
         trace?: never;
     };
     "/v1/projects/{projectId}/actions/suspend": {
@@ -257,6 +261,26 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["restoreProject"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/projects/{projectId}/actions/transfer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Transfer a project to another owner
+         * @description Moves the project to a team the caller administers, or to the caller's personal space when no team is named. The identifier, environments, data, policies, users, credentials, and functions are unchanged; every environment is held to the new owner's plan before the owner changes, and the move is audited under both owners. The caller must administer both the current owner and the target.
+         */
+        post: operations["transferProject"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5104,6 +5128,35 @@ export interface operations {
             default: components["responses"]["ApiError"];
         };
     };
+    updateProject: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    name: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Renamed project */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Project"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
     suspendProject: {
         parameters: {
             query?: never;
@@ -5144,6 +5197,37 @@ export interface operations {
         responses: {
             /** @description Project restoration accepted */
             202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Project"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    transferProject: {
+        parameters: {
+            query?: never;
+            header: {
+                confirmation: string;
+            };
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    teamId?: components["schemas"]["TeamId"];
+                };
+            };
+        };
+        responses: {
+            /** @description The project under its new owner */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };

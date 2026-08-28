@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import {
+  apiError,
   authHandler,
   configDir,
   ENVIRONMENT_ID,
@@ -459,6 +460,85 @@ test("projects get, suspend, restore, and delete", async (t) => {
   assert.equal(api.find(path, "DELETE")[0].headers.confirmation, PROJECT_ID);
   assert.match(deleted.stdout, /state\s+deletion_grace/u);
   assert.match(deleted.stderr, /mako projects restore prj_abcdefgh/u);
+});
+
+test("projects rename sends the new name; transfer needs confirmation, names the new owner, and maps refusals to exit codes", async (t) => {
+  const path = `/v1/projects/${PROJECT_ID}`;
+  const transferPath = `${path}/actions/transfer`;
+  const api = await startMockApi(
+    authHandler({
+      fallback: (request) => {
+        if (request.method === "PATCH" && request.path === path) {
+          return { status: 200, json: project({ name: request.body.name }) };
+        }
+        if (request.method === "POST" && request.path === transferPath) {
+          const target = request.body.teamId;
+          if (target === "org_notmine0") {
+            return apiError("permission_denied", "you must administer both the current owner and the target", 403);
+          }
+          if (target === TEAM_ID) return apiError("conflict", `${TEAM_ID} already owns ${PROJECT_ID}`, 409);
+          return { status: 200, json: project({ teamId: target ?? PERSONAL_TEAM_ID }) };
+        }
+        return undefined;
+      },
+    }),
+  );
+  t.after(() => api.close());
+  const directory = await signedIn(t, api);
+
+  const renamed = await runCli(["projects", "rename", PROJECT_ID, "Mako Renamed"], { configDir: directory });
+  assert.equal(renamed.code, 0, renamed.stderr);
+  const rename = api.find(path, "PATCH")[0];
+  assert.equal(rename.headers.authorization, BEARER);
+  assert.deepEqual(rename.body, { name: "Mako Renamed" });
+  assert.match(renamed.stdout, /name\s+Mako Renamed/u);
+  const renamedJson = await runCli(["projects", "rename", PROJECT_ID, "Mako Renamed", "--json"], { configDir: directory });
+  assert.equal(renamedJson.code, 0, renamedJson.stderr);
+  assert.deepEqual(JSON.parse(renamedJson.stdout), project({ name: "Mako Renamed" }));
+  const noName = await runCli(["projects", "rename", PROJECT_ID], { configDir: directory });
+  assert.equal(noName.code, 2);
+  assert.equal(api.find(path, "PATCH").length, 2);
+
+  const refused = await runCli(["projects", "transfer", PROJECT_ID, "--team", "org_newteam01"], { configDir: directory });
+  assert.equal(refused.code, 2);
+  assert.match(refused.stderr, /without --yes/u);
+  assert.equal(refused.stdout, "");
+  const mistyped = await runCli(["projects", "transfer", PROJECT_ID], { configDir: directory, stdin: "prj_other\n", isTTY: true });
+  assert.equal(mistyped.code, 2);
+  assert.equal(api.find(transferPath).length, 0, "refusals send nothing");
+
+  const toTeam = await runCli(["projects", "transfer", PROJECT_ID, "--team", "org_newteam01", "--yes"], { configDir: directory });
+  assert.equal(toTeam.code, 0, toTeam.stderr);
+  const transfer = api.find(transferPath, "POST")[0];
+  assert.equal(transfer.headers.authorization, BEARER);
+  assert.equal(transfer.headers.confirmation, PROJECT_ID, "the confirmation header names the project");
+  assert.deepEqual(transfer.body, { teamId: "org_newteam01" });
+  assert.match(toTeam.stdout, /teamId\s+org_newteam01/u);
+  assert.match(toTeam.stderr, /now belongs to org_newteam01/u);
+  assert.match(toTeam.stderr, /audited under both/u);
+
+  const toPersonal = await runCli(["projects", "transfer", PROJECT_ID, "--json"], {
+    configDir: directory,
+    stdin: `${PROJECT_ID}\n`,
+    isTTY: true,
+  });
+  assert.equal(toPersonal.code, 0, toPersonal.stderr);
+  const personal = api.find(transferPath, "POST")[1];
+  assert.deepEqual(personal.body, {}, "no --team means the personal space");
+  assert.equal(personal.headers.confirmation, PROJECT_ID);
+  assert.deepEqual(JSON.parse(toPersonal.stdout), project({ teamId: PERSONAL_TEAM_ID }));
+  assert.equal(toPersonal.stderr, `Type "${PROJECT_ID}" to transfer project: `, "JSON mode adds nothing beyond the prompt");
+
+  const forbidden = await runCli(["projects", "transfer", PROJECT_ID, "--team", "org_notmine0", "--yes"], { configDir: directory });
+  assert.equal(forbidden.code, 3);
+  assert.match(forbidden.stderr, /you must administer both the current owner and the target/u);
+  assert.equal(forbidden.stdout, "");
+  const conflict = await runCli(["projects", "transfer", PROJECT_ID, "--team", TEAM_ID, "--yes"], { configDir: directory });
+  assert.equal(conflict.code, 5);
+  assert.match(conflict.stderr, /already owns prj_abcdefgh/u);
+  assert.equal(conflict.stdout, "");
+  assert.equal(api.find(transferPath, "POST").length, 4);
+  assert.equal(api.unhandled.length, 0, `unhandled: ${api.unhandled.join(", ")}`);
 });
 
 test("envs take the project from --project or MAKO_PROJECT_ID and follow the same lifecycle", async (t) => {

@@ -101,6 +101,16 @@ pub(crate) fn add_management_routes(
             handle_delete_project,
         ),
         (
+            HttpMethod::Patch,
+            "/v1/projects/{projectId}",
+            handle_update_project,
+        ),
+        (
+            HttpMethod::Post,
+            "/v1/projects/{projectId}/actions/transfer",
+            handle_transfer_project,
+        ),
+        (
             HttpMethod::Post,
             "/v1/projects/{projectId}/actions/suspend",
             handle_suspend_project,
@@ -585,6 +595,136 @@ fn handle_delete_project(
             .await?;
         json(request, 202, &project_wire(request, &record)?)
     })
+}
+
+fn handle_update_project(
+    graph: &Arc<ControlPlaneGraph>,
+    request: &HttpRequest,
+) -> Result<HttpResponse, HttpApiError> {
+    no_query(request)?;
+    require_json(request)?;
+    let project_id = project_id(request)?;
+    let body: NameWire = parse_json(request)?;
+    with_developer(graph, request, |actor, now| async move {
+        let record = graph
+            .project_service()
+            .rename_project(&actor, &project_id, body.name, now)
+            .await
+            .map_err(|error| project_error(request, error))?;
+        json(request, 200, &project_wire(request, &record)?)
+    })
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TransferWire {
+    #[serde(default, rename = "teamId")]
+    organization_id: Option<OrganizationId>,
+}
+
+/// Moves a project to another owner. The new owner's limits are installed on
+/// every environment before the owner changes, so a project is never listed
+/// under a plan it is not yet held to; if installing them fails the transfer
+/// is refused with nothing moved, and if the owner change itself fails the
+/// previous owner's limits are put back.
+fn handle_transfer_project(
+    graph: &Arc<ControlPlaneGraph>,
+    request: &HttpRequest,
+) -> Result<HttpResponse, HttpApiError> {
+    no_query(request)?;
+    require_json(request)?;
+    require_confirmation(request)?;
+    let project_id = project_id(request)?;
+    let body: TransferWire = parse_json(request)?;
+    with_developer(graph, request, |actor, now| async move {
+        // No team named means the caller's personal space, created on first
+        // use exactly as project creation does.
+        let target = match body.organization_id {
+            Some(organization_id) => organization_id,
+            None => {
+                let personal_id = OrganizationId::parse(stable_id(
+                    "org",
+                    &["personal-space", actor.identity_id().as_str()],
+                ))
+                .map_err(|_| internal(request, "personal space identifier generation failed"))?;
+                graph
+                    .organization_service()
+                    .ensure_personal_organization(&actor, personal_id, now)
+                    .await
+                    .map_err(|error| organization_error(request, error))?
+                    .id()
+                    .clone()
+            }
+        };
+        let previous = graph
+            .project_service()
+            .prepare_transfer(&actor, &project_id, &target, now)
+            .await
+            .map_err(|error| project_error(request, error))?;
+        let policy = owner_plan_policy(graph, request, &target, now).await?;
+        let environments = graph
+            .project_store()
+            .list_environments(&project_id, limit())
+            .await
+            .map_err(|_| unavailable(request, "the project's environments are unavailable"))?;
+        for environment in &environments {
+            let tenant = TenantScope::new(project_id.clone(), environment.id().clone());
+            crate::identity_admin_http::install_quota_policy(
+                graph,
+                request,
+                actor.identity_id().as_str(),
+                &tenant,
+                &policy,
+            )
+            .await?;
+        }
+        match graph
+            .project_service()
+            .commit_transfer(&actor, &project_id, &target, now)
+            .await
+        {
+            Ok(record) => json(request, 200, &project_wire(request, &record)?),
+            Err(error) => {
+                if let Ok(previous_policy) =
+                    owner_plan_policy(graph, request, previous.organization_id(), now).await
+                {
+                    for environment in &environments {
+                        let tenant = TenantScope::new(project_id.clone(), environment.id().clone());
+                        let _ = crate::identity_admin_http::install_quota_policy(
+                            graph,
+                            request,
+                            actor.identity_id().as_str(),
+                            &tenant,
+                            &previous_policy,
+                        )
+                        .await;
+                    }
+                }
+                Err(project_error(request, error))
+            }
+        }
+    })
+}
+
+/// The limits an owner's plan implies for the environments it holds.
+async fn owner_plan_policy(
+    graph: &ControlPlaneGraph,
+    request: &HttpRequest,
+    organization_id: &OrganizationId,
+    now: u64,
+) -> Result<serde_json::Value, HttpApiError> {
+    let organization = graph
+        .organization_store()
+        .get_organization(organization_id)
+        .await
+        .map_err(|_| unavailable(request, "team is unavailable"))?
+        .ok_or_else(|| not_found(request, "team was not found"))?;
+    let exceptions = graph
+        .operator_service()
+        .plan_exceptions(organization_id, now)
+        .await
+        .map_err(|_| unavailable(request, "plan exceptions are unavailable"))?;
+    resolve_plan_policy(request, organization.plan_id(), &exceptions, now)
 }
 
 fn handle_suspend_project(

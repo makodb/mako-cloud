@@ -4,6 +4,7 @@ const NOW = "2026-08-06T12:00:00.000Z";
 const EARLIER = "2026-08-06T11:00:00.000Z";
 const LATER = "2026-08-07T12:00:00.000Z";
 const TEAM_ID = "org_abcdefgh";
+const PERSONAL_TEAM_ID = "org_personal";
 const PROJECT_ID = "prj_abcdefgh";
 const ENVIRONMENT_ID = "env_abcdefgh";
 const PREVIEW_ENVIRONMENT_ID = "env_ijklmnop";
@@ -205,9 +206,18 @@ test("settings shows identifiers and owner and offers deletion with grace", asyn
   await expect(identifiers.getByText("local", { exact: true })).toBeVisible();
   await expect(identifiers.getByText(new Date(NOW).toLocaleString())).toHaveCount(2);
 
-  // Rename and transfer are announced, not offered: no editable control.
-  await expect(page.getByText(/coming soon/u)).toBeVisible();
-  await expect(page.getByRole("textbox")).toHaveCount(0);
+  // Rename starts from the current name and is disabled until it changes;
+  // transfer offers the personal space and never the current owner, and is
+  // disabled until a target is chosen.
+  const rename = page.getByRole("region", { name: "Project name" });
+  await expect(rename.getByLabel("Project name")).toHaveValue("Mako Test Project");
+  await expect(rename.getByRole("button", { name: "Rename" })).toBeDisabled();
+  const transfer = page.getByRole("region", { name: "Transfer ownership" });
+  await expect(transfer.getByRole("option")).toHaveText([
+    "Choose the new owner",
+    "Your projects (personal space)",
+  ]);
+  await expect(transfer.getByRole("button", { name: "Transfer" })).toBeDisabled();
 
   await page.getByRole("button", { name: "Request deletion" }).click();
   await expect(page.getByText(/Restorable until/u)).toBeVisible();
@@ -221,7 +231,7 @@ test("settings shows identifiers and owner and offers deletion with grace", asyn
 
 test("a personal space is named as the developer's own projects", async ({ page }) => {
   const api = new ProjectHomeHarness();
-  api.team = { ...teamFixture(), name: "Owner", kind: "personal" };
+  api.teams = [{ ...teamFixture(), name: "Owner", kind: "personal" }];
   await api.install(page);
 
   await page.goto(`/projects/${PROJECT_ID}/settings`);
@@ -233,6 +243,179 @@ test("a personal space is named as the developer's own projects", async ({ page 
   const identifiers = page.getByRole("region", { name: "Identifiers and ownership" });
   await expect(identifiers.getByText("Your personal space", { exact: true })).toBeVisible();
   await expect(identifiers.getByText("Personal space", { exact: true })).toBeVisible();
+
+  // With the personal space owning the project and no team to move it to,
+  // transfer states that rather than offering an empty list.
+  const transfer = page.getByRole("region", { name: "Transfer ownership" });
+  await expect(transfer.getByText(/no owner to transfer it to/u)).toBeVisible();
+  await expect(transfer.getByRole("combobox")).toHaveCount(0);
+  expect(api.unhandled).toEqual([]);
+});
+
+test("renaming a project confirms, patches the name, and shows it everywhere", async ({ page }) => {
+  const api = new ProjectHomeHarness();
+  await api.install(page);
+  const dialogs: string[] = [];
+  page.on("dialog", (dialog) => {
+    dialogs.push(dialog.message());
+    void dialog.accept();
+  });
+
+  await page.goto(`/projects/${PROJECT_ID}/settings`);
+  const rename = page.getByRole("region", { name: "Project name" });
+  const input = rename.getByLabel("Project name");
+  await input.fill("Mako Renamed Project");
+  await expect(rename.getByRole("button", { name: "Rename" })).toBeEnabled();
+  await rename.getByRole("button", { name: "Rename" }).click();
+
+  await expect(rename.getByRole("status")).toHaveText(
+    "Renamed to Mako Renamed Project. The change is audited.",
+  );
+  expect(api.renames).toEqual([{ name: "Mako Renamed Project" }]);
+  expect(dialogs).toEqual([
+    'Rename project Mako Test Project?\n\nThe project will be called "Mako Renamed Project" everywhere it is listed. Its identifier, keys, policies, and data are unchanged.\n\nThis action will be audited.',
+  ]);
+
+  // The heading, sidebar, breadcrumb, and settings all show the new name,
+  // read back from the project, and the form is at rest again.
+  await expect(page.getByRole("heading", { name: "Mako Renamed Project", level: 1 })).toBeVisible();
+  const sidebar = page.getByRole("complementary", { name: "Project navigation" });
+  await expect(sidebar.getByRole("button", { name: "Mako Renamed Project" })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Breadcrumb" })).toContainText(
+    "Mako Renamed Project",
+  );
+  await expect(input).toHaveValue("Mako Renamed Project");
+  await expect(rename.getByRole("button", { name: "Rename" })).toBeDisabled();
+  expect(api.unhandled).toEqual([]);
+});
+
+test("transferring a personal project to a team confirms, posts the team, and shows the new owner", async ({
+  page,
+}) => {
+  const api = new ProjectHomeHarness();
+  api.project.teamId = PERSONAL_TEAM_ID;
+  await api.install(page);
+  const dialogs: string[] = [];
+  page.on("dialog", (dialog) => {
+    dialogs.push(dialog.message());
+    void dialog.accept();
+  });
+
+  await page.goto(`/projects/${PROJECT_ID}/settings`);
+  const identifiers = page.getByRole("region", { name: "Identifiers and ownership" });
+  await expect(identifiers.getByText("Your personal space", { exact: true })).toBeVisible();
+  const transfer = page.getByRole("region", { name: "Transfer ownership" });
+  const select = transfer.getByLabel("Transfer to");
+  // The personal space owns the project, so only the team is offered.
+  await expect(transfer.getByRole("option")).toHaveText(["Choose the new owner", "Mako Test Team"]);
+  await expect(transfer.getByRole("button", { name: "Transfer" })).toBeDisabled();
+  await select.selectOption(TEAM_ID);
+  await transfer.getByRole("button", { name: "Transfer" }).click();
+
+  await expect(transfer.getByRole("status")).toHaveText(
+    "Transferred to Mako Test Team; the move is audited under both owners.",
+  );
+  expect(api.transfers).toEqual([
+    { body: { teamId: TEAM_ID }, confirmation: `transfer:${PROJECT_ID}` },
+  ]);
+  expect(dialogs).toEqual([
+    "Transfer project Mako Test Project to team Mako Test Team?\n\nPolicies, users, data, and keys stay with the project. Usage limits follow the new owner's plan, and access follows the new owner's membership.\n\nThis action will be audited.",
+  ]);
+
+  // The owner is read back: settings, the sidebar link, and the breadcrumb
+  // name the team, and the select no longer offers it.
+  await expect(identifiers.getByText("Mako Test Team", { exact: true })).toBeVisible();
+  await expect(identifiers.getByText("Team", { exact: true })).toBeVisible();
+  await expect(identifiers.getByText(TEAM_ID, { exact: true })).toBeVisible();
+  const sidebar = page.getByRole("complementary", { name: "Project navigation" });
+  await expect(sidebar.getByRole("link", { name: "Mako Test Team" })).toHaveAttribute(
+    "href",
+    `/teams/${TEAM_ID}`,
+  );
+  await expect(transfer.getByRole("option")).toHaveText([
+    "Choose the new owner",
+    "Your projects (personal space)",
+  ]);
+  await expect(select).toHaveValue("");
+  expect(api.unhandled).toEqual([]);
+});
+
+test("transferring a team project to the personal space names no team", async ({ page }) => {
+  const api = new ProjectHomeHarness();
+  await api.install(page);
+  page.on("dialog", (dialog) => void dialog.accept());
+
+  await page.goto(`/projects/${PROJECT_ID}/settings`);
+  const transfer = page.getByRole("region", { name: "Transfer ownership" });
+  await transfer
+    .getByLabel("Transfer to")
+    .selectOption({ label: "Your projects (personal space)" });
+  await transfer.getByRole("button", { name: "Transfer" }).click();
+
+  await expect(transfer.getByRole("status")).toHaveText(
+    "Transferred to your personal space; the move is audited under both owners.",
+  );
+  expect(api.transfers).toEqual([{ body: {}, confirmation: `transfer:${PROJECT_ID}` }]);
+  const identifiers = page.getByRole("region", { name: "Identifiers and ownership" });
+  await expect(identifiers.getByText("Your personal space", { exact: true })).toBeVisible();
+  await expect(identifiers.getByText(PERSONAL_TEAM_ID, { exact: true })).toBeVisible();
+  const sidebar = page.getByRole("complementary", { name: "Project navigation" });
+  await expect(sidebar.getByRole("link", { name: "Your projects" })).toHaveAttribute(
+    "href",
+    `/teams/${PERSONAL_TEAM_ID}`,
+  );
+  expect(api.unhandled).toEqual([]);
+});
+
+test("a refused transfer shows the API's reason and changes nothing", async ({ page }) => {
+  const api = new ProjectHomeHarness();
+  api.failing.add("transfer");
+  await api.install(page);
+  page.on("dialog", (dialog) => void dialog.accept());
+
+  await page.goto(`/projects/${PROJECT_ID}/settings`);
+  const transfer = page.getByRole("region", { name: "Transfer ownership" });
+  await transfer
+    .getByLabel("Transfer to")
+    .selectOption({ label: "Your projects (personal space)" });
+  await transfer.getByRole("button", { name: "Transfer" }).click();
+
+  await expect(transfer.getByRole("alert")).toContainText(
+    "You do not administer the target of this transfer.",
+  );
+  expect(api.transfers).toEqual([{ body: {}, confirmation: `transfer:${PROJECT_ID}` }]);
+  await expect(transfer.getByRole("status")).toHaveCount(0);
+  expect(api.project.teamId).toBe(TEAM_ID);
+  const identifiers = page.getByRole("region", { name: "Identifiers and ownership" });
+  await expect(identifiers.getByText("Mako Test Team", { exact: true })).toBeVisible();
+  await expect(transfer.getByLabel("Transfer to")).toHaveValue("personal");
+  await expect(transfer.getByRole("button", { name: "Transfer" })).toBeEnabled();
+  expect(api.unhandled).toEqual([]);
+});
+
+test("dismissing a rename or transfer confirmation sends nothing", async ({ page }) => {
+  const api = new ProjectHomeHarness();
+  await api.install(page);
+  page.on("dialog", (dialog) => void dialog.dismiss());
+
+  await page.goto(`/projects/${PROJECT_ID}/settings`);
+  const rename = page.getByRole("region", { name: "Project name" });
+  await rename.getByLabel("Project name").fill("Never Applied");
+  await rename.getByRole("button", { name: "Rename" }).click();
+  const transfer = page.getByRole("region", { name: "Transfer ownership" });
+  await transfer
+    .getByLabel("Transfer to")
+    .selectOption({ label: "Your projects (personal space)" });
+  await transfer.getByRole("button", { name: "Transfer" }).click();
+
+  // The draft and selection stay for another attempt; nothing reached the API.
+  await expect(rename.getByLabel("Project name")).toHaveValue("Never Applied");
+  await expect(transfer.getByLabel("Transfer to")).toHaveValue("personal");
+  await expect(page.getByRole("heading", { name: "Mako Test Project", level: 1 })).toBeVisible();
+  expect(api.renames).toEqual([]);
+  expect(api.transfers).toEqual([]);
+  expect(api.project.name).toBe("Mako Test Project");
+  expect(api.project.teamId).toBe(TEAM_ID);
   expect(api.unhandled).toEqual([]);
 });
 
@@ -240,12 +423,14 @@ class ProjectHomeHarness {
   readonly unhandled: string[] = [];
   readonly failing = new Set<string>();
   readonly deletionConfirmations: string[] = [];
+  readonly renames: { name: string }[] = [];
+  readonly transfers: { body: unknown; confirmation: string }[] = [];
   readonly project = projectFixture();
   readonly environments = [
     environmentFixture(ENVIRONMENT_ID, "development"),
     environmentFixture(PREVIEW_ENVIRONMENT_ID, "preview"),
   ];
-  team = teamFixture();
+  teams = [teamFixture(), personalSpaceFixture()];
 
   async install(page: Page) {
     await page.route("**/v1/**", (route) => void this.handle(route));
@@ -262,9 +447,38 @@ class ProjectHomeHarness {
     const environment = path.match(/^\/v1\/projects\/prj_abcdefgh\/environments\/(env_[a-z]+)\//u);
     const environmentId = environment?.[1];
 
-    if (path === `/v1/teams/${TEAM_ID}` && method === "GET") {
-      await json(route, this.team);
+    const team = path.match(/^\/v1\/teams\/(org_[a-z]+)$/u)?.[1];
+
+    if (path === "/v1/teams" && method === "GET") {
+      await json(route, { items: this.teams });
+    } else if (team !== undefined && method === "GET") {
+      const found = this.teams.find((candidate) => candidate.id === team);
+      if (found === undefined) {
+        await json(route, apiError("not_found", "No such team."), 404);
+      } else {
+        await json(route, found);
+      }
     } else if (path === `/v1/projects/${PROJECT_ID}` && method === "GET") {
+      await json(route, this.project);
+    } else if (path === `/v1/projects/${PROJECT_ID}` && method === "PATCH") {
+      const body = request.postDataJSON() as { name: string };
+      this.renames.push({ name: body.name });
+      this.project.name = body.name;
+      this.project.updatedAt = LATER;
+      await json(route, this.project);
+    } else if (path === `/v1/projects/${PROJECT_ID}/actions/transfer` && method === "POST") {
+      const body = request.postDataJSON() as { teamId?: string };
+      this.transfers.push({ body, confirmation: request.headers().confirmation ?? "" });
+      if (this.failing.has("transfer")) {
+        await json(
+          route,
+          apiError("permission_denied", "You do not administer the target of this transfer."),
+          403,
+        );
+        return;
+      }
+      this.project.teamId = body.teamId ?? PERSONAL_TEAM_ID;
+      this.project.updatedAt = LATER;
       await json(route, this.project);
     } else if (path === `/v1/projects/${PROJECT_ID}` && method === "DELETE") {
       this.deletionConfirmations.push(request.headers().confirmation ?? "");
@@ -304,6 +518,17 @@ function teamFixture() {
     id: TEAM_ID,
     name: "Mako Test Team",
     kind: "team",
+    state: "active",
+    createdAt: NOW,
+    updatedAt: NOW,
+  };
+}
+
+function personalSpaceFixture() {
+  return {
+    id: PERSONAL_TEAM_ID,
+    name: "Owner",
+    kind: "personal",
     state: "active",
     createdAt: NOW,
     updatedAt: NOW,

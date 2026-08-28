@@ -197,7 +197,7 @@ const secretCommand = {
   operations: [],
   options: { "secret-file": { type: "string", description: "write the secret here" } },
   run: (context, args) =>
-    context.secret("api key", "sk_live_do_not_log", { id: "key_1", kind: "public" }, args.string("secret-file")),
+    context.secret("api key", "api-key-value-do-not-log", { id: "key_1", kind: "public" }, args.string("secret-file")),
 };
 
 const destructiveCommand = {
@@ -251,21 +251,21 @@ const probes = [secretCommand, destructiveCommand, waitCommand, pagedCommand, st
 test("secrets print exactly once: block, JSON field, or 0600 file", async (t) => {
   const block = await runCli(["probe", "secret"], { commands: probes });
   assert.equal(block.code, 0, block.stderr);
-  assert.equal(block.stdout.split("sk_live_do_not_log").length - 1, 1);
+  assert.equal(block.stdout.split("api-key-value-do-not-log").length - 1, 1);
   assert.match(block.stdout, /api key \(shown once\)/u);
-  assert.doesNotMatch(block.stderr, /sk_live/u);
+  assert.doesNotMatch(block.stderr, /api-key-value/u);
 
   const json = await runCli(["probe", "secret", "--json"], { commands: probes });
   const parsed = JSON.parse(json.stdout);
-  assert.equal(parsed.secret, "sk_live_do_not_log");
+  assert.equal(parsed.secret, "api-key-value-do-not-log");
   assert.equal(parsed.id, "key_1");
 
   const directory = await configDir(t);
   const file = join(directory, "key.txt");
   const toFile = await runCli(["probe", "secret", "--secret-file", file], { commands: probes });
   assert.equal(toFile.code, 0, toFile.stderr);
-  assert.doesNotMatch(toFile.stdout, /sk_live/u);
-  assert.equal(await readFile(file, "utf8"), "sk_live_do_not_log\n");
+  assert.doesNotMatch(toFile.stdout, /api-key-value/u);
+  assert.equal(await readFile(file, "utf8"), "api-key-value-do-not-log\n");
   assert.equal((await stat(file)).mode & 0o777, 0o600);
 });
 

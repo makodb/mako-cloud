@@ -154,6 +154,12 @@
   font-size: 0.8rem;
 }
 
+/* Settings forms sit in full-span panels; a bound keeps one input from
+   stretching across the whole content column. */
+.project-home-form {
+  max-width: 40rem;
+}
+
 .project-home-actions {
   display: flex;
   flex-wrap: wrap;

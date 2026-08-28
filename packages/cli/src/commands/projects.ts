@@ -15,6 +15,14 @@ const TEAM_OPTION: Readonly<Record<string, OptionSpec>> = {
   },
 };
 
+const TRANSFER_TEAM_OPTION: Readonly<Record<string, OptionSpec>> = {
+  team: {
+    type: "string",
+    description: "Team that receives the project (default: your personal space)",
+    placeholder: "<team-id>",
+  },
+};
+
 const PROJECT_COLUMNS: readonly TableColumn[] = [
   { key: "id" },
   { key: "name" },
@@ -155,6 +163,44 @@ export const projectsCommands: readonly Command[] = [
       const projectId = args.requirePositional(0, "project-id");
       const client = await context.management();
       await settleAndPrint(context, await client.requestProjectDeletion(projectId, projectId));
+    },
+  },
+  {
+    path: ["projects", "rename"],
+    summary: "Rename a project",
+    operations: ["updateProject"],
+    positionals: [PROJECT_ID, { name: "name", description: "New project name", required: true }],
+    run: async (context, args) => {
+      const client = await context.management();
+      context.out(
+        await client.updateProject(
+          args.requirePositional(0, "project-id"),
+          args.requirePositional(1, "name"),
+        ),
+      );
+    },
+  },
+  {
+    path: ["projects", "transfer"],
+    summary: "Move a project to a team you administer, or to your personal space",
+    operations: ["transferProject"],
+    positionals: [PROJECT_ID],
+    options: TRANSFER_TEAM_OPTION,
+    destructive: {
+      action: "transfer project",
+      resource: (args) => args.requirePositional(0, "project-id"),
+    },
+    run: async (context, args) => {
+      const projectId = args.requirePositional(0, "project-id");
+      const client = await context.management();
+      const moved = await client.transferProject(projectId, args.string("team"), projectId);
+      context.out(moved);
+      if (!context.json) {
+        context.info(
+          `Project ${moved.id} now belongs to ${moved.teamId}; ` +
+            "the transfer is audited under both the previous and the new owner.",
+        );
+      }
     },
   },
 ];
