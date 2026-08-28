@@ -10,7 +10,7 @@
   },
   "planHash": "d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073",
   "source": {
-    "digest": "23faaad78bac41410e293dc89fbbb734994fe4afa811aa65ecc4497d46c58954",
+    "digest": "065b9a6aef426f8d3b42dadc0b65ee86e31f226144a7eaaf282c17dcd2ec0820",
     "files": [
       {
         "path": ".env.example",
@@ -44,8 +44,8 @@
       },
       {
         "path": "api/openapi/mako-cloud-v1.yaml",
-        "sha256": "7794bf4339712369561b4ae5d8821fa8849330e2bc0e4248c1724d749b754931",
-        "size": 273913,
+        "sha256": "f32e4bd5fed051a22b6c958c8d14c9d4a3ad24d0b62e1376774ee6da7f0a6b80",
+        "size": 274412,
         "mode": 420
       },
       {
@@ -74,8 +74,8 @@
       },
       {
         "path": "apps/console/src/app.tsx",
-        "sha256": "880a3dcfd3d706844192bfcedf083b3ab10cf871bec9815cac29a0b8fd14dfaa",
-        "size": 16752,
+        "sha256": "becfa95b99b5b6e09f3012f1c1651e3be0568a6a54c54543b3719a5fce03f881",
+        "size": 16864,
         "mode": 420
       },
       {
@@ -158,8 +158,8 @@
       },
       {
         "path": "apps/console/src/index.ts",
-        "sha256": "81633227c8400aadc866e684a687b708f02661b9978015963750e81cf550f923",
-        "size": 3151,
+        "sha256": "4c8123ca52d02c332ccb4a0a37cae4cff95cbf79473ee38711f66fcf4426407b",
+        "size": 3170,
         "mode": 420
       },
       {
@@ -218,8 +218,8 @@
       },
       {
         "path": "apps/console/src/projects.tsx",
-        "sha256": "80536b095d8501235c730f3464ea1cb8dcc21067ec69451ef821315aed24941f",
-        "size": 15368,
+        "sha256": "8581e0a4d2e61b01e2902ba5fd32c763dc8450967eec2052ecf2b425c9b5dc7b",
+        "size": 17279,
         "mode": 420
       },
       {
@@ -236,14 +236,14 @@
       },
       {
         "path": "apps/console/src/styles.css",
-        "sha256": "1171f2866db514b081966b4d6f416aa2ef31b8743dbb76c4b0815c8436c1d573",
-        "size": 20731,
+        "sha256": "00841a541dff21b6e359773aa67b4c3b1ad650d893c17e5ffcee94efadadf2c1",
+        "size": 20752,
         "mode": 420
       },
       {
         "path": "apps/console/src/teams.tsx",
-        "sha256": "97cbb3d0db5ad12d46270509c34decb6e7065f4ef61d16521b77425f2c27116b",
-        "size": 11622,
+        "sha256": "32771ce4b53f2b06fdc5b7f891df672019e9fc1e908f98047448e2962d098de8",
+        "size": 13314,
         "mode": 420
       },
       {
@@ -260,8 +260,8 @@
       },
       {
         "path": "apps/console/test-e2e/management-workflows.spec.ts",
-        "sha256": "d6f7f390b9da825824035763be5f6890bfd90e810ad5540b1f34307ec58847bb",
-        "size": 23733,
+        "sha256": "2b452910762f9a19121152e07857f198bb3bb8cfbe2367e4f3281aba018c3ad9",
+        "size": 29084,
         "mode": 420
       },
       {
@@ -560,8 +560,8 @@
       },
       {
         "path": "crates/mako-control-plane/src/model.rs",
-        "sha256": "60f217b734923c06358ff9afb2658472994dd515ceb06ec7346e375169bd752b",
-        "size": 38422,
+        "sha256": "33408463ae955310003b58f024d8130a01a0881d8f73109ddcca8d66f0d231a1",
+        "size": 40891,
         "mode": 420
       },
       {
@@ -590,8 +590,8 @@
       },
       {
         "path": "crates/mako-control-plane/src/organization.rs",
-        "sha256": "b208622d93a28198194961a777310c89328166250b60e6aca693eef5b6a978d8",
-        "size": 53491,
+        "sha256": "75a041ed0b6a61300c68391004d2b7b20183504b025382c1518ba15198e2cd3e",
+        "size": 60016,
         "mode": 420
       },
       {
@@ -1144,6 +1144,12 @@
         "path": "crates/mako-smoke/tests/happy_path.rs",
         "sha256": "90cdff680c290ec84468e4ea0cf334eebd35862c6e69ad1537be707dbf16011f",
         "size": 7951,
+        "mode": 420
+      },
+      {
+        "path": "crates/mako-smoke/tests/personal_space.rs",
+        "sha256": "4986dfb63e99a0b57c602e25a2cdfb0c9c15a48ae195de705c664b6c3813d518",
+        "size": 5605,
         "mode": 420
       },
       {
@@ -2156,8 +2162,8 @@
       },
       {
         "path": "packages/api-types/src/generated/schema.ts",
-        "sha256": "49ad676c5ad73bb743031c15fab853cd5018ecd3bb8b5dc29c8652fba924f1dd",
-        "size": 323503,
+        "sha256": "84fddfb78051d169cdccd3de4122382278d823af88f9f85425ea8e56b3009907",
+        "size": 323988,
         "mode": 420
       },
       {
@@ -2312,8 +2318,8 @@
       },
       {
         "path": "packages/management-sdk/src/index.ts",
-        "sha256": "ad766416daa794f01eafdf9493c14f83cc1c4239bd2e5a0ee86476136bf637b6",
-        "size": 86965,
+        "sha256": "f75d49ff715b20a9f5bc2c86589ee8ba7054a087619c82b731c650467b740e51",
+        "size": 87053,
         "mode": 420
       },
       {
@@ -2474,8 +2480,8 @@
       },
       {
         "path": "scripts/build-public-beta-release.js",
-        "sha256": "71bd7f354fba674f71438395f3527cc4b66305c31388a4b903a71142509eaaf1",
-        "size": 13300,
+        "sha256": "094f7f2e34d81e1a9c656d17b6b50aa69337d4f5310529f286578ea397d272ae",
+        "size": 13591,
         "mode": 420
       },
       {
@@ -2708,8 +2714,8 @@
       },
       {
         "path": "scripts/run-public-beta-hosted-benchmark.js",
-        "sha256": "232e0ded44dcb6087d2ad83d8209733f88f5cb7bdc5ebedd597223a9d18e4fb9",
-        "size": 18032,
+        "sha256": "004a93d753c39fbb4cb8f9f78be0bdc019da4852304b25e2bc299e9fdc23388f",
+        "size": 18415,
         "mode": 420
       },
       {
@@ -3032,8 +3038,8 @@
       },
       {
         "path": "services/mako-control-plane/src/management_http.rs",
-        "sha256": "827141795002a387924e08f46eddf66f90d0c0f88fd51533d65f03513dc4b95f",
-        "size": 72937,
+        "sha256": "445e98d5fdbea4014b110f84d61fef71703a327196529c83739cd7e3d423ff13",
+        "size": 74226,
         "mode": 420
       },
       {
@@ -3244,13 +3250,13 @@
     ]
   },
   "artifacts": {
-    "digest": "0a5b5f57e522fa2adbb426eeb43da2520984dc2cdaddc1645aa85d323488ba1e",
+    "digest": "6e4325108e7340062d9c5a97678bcfed1832fdc3fe0c1e0bbaf540096fe570fe",
     "files": [
       {
         "path": "bin/mako-control-plane",
         "source": "target/release/mako-control-plane",
-        "sha256": "b18fae133e416d0754121a9d3b6bb975a226e01730953040e68130e7e118a535",
-        "size": 16119656,
+        "sha256": "f9d1c8301aab804a6fda76affe221c1f50cf40afc2a1068669822735a509b19a",
+        "size": 16138888,
         "mode": 493
       },
       {
@@ -3291,7 +3297,7 @@
       {
         "path": "bin/mako-operator-projection",
         "source": "target/release/mako-operator-projection",
-        "sha256": "3294b50cdefa7567cb61c7ea548199512752899b2d30409e225d3d3831ce6229",
+        "sha256": "5c3979f2197f740c22d92583e067b121f2f74b753413e083c5f8ab76387f6da3",
         "size": 8351296,
         "mode": 493
       },
@@ -3324,32 +3330,32 @@
         "mode": 493
       },
       {
-        "path": "console/assets/index-CSuZFsv_.css",
-        "source": "apps/console/web-dist/assets/index-CSuZFsv_.css",
-        "sha256": "64388ac06f4f54771a0f901a930c7448113294d49985888a01a8ded6dcca4157",
-        "size": 16595,
+        "path": "console/assets/index-DRtptmRX.js",
+        "source": "apps/console/web-dist/assets/index-DRtptmRX.js",
+        "sha256": "c2eaf20925efb7e48859c765428e69434ea4b4cd79490249d32683524a73c09d",
+        "size": 454838,
         "mode": 420
       },
       {
-        "path": "console/assets/index-gN8KcZ5r.js",
-        "source": "apps/console/web-dist/assets/index-gN8KcZ5r.js",
-        "sha256": "36e930df140031be95172e1455f4d3d01546f12eea7a592d3092f39a08b0b71a",
-        "size": 453155,
+        "path": "console/assets/index-WmmwJK2F.css",
+        "source": "apps/console/web-dist/assets/index-WmmwJK2F.css",
+        "sha256": "f38dabed417cf898d7113dc3b093dda637c488efcfce7f88a28c3bd9d5ab3b5f",
+        "size": 16615,
         "mode": 420
       },
       {
         "path": "console/index.html",
         "source": "apps/console/web-dist/index.html",
-        "sha256": "6d87682b453e3e2aec405933a57d0207eb2f701238c4d1f646d6169b10368e41",
+        "sha256": "1cae3210d2eda42fd43b644735c6b5676a11563d177a9730e2d4fce27eab143d",
         "size": 885,
         "mode": 420
       }
     ]
   },
-  "releaseDigest": "b0d4cd2b1b992a1f254b90e8f0658dee370486a9f8f9ba43c67c8daf10086c3d",
-  "generatedAt": "2026-08-28T01:27:21.392Z",
+  "releaseDigest": "d26d4b8263e9c3e3795759d48e48c2f3b82e9ce6a6e753e7a604933f7a313af0",
+  "generatedAt": "2026-08-28T04:59:51.251Z",
   "candidateLayout": {
-    "root": ".local/public-beta-candidates/b0d4cd2b1b992a1f254b90e8f0658dee370486a9f8f9ba43c67c8daf10086c3d",
+    "root": ".local/public-beta-candidates/d26d4b8263e9c3e3795759d48e48c2f3b82e9ce6a6e753e7a604933f7a313af0",
     "manifest": "manifest.json",
     "binaries": "bin",
     "console": "console"
