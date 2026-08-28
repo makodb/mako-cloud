@@ -453,10 +453,30 @@ fn handle_create_project(
     let idempotency = require_idempotency(request)?.to_owned();
     let body: CreateProjectWire = parse_json(request)?;
     with_developer(graph, request, |actor, now| async move {
+        // No team named means an individual project: it lives in the
+        // caller's personal space, created on first use under an id derived
+        // from their identity so a retry lands on the same space.
+        let organization_id = match body.organization_id.clone() {
+            Some(organization_id) => organization_id,
+            None => {
+                let personal_id = OrganizationId::parse(stable_id(
+                    "org",
+                    &["personal-space", actor.identity_id().as_str()],
+                ))
+                .map_err(|_| internal(request, "personal space identifier generation failed"))?;
+                graph
+                    .organization_service()
+                    .ensure_personal_organization(&actor, personal_id, now)
+                    .await
+                    .map_err(|error| organization_error(request, error))?
+                    .id()
+                    .clone()
+            }
+        };
         let id = ProjectId::parse(stable_id(
             "prj",
             &[
-                body.organization_id.as_str(),
+                organization_id.as_str(),
                 actor.identity_id().as_str(),
                 &idempotency,
             ],
@@ -468,7 +488,7 @@ fn handle_create_project(
                 &actor,
                 NewProject {
                     id: id.clone(),
-                    organization_id: body.organization_id.clone(),
+                    organization_id: organization_id.clone(),
                     name: body.name.clone(),
                     region: body.region.clone(),
                     now_unix_seconds: now,
@@ -483,7 +503,7 @@ fn handle_create_project(
                     .get_project(&actor, &id, now)
                     .await
                     .map_err(|error| project_error(request, error))?;
-                if existing.organization_id() != &body.organization_id
+                if existing.organization_id() != &organization_id
                     || existing.name() != body.name
                     || existing.region() != body.region
                 {
@@ -1675,6 +1695,10 @@ fn organization_error(request: &HttpRequest, error: OrganizationServiceError) ->
             invalid(request, "invitation is invalid or expired")
         }
         OrganizationServiceError::LastOwner => conflict(request, "team must retain an owner"),
+        OrganizationServiceError::PersonalSpace => conflict(
+            request,
+            "a personal space has exactly one member and cannot be deleted",
+        ),
         OrganizationServiceError::Model(_) => {
             conflict(request, "team lifecycle or input is invalid")
         }
@@ -1776,6 +1800,7 @@ fn organization_wire(
     Ok(OrganizationWire {
         id: record.id().as_str().to_owned(),
         name: record.name().to_owned(),
+        kind: record.kind().as_str(),
         state: lifecycle(record.lifecycle()),
         created_at: format_timestamp(request, record.created_at_unix_seconds())?,
         updated_at: format_timestamp(request, record.updated_at_unix_seconds())?,
@@ -1899,8 +1924,10 @@ struct RoleWire {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct CreateProjectWire {
-    #[serde(rename = "teamId")]
-    organization_id: OrganizationId,
+    /// Absent for an individual project, which lives in the caller's
+    /// personal space.
+    #[serde(rename = "teamId", default)]
+    organization_id: Option<OrganizationId>,
     name: String,
     region: String,
 }
@@ -1915,6 +1942,7 @@ struct ItemsWire<T> {
 struct OrganizationWire {
     id: String,
     name: String,
+    kind: &'static str,
     state: &'static str,
     created_at: String,
     updated_at: String,

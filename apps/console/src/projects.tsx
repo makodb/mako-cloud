@@ -8,9 +8,15 @@ import { confirmDestructiveAction } from "./safety.js";
 
 export function ProjectsPanel({
   teamId,
+  scope = "team",
   onOpen,
 }: {
   readonly teamId: string;
+  /**
+   * A personal space owns its projects implicitly: creation posts without a
+   * `teamId` and the server resolves the caller's space.
+   */
+  readonly scope?: "team" | "personal";
   readonly onOpen: (projectId: string) => void;
 }) {
   const client = useManagementClient();
@@ -30,14 +36,9 @@ export function ProjectsPanel({
   const create = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const form = event.currentTarget;
-    const data = new FormData(form);
     try {
       const project = await client.createProject(
-        {
-          teamId,
-          name: String(data.get("name") ?? "").trim(),
-          region: String(data.get("region") ?? "").trim(),
-        },
+        { ...(scope === "personal" ? {} : { teamId }), ...projectInput(form) },
         idempotencyKey(),
       );
       form.reset();
@@ -73,19 +74,77 @@ export function ProjectsPanel({
       <details>
         <summary>Create project</summary>
         <form onSubmit={(event) => void create(event)}>
-          <label>
-            Project name
-            <input name="name" required maxLength={200} />
-          </label>
-          <label>
-            Data region
-            <input name="region" required maxLength={64} placeholder="us-east" />
-          </label>
+          <ProjectFormFields />
           <button type="submit">Create and provision</button>
         </form>
       </details>
     </section>
   );
+}
+
+/**
+ * The empty state of a developer without a personal space yet. The first
+ * individual project is created without naming a team; the server creates the
+ * personal space that owns it on the way, so the caller reloads its teams.
+ */
+export function FirstProjectPanel({ onCreated }: { readonly onCreated: () => Promise<void> }) {
+  const client = useManagementClient();
+  const [failure, setFailure] = useState<ConsoleApiFailure | null>(null);
+  const [pending, setPending] = useState(false);
+  const create = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    setPending(true);
+    setFailure(null);
+    try {
+      await client.createProject(projectInput(form), idempotencyKey());
+      form.reset();
+      await onCreated();
+    } catch (error) {
+      setFailure(toConsoleApiFailure(error));
+    } finally {
+      setPending(false);
+    }
+  };
+  return (
+    <section className="panel" aria-labelledby="first-project-title">
+      <h2 id="first-project-title">Create your first project</h2>
+      <p>
+        Individual projects live in your personal space, which is created together with your first
+        project.
+      </p>
+      <ApiFailureNotice failure={failure} />
+      <form onSubmit={(event) => void create(event)}>
+        <ProjectFormFields />
+        <button type="submit" disabled={pending}>
+          {pending ? "Creating…" : "Create and provision"}
+        </button>
+      </form>
+    </section>
+  );
+}
+
+function ProjectFormFields() {
+  return (
+    <>
+      <label>
+        Project name
+        <input name="name" required maxLength={200} />
+      </label>
+      <label>
+        Data region
+        <input name="region" required maxLength={64} placeholder="us-east" />
+      </label>
+    </>
+  );
+}
+
+function projectInput(form: HTMLFormElement): { readonly name: string; readonly region: string } {
+  const data = new FormData(form);
+  return {
+    name: String(data.get("name") ?? "").trim(),
+    region: String(data.get("region") ?? "").trim(),
+  };
 }
 
 export function ProjectScreen({
@@ -193,7 +252,7 @@ export function ProjectScreen({
         disabled={project === null}
         onClick={() => project !== null && onBack(project.teamId)}
       >
-        ← Team
+        ← Back
       </button>
       <div className="section-heading">
         <div>

@@ -90,5 +90,5 @@ export {
   type ConsoleRoute,
 } from "./router.js";
 export { InvitationAcceptScreen, TeamScreen, TeamsScreen } from "./teams.js";
-export { LifecycleBadge, ProjectScreen, ProjectsPanel } from "./projects.js";
+export { FirstProjectPanel, LifecycleBadge, ProjectScreen, ProjectsPanel } from "./projects.js";
 export { PolicyScreen } from "./policies.js";

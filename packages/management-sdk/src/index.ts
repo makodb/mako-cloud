@@ -558,8 +558,9 @@ export class MakoManagementClient {
     );
   }
 
+  /** Omit `teamId` to create an individual project in the caller's personal space. */
   async createProject(
-    input: { readonly teamId: string; readonly name: string; readonly region: string },
+    input: { readonly teamId?: string; readonly name: string; readonly region: string },
     idempotencyKey: string,
   ): Promise<Project> {
     return unwrap(

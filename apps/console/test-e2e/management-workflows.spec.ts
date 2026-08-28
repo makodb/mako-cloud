@@ -3,6 +3,7 @@ import { expect, test, type Page, type Route } from "@playwright/test";
 const NOW = "2026-08-06T12:00:00.000Z";
 const LATER = "2026-08-07T12:00:00.000Z";
 const TEAM_ID = "org_abcdefgh";
+const PERSONAL_TEAM_ID = "org_personal";
 const PROJECT_ID = "prj_abcdefgh";
 const ENVIRONMENT_ID = "env_abcdefgh";
 
@@ -106,6 +107,70 @@ test("role management, provisioning health, and deletion grace run through the A
   expect(api.unhandled).toEqual([]);
 });
 
+test("a personal space leads the home screen and creates projects without naming a team", async ({
+  page,
+}) => {
+  const api = new ManagementApiHarness();
+  await api.install(page);
+
+  // Before the first individual project exists there is no personal space:
+  // the home screen leads with the first-project form, and the teams the
+  // developer has joined follow it.
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "Your projects" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Create your first project" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Teams" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Mako Test Team/u })).toBeVisible();
+
+  await page.getByLabel("Project name").fill("Side project");
+  await page.getByLabel("Data region").fill("local");
+  await page.getByRole("button", { name: "Create and provision" }).click();
+
+  // The space now exists and its projects replace the empty state; it is
+  // never listed among the teams.
+  await expect(page.getByRole("button", { name: /Side project/u })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Create your first project" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /Mako Test Team/u })).toHaveCount(1);
+  await expect(page.locator(".resource-card")).toHaveCount(1);
+  expect(api.personalSpace?.kind).toBe("personal");
+
+  // Creating from the personal projects panel posts without a team as well.
+  await page.getByText("Create project", { exact: true }).click();
+  await page.getByLabel("Project name").fill("Second project");
+  await page.getByLabel("Data region").fill("local");
+  await page.getByRole("button", { name: "Create and provision" }).click();
+  await expect(page).toHaveURL(/\/projects\/prj_persona2$/u);
+  await expect(page.getByRole("heading", { name: "Second project" })).toBeVisible();
+  expect(api.createProjectBodies).toEqual([
+    { name: "Side project", region: "local" },
+    { name: "Second project", region: "local" },
+  ]);
+  expect(api.createProjectBodies.map((body) => Object.keys(body).sort())).toEqual([
+    ["name", "region"],
+    ["name", "region"],
+  ]);
+
+  // The space's own screen is labelled as such and hides membership
+  // management: a personal space has exactly one member and refuses changes.
+  await page.goto(`/teams/${PERSONAL_TEAM_ID}`);
+  await expect(page.getByText("Personal space", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Owner", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Billing" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Side project/u })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Members" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Invite a member" })).toHaveCount(0);
+  const switcher = page.getByLabel("Switch team");
+  await expect(switcher).toHaveValue(PERSONAL_TEAM_ID);
+  await expect(switcher.locator("option")).toHaveText(["Mako Test Team", "Your projects"]);
+
+  // A joined team still manages its members.
+  await switcher.selectOption(TEAM_ID);
+  await expect(page.getByRole("heading", { name: "Mako Test Team" })).toBeVisible();
+  await expect(page.getByText("Team", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Members" })).toBeVisible();
+  expect(api.unhandled).toEqual([]);
+});
+
 test("policy and application-user administration enforce full management workflows", async ({
   page,
 }) => {
@@ -206,6 +271,9 @@ class ManagementApiHarness {
   readonly members = [membership("dev_abcdefgh", "owner"), membership("dev_member01", "developer")];
   readonly project = projectFixture();
   readonly environment = environmentFixture();
+  personalSpace: ReturnType<typeof personalSpaceFixture> | null = null;
+  readonly personalProjects: ReturnType<typeof projectFixture>[] = [];
+  readonly createProjectBodies: Record<string, unknown>[] = [];
   policy = policyFixture("draft");
   activePolicy: Record<string, unknown> = { defaultDeny: true, authorizationEpoch: 1 };
   user = userFixture();
@@ -228,42 +296,21 @@ class ManagementApiHarness {
     }
 
     if (path === "/v1/teams" && method === "GET") {
-      await json(route, { items: [teamFixture()] });
+      await json(route, {
+        items: this.personalSpace === null ? [teamFixture()] : [teamFixture(), this.personalSpace],
+      });
     } else if (path === `/v1/teams/${TEAM_ID}` && method === "GET") {
       await json(route, teamFixture());
     } else if (path === `/v1/teams/${TEAM_ID}/bill` && method === "GET") {
-      await json(route, {
-        teamId: TEAM_ID,
-        planId: "pro",
-        periodStart: "2026-08-01T00:00:00Z",
-        periodEnd: NOW,
-        observedAt: NOW,
-        finalized: false,
-        closedAt: null,
-        baseMicroDollars: 25_000_000,
-        lineItems: [
-          {
-            resource: "storage_bytes",
-            quantity: 120 * 1024 * 1024,
-            included: 500 * 1024 * 1024,
-            overage: 0,
-            amountMicroDollars: 0,
-          },
-          {
-            resource: "edge_invocations_per_month",
-            quantity: 1200,
-            included: 500000,
-            overage: 0,
-            amountMicroDollars: 0,
-          },
-        ],
-        totalMicroDollars: 25_000_000,
-        creditsMicroDollars: 2_500_000,
-        balanceMicroDollars: -22_500_000,
-        collectable: false,
-        notice:
-          "This bill is informational. Nothing is payable and no charge will be made during the beta.",
-      });
+      await json(route, billFixture(TEAM_ID));
+    } else if (
+      path === `/v1/teams/${PERSONAL_TEAM_ID}` &&
+      method === "GET" &&
+      this.personalSpace !== null
+    ) {
+      await json(route, this.personalSpace);
+    } else if (path === `/v1/teams/${PERSONAL_TEAM_ID}/bill` && method === "GET") {
+      await json(route, billFixture(PERSONAL_TEAM_ID));
     } else if (path === `/v1/teams/${TEAM_ID}/members` && method === "GET") {
       await json(route, { items: this.members });
     } else if (path === `/v1/teams/${TEAM_ID}/members/dev_member01` && method === "PATCH") {
@@ -273,7 +320,34 @@ class ManagementApiHarness {
       this.members[1] = membership("dev_member01", body.role);
       await json(route, this.members[1]);
     } else if (path === "/v1/projects" && method === "GET") {
-      await json(route, { items: [this.project] });
+      await json(route, {
+        items:
+          url.searchParams.get("teamId") === PERSONAL_TEAM_ID
+            ? this.personalProjects
+            : [this.project],
+      });
+    } else if (path === "/v1/projects" && method === "POST") {
+      // Without a teamId the project lands in the caller's personal space,
+      // which is created on first use.
+      const body = request.postDataJSON() as { name: string; region: string };
+      this.createProjectBodies.push(body);
+      this.personalSpace ??= personalSpaceFixture();
+      const project = {
+        ...projectFixture(),
+        id: `prj_persona${this.personalProjects.length + 1}`,
+        teamId: PERSONAL_TEAM_ID,
+        name: body.name,
+        region: body.region,
+      };
+      this.personalProjects.push(project);
+      await json(route, project, 202);
+    } else if (method === "GET" && /^\/v1\/projects\/prj_persona\d$/u.test(path)) {
+      await json(
+        route,
+        this.personalProjects.find((project) => path.endsWith(project.id)),
+      );
+    } else if (method === "GET" && /^\/v1\/projects\/prj_persona\d\/environments$/u.test(path)) {
+      await json(route, { items: [] });
     } else if (path === `/v1/projects/${PROJECT_ID}` && method === "GET") {
       await json(route, this.project);
     } else if (path === `/v1/projects/${PROJECT_ID}` && method === "DELETE") {
@@ -427,9 +501,56 @@ function teamFixture() {
   return {
     id: TEAM_ID,
     name: "Mako Test Team",
+    kind: "team",
     state: "active",
     createdAt: NOW,
     updatedAt: NOW,
+  };
+}
+
+function personalSpaceFixture() {
+  return {
+    id: PERSONAL_TEAM_ID,
+    name: "Owner",
+    kind: "personal",
+    state: "active",
+    createdAt: NOW,
+    updatedAt: NOW,
+  };
+}
+
+function billFixture(teamId: string) {
+  return {
+    teamId,
+    planId: "pro",
+    periodStart: "2026-08-01T00:00:00Z",
+    periodEnd: NOW,
+    observedAt: NOW,
+    finalized: false,
+    closedAt: null,
+    baseMicroDollars: 25_000_000,
+    lineItems: [
+      {
+        resource: "storage_bytes",
+        quantity: 120 * 1024 * 1024,
+        included: 500 * 1024 * 1024,
+        overage: 0,
+        amountMicroDollars: 0,
+      },
+      {
+        resource: "edge_invocations_per_month",
+        quantity: 1200,
+        included: 500000,
+        overage: 0,
+        amountMicroDollars: 0,
+      },
+    ],
+    totalMicroDollars: 25_000_000,
+    creditsMicroDollars: 2_500_000,
+    balanceMicroDollars: -22_500_000,
+    collectable: false,
+    notice:
+      "This bill is informational. Nothing is payable and no charge will be made during the beta.",
   };
 }
 

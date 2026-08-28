@@ -16,6 +16,12 @@ semantics and warnings are documented in [Developer data workspace](developer-da
 
 - Management endpoints use a developer session or scoped team
   automation token.
+- Projects belong to teams. Every developer also has a personal space -- an
+  implicit one-member team, created the first time they create a project
+  without naming a `teamId` and reused thereafter -- that holds their
+  individual projects. It is listed among their teams with `kind: personal`,
+  is billed and limited like any team, and refuses invitations, membership
+  changes, and deletion.
 - Project auth, document, replication, and protected function endpoints use an
   application-user session scoped to one project and environment.
 - Public project keys identify and meter a client but grant no policy bypass.

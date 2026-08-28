@@ -682,6 +682,71 @@ impl OrganizationService {
         Ok(organization)
     }
 
+    /// The developer's personal space, created on first use.
+    ///
+    /// The id is derived by the caller from the developer's identity, so two
+    /// concurrent first uses race to the same record: whichever creation
+    /// lands first wins and the other reads it back. A record that exists
+    /// under that id but is not a personal space, or does not belong to the
+    /// caller, is refused rather than adopted.
+    pub async fn ensure_personal_organization(
+        &self,
+        actor: &DeveloperPrincipal,
+        organization_id: OrganizationId,
+        now_unix_seconds: u64,
+    ) -> Result<OrganizationRecord, OrganizationServiceError> {
+        if let Some(existing) = self.store.get_organization(&organization_id).await? {
+            return self.owned_personal_space(actor, existing).await;
+        }
+        let organization = OrganizationRecord::new_personal(
+            organization_id.clone(),
+            actor.display_name(),
+            now_unix_seconds,
+        )?;
+        let owner = MembershipRecord::new(
+            organization.id().clone(),
+            actor.identity_id().clone(),
+            OrganizationRole::Owner,
+            now_unix_seconds,
+        );
+        match self.store.create_organization(&organization, &owner).await {
+            Ok(()) => {}
+            Err(OrganizationStoreError::Conflict) => {
+                let existing = self
+                    .store
+                    .get_organization(&organization_id)
+                    .await?
+                    .ok_or(OrganizationServiceError::NotFound)?;
+                return self.owned_personal_space(actor, existing).await;
+            }
+            Err(error) => return Err(error.into()),
+        }
+        self.audit(
+            actor,
+            &organization,
+            ControlAuditAction::OrganizationCreate,
+            "personal_space",
+            ControlAuditOutcome::Allowed,
+            now_unix_seconds,
+        );
+        Ok(organization)
+    }
+
+    async fn owned_personal_space(
+        &self,
+        actor: &DeveloperPrincipal,
+        existing: OrganizationRecord,
+    ) -> Result<OrganizationRecord, OrganizationServiceError> {
+        if !existing.is_personal() {
+            return Err(OrganizationServiceError::Forbidden);
+        }
+        self.store
+            .get_membership(existing.id(), actor.identity_id())
+            .await?
+            .ok_or(OrganizationServiceError::Forbidden)?;
+        Ok(existing)
+    }
+
     pub async fn list_organizations(
         &self,
         actor: &DeveloperPrincipal,
@@ -777,6 +842,10 @@ impl OrganizationService {
         input: NewInvitation,
     ) -> Result<IssuedInvitation, OrganizationServiceError> {
         let organization = self.organization(&input.organization_id).await?;
+        // One person's space has nothing to invite, change, remove, or delete.
+        if organization.is_personal() {
+            return Err(OrganizationServiceError::PersonalSpace);
+        }
         let actor_membership = self
             .require_membership(
                 actor,
@@ -910,6 +979,10 @@ impl OrganizationService {
         now_unix_seconds: u64,
     ) -> Result<MembershipRecord, OrganizationServiceError> {
         let organization = self.organization(organization_id).await?;
+        // One person's space has nothing to invite, change, remove, or delete.
+        if organization.is_personal() {
+            return Err(OrganizationServiceError::PersonalSpace);
+        }
         let actor_membership = self
             .require_membership(
                 actor,
@@ -965,6 +1038,10 @@ impl OrganizationService {
         now_unix_seconds: u64,
     ) -> Result<(), OrganizationServiceError> {
         let organization = self.organization(organization_id).await?;
+        // One person's space has nothing to invite, change, remove, or delete.
+        if organization.is_personal() {
+            return Err(OrganizationServiceError::PersonalSpace);
+        }
         let actor_membership = self
             .require_membership(
                 actor,
@@ -1015,6 +1092,10 @@ impl OrganizationService {
         deadline_unix_seconds: u64,
     ) -> Result<OrganizationRecord, OrganizationServiceError> {
         let previous = self.organization(organization_id).await?;
+        // One person's space has nothing to invite, change, remove, or delete.
+        if previous.is_personal() {
+            return Err(OrganizationServiceError::PersonalSpace);
+        }
         let membership = self
             .require_membership(
                 actor,
@@ -1222,6 +1303,9 @@ pub enum OrganizationServiceError {
     Forbidden,
     InvalidInvitation,
     LastOwner,
+    /// The operation only makes sense for a team with more than one person
+    /// in it, and this is a developer's personal space.
+    PersonalSpace,
     Model(ControlModelError),
     Store(OrganizationStoreError),
 }
@@ -1233,6 +1317,9 @@ impl fmt::Display for OrganizationServiceError {
             Self::Forbidden => formatter.write_str("organization action is forbidden"),
             Self::InvalidInvitation => formatter.write_str("invitation is invalid or expired"),
             Self::LastOwner => formatter.write_str("organization must retain an owner"),
+            Self::PersonalSpace => {
+                formatter.write_str("a personal space has exactly one member and cannot be deleted")
+            }
             Self::Model(error) => error.fmt(formatter),
             Self::Store(error) => error.fmt(formatter),
         }
@@ -1466,6 +1553,72 @@ mod tests {
         assert_eq!(format!("{token:?}"), "InvitationToken([REDACTED])");
         assert!(InvitationToken::parse(token.expose_once()).is_ok());
         assert!(InvitationToken::parse("not-a-token").is_err());
+    }
+
+    /// A developer's personal space appears on first use and is the same
+    /// space on every later use; nobody else can be let into it and it
+    /// cannot be deleted, because one person's space has no one to invite
+    /// and nothing to hand over.
+    #[test]
+    fn a_personal_space_is_created_once_and_refuses_members_and_deletion() {
+        futures::executor::block_on(async {
+            let audit = Arc::new(AuditLog::default());
+            let service = service(audit.clone());
+            let alice = principal("dev_alice0000", "alice@example.test").await;
+            let mallory = principal("dev_mallory00", "mallory@example.test").await;
+            let personal_id = OrganizationId::parse("org_personalalice").expect("id");
+
+            let first = service
+                .ensure_personal_organization(&alice, personal_id.clone(), 10)
+                .await
+                .expect("first use creates the space");
+            assert!(first.is_personal());
+            assert_eq!(first.name(), alice.display_name());
+            let again = service
+                .ensure_personal_organization(&alice, personal_id.clone(), 20)
+                .await
+                .expect("second use reuses the space");
+            assert_eq!(again.id(), first.id());
+            assert_eq!(
+                again.created_at_unix_seconds(),
+                10,
+                "the second use created a new space instead of reusing the first"
+            );
+
+            // Someone else deriving the same id must not adopt it.
+            assert!(matches!(
+                service
+                    .ensure_personal_organization(&mallory, personal_id.clone(), 30)
+                    .await,
+                Err(OrganizationServiceError::Forbidden)
+            ));
+
+            // The owner cannot invite, and cannot delete.
+            let refused = service
+                .invite(
+                    &alice,
+                    NewInvitation {
+                        id: InvitationId::parse("inv_personal00").expect("invitation id"),
+                        organization_id: personal_id.clone(),
+                        normalized_email: "friend@example.test".to_owned(),
+                        role: OrganizationRole::Developer,
+                        created_at_unix_seconds: 40,
+                        expires_at_unix_seconds: 40 + 7 * 24 * 60 * 60,
+                    },
+                )
+                .await;
+            assert!(
+                matches!(refused, Err(OrganizationServiceError::PersonalSpace)),
+                "a personal space accepted an invitation: {refused:?}"
+            );
+            let deletion = service
+                .request_organization_deletion(&alice, &personal_id, 50, 50 + 30 * 24 * 60 * 60)
+                .await;
+            assert!(
+                matches!(deletion, Err(OrganizationServiceError::PersonalSpace)),
+                "a personal space accepted deletion: {deletion:?}"
+            );
+        });
     }
 
     /// A closed period is closed once: whoever derives it first writes the

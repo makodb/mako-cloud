@@ -6,55 +6,84 @@ import { ApiFailureNotice, type ConsoleApiFailure, toConsoleApiFailure } from ".
 import { useDeveloperAuth } from "./auth.js";
 import { useManagementClient } from "./management.js";
 import { BillingPanel } from "./billing.js";
-import { ProjectsPanel } from "./projects.js";
+import { FirstProjectPanel, ProjectsPanel } from "./projects.js";
 import { confirmDestructiveAction, OneTimeSecretValue } from "./safety.js";
 
 const ROLES: readonly TeamRole[] = ["owner", "administrator", "developer", "viewer"];
 
-export function TeamsScreen({ onOpen }: { readonly onOpen: (teamId: string) => void }) {
+export function TeamsScreen({
+  onOpen,
+  onOpenProject,
+}: {
+  readonly onOpen: (teamId: string) => void;
+  readonly onOpenProject: (projectId: string) => void;
+}) {
   const client = useManagementClient();
   const [teams, setTeams] = useState<Team[] | null>(null);
   const [failure, setFailure] = useState<ConsoleApiFailure | null>(null);
-  useEffect(() => {
-    let live = true;
-    client.listTeams().then(
-      (items) => live && setTeams(items),
-      (error: unknown) => live && setFailure(toConsoleApiFailure(error)),
-    );
-    return () => {
-      live = false;
-    };
+  const reload = useCallback(async () => {
+    try {
+      setTeams(await client.listTeams());
+      setFailure(null);
+    } catch (error) {
+      setFailure(toConsoleApiFailure(error));
+    }
   }, [client]);
+  useEffect(() => {
+    void reload();
+  }, [reload]);
+
+  // The personal space is an implicit one-member team that holds the caller's
+  // individual projects; it leads the screen and is never listed as a team.
+  const personalSpace = teams?.find((team) => team.kind === "personal");
+  const joinedTeams = teams?.filter((team) => team.kind === "team") ?? [];
 
   return (
-    <section aria-labelledby="teams-title">
-      <div className="section-heading">
-        <div>
-          <p className="eyebrow">Workspace</p>
-          <h1 id="teams-title">Teams</h1>
+    <>
+      <section aria-labelledby="personal-space-title">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">Personal space</p>
+            <h1 id="personal-space-title">Your projects</h1>
+          </div>
         </div>
-      </div>
-      <ApiFailureNotice failure={failure} />
-      {teams === null ? (
-        <p aria-live="polite">Loading teams…</p>
-      ) : teams.length === 0 ? (
-        <div className="panel empty-state">No teams are available for this account.</div>
-      ) : (
-        <div className="card-grid">
-          {teams.map((team) => (
-            <button
-              type="button"
-              className="resource-card"
-              key={team.id}
-              onClick={() => onOpen(team.id)}
-            >
-              <strong>{team.name}</strong>
-              <span>{team.state.replaceAll("_", " ")}</span>
-            </button>
-          ))}
+        <ApiFailureNotice failure={failure} />
+        {teams === null ? (
+          <p aria-live="polite">Loading your projects…</p>
+        ) : personalSpace === undefined ? (
+          <FirstProjectPanel onCreated={reload} />
+        ) : (
+          <ProjectsPanel teamId={personalSpace.id} scope="personal" onOpen={onOpenProject} />
+        )}
+      </section>
+      <section aria-labelledby="teams-title">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">Workspace</p>
+            <h2 id="teams-title">Teams</h2>
+          </div>
         </div>
-      )}
-    </section>
+        {teams === null ? (
+          <p aria-live="polite">Loading teams…</p>
+        ) : joinedTeams.length === 0 ? (
+          <div className="panel empty-state">No teams are available for this account.</div>
+        ) : (
+          <div className="card-grid">
+            {joinedTeams.map((team) => (
+              <button
+                type="button"
+                className="resource-card"
+                key={team.id}
+                onClick={() => onOpen(team.id)}
+              >
+                <strong>{team.name}</strong>
+                <span>{team.state.replaceAll("_", " ")}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </section>
+    </>
   );
 }
 
@@ -76,11 +105,10 @@ export function TeamScreen({
   const reload = useCallback(async () => {
     setFailure(null);
     try {
-      const [selected, available, membershipItems] = await Promise.all([
-        client.getTeam(teamId),
-        client.listTeams(),
-        client.listMembers(teamId),
-      ]);
+      const [selected, available] = await Promise.all([client.getTeam(teamId), client.listTeams()]);
+      // A personal space has exactly one member and refuses membership changes,
+      // so there is nothing to manage and nothing to fetch.
+      const membershipItems = selected.kind === "personal" ? [] : await client.listMembers(teamId);
       setTeam(selected);
       setTeams(available);
       setMembers(membershipItems);
@@ -95,12 +123,13 @@ export function TeamScreen({
   const developerId = state.status === "authenticated" ? state.session.profile.id : "";
   const currentRole = members?.find((member) => member.developerIdentityId === developerId)?.role;
   const canManage = currentRole === "owner" || currentRole === "administrator";
+  const personal = team?.kind === "personal";
 
   return (
     <section aria-labelledby="team-title">
       <div className="section-heading">
         <div>
-          <p className="eyebrow">Team</p>
+          <p className="eyebrow">{personal ? "Personal space" : "Team"}</p>
           <h1 id="team-title">{team?.name ?? "Loading…"}</h1>
         </div>
         <label>
@@ -108,7 +137,7 @@ export function TeamScreen({
           <select value={teamId} onChange={(event) => onOpen(event.currentTarget.value)}>
             {teams.map((item) => (
               <option key={item.id} value={item.id}>
-                {item.name}
+                {teamLabel(item)}
               </option>
             ))}
           </select>
@@ -116,19 +145,32 @@ export function TeamScreen({
       </div>
       <ApiFailureNotice failure={failure} />
       <div className="split-grid">
-        <MembersPanel
+        {team === null || personal ? null : (
+          <>
+            <MembersPanel
+              teamId={teamId}
+              members={members}
+              currentRole={currentRole}
+              canManage={canManage}
+              onChanged={reload}
+            />
+            <InvitationPanel teamId={teamId} canManage={canManage} onChanged={reload} />
+          </>
+        )}
+        <ProjectsPanel
           teamId={teamId}
-          members={members}
-          currentRole={currentRole}
-          canManage={canManage}
-          onChanged={reload}
+          scope={personal ? "personal" : "team"}
+          onOpen={onOpenProject}
         />
-        <InvitationPanel teamId={teamId} canManage={canManage} onChanged={reload} />
-        <ProjectsPanel teamId={teamId} onOpen={onOpenProject} />
         <BillingPanel teamId={teamId} />
       </div>
     </section>
   );
+}
+
+/** How a team reads wherever teams are listed for navigation. */
+function teamLabel(team: Team): string {
+  return team.kind === "personal" ? "Your projects" : team.name;
 }
 
 export function InvitationAcceptScreen({

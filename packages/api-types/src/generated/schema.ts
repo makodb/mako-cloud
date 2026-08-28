@@ -3421,6 +3421,11 @@ export interface components {
         Team: {
             id: components["schemas"]["TeamId"];
             name: string;
+            /**
+             * @description A team people join, or the caller's personal space: an implicit one-member team that holds their individual projects and refuses invitations, membership changes, and deletion.
+             * @enum {string}
+             */
+            kind: "team" | "personal";
             /** @enum {string} */
             state: "active" | "suspended" | "deletion_grace" | "deleting" | "deleted";
             /** Format: date-time */
@@ -5031,7 +5036,8 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    teamId: components["schemas"]["TeamId"];
+                    /** @description The team that will own the project. Omit it to create an individual project in the caller's personal space, which is created on first use. */
+                    teamId?: components["schemas"]["TeamId"];
                     name: string;
                     region: string;
                 };

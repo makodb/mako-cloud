@@ -82,7 +82,10 @@ export function ConsoleApp({
         <RequireDeveloperSession>
           <AuthenticatedShell>
             {route.name === "home" ? (
-              <TeamsScreen onOpen={(teamId) => navigate(`/teams/${teamId}`)} />
+              <TeamsScreen
+                onOpen={(teamId) => navigate(`/teams/${teamId}`)}
+                onOpenProject={(projectId) => navigate(`/projects/${projectId}`)}
+              />
             ) : route.name === "team" ? (
               <TeamScreen
                 teamId={route.teamId}

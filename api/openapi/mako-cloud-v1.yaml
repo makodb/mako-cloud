@@ -474,10 +474,12 @@ paths:
           application/json:
             schema:
               type: object
-              required: [teamId, name, region]
+              required: [name, region]
               properties:
                 teamId:
                   $ref: "#/components/schemas/TeamId"
+                  description: >-
+                    The team that will own the project. Omit it to create an individual project in the caller's personal space, which is created on first use.
                 name:
                   type: string
                   minLength: 1
@@ -6149,12 +6151,19 @@ components:
       pattern: "^[a-z][a-z0-9-]{0,62}$"
     Team:
       type: object
-      required: [id, name, state, createdAt, updatedAt]
+      required: [id, name, kind, state, createdAt, updatedAt]
       properties:
         id:
           $ref: "#/components/schemas/TeamId"
         name:
           type: string
+        kind:
+          type: string
+          enum: [team, personal]
+          description: >-
+            A team people join, or the caller's personal space: an implicit
+            one-member team that holds their individual projects and refuses
+            invitations, membership changes, and deletion.
         state:
           type: string
           enum: [active, suspended, deletion_grace, deleting, deleted]

@@ -265,6 +265,11 @@ pub struct OrganizationRecord {
     /// organization already stored is on the free plan rather than on nothing.
     #[serde(default = "free_plan_id")]
     plan_id: String,
+    /// Whether this is a team people join or one developer's personal space.
+    /// Defaulted for records stored before personal spaces existed: every
+    /// team that already exists is a team.
+    #[serde(default)]
+    kind: OrganizationKind,
     /// Every plan change, oldest first, so a billing period that spans one
     /// can be rated stretch by stretch. Empty means the plan above has held
     /// since the organization was created -- which is also what records
@@ -278,6 +283,28 @@ pub struct OrganizationRecord {
 
 fn free_plan_id() -> String {
     "free".to_owned()
+}
+
+/// A team people join, or the implicit one-member space every developer
+/// has for individual projects. A personal space is a team for billing,
+/// limits, audit, and operator purposes, and refuses everything that only
+/// makes sense with more than one person in it.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OrganizationKind {
+    #[default]
+    Team,
+    Personal,
+}
+
+impl OrganizationKind {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Team => "team",
+            Self::Personal => "personal",
+        }
+    }
 }
 
 /// One recorded plan change: which plan the organization moved to, and when.
@@ -305,6 +332,7 @@ impl OrganizationRecord {
             name,
             lifecycle: LifecycleState::Active,
             plan_id: free_plan_id(),
+            kind: OrganizationKind::Team,
             plan_history: Vec::new(),
             created_at_unix_seconds: now_unix_seconds,
             updated_at_unix_seconds: now_unix_seconds,
@@ -315,6 +343,28 @@ impl OrganizationRecord {
     #[must_use]
     pub fn id(&self) -> &OrganizationId {
         &self.id
+    }
+
+    /// A developer's personal space: the same record as a team, marked so
+    /// the surfaces that only make sense for several people can refuse it.
+    pub fn new_personal(
+        id: OrganizationId,
+        name: impl Into<String>,
+        now_unix_seconds: u64,
+    ) -> Result<Self, ControlModelError> {
+        let mut record = Self::new(id, name, now_unix_seconds)?;
+        record.kind = OrganizationKind::Personal;
+        Ok(record)
+    }
+
+    #[must_use]
+    pub const fn kind(&self) -> OrganizationKind {
+        self.kind
+    }
+
+    #[must_use]
+    pub const fn is_personal(&self) -> bool {
+        matches!(self.kind, OrganizationKind::Personal)
     }
 
     #[must_use]
@@ -1130,6 +1180,26 @@ mod tests {
         assert!(rewritten.contains("\"planId\":\"free\""));
         // A record without a history has held its plan since creation.
         assert_eq!(record.plan_stretches(5), vec![("free".to_owned(), 5)]);
+        // And a record stored before personal spaces existed is a team.
+        assert_eq!(record.kind(), OrganizationKind::Team);
+        assert!(!record.is_personal());
+    }
+
+    /// A personal space is the same record as a team, marked; nothing about
+    /// creating one may differ except the mark, so everything downstream
+    /// keeps treating it as a team.
+    #[test]
+    fn a_personal_space_is_a_team_record_marked_personal() {
+        let record = OrganizationRecord::new_personal(
+            OrganizationId::parse("org_personal0001").expect("id"),
+            "Alice",
+            7,
+        )
+        .expect("record");
+        assert!(record.is_personal());
+        assert_eq!(record.plan_id(), "free");
+        let stored = serde_json::to_string(&record).expect("serialize");
+        assert!(stored.contains("\"kind\":\"personal\""));
     }
 
     /// Rating a period needs to know which plan held when, so a change must
