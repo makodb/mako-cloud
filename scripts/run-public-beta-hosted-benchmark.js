@@ -269,10 +269,16 @@ async function pullAll(token, expected) {
         expected: [200, 429],
       });
       if (response.status === 200) break;
-      // Honor the platform's own retry contract in full: the rate window is
-      // a minute, so a wait capped below it can burn every attempt inside
-      // one exhausted window and report a healthy limiter as a failure.
-      const retryAfterSeconds = Number(response.headers.get("retry-after") ?? "1");
+      // Honor the platform's own retry contract in full: a throttled request
+      // says how long to wait in its error envelope (retry.afterMs), which
+      // is where clients are told to look; the Retry-After header exists
+      // only on the transport's overload path. The rate window is a minute,
+      // so a wait capped below it can burn every attempt inside one
+      // exhausted window and report a healthy limiter as a failure.
+      const advisedMilliseconds = Number(response.body?.error?.retry?.afterMs);
+      const retryAfterSeconds = Number.isFinite(advisedMilliseconds)
+        ? advisedMilliseconds / 1_000
+        : Number(response.headers.get("retry-after") ?? "1");
       await delay(Math.min(Math.max(retryAfterSeconds, 0.25), 61) * 1_000);
     }
     assert(response?.status === 200, "RxDB pull remained rate limited after bounded retries");
