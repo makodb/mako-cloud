@@ -32,7 +32,26 @@ export type ConsoleRoute =
     }
   | { readonly name: "team"; readonly teamId: string }
   | { readonly name: "invitation"; readonly invitationId: string }
-  | { readonly name: "project"; readonly projectId: string }
+  | {
+      readonly name: "project";
+      readonly projectId: string;
+      readonly section: "overview" | "usage" | "activity" | "settings";
+    }
+  | {
+      readonly name: "logs";
+      readonly projectId: string;
+      readonly environmentId: string;
+    }
+  | {
+      readonly name: "usage";
+      readonly projectId: string;
+      readonly environmentId: string;
+    }
+  | {
+      readonly name: "activity";
+      readonly projectId: string;
+      readonly environmentId: string;
+    }
   | {
       readonly name: "environment_workspace";
       readonly projectId: string;
@@ -139,9 +158,28 @@ export function matchConsoleRoute(pathname: string): ConsoleRoute {
   if (invitation?.[1] !== undefined) {
     return { name: "invitation", invitationId: invitation[1] };
   }
-  const project = normalized.match(/^\/projects\/(prj_[A-Za-z0-9_-]{8,64})$/u);
+  const project = normalized.match(
+    /^\/projects\/(prj_[A-Za-z0-9_-]{8,64})(?:\/(overview|usage|activity|settings))?$/u,
+  );
   if (project?.[1] !== undefined) {
-    return { name: "project", projectId: project[1] };
+    return {
+      name: "project",
+      projectId: project[1],
+      section: (project[2] ?? "overview") as Extract<
+        ConsoleRoute,
+        { readonly name: "project" }
+      >["section"],
+    };
+  }
+  const environmentPage = normalized.match(
+    /^\/projects\/(prj_[A-Za-z0-9_-]{8,64})\/environments\/(env_[A-Za-z0-9_-]{8,64})\/(logs|usage|activity)$/u,
+  );
+  if (environmentPage?.[1] !== undefined && environmentPage[2] !== undefined) {
+    return {
+      name: environmentPage[3] as "logs" | "usage" | "activity",
+      projectId: environmentPage[1],
+      environmentId: environmentPage[2],
+    };
   }
   const environmentWorkspace = normalized.match(
     /^\/projects\/(prj_[A-Za-z0-9_-]{8,64})\/environments\/(env_[A-Za-z0-9_-]{8,64})(?:\/(overview|data|sync|policies|backups|connect|settings))?$/u,

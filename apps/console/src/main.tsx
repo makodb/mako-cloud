@@ -5,6 +5,10 @@ import { mountConsole } from "./bootstrap.js";
 import { HostedDeveloperAuthAdapter } from "./hosted-auth.js";
 import { HostedOperatorAuthAdapter } from "./hosted-operator-auth.js";
 import "./styles.css";
+import "./home.css";
+import "./project-home.css";
+import "./surfaced.css";
+import "./usage-activity.css";
 
 declare global {
   interface Window {

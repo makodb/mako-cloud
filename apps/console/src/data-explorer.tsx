@@ -2,6 +2,7 @@ import { type FormEvent, useCallback, useEffect, useRef, useState } from "react"
 
 import type {
   ApplicationUserSummary,
+  ArtifactGrant,
   Collection,
   DataJob,
   ExplorerDocument,
@@ -968,12 +969,18 @@ function DataJobs({
   const [failure, setFailure] = useState<ConsoleApiFailure | null>(null);
   const [exportScopeConfirmed, setExportScopeConfirmed] = useState(false);
   const [pendingConfirmation, setPendingConfirmation] = useState<DataJob | null>(null);
+  const [detail, setDetail] = useState<DataJob | null>(null);
+  const [uploadGrant, setUploadGrant] = useState<ArtifactGrant | null>(null);
   const reload = useCallback(async () => {
     try {
-      setJobs(
-        (await client.listDataJobs(projectId, environmentId)).filter(
-          (job) => job.collectionId === collectionId,
-        ),
+      const items = (await client.listDataJobs(projectId, environmentId)).filter(
+        (job) => job.collectionId === collectionId,
+      );
+      setJobs(items);
+      // The open detail follows the list so polling keeps it current between
+      // explicit refreshes.
+      setDetail((current) =>
+        current === null ? null : (items.find((job) => job.jobId === current.jobId) ?? current),
       );
       setFailure(null);
     } catch (error) {
@@ -1095,6 +1102,31 @@ function DataJobs({
       setFailure(consoleFailure(error));
     }
   };
+  const cancel = async (job: DataJob) => {
+    try {
+      await client.cancelDataJob(projectId, environmentId, job.jobId);
+      await reload();
+    } catch (error) {
+      setFailure(consoleFailure(error));
+    }
+  };
+  const openDetail = async (jobId: string) => {
+    try {
+      setDetail(await client.getDataJob(projectId, environmentId, jobId));
+      setUploadGrant(null);
+      setFailure(null);
+    } catch (error) {
+      setFailure(consoleFailure(error));
+    }
+  };
+  const issueUploadGrant = async (job: DataJob) => {
+    try {
+      setUploadGrant(await client.createDataJobUploadGrant(projectId, environmentId, job.jobId));
+      setFailure(null);
+    } catch (error) {
+      setFailure(consoleFailure(error));
+    }
+  };
   return (
     <section className="panel">
       <div className="section-heading">
@@ -1199,21 +1231,24 @@ function DataJobs({
                   <td>{job.errors.slice(0, 5).join("; ") || (manifestDigest(job) ?? "—")}</td>
                   <td>
                     <div className="button-row">
+                      <button
+                        type="button"
+                        className="secondary"
+                        aria-label={`Details for ${job.jobId}`}
+                        onClick={() => void openDetail(job.jobId)}
+                      >
+                        Details
+                      </button>
                       {job.state === "awaiting_confirmation" ? (
                         <button type="button" onClick={() => setPendingConfirmation(job)}>
                           Review execution
                         </button>
                       ) : null}
-                      {["queued", "running", "cancelling"].includes(job.state) ? (
+                      {cancellable(job) ? (
                         <button
                           type="button"
                           className="secondary"
-                          onClick={() =>
-                            void client
-                              .cancelDataJob(projectId, environmentId, job.jobId)
-                              .then(reload)
-                              .catch((error: unknown) => setFailure(consoleFailure(error)))
-                          }
+                          onClick={() => void cancel(job)}
                         >
                           Cancel
                         </button>
@@ -1231,7 +1266,159 @@ function DataJobs({
           </table>
         </div>
       )}
+      {detail === null ? null : (
+        <DataJobDetail
+          job={detail}
+          uploadGrant={uploadGrant}
+          onRefresh={() => void openDetail(detail.jobId)}
+          onClose={() => {
+            setDetail(null);
+            setUploadGrant(null);
+          }}
+          onReview={() => setPendingConfirmation(detail)}
+          onCancel={() => void cancel(detail)}
+          onDownload={() => void download(detail)}
+          onIssueUploadGrant={() => void issueUploadGrant(detail)}
+        />
+      )}
     </section>
+  );
+}
+
+// One job in full: status, kind, counts, timestamps, the retained failure
+// diagnostic, and the grant actions its state allows.
+function DataJobDetail({
+  job,
+  uploadGrant,
+  onRefresh,
+  onClose,
+  onReview,
+  onCancel,
+  onDownload,
+  onIssueUploadGrant,
+}: {
+  readonly job: DataJob;
+  readonly uploadGrant: ArtifactGrant | null;
+  readonly onRefresh: () => void;
+  readonly onClose: () => void;
+  readonly onReview: () => void;
+  readonly onCancel: () => void;
+  readonly onDownload: () => void;
+  readonly onIssueUploadGrant: () => void;
+}) {
+  const diagnostics = job.errors.map((message, position) => ({ id: `${position}`, message }));
+  return (
+    <article className="workflow-card job-detail" aria-labelledby="job-detail-title">
+      <div className="button-row spread">
+        <h4 id="job-detail-title">Job {job.jobId}</h4>
+        <div className="button-row">
+          <button type="button" className="secondary" onClick={onRefresh}>
+            Refresh
+          </button>
+          <button type="button" className="secondary" onClick={onClose}>
+            Close
+          </button>
+        </div>
+      </div>
+      <dl className="definition-grid">
+        <div>
+          <dt>Status</dt>
+          <dd>{job.state.replaceAll("_", " ")}</dd>
+        </div>
+        <div>
+          <dt>Kind</dt>
+          <dd>{job.kind}</dd>
+        </div>
+        <div>
+          <dt>Collection</dt>
+          <dd>
+            <code>{job.collectionId}</code>
+          </dd>
+        </div>
+        <div>
+          <dt>Conflict strategy</dt>
+          <dd>{job.conflictStrategy === null ? "—" : job.conflictStrategy.replaceAll("_", " ")}</dd>
+        </div>
+        <div>
+          <dt>Created by</dt>
+          <dd>
+            <code>{job.creatorId}</code>
+          </dd>
+        </div>
+        <div>
+          <dt>Created</dt>
+          <dd>{formatTime(job.createdAtUnixSeconds)}</dd>
+        </div>
+        <div>
+          <dt>Updated</dt>
+          <dd>{formatTime(job.updatedAtUnixSeconds)}</dd>
+        </div>
+        <div>
+          <dt>Expires</dt>
+          <dd>{formatTime(job.expiresAtUnixSeconds)}</dd>
+        </div>
+      </dl>
+      <h5>Counts</h5>
+      <dl className="definition-grid">
+        {Object.entries(job.progress).map(([key, value]) => (
+          <div key={key}>
+            <dt>{key}</dt>
+            <dd>{value.toLocaleString()}</dd>
+          </div>
+        ))}
+      </dl>
+      {job.manifest === null ? null : (
+        <p>
+          Manifest: {job.manifest.rowCount.toLocaleString()} rows,{" "}
+          {job.manifest.byteCount.toLocaleString()} bytes, schema version{" "}
+          {job.manifest.schemaVersion}, digest <code>{job.manifest.digest}</code>, finalized{" "}
+          {formatTime(job.manifest.finalizedAtUnixSeconds)}.
+        </p>
+      )}
+      {diagnostics.length > 0 ? (
+        <div className="notice error" role="status">
+          <strong>Failure diagnostic</strong>
+          <ul className="job-errors">
+            {diagnostics.map((diagnostic) => (
+              <li key={diagnostic.id}>{diagnostic.message}</li>
+            ))}
+          </ul>
+        </div>
+      ) : job.state === "failed" ? (
+        <p className="notice error" role="status">
+          The job failed without a retained diagnostic.
+        </p>
+      ) : null}
+      <div className="button-row">
+        {job.kind === "import" && job.state === "awaiting_upload" ? (
+          <button type="button" onClick={onIssueUploadGrant}>
+            Issue upload grant
+          </button>
+        ) : null}
+        {job.kind === "export" && job.state === "succeeded" ? (
+          <button type="button" onClick={onDownload}>
+            Download and verify
+          </button>
+        ) : null}
+        {job.state === "awaiting_confirmation" ? (
+          <button type="button" onClick={onReview}>
+            Review execution
+          </button>
+        ) : null}
+        {cancellable(job) ? (
+          <button type="button" className="secondary" onClick={onCancel}>
+            Cancel job
+          </button>
+        ) : null}
+      </div>
+      {uploadGrant === null ? null : (
+        <p className="notice" role="status">
+          Upload grant: <code>{uploadGrant.method}</code> <code>{uploadGrant.url}</code>, expires{" "}
+          {formatTime(uploadGrant.expiresAtUnixSeconds)}. Send the JSON Lines file with a{" "}
+          <code>Digest: sha-256=…</code> header, then run the dry run.
+        </p>
+      )}
+    </article>
   );
 }
 
@@ -1291,6 +1478,9 @@ function formatTime(value: number | null): string {
 }
 function manifestDigest(job: DataJob): string | null {
   return job.manifest?.digest ?? null;
+}
+function cancellable(job: DataJob): boolean {
+  return ["queued", "running", "cancelling"].includes(job.state);
 }
 async function sha256Hex(bytes: ArrayBuffer): Promise<string> {
   return Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)))

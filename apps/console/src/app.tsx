@@ -19,9 +19,13 @@ import { FunctionScreen, FunctionsScreen } from "./functions.js";
 import { ObservabilityScreen } from "./observability.js";
 import { RequireOperatorSession } from "./operator.js";
 import { OperatorWorkspaceScreen } from "./operator-control-center.js";
-import { InvitationAcceptScreen, TeamScreen, TeamsScreen } from "./teams.js";
-import { ProjectScreen } from "./projects.js";
+import { ActivityScreen } from "./activity.js";
+import { HomeDashboard } from "./home.js";
+import { LogsScreen } from "./logs.js";
 import { PolicyScreen } from "./policies.js";
+import { ProjectHome } from "./project-home.js";
+import { InvitationAcceptScreen, TeamScreen } from "./teams.js";
+import { UsageScreen } from "./usage.js";
 import { RequireDeveloperSession, SignInView, useConsoleRoute } from "./router.js";
 
 export function ConsoleApp({
@@ -82,8 +86,8 @@ export function ConsoleApp({
         <RequireDeveloperSession>
           <AuthenticatedShell>
             {route.name === "home" ? (
-              <TeamsScreen
-                onOpen={(teamId) => navigate(`/teams/${teamId}`)}
+              <HomeDashboard
+                onOpenTeam={(teamId) => navigate(`/teams/${teamId}`)}
                 onOpenProject={(projectId) => navigate(`/projects/${projectId}`)}
               />
             ) : route.name === "team" ? (
@@ -98,31 +102,10 @@ export function ConsoleApp({
                 onAccepted={(teamId) => navigate(`/teams/${teamId}`, true)}
               />
             ) : route.name === "project" ? (
-              <ProjectScreen
+              <ProjectHome
                 projectId={route.projectId}
-                onBack={(teamId) => navigate(`/teams/${teamId}`)}
-                onOpenCollections={(environmentId) =>
-                  navigate(`/projects/${route.projectId}/environments/${environmentId}/collections`)
-                }
-                onOpenWorkspace={(environmentId) =>
-                  navigate(
-                    `/projects/${route.projectId}/environments/${environmentId}/${developerWorkspaceEnabled ? "overview" : "collections"}`,
-                  )
-                }
-                onOpenFunctions={(environmentId) =>
-                  navigate(`/projects/${route.projectId}/environments/${environmentId}/functions`)
-                }
-                onOpenObservability={(environmentId) =>
-                  navigate(
-                    `/projects/${route.projectId}/environments/${environmentId}/observability`,
-                  )
-                }
-                onOpenUsers={(environmentId) =>
-                  navigate(`/projects/${route.projectId}/environments/${environmentId}/users`)
-                }
-                onOpenSecurity={(environmentId) =>
-                  navigate(`/projects/${route.projectId}/environments/${environmentId}/credentials`)
-                }
+                section={route.section}
+                navigate={navigate}
               />
             ) : route.name === "environment_workspace" ? (
               developerWorkspaceEnabled ? (
@@ -329,6 +312,36 @@ export function ConsoleApp({
                   }
                 />
               </StagedEnvironmentLayout>
+            ) : route.name === "logs" ? (
+              <StagedEnvironmentLayout
+                enabled={developerWorkspaceEnabled}
+                projectId={route.projectId}
+                environmentId={route.environmentId}
+                section="logs"
+                navigate={navigate}
+              >
+                <LogsScreen projectId={route.projectId} environmentId={route.environmentId} />
+              </StagedEnvironmentLayout>
+            ) : route.name === "usage" ? (
+              <StagedEnvironmentLayout
+                enabled={developerWorkspaceEnabled}
+                projectId={route.projectId}
+                environmentId={route.environmentId}
+                section="usage"
+                navigate={navigate}
+              >
+                <UsageScreen projectId={route.projectId} environmentId={route.environmentId} />
+              </StagedEnvironmentLayout>
+            ) : route.name === "activity" ? (
+              <StagedEnvironmentLayout
+                enabled={developerWorkspaceEnabled}
+                projectId={route.projectId}
+                environmentId={route.environmentId}
+                section="activity"
+                navigate={navigate}
+              >
+                <ActivityScreen projectId={route.projectId} environmentId={route.environmentId} />
+              </StagedEnvironmentLayout>
             ) : (
               <NotFound path={route.path} onHome={() => navigate("/")} />
             )}
@@ -422,7 +435,9 @@ function AuthenticatedShell({ children }: { readonly children: ReactNode }) {
       <header className="topbar">
         <div>
           <p className="eyebrow">Mako Cloud</p>
-          <strong>Developer Console</strong>
+          <a className="button-link" href="/" aria-label="Developer Console home">
+            <strong>Developer Console</strong>
+          </a>
         </div>
         <div className="account">
           <span>{state.session.profile.email}</span>

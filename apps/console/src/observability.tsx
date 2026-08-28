@@ -227,11 +227,12 @@ export function ObservabilityScreen({
           </button>
         </div>
       </section>
+      <IndexStatePanel projectId={projectId} environmentId={environmentId} query={query} />
     </section>
   );
 }
 
-function RetentionNotice({ page }: { readonly page: ObservabilityPage }) {
+export function RetentionNotice({ page }: { readonly page: ObservabilityPage }) {
   return (
     <p className="notice" role="status">
       Retained from {new Date(page.retention.retainedFrom).toLocaleString()}; observed at{" "}
@@ -461,4 +462,200 @@ function viewDescription(view: ViewId): string {
     case "audit":
       return "Append-only administration history. Search and export operate on the retained records loaded below.";
   }
+}
+
+type IndexStateEvent = Extract<ObservabilityPayload, { kind: "index_state" }>;
+
+export interface IndexStateGroup {
+  readonly key: string;
+  readonly collectionId: string;
+  readonly indexName: string;
+  /** The newest retained event for this index. */
+  readonly latest: ObservabilityRecord & { readonly payload: IndexStateEvent };
+  /** Every retained event for this index, newest first. */
+  readonly history: readonly (ObservabilityRecord & { readonly payload: IndexStateEvent })[];
+}
+
+// Index build state: the retained index-state events grouped per collection
+// index, newest first, with the latest state leading each group.
+function IndexStatePanel({
+  projectId,
+  environmentId,
+  query,
+}: {
+  readonly projectId: string;
+  readonly environmentId: string;
+  readonly query: ObservabilityQuery;
+}) {
+  const client = useManagementClient();
+  const [page, setPage] = useState<ObservabilityPage | null>(null);
+  const [failure, setFailure] = useState<ConsoleApiFailure | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    client
+      .queryIndexStateEvents(projectId, environmentId, query)
+      .then((next) => {
+        if (!cancelled) {
+          setPage(next);
+          setFailure(null);
+        }
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setFailure(toConsoleApiFailure(error));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [client, environmentId, projectId, query]);
+
+  const groups = useMemo(() => groupIndexStates(page?.items ?? []), [page?.items]);
+  const eventCount = groups.reduce((total, group) => total + group.history.length, 0);
+
+  return (
+    <section className="panel full-span" aria-labelledby="index-state-title">
+      <div className="button-row spread">
+        <div>
+          <h2 id="index-state-title">Indexes</h2>
+          <p>
+            Build state per collection index from the retained index-state events, newest first.
+          </p>
+        </div>
+        <small>
+          {groups.length} {groups.length === 1 ? "index" : "indexes"} · {eventCount}{" "}
+          {eventCount === 1 ? "event" : "events"}
+        </small>
+      </div>
+      <ApiFailureNotice failure={failure} />
+      {loading && page === null ? (
+        <p aria-live="polite">Loading index states…</p>
+      ) : groups.length === 0 ? (
+        <p>No index build events are retained for this window.</p>
+      ) : (
+        <div className="table-scroll">
+          <table className="index-state-table">
+            <thead>
+              <tr>
+                <th scope="col">Collection</th>
+                <th scope="col">Index</th>
+                <th scope="col">Version</th>
+                <th scope="col">State</th>
+                <th scope="col">Progress</th>
+                <th scope="col">Message</th>
+                <th scope="col">Observed</th>
+                <th scope="col">History</th>
+              </tr>
+            </thead>
+            <tbody>
+              {groups.map((group) => (
+                <tr key={group.key}>
+                  <td>
+                    <code>{group.collectionId}</code>
+                  </td>
+                  <td>
+                    <strong>{group.indexName}</strong>
+                  </td>
+                  <td>v{group.latest.payload.indexVersion}</td>
+                  <td>
+                    <span className={`status-pill ${indexStateClass(group.latest.payload.state)}`}>
+                      {humanize(group.latest.payload.state)}
+                    </span>
+                  </td>
+                  <td>
+                    <IndexProgress
+                      percent={group.latest.payload.progressPercent}
+                      label={`${group.collectionId} ${group.indexName} build progress`}
+                    />
+                  </td>
+                  <td>{group.latest.payload.message ?? "—"}</td>
+                  <td>{new Date(group.latest.timestamp).toLocaleString()}</td>
+                  <td>
+                    {group.history.length < 2 ? (
+                      "—"
+                    ) : (
+                      <details>
+                        <summary>{group.history.length} events</summary>
+                        <ol className="index-history">
+                          {group.history.map((record) => (
+                            <li key={record.timestamp}>
+                              {new Date(record.timestamp).toLocaleString()}:{" "}
+                              {humanize(record.payload.state)} v{record.payload.indexVersion} (
+                              {clampPercent(record.payload.progressPercent)}%)
+                              {record.payload.message === null
+                                ? ""
+                                : ` — ${record.payload.message}`}
+                            </li>
+                          ))}
+                        </ol>
+                      </details>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function IndexProgress({ percent, label }: { readonly percent: number; readonly label: string }) {
+  const value = clampPercent(percent);
+  return (
+    <span className="index-progress">
+      <progress value={value} max={100} aria-label={label} />
+      <small>{value}%</small>
+    </span>
+  );
+}
+
+/** Index-state events grouped per collection index, newest first, latest state leading. */
+export function groupIndexStates(records: readonly ObservabilityRecord[]): IndexStateGroup[] {
+  const events = records
+    .flatMap((record) =>
+      record.payload.kind === "index_state" ? [{ ...record, payload: record.payload }] : [],
+    )
+    .sort((left, right) => Date.parse(right.timestamp) - Date.parse(left.timestamp));
+  const groups = new Map<string, IndexStateGroup>();
+  for (const event of events) {
+    const key = `${event.payload.collectionId}/${event.payload.indexName}`;
+    const existing = groups.get(key);
+    if (existing === undefined) {
+      groups.set(key, {
+        key,
+        collectionId: event.payload.collectionId,
+        indexName: event.payload.indexName,
+        latest: event,
+        history: [event],
+      });
+    } else {
+      groups.set(key, { ...existing, history: [...existing.history, event] });
+    }
+  }
+  return Array.from(groups.values());
+}
+
+function indexStateClass(state: string): string {
+  const lowered = state.toLowerCase();
+  if (lowered.includes("fail") || lowered.includes("error")) {
+    return "index-failed";
+  }
+  if (["ready", "active", "built", "complete", "completed"].includes(lowered)) {
+    return "index-ready";
+  }
+  return "index-building";
+}
+
+function clampPercent(percent: number): number {
+  return Number.isFinite(percent) ? Math.max(0, Math.min(100, Math.round(percent))) : 0;
 }

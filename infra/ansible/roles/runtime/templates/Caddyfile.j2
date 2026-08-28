@@ -87,7 +87,7 @@
 		root * /opt/mako/current/console
 		file_server
 	}
-	@console_route path_regexp console_route ^(?:/|/login|/sign-in|/create-account|/check-email|/verify-email|/forgot-password|/check-recovery-email|/reset-password|/wait-list|/operator|/teams/[^/]+|/invitations/[^/]+|/projects/[^/]+(?:/environments/[^/]+(?:/(?:collections(?:/[^/]+(?:/policies)?)?|users(?:/[^/]+)?|credentials|functions(?:/[^/]+)?|observability))?)?)$
+	@console_route path_regexp console_route ^(?:/|/login|/sign-in|/create-account|/check-email|/verify-email|/forgot-password|/check-recovery-email|/reset-password|/wait-list|/operator|/teams/[^/]+|/invitations/[^/]+|/projects/[^/]+(?:/(?:overview|usage|activity|settings)|/environments/[^/]+(?:/(?:collections(?:/[^/]+(?:/policies)?)?|users(?:/[^/]+)?|credentials|functions(?:/[^/]+)?|observability|logs|usage|activity))?)?)$
 	handle @console_route {
 		root * /opt/mako/current/console
 		rewrite * /index.html

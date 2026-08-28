@@ -55,6 +55,7 @@ export function CredentialsScreen({
   const [credential, setCredential] = useState<ProjectCredential | null>(null);
   const [functionSecret, setFunctionSecret] = useState<FunctionSecret | null>(null);
   const [oneTime, setOneTime] = useState<OneTimeSecret | null>(null);
+  const [initializedKey, setInitializedKey] = useState<JwtSigningKey | null>(null);
   const [failure, setFailure] = useState<ConsoleApiFailure | null>(null);
   const reload = useCallback(async () => {
     try {
@@ -172,6 +173,28 @@ export function CredentialsScreen({
         positiveInteger(new FormData(event.currentTarget), "overlapSeconds"),
         idempotencyKey(),
       );
+      await reload();
+    } catch (error) {
+      setFailure(failureFrom(error));
+    }
+  };
+  // Offered only while no key exists; the response carries key metadata and
+  // never the private material.
+  const initializeSigningKey = async () => {
+    if (
+      !confirmDestructiveAction({
+        action: "Initialize",
+        target: `the JWT signing key for environment ${environmentId}`,
+        consequence:
+          "Application-user tokens for this environment will be signed with the new key. Private key material stays on the server and is never shown.",
+      })
+    ) {
+      return;
+    }
+    try {
+      const key = await client.initializeJwtSigningKey(projectId, environmentId, idempotencyKey());
+      setInitializedKey(key);
+      setFailure(null);
       await reload();
     } catch (error) {
       setFailure(failureFrom(error));
@@ -327,7 +350,12 @@ export function CredentialsScreen({
           onRotate={rotateCredential}
           onRetire={() => void retireCredential()}
         />
-        <SigningKeysPanel keys={signingKeys} onRotate={rotateSigningKey} />
+        <SigningKeysPanel
+          keys={signingKeys}
+          initialized={initializedKey}
+          onInitialize={() => void initializeSigningKey()}
+          onRotate={rotateSigningKey}
+        />
         <FunctionSecretsPanel
           secret={functionSecret}
           onCreate={createSecret}
@@ -447,9 +475,13 @@ function ProjectCredentialsPanel({
 
 function SigningKeysPanel({
   keys,
+  initialized,
+  onInitialize,
   onRotate,
 }: {
   readonly keys: JwtSigningKey[] | null;
+  readonly initialized: JwtSigningKey | null;
+  readonly onInitialize: () => void;
   readonly onRotate: (event: FormEvent<HTMLFormElement>) => void;
 }) {
   return (
@@ -458,6 +490,16 @@ function SigningKeysPanel({
       <p>Private signing material is never returned.</p>
       {keys === null ? (
         <p>Loading signing keys…</p>
+      ) : keys.length === 0 ? (
+        <div className="notice key-initialize" role="status">
+          <p>
+            No signing key exists for this environment yet. Application-user sessions cannot be
+            issued until one is initialized.
+          </p>
+          <button type="button" onClick={onInitialize}>
+            Initialize signing key
+          </button>
+        </div>
       ) : (
         <ul className="resource-list">
           {keys.map((key) => (
@@ -471,20 +513,28 @@ function SigningKeysPanel({
           ))}
         </ul>
       )}
-      <form onSubmit={onRotate}>
-        <label>
-          Verification overlap seconds
-          <input
-            name="overlapSeconds"
-            type="number"
-            min="1"
-            max="2592000"
-            defaultValue="3600"
-            required
-          />
-        </label>
-        <button type="submit">Rotate signing key</button>
-      </form>
+      {initialized === null ? null : (
+        <p className="notice success" role="status">
+          Signing key <code>{initialized.keyId}</code> initialized ({initialized.state}) at{" "}
+          {new Date(initialized.createdAt).toLocaleString()}.
+        </p>
+      )}
+      {keys === null || keys.length === 0 ? null : (
+        <form onSubmit={onRotate}>
+          <label>
+            Verification overlap seconds
+            <input
+              name="overlapSeconds"
+              type="number"
+              min="1"
+              max="2592000"
+              defaultValue="3600"
+              required
+            />
+          </label>
+          <button type="submit">Rotate signing key</button>
+        </form>
+      )}
     </section>
   );
 }

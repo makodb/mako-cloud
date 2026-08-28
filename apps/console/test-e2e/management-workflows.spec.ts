@@ -89,18 +89,21 @@ test("role management, provisioning health, and deletion grace run through the A
   await expect(page.getByText("active", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("storage in local: healthy")).toBeVisible();
 
-  await page.getByRole("button", { name: "Suspend", exact: true }).first().click();
-  await expect(page.getByText("suspended", { exact: true }).first()).toBeVisible();
+  // The project's own lifecycle controls live in their panel; environments carry
+  // their own Suspend/Restore buttons above it.
+  const lifecycle = page.getByRole("region", { name: "Provisioning and lifecycle" });
+  await lifecycle.getByRole("button", { name: "Suspend", exact: true }).click();
+  await expect(lifecycle.getByText("suspended", { exact: true })).toBeVisible();
   expect(api.project.state).toBe("suspended");
 
-  await page.getByRole("button", { name: "Restore", exact: true }).first().click();
-  await expect(page.getByText("active", { exact: true }).first()).toBeVisible();
+  await lifecycle.getByRole("button", { name: "Restore", exact: true }).click();
+  await expect(lifecycle.getByText("active", { exact: true })).toBeVisible();
   expect(api.project.state).toBe("active");
 
-  await page.getByRole("button", { name: "Request deletion" }).click();
+  await lifecycle.getByRole("button", { name: "Request deletion" }).click();
   await expect(page.getByText(/Restorable until/u)).toBeVisible();
   expect(api.project.state).toBe("deletion_grace");
-  await page.getByRole("button", { name: "Restore", exact: true }).first().click();
+  await lifecycle.getByRole("button", { name: "Restore", exact: true }).click();
   await expect.poll(() => api.project.state).toBe("active");
   await page.getByRole("button", { name: "Request deletion" }).click();
   await expect.poll(() => api.project.state).toBe("deletion_grace");
@@ -388,6 +391,33 @@ class ManagementApiHarness {
           permitted: true,
         })),
       );
+    } else if (path.endsWith("/workspace/summary") && method === "GET") {
+      await json(route, {
+        tenant: { projectId: PROJECT_ID, environmentId: ENVIRONMENT_ID },
+        sections: {
+          lifecycle: {
+            status: "current",
+            observedAtUnixSeconds: 1_786_579_200,
+            freshUntilUnixSeconds: 1_786_579_260,
+            payload: {
+              ready: this.environment.state === "active",
+              project: this.project.state,
+              environment: this.environment.state,
+              region: this.project.region,
+            },
+          },
+        },
+      });
+    } else if (path.endsWith("/connect") && method === "GET") {
+      await json(route, {
+        tenant: { projectId: PROJECT_ID, environmentId: ENVIRONMENT_ID },
+        publicEndpoint: "https://cloud-test.makodb.com",
+        publicKeyId: "key_public01",
+        publicKey: "",
+        collections: [],
+        rxdbClientRange: ">=17 <18",
+        templateVersion: 1,
+      });
     } else if (path.endsWith("/collections/todos/policies") && method === "GET") {
       await json(route, this.activePolicy);
     } else if (path.endsWith("/collections/todos/policies") && method === "POST") {

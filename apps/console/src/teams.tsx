@@ -155,6 +155,17 @@ export function TeamScreen({
               onChanged={reload}
             />
             <InvitationPanel teamId={teamId} canManage={canManage} onChanged={reload} />
+            {canManage ? (
+              <RenameTeamPanel
+                team={team}
+                onRenamed={(renamed) => {
+                  setTeam(renamed);
+                  setTeams((current) =>
+                    current.map((item) => (item.id === renamed.id ? renamed : item)),
+                  );
+                }}
+              />
+            ) : null}
           </>
         )}
         <ProjectsPanel
@@ -395,6 +406,66 @@ function InvitationPanel({
           value={issue.token}
           onDismiss={() => setIssue(null)}
         />
+      )}
+    </section>
+  );
+}
+
+// Renaming is offered to owners and administrators of a joined team; the
+// personal space has no name of its own to change.
+function RenameTeamPanel({
+  team,
+  onRenamed,
+}: {
+  readonly team: Team;
+  readonly onRenamed: (team: Team) => void;
+}) {
+  const client = useManagementClient();
+  const [failure, setFailure] = useState<ConsoleApiFailure | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const name = String(new FormData(event.currentTarget).get("name") ?? "").trim();
+    setStatus(null);
+    if (name === "") {
+      setFailure({ message: "Enter a team name.", requestId: null });
+      return;
+    }
+    if (name === team.name) {
+      setFailure({ message: "That is already the team's name.", requestId: null });
+      return;
+    }
+    setPending(true);
+    setFailure(null);
+    try {
+      const renamed = await client.updateTeam(team.id, name);
+      onRenamed(renamed);
+      setStatus(`Renamed to ${renamed.name}. The change is audited.`);
+    } catch (error) {
+      setFailure(toConsoleApiFailure(error));
+    } finally {
+      setPending(false);
+    }
+  };
+  return (
+    <section className="panel team-rename" aria-labelledby="rename-team-title">
+      <h2 id="rename-team-title">Team name</h2>
+      <p>The name appears everywhere the team is listed. Renaming is audited.</p>
+      <ApiFailureNotice failure={failure} />
+      <form className="inline-form" onSubmit={(event) => void submit(event)}>
+        <label>
+          New name
+          <input name="name" defaultValue={team.name} required maxLength={200} />
+        </label>
+        <button type="submit" disabled={pending}>
+          {pending ? "Renaming…" : "Rename team"}
+        </button>
+      </form>
+      {status === null ? null : (
+        <p className="notice success" role="status">
+          {status}
+        </p>
       )}
     </section>
   );

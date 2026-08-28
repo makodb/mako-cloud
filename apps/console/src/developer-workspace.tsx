@@ -114,6 +114,48 @@ export function EnvironmentWorkspaceScreen({
   );
 }
 
+/// Destinations the console serves itself from signals the API already
+/// exposes; the backend's navigation lists the areas it authorizes.
+function consoleDestinations(projectId: string, environmentId: string): WorkspaceDestination[] {
+  const base = `/projects/${projectId}/environments/${environmentId}`;
+  return [
+    { id: "logs", label: "Logs", path: `${base}/logs`, permitted: true },
+    { id: "usage", label: "Usage", path: `${base}/usage`, permitted: true },
+    { id: "activity", label: "Activity", path: `${base}/activity`, permitted: true },
+  ];
+}
+
+/// Product areas the platform does not provide yet. Shown, never hidden: a
+/// developer should see the shape of the product, and nothing here pretends
+/// to work.
+const UNAVAILABLE_DESTINATIONS: readonly { id: string; label: string; reason: string }[] = [
+  {
+    id: "storage",
+    label: "Storage",
+    reason: "Application file storage is not available on this deployment yet.",
+  },
+  {
+    id: "auth-providers",
+    label: "Auth providers",
+    reason: "Social sign-in and magic links are not available on this deployment yet.",
+  },
+  {
+    id: "webhooks",
+    label: "Webhooks",
+    reason: "Database webhooks are not available on this deployment yet.",
+  },
+  {
+    id: "schedules",
+    label: "Schedules",
+    reason: "Scheduled functions are not available on this deployment yet.",
+  },
+  {
+    id: "domains",
+    label: "Domains",
+    reason: "Custom domains are not available on this deployment yet.",
+  },
+];
+
 export function EnvironmentWorkspaceLayout({
   projectId,
   environmentId,
@@ -184,24 +226,38 @@ export function EnvironmentWorkspaceLayout({
             </select>
           </label>
         </div>
-        <nav>
+        <nav aria-label="Environment destinations">
           <ul>
-            {destinations
-              .filter((destination) => destination.permitted)
-              .map((destination) => (
-                <li key={destination.id}>
-                  <a
-                    className={section === destination.id ? "active" : ""}
-                    href={destination.path}
-                    onClick={(event) => {
-                      event.preventDefault();
-                      navigate(destination.path);
-                    }}
-                  >
-                    {destination.label}
-                  </a>
-                </li>
-              ))}
+            {[
+              ...destinations.filter((destination) => destination.permitted),
+              ...consoleDestinations(projectId, environmentId),
+            ].map((destination) => (
+              <li key={destination.id}>
+                <a
+                  className={section === destination.id ? "active" : ""}
+                  aria-current={section === destination.id ? "page" : undefined}
+                  href={destination.path}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    navigate(destination.path);
+                  }}
+                >
+                  {destination.label}
+                </a>
+              </li>
+            ))}
+            {UNAVAILABLE_DESTINATIONS.map((destination) => (
+              <li key={destination.id}>
+                <span
+                  className="destination-unavailable"
+                  aria-disabled="true"
+                  title={destination.reason}
+                >
+                  {destination.label}
+                  <small>Not available on this deployment</small>
+                </span>
+              </li>
+            ))}
           </ul>
         </nav>
       </aside>
