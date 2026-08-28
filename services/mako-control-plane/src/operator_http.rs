@@ -193,17 +193,17 @@ pub(crate) fn add_operator_routes(
         ),
         (
             HttpMethod::Post,
-            "/v1/operator/organizations/{organizationId}/plan",
+            "/v1/operator/teams/{teamId}/plan",
             handle_change_plan,
         ),
         (
             HttpMethod::Put,
-            "/v1/operator/organizations/{organizationId}/plan-exceptions",
+            "/v1/operator/teams/{teamId}/plan-exceptions",
             handle_set_plan_exceptions,
         ),
         (
             HttpMethod::Post,
-            "/v1/operator/organizations/{organizationId}/credits",
+            "/v1/operator/teams/{teamId}/credits",
             handle_grant_credit,
         ),
         (
@@ -1190,7 +1190,7 @@ fn reinstall_organization_limits(
 ) -> Result<(), HttpApiError> {
     let limit = NonZeroUsize::new(100).expect("listing limit");
     let projects = block_on(graph.project_store().list_projects(organization, limit))
-        .map_err(|_| unavailable(request, "the organization's projects are unavailable"))?;
+        .map_err(|_| unavailable(request, "the team's projects are unavailable"))?;
     for project in &projects {
         let environments =
             block_on(graph.project_store().list_environments(project.id(), limit))
@@ -1213,9 +1213,8 @@ fn handle_change_plan(
     no_query(request)?;
     require_json(request)?;
     let body: PlanChangeWire = parse_json(request)?;
-    let organization =
-        OrganizationId::parse(request.path_parameter("organizationId").unwrap_or_default())
-            .map_err(|_| invalid(request, "organization path is invalid"))?;
+    let organization = OrganizationId::parse(request.path_parameter("teamId").unwrap_or_default())
+        .map_err(|_| invalid(request, "team path is invalid"))?;
     let record = block_on(graph.operator_service().change_organization_plan(
         &actor,
         &organization,
@@ -1240,7 +1239,7 @@ fn handle_change_plan(
         request,
         200,
         &serde_json::json!({
-            "organizationId": record.id().as_str(),
+            "teamId": record.id().as_str(),
             "planId": record.plan_id(),
             "updatedAt": crate::management_http::format_timestamp(request, record.updated_at_unix_seconds())?,
         }),
@@ -1262,9 +1261,8 @@ fn handle_set_plan_exceptions(
     no_query(request)?;
     require_json(request)?;
     let body: PlanExceptionsWire = parse_json(request)?;
-    let organization =
-        OrganizationId::parse(request.path_parameter("organizationId").unwrap_or_default())
-            .map_err(|_| invalid(request, "organization path is invalid"))?;
+    let organization = OrganizationId::parse(request.path_parameter("teamId").unwrap_or_default())
+        .map_err(|_| invalid(request, "team path is invalid"))?;
     let stored = block_on(graph.operator_service().set_plan_exceptions(
         &actor,
         &organization,
@@ -1277,8 +1275,8 @@ fn handle_set_plan_exceptions(
     // The exceptions change what the plan resolves to, so what every
     // environment is held to is reinstalled before the change is reported.
     let record = block_on(graph.organization_store().get_organization(&organization))
-        .map_err(|_| unavailable(request, "organization is unavailable"))?
-        .ok_or_else(|| not_found(request, "organization was not found"))?;
+        .map_err(|_| unavailable(request, "team is unavailable"))?
+        .ok_or_else(|| not_found(request, "team was not found"))?;
     let policy =
         crate::management_http::resolve_plan_policy(request, record.plan_id(), &stored, now)?;
     reinstall_organization_limits(graph, request, actor.id().as_str(), &organization, &policy)?;
@@ -1287,7 +1285,7 @@ fn handle_set_plan_exceptions(
         request,
         200,
         &serde_json::json!({
-            "organizationId": organization.as_str(),
+            "teamId": organization.as_str(),
             "exceptions": stored,
         }),
     )
@@ -1308,9 +1306,8 @@ fn handle_grant_credit(
     no_query(request)?;
     require_json(request)?;
     let body: CreditWire = parse_json(request)?;
-    let organization =
-        OrganizationId::parse(request.path_parameter("organizationId").unwrap_or_default())
-            .map_err(|_| invalid(request, "organization path is invalid"))?;
+    let organization = OrganizationId::parse(request.path_parameter("teamId").unwrap_or_default())
+        .map_err(|_| invalid(request, "team path is invalid"))?;
     let id = CreditId::parse(body.id).map_err(|_| invalid(request, "credit id is invalid"))?;
     let record = block_on(graph.operator_service().grant_credit(
         &actor,

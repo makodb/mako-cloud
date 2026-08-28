@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Turn a closed period's measured use into a bill an organization can read, and keep a running account balance that shows what that use would have cost — without collecting it.
+Turn a closed period's measured use into a bill a team can read, and keep a running account balance that shows what that use would have cost — without collecting it.
 
 ## Requirements
 
@@ -21,11 +21,11 @@ Closing a billing period SHALL rate the period's ledger into invoice line items,
 - **WHEN** a period that spanned a plan change is rated
 - **THEN** each plan's stretch is rated under its own terms with base fees and allowances prorated by time, and an unchanged plan rates identically to the unsegmented arithmetic
 
-### Requirement: An organization has a running balance that may be negative
-Each organization SHALL have an account balance equal to its credits minus its finalized charges. A balance MUST be permitted to go negative, meaning the organization has accrued more use than credit, and MUST be derivable from the retained invoices and credit entries that produced it.
+### Requirement: A team has a running balance that may be negative
+Each team SHALL have an account balance equal to its credits minus its finalized charges. A balance MUST be permitted to go negative, meaning the team has accrued more use than credit, and MUST be derivable from the retained invoices and credit entries that produced it.
 
 #### Scenario: Use accrues beyond any credit
-- **WHEN** finalized charges exceed the credits an organization holds
+- **WHEN** finalized charges exceed the credits a team holds
 - **THEN** the balance is reported as negative and the invoices and credits that produced it remain available
 
 #### Scenario: A balance is explained
@@ -40,11 +40,11 @@ Each organization SHALL have an account balance equal to its credits minus its f
 The platform MUST NOT attempt to collect a balance, request payment details, or contact a payment provider. Any surface that shows a bill or a balance MUST state that it is not payable and that no charge will be made. A negative balance MUST NOT restrict, throttle, suspend, or degrade any tenant's service.
 
 #### Scenario: A bill is displayed
-- **WHEN** an organization views its bill or balance
+- **WHEN** a team views its bill or balance
 - **THEN** the surface states that it is not payable and no payment method is requested
 
 #### Scenario: A tenant's balance is deeply negative
-- **WHEN** an organization's balance is negative by any amount
+- **WHEN** a team's balance is negative by any amount
 - **THEN** its projects continue to serve traffic unchanged, and no quota, suspension, or lifecycle decision reads the balance
 
 #### Scenario: A component attempts collection
@@ -56,4 +56,4 @@ An accrued balance SHALL NOT become a payable debt by the passage of time, by th
 
 #### Scenario: The beta ends
 - **WHEN** the beta period ends
-- **THEN** accrued balances remain informational until an operator explicitly converts them, and no organization is billed for beta use without that decision
+- **THEN** accrued balances remain informational until an operator explicitly converts them, and no team is billed for beta use without that decision

@@ -130,7 +130,7 @@ fn build_app(services: &Services) -> (String, String) {
         "/v1/projects",
         &manage("project"),
         Some(&json!({
-            "organizationId": ORGANIZATION_ID,
+            "teamId": ORGANIZATION_ID,
             "name": "Sample App",
             "region": "local",
         })),

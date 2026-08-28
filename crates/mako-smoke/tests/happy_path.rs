@@ -183,7 +183,7 @@ fn bootstrap_converges_on_rerun_and_refuses_outside_a_local_environment() {
     let second = run_bootstrap(&binaries, &environment);
     for field in [
         "developerId",
-        "organizationId",
+        "teamId",
         "projectId",
         "environmentId",
         "collectionId",

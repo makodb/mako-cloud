@@ -30,7 +30,7 @@ export type ConsoleRoute =
         | "waitlist";
       readonly projectId?: string;
     }
-  | { readonly name: "organization"; readonly organizationId: string }
+  | { readonly name: "team"; readonly teamId: string }
   | { readonly name: "invitation"; readonly invitationId: string }
   | { readonly name: "project"; readonly projectId: string }
   | {
@@ -131,9 +131,9 @@ export function matchConsoleRoute(pathname: string): ConsoleRoute {
       >,
     };
   }
-  const organization = normalized.match(/^\/organizations\/(org_[A-Za-z0-9_-]{8,64})$/u);
-  if (organization?.[1] !== undefined) {
-    return { name: "organization", organizationId: organization[1] };
+  const team = normalized.match(/^\/teams\/(org_[A-Za-z0-9_-]{8,64})$/u);
+  if (team?.[1] !== undefined) {
+    return { name: "team", teamId: team[1] };
   }
   const invitation = normalized.match(/^\/invitations\/(inv_[A-Za-z0-9_-]{8,64})$/u);
   if (invitation?.[1] !== undefined) {

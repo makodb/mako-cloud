@@ -1,6 +1,6 @@
 # Account and role authority inventory
 
-This inventory records which authority owns each existing `DeveloperAccount` field and epoch consumer. Every shared identity, developer-role, operator-role, organization/project, control audit, provisioning, idempotency, function-metadata, and mail-outbox record listed here is now control-plane SQLite state. Application users, project credentials/signing keys, documents, policies, indexes, and RxDB state remain tenant RocksDB state. Browser session storage holds only the existing short-lived developer token; browser SQLite, IndexedDB, Dexie, RxDB, and local storage are not durable authorities.
+This inventory records which authority owns each existing `DeveloperAccount` field and epoch consumer. Every shared identity, developer-role, operator-role, team/project, control audit, provisioning, idempotency, function-metadata, and mail-outbox record listed here is now control-plane SQLite state. Application users, project credentials/signing keys, documents, policies, indexes, and RxDB state remain tenant RocksDB state. Browser session storage holds only the existing short-lived developer token; browser SQLite, IndexedDB, Dexie, RxDB, and local storage are not durable authorities.
 
 | Current data or consumer | Current use | Required authority after this change |
 | --- | --- | --- |

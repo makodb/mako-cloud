@@ -7,10 +7,10 @@ import { useManagementClient } from "./management.js";
 import { confirmDestructiveAction } from "./safety.js";
 
 export function ProjectsPanel({
-  organizationId,
+  teamId,
   onOpen,
 }: {
-  readonly organizationId: string;
+  readonly teamId: string;
   readonly onOpen: (projectId: string) => void;
 }) {
   const client = useManagementClient();
@@ -18,12 +18,12 @@ export function ProjectsPanel({
   const [failure, setFailure] = useState<ConsoleApiFailure | null>(null);
   const reload = useCallback(async () => {
     try {
-      setProjects(await client.listProjects(organizationId));
+      setProjects(await client.listProjects(teamId));
       setFailure(null);
     } catch (error) {
       setFailure(toConsoleApiFailure(error));
     }
-  }, [client, organizationId]);
+  }, [client, teamId]);
   useEffect(() => {
     void reload();
   }, [reload]);
@@ -34,7 +34,7 @@ export function ProjectsPanel({
     try {
       const project = await client.createProject(
         {
-          organizationId,
+          teamId,
           name: String(data.get("name") ?? "").trim(),
           region: String(data.get("region") ?? "").trim(),
         },
@@ -99,7 +99,7 @@ export function ProjectScreen({
   onOpenSecurity,
 }: {
   readonly projectId: string;
-  readonly onBack: (organizationId: string) => void;
+  readonly onBack: (teamId: string) => void;
   readonly onOpenCollections: (environmentId: string) => void;
   readonly onOpenWorkspace: (environmentId: string) => void;
   readonly onOpenFunctions: (environmentId: string) => void;
@@ -191,9 +191,9 @@ export function ProjectScreen({
         type="button"
         className="back-link"
         disabled={project === null}
-        onClick={() => project !== null && onBack(project.organizationId)}
+        onClick={() => project !== null && onBack(project.teamId)}
       >
-        ← Organization
+        ← Team
       </button>
       <div className="section-heading">
         <div>

@@ -46,7 +46,7 @@ The control plane and data plane each hold an exclusive lock on their own databa
 
 ## Seed a working tenant
 
-A freshly started stack has no project, so nothing can authenticate against it. `mako-local-bootstrap` seeds one — developer, organization, project, environment, public project key, signing key, collection, and a development document policy — while the services are stopped:
+A freshly started stack has no project, so nothing can authenticate against it. `mako-local-bootstrap` seeds one — developer, team, project, environment, public project key, signing key, collection, and a development document policy — while the services are stopped:
 
 ```bash
 set -a; . ./.env; set +a

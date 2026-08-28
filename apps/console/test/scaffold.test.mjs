@@ -60,9 +60,9 @@ test("route matching fails closed for unknown and malformed locations", () => {
     section: "activity",
   });
   assert.equal(matchConsoleRoute("/operator/tenants/not-valid").name, "not_found");
-  assert.deepEqual(matchConsoleRoute("/organizations/org_abcdefgh"), {
-    name: "organization",
-    organizationId: "org_abcdefgh",
+  assert.deepEqual(matchConsoleRoute("/teams/org_abcdefgh"), {
+    name: "team",
+    teamId: "org_abcdefgh",
   });
   assert.deepEqual(matchConsoleRoute("/invitations/inv_abcdefgh"), {
     name: "invitation",
@@ -248,7 +248,7 @@ test("observability search and CSV export retain safe structured audit data", ()
       timestamp: "2026-08-06T12:00:00.000Z",
       payload: {
         kind: "audit",
-        organizationId: "org_abcdefgh",
+        teamId: "org_abcdefgh",
         actorId: '=HYPERLINK("https://example.test")',
         action: "policy.activate",
         target: "todos/policy/2",

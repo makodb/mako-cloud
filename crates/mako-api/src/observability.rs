@@ -165,6 +165,9 @@ pub enum ObservabilityPayload {
         message: Option<String>,
     },
     Audit {
+        /// Renamed on the wire when organizations became teams; records
+        /// stored under the old name still read.
+        #[serde(rename = "teamId", alias = "organizationId")]
         organization_id: String,
         actor_id: String,
         action: String,

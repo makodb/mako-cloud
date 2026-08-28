@@ -4,25 +4,25 @@
  */
 
 export interface paths {
-    "/v1/organizations": {
+    "/v1/teams": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** List organizations visible to the developer */
-        get: operations["listOrganizations"];
+        /** List teams visible to the developer */
+        get: operations["listTeams"];
         put?: never;
-        /** Create an organization */
-        post: operations["createOrganization"];
+        /** Create a team */
+        post: operations["createTeam"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/v1/organizations/{organizationId}/bill": {
+    "/v1/teams/{teamId}/bill": {
         parameters: {
             query?: never;
             header?: never;
@@ -30,10 +30,10 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * The organization's informational bill
-         * @description What the organization's metered use would cost under its plan and the current rate card, and the balance it implies. Without a period, the live current month; with one, the finalized invoice of a closed past month. Ended months are closed on read while their evidence is still retained, exactly once, and a closed period never changes. A period that spanned a plan change is rated stretch by stretch, prorated by time. Informational only: nothing is payable and no charge is made during the beta, and the response says so explicitly.
+         * The team's informational bill
+         * @description What the team's metered use would cost under its plan and the current rate card, and the balance it implies. Without a period, the live current month; with one, the finalized invoice of a closed past month. Ended months are closed on read while their evidence is still retained, exactly once, and a closed period never changes. A period that spanned a plan change is rated stretch by stretch, prorated by time. Informational only: nothing is payable and no charge is made during the beta, and the response says so explicitly.
          */
-        get: operations["getOrganizationBill"];
+        get: operations["getTeamBill"];
         put?: never;
         post?: never;
         delete?: never;
@@ -42,28 +42,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/organizations/{organizationId}": {
+    "/v1/teams/{teamId}": {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                organizationId: components["parameters"]["OrganizationId"];
+                teamId: components["parameters"]["TeamId"];
             };
             cookie?: never;
         };
-        /** Inspect an organization visible to the developer or automation token */
-        get: operations["getOrganization"];
+        /** Inspect a team visible to the developer or automation token */
+        get: operations["getTeam"];
         put?: never;
         post?: never;
-        /** Enter the organization deletion grace period */
-        delete: operations["requestOrganizationDeletion"];
+        /** Enter the team deletion grace period */
+        delete: operations["requestTeamDeletion"];
         options?: never;
         head?: never;
-        /** Update organization metadata */
-        patch: operations["updateOrganization"];
+        /** Update team metadata */
+        patch: operations["updateTeam"];
         trace?: never;
     };
-    "/v1/organizations/{organizationId}/actions/restore": {
+    "/v1/teams/{teamId}/actions/restore": {
         parameters: {
             query?: never;
             header?: never;
@@ -72,15 +72,15 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Restore an organization before its deletion grace deadline */
-        post: operations["restoreOrganization"];
+        /** Restore a team before its deletion grace deadline */
+        post: operations["restoreTeam"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/v1/organizations/{organizationId}/invitations": {
+    "/v1/teams/{teamId}/invitations": {
         parameters: {
             query?: never;
             header?: never;
@@ -89,7 +89,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        post: operations["createOrganizationInvitation"];
+        post: operations["createTeamInvitation"];
         delete?: never;
         options?: never;
         head?: never;
@@ -105,21 +105,21 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        post: operations["acceptOrganizationInvitation"];
+        post: operations["acceptTeamInvitation"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/v1/organizations/{organizationId}/members": {
+    "/v1/teams/{teamId}/members": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get: operations["listOrganizationMembers"];
+        get: operations["listTeamMembers"];
         put?: never;
         post?: never;
         delete?: never;
@@ -128,12 +128,12 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/organizations/{organizationId}/members/{developerIdentityId}": {
+    "/v1/teams/{teamId}/members/{developerIdentityId}": {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                organizationId: components["parameters"]["OrganizationId"];
+                teamId: components["parameters"]["TeamId"];
                 developerIdentityId: components["parameters"]["DeveloperIdentityId"];
             };
             cookie?: never;
@@ -141,13 +141,13 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        delete: operations["removeOrganizationMember"];
+        delete: operations["removeTeamMember"];
         options?: never;
         head?: never;
-        patch: operations["updateOrganizationMember"];
+        patch: operations["updateTeamMember"];
         trace?: never;
     };
-    "/v1/organizations/{organizationId}/automation-tokens": {
+    "/v1/teams/{teamId}/automation-tokens": {
         parameters: {
             query?: never;
             header?: never;
@@ -163,7 +163,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/organizations/{organizationId}/automation-tokens/{automationTokenId}": {
+    "/v1/teams/{teamId}/automation-tokens/{automationTokenId}": {
         parameters: {
             query?: never;
             header?: never;
@@ -179,7 +179,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/organizations/{organizationId}/automation-tokens/{automationTokenId}/actions/rotate": {
+    "/v1/teams/{teamId}/automation-tokens/{automationTokenId}/actions/rotate": {
         parameters: {
             query?: never;
             header?: never;
@@ -202,7 +202,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List projects visible in an organization */
+        /** List projects visible in a team */
         get: operations["listProjects"];
         put?: never;
         /** Start asynchronous project provisioning */
@@ -1750,7 +1750,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/operator/organizations/{organizationId}/plan": {
+    "/v1/operator/teams/{teamId}/plan": {
         parameters: {
             query?: never;
             header?: never;
@@ -1760,17 +1760,17 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Move an organization to another plan
-         * @description The beta's comped plan change: nothing sells plans, so an operator granting one is the only way onto a paid tier. The change is audited, and the limits each of the organization's environments is held to are reinstalled before the change is reported.
+         * Move a team to another plan
+         * @description The beta's comped plan change: nothing sells plans, so an operator granting one is the only way onto a paid tier. The change is audited, and the limits each of the team's environments is held to are reinstalled before the change is reported.
          */
-        post: operations["changeOrganizationPlan"];
+        post: operations["changeTeamPlan"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/v1/operator/organizations/{organizationId}/plan-exceptions": {
+    "/v1/operator/teams/{teamId}/plan-exceptions": {
         parameters: {
             query?: never;
             header?: never;
@@ -1779,10 +1779,10 @@ export interface paths {
         };
         get?: never;
         /**
-         * Replace the exceptions to an organization's plan
-         * @description The operator states what is exceptional right now; an empty set clears everything. Each exception names one resource, carries a reason, and may expire, after which the organization is back on its plan. The limits every environment is held to are reinstalled before the change is reported.
+         * Replace the exceptions to a team's plan
+         * @description The operator states what is exceptional right now; an empty set clears everything. Each exception names one resource, carries a reason, and may expire, after which the team is back on its plan. The limits every environment is held to are reinstalled before the change is reported.
          */
-        put: operations["setOrganizationPlanExceptions"];
+        put: operations["setTeamPlanExceptions"];
         post?: never;
         delete?: never;
         options?: never;
@@ -1790,7 +1790,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/operator/organizations/{organizationId}/credits": {
+    "/v1/operator/teams/{teamId}/credits": {
         parameters: {
             query?: never;
             header?: never;
@@ -1800,10 +1800,10 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Grant an organization a credit
+         * Grant a team a credit
          * @description Moves the shown balance and nothing else. Exactly-once per credit id: replaying the same id conflicts rather than granting twice. A credit cannot be negative -- taking money away is not a credit.
          */
-        post: operations["grantOrganizationCredit"];
+        post: operations["grantTeamCredit"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3036,8 +3036,8 @@ export interface components {
         OperatorTenantSummary: {
             projectId: components["schemas"]["ProjectId"];
             projectName: string;
-            organizationId: components["schemas"]["OrganizationId"];
-            organizationName: string | null;
+            teamId: components["schemas"]["TeamId"];
+            teamName: string | null;
             lifecycle: components["schemas"]["LifecycleState"];
             region: string;
             environmentCount: number;
@@ -3405,7 +3405,7 @@ export interface components {
             nextCursor: string | null;
         };
         DeveloperIdentityId: string;
-        OrganizationId: string;
+        TeamId: string;
         InvitationId: string;
         AutomationTokenId: string;
         ProjectId: string;
@@ -3418,8 +3418,8 @@ export interface components {
         ProjectCredentialId: string;
         FunctionSecretName: string;
         FunctionName: string;
-        Organization: {
-            id: components["schemas"]["OrganizationId"];
+        Team: {
+            id: components["schemas"]["TeamId"];
             name: string;
             /** @enum {string} */
             state: "active" | "suspended" | "deletion_grace" | "deleting" | "deleted";
@@ -3431,11 +3431,11 @@ export interface components {
             deletionDeadline?: string;
         };
         /** @enum {string} */
-        OrganizationRole: "owner" | "administrator" | "developer" | "viewer";
-        OrganizationMembership: {
-            organizationId: components["schemas"]["OrganizationId"];
+        TeamRole: "owner" | "administrator" | "developer" | "viewer";
+        TeamMembership: {
+            teamId: components["schemas"]["TeamId"];
             developerIdentityId: components["schemas"]["DeveloperIdentityId"];
-            role: components["schemas"]["OrganizationRole"];
+            role: components["schemas"]["TeamRole"];
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
@@ -3443,10 +3443,10 @@ export interface components {
         };
         Invitation: {
             id: components["schemas"]["InvitationId"];
-            organizationId: components["schemas"]["OrganizationId"];
+            teamId: components["schemas"]["TeamId"];
             /** Format: email */
             email: string;
-            role: components["schemas"]["OrganizationRole"];
+            role: components["schemas"]["TeamRole"];
             /** @enum {string} */
             status: "pending" | "accepted" | "revoked" | "expired";
             /** Format: date-time */
@@ -3467,7 +3467,7 @@ export interface components {
         };
         AutomationToken: {
             id: components["schemas"]["AutomationTokenId"];
-            organizationId: components["schemas"]["OrganizationId"];
+            teamId: components["schemas"]["TeamId"];
             name: string;
             scope: components["schemas"]["AutomationScope"];
             /** @enum {string} */
@@ -3485,7 +3485,7 @@ export interface components {
         };
         Project: {
             id: components["schemas"]["ProjectId"];
-            organizationId: components["schemas"]["OrganizationId"];
+            teamId: components["schemas"]["TeamId"];
             name: string;
             region: string;
             /** @enum {string} */
@@ -3970,7 +3970,7 @@ export interface components {
         };
         Credit: {
             id: string;
-            organizationId: components["schemas"]["OrganizationId"];
+            teamId: components["schemas"]["TeamId"];
             /** Format: int64 */
             amountMicroDollars: number;
             reason: string;
@@ -4109,7 +4109,7 @@ export interface components {
              * @enum {string}
              */
             kind: "audit";
-            organizationId: components["schemas"]["OrganizationId"];
+            teamId: components["schemas"]["TeamId"];
             actorId: string;
             action: string;
             target: string;
@@ -4494,7 +4494,7 @@ export interface components {
         };
     };
     parameters: {
-        OrganizationId: components["schemas"]["OrganizationId"];
+        TeamId: components["schemas"]["TeamId"];
         InvitationId: components["schemas"]["InvitationId"];
         DeveloperIdentityId: components["schemas"]["DeveloperIdentityId"];
         AutomationTokenId: components["schemas"]["AutomationTokenId"];
@@ -4530,7 +4530,7 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
-    listOrganizations: {
+    listTeams: {
         parameters: {
             query?: never;
             header?: never;
@@ -4539,21 +4539,21 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Organization page */
+            /** @description Team page */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": {
-                        items: components["schemas"]["Organization"][];
+                        items: components["schemas"]["Team"][];
                     };
                 };
             };
             default: components["responses"]["ApiError"];
         };
     };
-    createOrganization: {
+    createTeam: {
         parameters: {
             query?: never;
             header?: never;
@@ -4568,19 +4568,19 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Organization created */
+            /** @description Team created */
             201: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Organization"];
+                    "application/json": components["schemas"]["Team"];
                 };
             };
             default: components["responses"]["ApiError"];
         };
     };
-    getOrganizationBill: {
+    getTeamBill: {
         parameters: {
             query?: {
                 /** @description A closed calendar month to show, as YYYY-MM. */
@@ -4588,7 +4588,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                organizationId: components["parameters"]["OrganizationId"];
+                teamId: components["parameters"]["TeamId"];
             };
             cookie?: never;
         };
@@ -4601,7 +4601,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        organizationId: components["schemas"]["OrganizationId"];
+                        teamId: components["schemas"]["TeamId"];
                         planId: string;
                         /** Format: date-time */
                         periodStart: string;
@@ -4640,37 +4640,37 @@ export interface operations {
             default: components["responses"]["ApiError"];
         };
     };
-    getOrganization: {
+    getTeam: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                organizationId: components["parameters"]["OrganizationId"];
+                teamId: components["parameters"]["TeamId"];
             };
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description Organization */
+            /** @description Team */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Organization"];
+                    "application/json": components["schemas"]["Team"];
                 };
             };
             default: components["responses"]["ApiError"];
         };
     };
-    requestOrganizationDeletion: {
+    requestTeamDeletion: {
         parameters: {
             query?: never;
             header: {
                 confirmation: string;
             };
             path: {
-                organizationId: components["parameters"]["OrganizationId"];
+                teamId: components["parameters"]["TeamId"];
             };
             cookie?: never;
         };
@@ -4682,18 +4682,18 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Organization"];
+                    "application/json": components["schemas"]["Team"];
                 };
             };
             default: components["responses"]["ApiError"];
         };
     };
-    updateOrganization: {
+    updateTeam: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                organizationId: components["parameters"]["OrganizationId"];
+                teamId: components["parameters"]["TeamId"];
             };
             cookie?: never;
         };
@@ -4705,49 +4705,49 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Updated organization */
+            /** @description Updated team */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Organization"];
+                    "application/json": components["schemas"]["Team"];
                 };
             };
             default: components["responses"]["ApiError"];
         };
     };
-    restoreOrganization: {
+    restoreTeam: {
         parameters: {
             query?: never;
             header: {
                 "Idempotency-Key": components["parameters"]["IdempotencyKey"];
             };
             path: {
-                organizationId: components["parameters"]["OrganizationId"];
+                teamId: components["parameters"]["TeamId"];
             };
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description Organization restoration accepted */
+            /** @description Team restoration accepted */
             202: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Organization"];
+                    "application/json": components["schemas"]["Team"];
                 };
             };
             default: components["responses"]["ApiError"];
         };
     };
-    createOrganizationInvitation: {
+    createTeamInvitation: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                organizationId: components["parameters"]["OrganizationId"];
+                teamId: components["parameters"]["TeamId"];
             };
             cookie?: never;
         };
@@ -4756,7 +4756,7 @@ export interface operations {
                 "application/json": {
                     /** Format: email */
                     email: string;
-                    role: components["schemas"]["OrganizationRole"];
+                    role: components["schemas"]["TeamRole"];
                     /** Format: date-time */
                     expiresAt: string;
                 };
@@ -4775,7 +4775,7 @@ export interface operations {
             default: components["responses"]["ApiError"];
         };
     };
-    acceptOrganizationInvitation: {
+    acceptTeamInvitation: {
         parameters: {
             query?: never;
             header?: never;
@@ -4792,49 +4792,49 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Accepted organization membership */
+            /** @description Accepted team membership */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["OrganizationMembership"];
+                    "application/json": components["schemas"]["TeamMembership"];
                 };
             };
             default: components["responses"]["ApiError"];
         };
     };
-    listOrganizationMembers: {
+    listTeamMembers: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                organizationId: components["parameters"]["OrganizationId"];
+                teamId: components["parameters"]["TeamId"];
             };
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description Organization members */
+            /** @description Team members */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": {
-                        items: components["schemas"]["OrganizationMembership"][];
+                        items: components["schemas"]["TeamMembership"][];
                     };
                 };
             };
             default: components["responses"]["ApiError"];
         };
     };
-    removeOrganizationMember: {
+    removeTeamMember: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                organizationId: components["parameters"]["OrganizationId"];
+                teamId: components["parameters"]["TeamId"];
                 developerIdentityId: components["parameters"]["DeveloperIdentityId"];
             };
             cookie?: never;
@@ -4851,12 +4851,12 @@ export interface operations {
             default: components["responses"]["ApiError"];
         };
     };
-    updateOrganizationMember: {
+    updateTeamMember: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                organizationId: components["parameters"]["OrganizationId"];
+                teamId: components["parameters"]["TeamId"];
                 developerIdentityId: components["parameters"]["DeveloperIdentityId"];
             };
             cookie?: never;
@@ -4864,7 +4864,7 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    role: components["schemas"]["OrganizationRole"];
+                    role: components["schemas"]["TeamRole"];
                 };
             };
         };
@@ -4875,7 +4875,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["OrganizationMembership"];
+                    "application/json": components["schemas"]["TeamMembership"];
                 };
             };
             default: components["responses"]["ApiError"];
@@ -4886,7 +4886,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                organizationId: components["parameters"]["OrganizationId"];
+                teamId: components["parameters"]["TeamId"];
             };
             cookie?: never;
         };
@@ -4911,7 +4911,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                organizationId: components["parameters"]["OrganizationId"];
+                teamId: components["parameters"]["TeamId"];
             };
             cookie?: never;
         };
@@ -4943,7 +4943,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                organizationId: components["parameters"]["OrganizationId"];
+                teamId: components["parameters"]["TeamId"];
                 automationTokenId: components["parameters"]["AutomationTokenId"];
             };
             cookie?: never;
@@ -4967,7 +4967,7 @@ export interface operations {
                 "Idempotency-Key": components["parameters"]["IdempotencyKey"];
             };
             path: {
-                organizationId: components["parameters"]["OrganizationId"];
+                teamId: components["parameters"]["TeamId"];
                 automationTokenId: components["parameters"]["AutomationTokenId"];
             };
             cookie?: never;
@@ -4997,7 +4997,7 @@ export interface operations {
     listProjects: {
         parameters: {
             query: {
-                organizationId: components["schemas"]["OrganizationId"];
+                teamId: components["schemas"]["TeamId"];
             };
             header?: never;
             path?: never;
@@ -5005,7 +5005,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Organization projects */
+            /** @description Team projects */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -5031,7 +5031,7 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    organizationId: components["schemas"]["OrganizationId"];
+                    teamId: components["schemas"]["TeamId"];
                     name: string;
                     region: string;
                 };
@@ -8316,12 +8316,12 @@ export interface operations {
             default: components["responses"]["ApiError"];
         };
     };
-    changeOrganizationPlan: {
+    changeTeamPlan: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                organizationId: components["parameters"]["OrganizationId"];
+                teamId: components["parameters"]["TeamId"];
             };
             cookie?: never;
         };
@@ -8334,14 +8334,14 @@ export interface operations {
             };
         };
         responses: {
-            /** @description The organization's plan after the change */
+            /** @description The team's plan after the change */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": {
-                        organizationId: components["schemas"]["OrganizationId"];
+                        teamId: components["schemas"]["TeamId"];
                         planId: string;
                         /** Format: date-time */
                         updatedAt: string;
@@ -8351,12 +8351,12 @@ export interface operations {
             default: components["responses"]["ApiError"];
         };
     };
-    setOrganizationPlanExceptions: {
+    setTeamPlanExceptions: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                organizationId: components["parameters"]["OrganizationId"];
+                teamId: components["parameters"]["TeamId"];
             };
             cookie?: never;
         };
@@ -8376,7 +8376,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        organizationId: components["schemas"]["OrganizationId"];
+                        teamId: components["schemas"]["TeamId"];
                         exceptions: components["schemas"]["PlanException"][];
                     };
                 };
@@ -8384,12 +8384,12 @@ export interface operations {
             default: components["responses"]["ApiError"];
         };
     };
-    grantOrganizationCredit: {
+    grantTeamCredit: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                organizationId: components["parameters"]["OrganizationId"];
+                teamId: components["parameters"]["TeamId"];
             };
             cookie?: never;
         };

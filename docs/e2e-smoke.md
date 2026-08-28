@@ -56,7 +56,7 @@ from its reverse proxy.
 
 ## Local tenant bootstrap
 
-`mako-local-bootstrap` seeds a complete, usable tenant into the two owned stores: a developer identity, organization, project, environment, public project key, project signing key, collection, and a permissive development document policy.
+`mako-local-bootstrap` seeds a complete, usable tenant into the two owned stores: a developer identity, team, project, environment, public project key, project signing key, collection, and a permissive development document policy.
 
 It exists because hosted developer registration requires mail delivery over authenticated TLS SMTP and an operator wait-list decision, none of which a local environment has. Without it there is no way to reach a working project locally.
 

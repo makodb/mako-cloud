@@ -125,7 +125,7 @@ fn run() -> Result<String, String> {
         "developerId": DEVELOPER_ID,
         "developerEmail": DEVELOPER_EMAIL,
         "developerPassword": DEVELOPER_PASSWORD,
-        "organizationId": ORGANIZATION_ID,
+        "teamId": ORGANIZATION_ID,
         "projectId": PROJECT_ID,
         "environmentId": ENVIRONMENT_ID,
         "collectionId": COLLECTION_ID,

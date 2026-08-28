@@ -1638,7 +1638,7 @@ mod tests {
             &router,
             request_with_authorization(
                 HttpMethod::Get,
-                "/v1/organizations",
+                "/v1/teams",
                 &waitlist_token,
                 "127.0.1.1:1003",
             ),
@@ -1751,12 +1751,7 @@ mod tests {
         let organizations = json_body(
             &dispatch(
                 &router,
-                request_with_authorization(
-                    HttpMethod::Get,
-                    "/v1/organizations",
-                    access,
-                    "127.0.1.1:1006",
-                ),
+                request_with_authorization(HttpMethod::Get, "/v1/teams", access, "127.0.1.1:1006"),
             )
             .expect("the approved developer reaches the product"),
         );
@@ -1821,7 +1816,7 @@ mod tests {
             &router,
             request_with_authorization(
                 HttpMethod::Get,
-                "/v1/organizations",
+                "/v1/teams",
                 &rejected_token_value,
                 "127.0.1.2:1006",
             ),

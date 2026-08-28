@@ -480,7 +480,7 @@ fn provision(services: &Services) -> (String, String) {
         "/v1/projects",
         &manage("project"),
         Some(&json!({
-            "organizationId": ORGANIZATION_ID,
+            "teamId": ORGANIZATION_ID,
             "name": "Database Service",
             "region": "local",
         })),

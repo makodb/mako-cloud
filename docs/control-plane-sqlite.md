@@ -1,6 +1,6 @@
 # Control-plane SQLite authority
 
-Mako Cloud stores control-plane identity and management state in one server-side SQLite database. This includes developer credentials and lifecycle, verification and recovery, wait-list decisions, operator entitlements and sessions, organizations, projects, provisioning, control audit, idempotency, mail outbox, function metadata, and operator projections. The data plane continues to own application users, tenant credentials and signing keys, documents, policies, indexes, and RxDB synchronization state in RocksDB.
+Mako Cloud stores control-plane identity and management state in one server-side SQLite database. This includes developer credentials and lifecycle, verification and recovery, wait-list decisions, operator entitlements and sessions, teams, projects, provisioning, control audit, idempotency, mail outbox, function metadata, and operator projections. The data plane continues to own application users, tenant credentials and signing keys, documents, policies, indexes, and RxDB synchronization state in RocksDB.
 
 The adapter preserves the existing opaque byte-key/value encoding in `mako_kv(key BLOB PRIMARY KEY, value BLOB) WITHOUT ROWID`. This makes migration byte-exact and keeps repository and API behavior stable. Metadata records a database identity and format version. Every connection enables WAL, full synchronous durability, foreign keys, disabled trusted schema, a bounded busy timeout, and bounded automatic checkpointing. One process holds the configured external lock.
 

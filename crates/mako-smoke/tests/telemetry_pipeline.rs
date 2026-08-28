@@ -232,7 +232,7 @@ fn observed_events_and_usage_reach_the_management_api() {
     let (status, body) = request(
         control_port,
         "GET",
-        "/v1/organizations/org_localboot/bill",
+        "/v1/teams/org_localboot/bill",
         &reading,
         None,
     );
@@ -264,7 +264,7 @@ fn observed_events_and_usage_reach_the_management_api() {
     let (status, body) = request(
         control_port,
         "GET",
-        "/v1/organizations/org_localboot/bill?period=2020-01",
+        "/v1/teams/org_localboot/bill?period=2020-01",
         &reading,
         None,
     );
@@ -275,7 +275,7 @@ fn observed_events_and_usage_reach_the_management_api() {
     let (status, body) = request(
         control_port,
         "GET",
-        "/v1/organizations/org_localboot/bill?period=2020-13",
+        "/v1/teams/org_localboot/bill?period=2020-13",
         &reading,
         None,
     );
@@ -355,7 +355,7 @@ fn observed_events_and_usage_reach_the_management_api() {
     let (status, body) = request(
         control_port,
         "GET",
-        "/v1/organizations/org_localboot/bill",
+        "/v1/teams/org_localboot/bill",
         &reading,
         None,
     );

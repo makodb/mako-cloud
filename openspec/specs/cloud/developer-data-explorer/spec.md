@@ -7,7 +7,7 @@ Provide authorized project members with a safe, bounded, and auditable way to in
 ## Requirements
 
 ### Requirement: Project-scoped explorer authorization
-The system SHALL authorize every Data Explorer request against the current developer identity, organization membership, project, environment, collection, requested access mode, and requested operation. Developer-account status, operator status, or membership in another organization MUST NOT grant document access.
+The system SHALL authorize every Data Explorer request against the current developer identity, team membership, project, environment, collection, requested access mode, and requested operation. Developer-account status, operator status, or membership in another team MUST NOT grant document access.
 
 #### Scenario: Authorized member opens a collection
 - **WHEN** a developer with the required project data permission opens a collection in an active environment

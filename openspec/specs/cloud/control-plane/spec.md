@@ -6,12 +6,12 @@ Provide the multi-tenant management APIs and web console required for developers
 
 ## Requirements
 
-### Requirement: Developer account and organization management
-The control plane SHALL support developer accounts, organizations, invitations, and organization memberships with owner, administrator, developer, and viewer roles. Role checks MUST apply consistently to console and management API actions.
+### Requirement: Developer account and team management
+The control plane SHALL support developer accounts, teams, invitations, and team memberships with owner, administrator, developer, and viewer roles. Role checks MUST apply consistently to console and management API actions.
 
 #### Scenario: Owner invites a developer
-- **WHEN** an organization owner invites an email with the developer role and the recipient accepts
-- **THEN** the recipient gains only the permissions assigned to that role in the organization
+- **WHEN** a team owner invites an email with the developer role and the recipient accepts
+- **THEN** the recipient gains only the permissions assigned to that role in the team
 
 #### Scenario: Viewer attempts mutation
 - **WHEN** a viewer attempts to change project configuration
@@ -35,7 +35,7 @@ A project or environment reported as provisioning SHALL converge to an active or
 - **THEN** both reach an active state, and subsequent environment-scoped management operations are accepted rather than rejected as not yet provisioned
 
 ### Requirement: Control availability is independent of tenant RocksDB
-The control plane SHALL start and authenticate developers and operators using its independent control authority without requiring data-plane RocksDB readiness. It SHALL continue to serve control-owned identity, wait-list, organization, project metadata, audit, incident, and recovery-coordination operations during a tenant data-plane outage. Operations that require unavailable tenant authority MUST return a stable scoped unavailable result and MUST NOT make the entire control API or portal unavailable.
+The control plane SHALL start and authenticate developers and operators using its independent control authority without requiring data-plane RocksDB readiness. It SHALL continue to serve control-owned identity, wait-list, team, project metadata, audit, incident, and recovery-coordination operations during a tenant data-plane outage. Operations that require unavailable tenant authority MUST return a stable scoped unavailable result and MUST NOT make the entire control API or portal unavailable.
 
 #### Scenario: Developer signs in during a tenant database outage
 - **WHEN** the SQLite control authority is healthy but a project data-plane RocksDB service is unavailable
@@ -130,7 +130,7 @@ Authorized project members SHALL be able to create, deploy, configure, invoke fo
 ### Requirement: Usage, quotas, logs, and health
 The control plane SHALL display project usage, quota consumption, data-plane health, replication errors, auth events, function metrics and logs, and index status within defined freshness and retention windows. Quota enforcement MUST identify the exhausted resource and whether retry is possible.
 
-Reported usage SHALL come from the retained billing ledger and MUST identify the period it covers. Reported quota consumption SHALL be measured against the limits that follow from the organization's effective plan and from any operator override, rather than against limits shared by every tenant.
+Reported usage SHALL come from the retained billing ledger and MUST identify the period it covers. Reported quota consumption SHALL be measured against the limits that follow from the team's effective plan and from any operator override, rather than against limits shared by every tenant.
 
 Function log lines SHALL be collected into the retained telemetry store and served through the project logs surface. Because log text is written by customer code, it MUST be scrubbed before storage: configured secrets, bearer and JWT values, password and cookie assignments, platform credential formats, and email addresses are masked, and the store applies the scrub at ingest so no producer can bypass it. The scrub is best-effort and MUST be documented as such.
 
@@ -152,7 +152,7 @@ Function log lines SHALL be collected into the retained telemetry store and serv
 
 
 ### Requirement: Immutable audit history
-Security-sensitive control-plane and data-plane administration actions SHALL create append-only audit events containing organization, project, environment, actor, action, target, outcome, request identifier, and timestamp. Authorized users SHALL be able to filter and export events without secret values or document bodies.
+Security-sensitive control-plane and data-plane administration actions SHALL create append-only audit events containing team, project, environment, actor, action, target, outcome, request identifier, and timestamp. Authorized users SHALL be able to filter and export events without secret values or document bodies.
 
 #### Scenario: Policy version is activated
 - **WHEN** an administrator activates a policy version
@@ -166,7 +166,7 @@ Authorized platform operators SHALL have a separate admin surface for tenant loo
 - **THEN** the session has an expiry, stated reason, bounded permissions, and audit events visible to platform security staff
 
 ### Requirement: Tenant deletion lifecycle
-Deleting an organization, project, or environment SHALL require explicit confirmation, enter a recoverable grace period, revoke data-plane access promptly, and delete or cryptographically render inaccessible all scoped data after the grace period according to retention policy.
+Deleting a team, project, or environment SHALL require explicit confirmation, enter a recoverable grace period, revoke data-plane access promptly, and delete or cryptographically render inaccessible all scoped data after the grace period according to retention policy.
 
 #### Scenario: Project deletion is requested
 - **WHEN** an authorized owner confirms project deletion

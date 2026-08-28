@@ -3,9 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ApiFailureNotice, type ConsoleApiFailure, toConsoleApiFailure } from "./api-error.js";
 import { useManagementClient } from "./management.js";
 
-type OrganizationBill = Awaited<
-  ReturnType<ReturnType<typeof useManagementClient>["getOrganizationBill"]>
->;
+type TeamBill = Awaited<ReturnType<ReturnType<typeof useManagementClient>["getTeamBill"]>>;
 
 /** Micro-dollars as a dollar string. Integer arithmetic end to end; only the
  * display divides. */
@@ -30,18 +28,18 @@ function quantity(resource: string, value: number): string {
   return value.toLocaleString("en-US");
 }
 
-export function BillingPanel({ organizationId }: { readonly organizationId: string }) {
+export function BillingPanel({ teamId }: { readonly teamId: string }) {
   const client = useManagementClient();
-  const [bill, setBill] = useState<OrganizationBill | null>(null);
+  const [bill, setBill] = useState<TeamBill | null>(null);
   const [failure, setFailure] = useState<ConsoleApiFailure | null>(null);
   const reload = useCallback(async () => {
     setFailure(null);
     try {
-      setBill(await client.getOrganizationBill(organizationId));
+      setBill(await client.getTeamBill(teamId));
     } catch (error) {
       setFailure(toConsoleApiFailure(error));
     }
-  }, [client, organizationId]);
+  }, [client, teamId]);
   useEffect(() => {
     void reload();
   }, [reload]);

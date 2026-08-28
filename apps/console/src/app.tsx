@@ -19,11 +19,7 @@ import { FunctionScreen, FunctionsScreen } from "./functions.js";
 import { ObservabilityScreen } from "./observability.js";
 import { RequireOperatorSession } from "./operator.js";
 import { OperatorWorkspaceScreen } from "./operator-control-center.js";
-import {
-  InvitationAcceptScreen,
-  OrganizationScreen,
-  OrganizationsScreen,
-} from "./organizations.js";
+import { InvitationAcceptScreen, TeamScreen, TeamsScreen } from "./teams.js";
 import { ProjectScreen } from "./projects.js";
 import { PolicyScreen } from "./policies.js";
 import { RequireDeveloperSession, SignInView, useConsoleRoute } from "./router.js";
@@ -86,24 +82,22 @@ export function ConsoleApp({
         <RequireDeveloperSession>
           <AuthenticatedShell>
             {route.name === "home" ? (
-              <OrganizationsScreen
-                onOpen={(organizationId) => navigate(`/organizations/${organizationId}`)}
-              />
-            ) : route.name === "organization" ? (
-              <OrganizationScreen
-                organizationId={route.organizationId}
-                onOpen={(organizationId) => navigate(`/organizations/${organizationId}`)}
+              <TeamsScreen onOpen={(teamId) => navigate(`/teams/${teamId}`)} />
+            ) : route.name === "team" ? (
+              <TeamScreen
+                teamId={route.teamId}
+                onOpen={(teamId) => navigate(`/teams/${teamId}`)}
                 onOpenProject={(projectId) => navigate(`/projects/${projectId}`)}
               />
             ) : route.name === "invitation" ? (
               <InvitationAcceptScreen
                 invitationId={route.invitationId}
-                onAccepted={(organizationId) => navigate(`/organizations/${organizationId}`, true)}
+                onAccepted={(teamId) => navigate(`/teams/${teamId}`, true)}
               />
             ) : route.name === "project" ? (
               <ProjectScreen
                 projectId={route.projectId}
-                onBack={(organizationId) => navigate(`/organizations/${organizationId}`)}
+                onBack={(teamId) => navigate(`/teams/${teamId}`)}
                 onOpenCollections={(environmentId) =>
                   navigate(`/projects/${route.projectId}/environments/${environmentId}/collections`)
                 }

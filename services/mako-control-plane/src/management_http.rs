@@ -34,42 +34,38 @@ pub(crate) fn add_management_routes(
     for (method, path, handler) in [
         (
             HttpMethod::Get,
-            "/v1/organizations",
+            "/v1/teams",
             handle_list_organizations as Handler,
         ),
         (
             HttpMethod::Get,
-            "/v1/organizations/{organizationId}/bill",
+            "/v1/teams/{teamId}/bill",
             handle_organization_bill,
         ),
-        (
-            HttpMethod::Post,
-            "/v1/organizations",
-            handle_create_organization,
-        ),
+        (HttpMethod::Post, "/v1/teams", handle_create_organization),
         (
             HttpMethod::Get,
-            "/v1/organizations/{organizationId}",
+            "/v1/teams/{teamId}",
             handle_get_organization,
         ),
         (
             HttpMethod::Patch,
-            "/v1/organizations/{organizationId}",
+            "/v1/teams/{teamId}",
             handle_update_organization,
         ),
         (
             HttpMethod::Delete,
-            "/v1/organizations/{organizationId}",
+            "/v1/teams/{teamId}",
             handle_delete_organization,
         ),
         (
             HttpMethod::Post,
-            "/v1/organizations/{organizationId}/actions/restore",
+            "/v1/teams/{teamId}/actions/restore",
             handle_restore_organization,
         ),
         (
             HttpMethod::Post,
-            "/v1/organizations/{organizationId}/invitations",
+            "/v1/teams/{teamId}/invitations",
             handle_create_invitation,
         ),
         (
@@ -79,17 +75,17 @@ pub(crate) fn add_management_routes(
         ),
         (
             HttpMethod::Get,
-            "/v1/organizations/{organizationId}/members",
+            "/v1/teams/{teamId}/members",
             handle_list_members,
         ),
         (
             HttpMethod::Patch,
-            "/v1/organizations/{organizationId}/members/{developerIdentityId}",
+            "/v1/teams/{teamId}/members/{developerIdentityId}",
             handle_update_member,
         ),
         (
             HttpMethod::Delete,
-            "/v1/organizations/{organizationId}/members/{developerIdentityId}",
+            "/v1/teams/{teamId}/members/{developerIdentityId}",
             handle_delete_member,
         ),
         (HttpMethod::Get, "/v1/projects", handle_list_projects),
@@ -188,7 +184,7 @@ fn handle_create_organization(
                 &body.name,
             ],
         ))
-        .map_err(|_| internal(request, "organization identifier generation failed"))?;
+        .map_err(|_| internal(request, "team identifier generation failed"))?;
         let record = graph
             .organization_service()
             .create_organization(&actor, id, body.name, now)
@@ -757,8 +753,8 @@ async fn install_plan_limits(
         .organization_store()
         .get_organization(project.organization_id())
         .await
-        .map_err(|_| unavailable(request, "organization is unavailable"))?
-        .ok_or_else(|| not_found(request, "organization was not found"))?;
+        .map_err(|_| unavailable(request, "team is unavailable"))?
+        .ok_or_else(|| not_found(request, "team was not found"))?;
     let exceptions = graph
         .operator_service()
         .plan_exceptions(project.organization_id(), now)
@@ -785,7 +781,7 @@ pub(crate) fn resolve_plan_policy(
     // An organization on a plan the catalog no longer names is a deployment
     // bug, and inventing limits for it would hide that.
     let plan = mako_billing::plan(plan_id)
-        .ok_or_else(|| internal(request, "the organization's plan is not in the catalog"))?;
+        .ok_or_else(|| internal(request, "the team's plan is not in the catalog"))?;
     let plan = mako_billing::effective_plan(&plan, exceptions, now_unix_seconds);
     let policy = mako_billing::enforcement_policy(&plan.entitlements)
         .map_err(|_| internal(request, "plan limits could not be resolved"))?;
@@ -803,8 +799,8 @@ fn handle_organization_bill(
         return Err(invalid(request, "request body is not supported"));
     }
     let organization_id =
-        OrganizationId::parse(request.path_parameter("organizationId").unwrap_or_default())
-            .map_err(|_| invalid(request, "organization path is invalid"))?;
+        OrganizationId::parse(request.path_parameter("teamId").unwrap_or_default())
+            .map_err(|_| invalid(request, "team path is invalid"))?;
     // The only query this endpoint understands is a past period to show.
     let requested_period = match request.query() {
         [] => None,
@@ -819,14 +815,14 @@ fn handle_organization_bill(
             .organization_store()
             .get_organization(&organization_id)
             .await
-            .map_err(|_| unavailable(request, "organization is unavailable"))?
-            .ok_or_else(|| not_found(request, "organization was not found"))?;
+            .map_err(|_| unavailable(request, "team is unavailable"))?
+            .ok_or_else(|| not_found(request, "team was not found"))?;
         graph
             .organization_store()
             .get_membership(&organization_id, actor.identity_id())
             .await
             .map_err(|_| unavailable(request, "membership is unavailable"))?
-            .ok_or_else(|| forbidden(request, "organization access is forbidden"))?;
+            .ok_or_else(|| forbidden(request, "team access is forbidden"))?;
         let exceptions = graph
             .operator_service()
             .plan_exceptions(&organization_id, now)
@@ -1021,7 +1017,7 @@ async fn derive_rated_period(
         .project_store()
         .list_projects(organization.id(), limit)
         .await
-        .map_err(|_| unavailable(request, "the organization's projects are unavailable"))?;
+        .map_err(|_| unavailable(request, "the team's projects are unavailable"))?;
     for project in &projects {
         let environments = graph
             .project_store()
@@ -1096,7 +1092,7 @@ async fn derive_rated_period(
     let mut rated_segments = Vec::with_capacity(segments.len());
     for (index, (plan_id, from)) in segments.iter().enumerate() {
         let plan = mako_billing::plan(plan_id)
-            .ok_or_else(|| internal(request, "the organization's plan is not in the catalog"))?;
+            .ok_or_else(|| internal(request, "the team's plan is not in the catalog"))?;
         rated_segments.push(mako_billing::rating::PlanSegment {
             plan: mako_billing::effective_plan(&plan, exceptions, now),
             milliseconds: segment_end(index).saturating_sub(*from),
@@ -1126,7 +1122,7 @@ fn bill_response(
         request,
         200,
         &serde_json::json!({
-            "organizationId": organization_id.as_str(),
+            "teamId": organization_id.as_str(),
             "planId": rated.plan_id,
             "periodStart": format_timestamp(request, period_start / 1_000)?,
             "periodEnd": format_timestamp(request, period_end / 1_000)?,
@@ -1486,8 +1482,8 @@ where
 }
 
 fn organization_id(request: &HttpRequest) -> Result<OrganizationId, HttpApiError> {
-    OrganizationId::parse(request.path_parameter("organizationId").unwrap_or_default())
-        .map_err(|_| invalid(request, "organization path is invalid"))
+    OrganizationId::parse(request.path_parameter("teamId").unwrap_or_default())
+        .map_err(|_| invalid(request, "team path is invalid"))
 }
 
 fn invitation_id(request: &HttpRequest) -> Result<InvitationId, HttpApiError> {
@@ -1521,11 +1517,11 @@ fn only_query_organization(request: &HttpRequest) -> Result<OrganizationId, Http
     if !request.body().is_empty() {
         return Err(invalid(request, "request body is not supported"));
     }
-    if request.query().len() != 1 || request.query()[0].0 != "organizationId" {
-        return Err(invalid(request, "organizationId query is required"));
+    if request.query().len() != 1 || request.query()[0].0 != "teamId" {
+        return Err(invalid(request, "teamId query is required"));
     }
     OrganizationId::parse(request.query()[0].1.clone())
-        .map_err(|_| invalid(request, "organizationId query is invalid"))
+        .map_err(|_| invalid(request, "teamId query is invalid"))
 }
 
 pub(crate) fn no_query(request: &HttpRequest) -> Result<(), HttpApiError> {
@@ -1673,24 +1669,16 @@ fn authentication_error(
 
 fn organization_error(request: &HttpRequest, error: OrganizationServiceError) -> HttpApiError {
     match error {
-        OrganizationServiceError::NotFound => {
-            not_found(request, "organization resource was not found")
-        }
-        OrganizationServiceError::Forbidden => {
-            forbidden(request, "organization action is forbidden")
-        }
+        OrganizationServiceError::NotFound => not_found(request, "team resource was not found"),
+        OrganizationServiceError::Forbidden => forbidden(request, "team action is forbidden"),
         OrganizationServiceError::InvalidInvitation => {
             invalid(request, "invitation is invalid or expired")
         }
-        OrganizationServiceError::LastOwner => {
-            conflict(request, "organization must retain an owner")
-        }
+        OrganizationServiceError::LastOwner => conflict(request, "team must retain an owner"),
         OrganizationServiceError::Model(_) => {
-            conflict(request, "organization lifecycle or input is invalid")
+            conflict(request, "team lifecycle or input is invalid")
         }
-        OrganizationServiceError::Store(_) => {
-            unavailable(request, "organization storage is unavailable")
-        }
+        OrganizationServiceError::Store(_) => unavailable(request, "team storage is unavailable"),
     }
 }
 
@@ -1911,6 +1899,7 @@ struct RoleWire {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct CreateProjectWire {
+    #[serde(rename = "teamId")]
     organization_id: OrganizationId,
     name: String,
     region: String,
@@ -1936,6 +1925,7 @@ struct OrganizationWire {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct MembershipWire {
+    #[serde(rename = "teamId")]
     organization_id: String,
     developer_identity_id: String,
     role: OrganizationRole,
@@ -1947,6 +1937,7 @@ struct MembershipWire {
 #[serde(rename_all = "camelCase")]
 struct InvitationWire {
     id: String,
+    #[serde(rename = "teamId")]
     organization_id: String,
     email: String,
     role: OrganizationRole,
@@ -1966,6 +1957,7 @@ struct InvitationIssueWire {
 #[serde(rename_all = "camelCase")]
 struct ProjectWire {
     id: String,
+    #[serde(rename = "teamId")]
     organization_id: String,
     name: String,
     region: String,

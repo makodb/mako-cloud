@@ -1,11 +1,6 @@
 import { type FormEvent, useCallback, useEffect, useState } from "react";
 
-import type {
-  InvitationIssue,
-  Organization,
-  OrganizationMembership,
-  OrganizationRole,
-} from "@mako-cloud/management-sdk";
+import type { InvitationIssue, Team, TeamMembership, TeamRole } from "@mako-cloud/management-sdk";
 
 import { ApiFailureNotice, type ConsoleApiFailure, toConsoleApiFailure } from "./api-error.js";
 import { useDeveloperAuth } from "./auth.js";
@@ -14,20 +9,16 @@ import { BillingPanel } from "./billing.js";
 import { ProjectsPanel } from "./projects.js";
 import { confirmDestructiveAction, OneTimeSecretValue } from "./safety.js";
 
-const ROLES: readonly OrganizationRole[] = ["owner", "administrator", "developer", "viewer"];
+const ROLES: readonly TeamRole[] = ["owner", "administrator", "developer", "viewer"];
 
-export function OrganizationsScreen({
-  onOpen,
-}: {
-  readonly onOpen: (organizationId: string) => void;
-}) {
+export function TeamsScreen({ onOpen }: { readonly onOpen: (teamId: string) => void }) {
   const client = useManagementClient();
-  const [organizations, setOrganizations] = useState<Organization[] | null>(null);
+  const [teams, setTeams] = useState<Team[] | null>(null);
   const [failure, setFailure] = useState<ConsoleApiFailure | null>(null);
   useEffect(() => {
     let live = true;
-    client.listOrganizations().then(
-      (items) => live && setOrganizations(items),
+    client.listTeams().then(
+      (items) => live && setTeams(items),
       (error: unknown) => live && setFailure(toConsoleApiFailure(error)),
     );
     return () => {
@@ -36,29 +27,29 @@ export function OrganizationsScreen({
   }, [client]);
 
   return (
-    <section aria-labelledby="organizations-title">
+    <section aria-labelledby="teams-title">
       <div className="section-heading">
         <div>
           <p className="eyebrow">Workspace</p>
-          <h1 id="organizations-title">Organizations</h1>
+          <h1 id="teams-title">Teams</h1>
         </div>
       </div>
       <ApiFailureNotice failure={failure} />
-      {organizations === null ? (
-        <p aria-live="polite">Loading organizations…</p>
-      ) : organizations.length === 0 ? (
-        <div className="panel empty-state">No organizations are available for this account.</div>
+      {teams === null ? (
+        <p aria-live="polite">Loading teams…</p>
+      ) : teams.length === 0 ? (
+        <div className="panel empty-state">No teams are available for this account.</div>
       ) : (
         <div className="card-grid">
-          {organizations.map((organization) => (
+          {teams.map((team) => (
             <button
               type="button"
               className="resource-card"
-              key={organization.id}
-              onClick={() => onOpen(organization.id)}
+              key={team.id}
+              onClick={() => onOpen(team.id)}
             >
-              <strong>{organization.name}</strong>
-              <span>{organization.state.replaceAll("_", " ")}</span>
+              <strong>{team.name}</strong>
+              <span>{team.state.replaceAll("_", " ")}</span>
             </button>
           ))}
         </div>
@@ -67,36 +58,36 @@ export function OrganizationsScreen({
   );
 }
 
-export function OrganizationScreen({
-  organizationId,
+export function TeamScreen({
+  teamId,
   onOpen,
   onOpenProject,
 }: {
-  readonly organizationId: string;
-  readonly onOpen: (organizationId: string) => void;
+  readonly teamId: string;
+  readonly onOpen: (teamId: string) => void;
   readonly onOpenProject: (projectId: string) => void;
 }) {
   const client = useManagementClient();
   const { state } = useDeveloperAuth();
-  const [organization, setOrganization] = useState<Organization | null>(null);
-  const [organizations, setOrganizations] = useState<Organization[]>([]);
-  const [members, setMembers] = useState<OrganizationMembership[] | null>(null);
+  const [team, setTeam] = useState<Team | null>(null);
+  const [teams, setTeams] = useState<Team[]>([]);
+  const [members, setMembers] = useState<TeamMembership[] | null>(null);
   const [failure, setFailure] = useState<ConsoleApiFailure | null>(null);
   const reload = useCallback(async () => {
     setFailure(null);
     try {
       const [selected, available, membershipItems] = await Promise.all([
-        client.getOrganization(organizationId),
-        client.listOrganizations(),
-        client.listMembers(organizationId),
+        client.getTeam(teamId),
+        client.listTeams(),
+        client.listMembers(teamId),
       ]);
-      setOrganization(selected);
-      setOrganizations(available);
+      setTeam(selected);
+      setTeams(available);
       setMembers(membershipItems);
     } catch (error) {
       setFailure(toConsoleApiFailure(error));
     }
-  }, [client, organizationId]);
+  }, [client, teamId]);
   useEffect(() => {
     void reload();
   }, [reload]);
@@ -106,16 +97,16 @@ export function OrganizationScreen({
   const canManage = currentRole === "owner" || currentRole === "administrator";
 
   return (
-    <section aria-labelledby="organization-title">
+    <section aria-labelledby="team-title">
       <div className="section-heading">
         <div>
-          <p className="eyebrow">Organization</p>
-          <h1 id="organization-title">{organization?.name ?? "Loading…"}</h1>
+          <p className="eyebrow">Team</p>
+          <h1 id="team-title">{team?.name ?? "Loading…"}</h1>
         </div>
         <label>
-          Switch organization
-          <select value={organizationId} onChange={(event) => onOpen(event.currentTarget.value)}>
-            {organizations.map((item) => (
+          Switch team
+          <select value={teamId} onChange={(event) => onOpen(event.currentTarget.value)}>
+            {teams.map((item) => (
               <option key={item.id} value={item.id}>
                 {item.name}
               </option>
@@ -126,15 +117,15 @@ export function OrganizationScreen({
       <ApiFailureNotice failure={failure} />
       <div className="split-grid">
         <MembersPanel
-          organizationId={organizationId}
+          teamId={teamId}
           members={members}
           currentRole={currentRole}
           canManage={canManage}
           onChanged={reload}
         />
-        <InvitationPanel organizationId={organizationId} canManage={canManage} onChanged={reload} />
-        <ProjectsPanel organizationId={organizationId} onOpen={onOpenProject} />
-        <BillingPanel organizationId={organizationId} />
+        <InvitationPanel teamId={teamId} canManage={canManage} onChanged={reload} />
+        <ProjectsPanel teamId={teamId} onOpen={onOpenProject} />
+        <BillingPanel teamId={teamId} />
       </div>
     </section>
   );
@@ -145,7 +136,7 @@ export function InvitationAcceptScreen({
   onAccepted,
 }: {
   readonly invitationId: string;
-  readonly onAccepted: (organizationId: string) => void;
+  readonly onAccepted: (teamId: string) => void;
 }) {
   const client = useManagementClient();
   const [failure, setFailure] = useState<ConsoleApiFailure | null>(null);
@@ -157,7 +148,7 @@ export function InvitationAcceptScreen({
     const token = String(new FormData(event.currentTarget).get("token") ?? "").trim();
     try {
       const membership = await client.acceptInvitation(invitationId, token);
-      onAccepted(membership.organizationId);
+      onAccepted(membership.teamId);
     } catch (error) {
       setFailure(toConsoleApiFailure(error));
       setPending(false);
@@ -165,7 +156,7 @@ export function InvitationAcceptScreen({
   };
   return (
     <section className="panel" aria-labelledby="accept-invitation-title">
-      <p className="eyebrow">Organization invitation</p>
+      <p className="eyebrow">Team invitation</p>
       <h1 id="accept-invitation-title">Accept invitation</h1>
       <p>
         Invitation <code>{invitationId}</code>
@@ -185,21 +176,21 @@ export function InvitationAcceptScreen({
 }
 
 function MembersPanel({
-  organizationId,
+  teamId,
   members,
   currentRole,
   canManage,
   onChanged,
 }: {
-  readonly organizationId: string;
-  readonly members: OrganizationMembership[] | null;
-  readonly currentRole: OrganizationRole | undefined;
+  readonly teamId: string;
+  readonly members: TeamMembership[] | null;
+  readonly currentRole: TeamRole | undefined;
   readonly canManage: boolean;
   readonly onChanged: () => Promise<void>;
 }) {
   const client = useManagementClient();
   const [failure, setFailure] = useState<ConsoleApiFailure | null>(null);
-  const updateRole = async (developerIdentityId: string, role: OrganizationRole) => {
+  const updateRole = async (developerIdentityId: string, role: TeamRole) => {
     const previousRole = members?.find(
       (member) => member.developerIdentityId === developerIdentityId,
     )?.role;
@@ -208,13 +199,13 @@ function MembersPanel({
       !confirmDestructiveAction({
         action: "Change",
         target: `${developerIdentityId}'s role from ${previousRole ?? "unknown"} to ${role}`,
-        consequence: "Their organization and project permissions will change immediately.",
+        consequence: "Their team and project permissions will change immediately.",
       })
     ) {
       return;
     }
     try {
-      await client.updateMember(organizationId, developerIdentityId, role);
+      await client.updateMember(teamId, developerIdentityId, role);
       await onChanged();
     } catch (error) {
       setFailure(toConsoleApiFailure(error));
@@ -224,14 +215,14 @@ function MembersPanel({
     if (
       !confirmDestructiveAction({
         action: "Remove",
-        target: `organization member ${developerIdentityId}`,
-        consequence: "The member will lose organization and project access.",
+        target: `team member ${developerIdentityId}`,
+        consequence: "The member will lose team and project access.",
       })
     ) {
       return;
     }
     try {
-      await client.removeMember(organizationId, developerIdentityId);
+      await client.removeMember(teamId, developerIdentityId);
       await onChanged();
     } catch (error) {
       setFailure(toConsoleApiFailure(error));
@@ -268,7 +259,7 @@ function MembersPanel({
                       onChange={(event) =>
                         void updateRole(
                           member.developerIdentityId,
-                          event.currentTarget.value as OrganizationRole,
+                          event.currentTarget.value as TeamRole,
                         )
                       }
                     >
@@ -302,11 +293,11 @@ function MembersPanel({
 }
 
 function InvitationPanel({
-  organizationId,
+  teamId,
   canManage,
   onChanged,
 }: {
-  readonly organizationId: string;
+  readonly teamId: string;
   readonly canManage: boolean;
   readonly onChanged: () => Promise<void>;
 }) {
@@ -319,9 +310,9 @@ function InvitationPanel({
     setFailure(null);
     const data = new FormData(form);
     const email = String(data.get("email") ?? "").trim();
-    const role = String(data.get("role") ?? "viewer") as OrganizationRole;
+    const role = String(data.get("role") ?? "viewer") as TeamRole;
     try {
-      const invitation = await client.createInvitation(organizationId, {
+      const invitation = await client.createInvitation(teamId, {
         email,
         role,
         expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1_000).toISOString(),

@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Define the plans an organization can be on and make a plan's limits the limits the gateway actually enforces.
+Define the plans a team can be on and make a plan's limits the limits the gateway actually enforces.
 
 ## Requirements
 
@@ -13,11 +13,11 @@ The platform SHALL define plans, their entitlements, and their overage terms as 
 - **WHEN** a plan's terms are revised in the catalog
 - **THEN** new derivations resolve the revised plan while a closed period keeps the version it was rated under
 
-### Requirement: An organization subscribes to a plan
-Every organization SHALL have exactly one effective plan at any time, defaulting to the free plan. A change of plan MUST record when it takes effect and MUST NOT retroactively alter a closed period.
+### Requirement: A team subscribes to a plan
+Every team SHALL have exactly one effective plan at any time, defaulting to the free plan. A change of plan MUST record when it takes effect and MUST NOT retroactively alter a closed period.
 
-#### Scenario: An organization changes plan mid-period
-- **WHEN** an organization moves to a different plan partway through a period
+#### Scenario: A team changes plan mid-period
+- **WHEN** a team moves to a different plan partway through a period
 - **THEN** the change records its effective time and both plans' terms apply to their own portions of the period
 
 ### Requirement: Enforced limits follow from the plan

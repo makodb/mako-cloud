@@ -14,7 +14,7 @@ semantics and warnings are documented in [Developer data workspace](developer-da
 
 ## Identity domains
 
-- Management endpoints use a developer session or scoped organization
+- Management endpoints use a developer session or scoped team
   automation token.
 - Project auth, document, replication, and protected function endpoints use an
   application-user session scoped to one project and environment.
@@ -72,7 +72,7 @@ automation. Direct RocksDB access, MongoDB drivers, SQL, and arbitrary unindexed
 document scans are not public interfaces.
 
 The portal and operator API persist their authoritative identity, wait-list,
-organization, project, incident, audit, and function-metadata state in the
+team, project, incident, audit, and function-metadata state in the
 server-side control SQLite database. This is an implementation boundary, not a
 new public SQL API. Application users, credentials, documents, policies,
 indexes, and RxDB replication remain data-plane RocksDB authority. When that

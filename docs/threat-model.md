@@ -17,7 +17,7 @@ logs.
 
 Cloud and persistent-volume providers are assumed to enforce their documented physical and account isolation. Neither storage engine is trusted merely because it opens. Control-plane SQLite must prove private path ownership, exclusive locking, database identity, schema and integrity, capacity, synchronous durability, and the required adapter semantics. Tenant RocksDB must continue to prove its existing ownership and semantic readiness independently. End-user devices, networks, tenant-authored documents, queries, policies, schemas, and function code are untrusted. A valid identity does not imply authorization to another project, environment, document, management action, or function secret.
 
-The control plane is the sole owner of the local SQLite file and its WAL, lock, migration, restore, and backup staging paths. SQLite stores developer and operator identity lifecycle, organizations and projects, provisioning, functions metadata, audit, idempotency, incidents, and mail outbox state. Application users, project credentials and signing keys, documents, policies, indexes, change history, and RxDB replication state remain in tenant RocksDB. The browser is presentation only: it creates no SQLite, IndexedDB, Dexie, RxDB, or local-storage authority.
+The control plane is the sole owner of the local SQLite file and its WAL, lock, migration, restore, and backup staging paths. SQLite stores developer and operator identity lifecycle, teams and projects, provisioning, functions metadata, audit, idempotency, incidents, and mail outbox state. Application users, project credentials and signing keys, documents, policies, indexes, change history, and RxDB replication state remain in tenant RocksDB. The browser is presentation only: it creates no SQLite, IndexedDB, Dexie, RxDB, or local-storage authority.
 
 Availability against provider-wide catastrophe and malicious cloud-provider administrators is outside the MVP guarantee. These remain deployment risks to address with regional recovery, provider controls, and contractual assurance; they do not weaken tenant isolation or fail-closed requirements.
 
@@ -40,7 +40,7 @@ Availability against provider-wide catastrophe and malicious cloud-provider admi
 | `TB-03` | Data services → ordered transactional KV | Capability handshake, encoded tenant prefixes, bounded scans, transaction and durability conformance |
 | `TB-04` | Services → SMTP, object storage, telemetry, and other dependencies | Scoped credentials, configured endpoints, deadlines, output redaction, no implicit egress |
 | `TB-05` | Edge supervisor → untrusted tenant function isolate | Fresh/clean isolate, capability injection, resource ceilings, default-deny network policy |
-| `TB-06` | Organization members/support operators → management and operator paths | Organization RBAC, step-up/JIT access, case and reason binding, immutable audit, visible impersonation |
+| `TB-06` | Team members/support operators → management and operator paths | Team RBAC, step-up/JIT access, case and reason binding, immutable audit, visible impersonation |
 | `TB-07` | Source/dependencies → release artifact | Protected review, locked/audited dependencies, isolated release identity, provenance/signature verification |
 | `TB-08` | Control-plane desired state → regional runtime state | Versioned configuration, idempotent reconciliation, authorized promotion/rollback, drift detection |
 | `TB-09` | Developer console → capability-authenticated explorer data routes | Short-lived signed scope/mode/operation grant, current epoch/nonce, policy preview or audited administrative authorization |
@@ -92,7 +92,7 @@ The detailed prevention, detection, response, boundary, identity, asset, and ver
 | `AC-02` | Policy bypass through sync, conflicts, indexes, or diagnostics | security | Uniform decision path; never return protected body/existence/count |
 | `AC-03` | Credential stuffing and account enumeration | identity | Generic response plus bounded, observable throttling |
 | `AC-04` | Session replay or token theft | identity | Detect refresh reuse, revoke family, preserve project/audience isolation |
-| `AC-05` | Management/support privilege escalation | security | Deny outside organization role or JIT case grant; audit every attempt |
+| `AC-05` | Management/support privilege escalation | security | Deny outside team role or JIT case grant; audit every attempt |
 | `AC-06` | Edge isolate escape or cross-project reuse | edge-runtime | Terminate isolate/node, rotate exposed capabilities, preserve other tenants |
 | `AC-07` | SSRF or unauthorized edge egress | edge-runtime | Default-deny destination, revalidate DNS/redirects, block provider metadata |
 | `AC-08` | Resource exhaustion through API, sync, query, or functions | platform | Bound offender and shed its work without noisy-neighbor propagation |
@@ -125,7 +125,7 @@ The detailed prevention, detection, response, boundary, identity, asset, and ver
 ### Developer data explorer boundary
 
 Explorer capabilities cross `TB-09` and live only in browser memory. The control plane revalidates
-active developer status, organization membership and data permission, active project/environment,
+active developer status, team membership and data permission, active project/environment,
 active collection, requested mode, and any selected active application user. The data plane accepts
 only the signed `mako-control-plane` to `mako-data-plane-explorer` audience, then rechecks the
 persistent nonce and current authorization epoch for the exact tenant, collection, mode, and
@@ -188,7 +188,7 @@ its format. The old checkpoint remains evidence, not an active fallback.
 `AC-32` is enforced by static console tests and session tests: operator authentication remains in an
 HttpOnly cookie, the developer token remains short-lived in session storage, and no browser
 database or durable local authority is introduced. During `AC-33`, control readiness and
-SQLite-backed authentication, wait-list, audit, incident, organization, and project metadata remain
+SQLite-backed authentication, wait-list, audit, incident, team, and project metadata remain
 available. Tenant reads, mutations, credentials, application-user administration, replication, and
 recovery actions continue to require the data plane and fail closed with an explicit unavailable
 provider rather than treating missing data as empty or healthy.

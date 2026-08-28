@@ -92,8 +92,8 @@ test("operator shell is permission-aware, responsive, partial-failure safe, and 
           {
             projectId: PROJECT_ID,
             projectName: "Mako Test",
-            organizationId: "org_abcdefgh",
-            organizationName: "Mako",
+            teamId: "org_abcdefgh",
+            teamName: "Mako",
             lifecycle: "active",
             region: "us-east-1",
             environmentCount: 1,
@@ -112,8 +112,8 @@ test("operator shell is permission-aware, responsive, partial-failure safe, and 
         project: {
           projectId: PROJECT_ID,
           projectName: "Mako Test",
-          organizationId: "org_abcdefgh",
-          organizationName: "Mako",
+          teamId: "org_abcdefgh",
+          teamName: "Mako",
           lifecycle: "active",
           region: "us-east-1",
           environmentCount: 1,
@@ -263,7 +263,7 @@ test("contextual repair preserves its operation key across password step-up retr
       return json(route, {
         project: {
           id: PROJECT_ID,
-          organizationId: "org_abcdefgh",
+          teamId: "org_abcdefgh",
           name: "Mako Test",
           region: "us-east-1",
           state: "active",

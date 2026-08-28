@@ -53,7 +53,7 @@ A verified wait-listed applicant SHALL be able to authenticate only to view
 their own coarse wait-list status and sign out. Account recovery SHALL remain
 available through the logged-out sign-in flow rather than being offered from
 the authenticated pending-review page. A wait-list session MUST use a scope or audience that the normal
-management authenticator rejects. It MUST NOT authorize organization, project,
+management authenticator rejects. It MUST NOT authorize team, project,
 environment, collection, credential, application-user, replication, document,
 observability, operator, or edge-function operations. The status response MUST
 NOT expose queue position, reviewer notes, other applicants, capacity plans, or
@@ -125,7 +125,7 @@ idempotency key and MUST be atomic under concurrent review.
 The developer lifecycle SHALL distinguish at least `unverified`, `waitlisted`,
 `active`, `rejected`, and `disabled`. Every transition that changes available
 authority MUST advance a durable authorization epoch and revoke incompatible
-sessions. An identity MUST NOT gain organization membership or resource
+sessions. An identity MUST NOT gain team membership or resource
 ownership merely by becoming active. Rejected and disabled identities MUST
 remain non-active unless a later explicit, authorized transition is defined and
 audited.
@@ -139,8 +139,8 @@ audited.
 - **THEN** all current sessions become unusable before subsequent management operations and existing tenant data remains governed by normal ownership and recovery procedures
 
 #### Scenario: Newly active developer enters the product
-- **WHEN** a newly approved developer signs in successfully without an existing organization membership
-- **THEN** the console offers the normal authorized organization-onboarding flow rather than silently assigning membership to an existing tenant
+- **WHEN** a newly approved developer signs in successfully without an existing team membership
+- **THEN** the console offers the normal authorized team-onboarding flow rather than silently assigning membership to an existing tenant
 
 ### Requirement: Registration mail is durable and fail-closed
 Verification, recovery, approval, and rejection notices SHALL be represented by

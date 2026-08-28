@@ -2,7 +2,7 @@ import { expect, test, type Page, type Route } from "@playwright/test";
 
 const NOW = "2026-08-06T12:00:00.000Z";
 const LATER = "2026-08-07T12:00:00.000Z";
-const ORGANIZATION_ID = "org_abcdefgh";
+const TEAM_ID = "org_abcdefgh";
 const PROJECT_ID = "prj_abcdefgh";
 const ENVIRONMENT_ID = "env_abcdefgh";
 
@@ -56,8 +56,8 @@ test("role management, provisioning health, and deletion grace run through the A
   await api.install(page);
   page.on("dialog", (dialog) => void dialog.accept());
 
-  await page.goto(`/organizations/${ORGANIZATION_ID}`);
-  await expect(page.getByRole("heading", { name: "Mako Test Organization" })).toBeVisible();
+  await page.goto(`/teams/${TEAM_ID}`);
+  await expect(page.getByRole("heading", { name: "Mako Test Team" })).toBeVisible();
 
   // The bill renders with its non-payable notice before any number, shows the
   // metered quantities, and a balance that has gone negative -- shown, marked,
@@ -227,13 +227,13 @@ class ManagementApiHarness {
       return;
     }
 
-    if (path === "/v1/organizations" && method === "GET") {
-      await json(route, { items: [organizationFixture()] });
-    } else if (path === `/v1/organizations/${ORGANIZATION_ID}` && method === "GET") {
-      await json(route, organizationFixture());
-    } else if (path === `/v1/organizations/${ORGANIZATION_ID}/bill` && method === "GET") {
+    if (path === "/v1/teams" && method === "GET") {
+      await json(route, { items: [teamFixture()] });
+    } else if (path === `/v1/teams/${TEAM_ID}` && method === "GET") {
+      await json(route, teamFixture());
+    } else if (path === `/v1/teams/${TEAM_ID}/bill` && method === "GET") {
       await json(route, {
-        organizationId: ORGANIZATION_ID,
+        teamId: TEAM_ID,
         planId: "pro",
         periodStart: "2026-08-01T00:00:00Z",
         periodEnd: NOW,
@@ -264,12 +264,9 @@ class ManagementApiHarness {
         notice:
           "This bill is informational. Nothing is payable and no charge will be made during the beta.",
       });
-    } else if (path === `/v1/organizations/${ORGANIZATION_ID}/members` && method === "GET") {
+    } else if (path === `/v1/teams/${TEAM_ID}/members` && method === "GET") {
       await json(route, { items: this.members });
-    } else if (
-      path === `/v1/organizations/${ORGANIZATION_ID}/members/dev_member01` &&
-      method === "PATCH"
-    ) {
+    } else if (path === `/v1/teams/${TEAM_ID}/members/dev_member01` && method === "PATCH") {
       const body = request.postDataJSON() as {
         role: "owner" | "administrator" | "developer" | "viewer";
       };
@@ -355,7 +352,7 @@ class ManagementApiHarness {
       await json(route, this.user);
     } else if (path === `/v1/projects/${PROJECT_ID}/environments/${ENVIRONMENT_ID}/signing-keys`) {
       await json(route, { items: [signingKeyFixture()] });
-    } else if (path === `/v1/organizations/${ORGANIZATION_ID}/automation-tokens`) {
+    } else if (path === `/v1/teams/${TEAM_ID}/automation-tokens`) {
       await json(route, { items: [] });
     } else if (path.endsWith("/credentials/public") && method === "POST") {
       const body = request.postDataJSON() as { id: string };
@@ -426,10 +423,10 @@ class ManagementApiHarness {
   }
 }
 
-function organizationFixture() {
+function teamFixture() {
   return {
-    id: ORGANIZATION_ID,
-    name: "Mako Test Organization",
+    id: TEAM_ID,
+    name: "Mako Test Team",
     state: "active",
     createdAt: NOW,
     updatedAt: NOW,
@@ -438,7 +435,7 @@ function organizationFixture() {
 
 function membership(developerIdentityId: string, role: string) {
   return {
-    organizationId: ORGANIZATION_ID,
+    teamId: TEAM_ID,
     developerIdentityId,
     role,
     createdAt: NOW,
@@ -449,7 +446,7 @@ function membership(developerIdentityId: string, role: string) {
 function projectFixture() {
   return {
     id: PROJECT_ID,
-    organizationId: ORGANIZATION_ID,
+    teamId: TEAM_ID,
     name: "Mako Test Project",
     region: "local",
     state: "active",
@@ -597,7 +594,7 @@ function observabilityPage(kind: string) {
     },
     "audit-events": {
       kind: "audit",
-      organizationId: ORGANIZATION_ID,
+      teamId: TEAM_ID,
       actorId: "dev_abcdefgh",
       action: "policy.activate",
       target: "todos/policy/1",

@@ -100,7 +100,7 @@ export function OperatorWaitListPanel() {
         target,
         consequence:
           action === "approve"
-            ? "The account becomes active, pending sessions are revoked, and a fresh sign-in is required. No organization membership is created."
+            ? "The account becomes active, pending sessions are revoked, and a fresh sign-in is required. No team membership is created."
             : "The account becomes rejected and all developer sessions are revoked.",
       })
     ) {
@@ -169,7 +169,7 @@ export function OperatorWaitListPanel() {
         action: "Approve selected",
         target: `${selectedApplicants.length} visible wait-listed developer account${selectedApplicants.length === 1 ? "" : "s"}`,
         consequence:
-          "Each account is approved independently. Valid approvals remain committed if another selected account fails, and no organization membership is created.",
+          "Each account is approved independently. Valid approvals remain committed if another selected account fails, and no team membership is created.",
       })
     ) {
       return;

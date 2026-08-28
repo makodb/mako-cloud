@@ -65,7 +65,7 @@ assert(
 
 const samplePath = (path) =>
   path
-    .replaceAll("{organizationId}", "org_example0001")
+    .replaceAll("{teamId}", "org_example0001")
     .replaceAll("{invitationId}", "inv_example0001")
     .replaceAll("{developerIdentityId}", "dev_example0001")
     .replaceAll("{automationTokenId}", "aut_example0001")

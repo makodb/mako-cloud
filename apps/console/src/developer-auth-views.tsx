@@ -343,7 +343,7 @@ export function WaitListStatusView() {
     <PublicAuthShell title="Your account is waiting for review">
       <p>
         Your email is verified. A platform operator must approve this developer account before it
-        can access organizations, projects, data, or functions.
+        can access teams, projects, data, or functions.
       </p>
       {status === "loading" ? (
         <p role="status">Checking current wait-list status…</p>

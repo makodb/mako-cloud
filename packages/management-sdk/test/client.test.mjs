@@ -54,11 +54,11 @@ test("developer and automation credentials use the same versioned management con
       credential: { kind, accessToken: `${kind}-credential-value` },
       fetch: async (request) => {
         requests.push(request);
-        return Response.json(organization(), { status: 201 });
+        return Response.json(team(), { status: 201 });
       },
     });
-    assert.deepEqual(await client.createOrganization("Example"), organization());
-    assert.equal(requests[0].url, "https://api.example.test/v1/organizations");
+    assert.deepEqual(await client.createTeam("Example"), team());
+    assert.equal(requests[0].url, "https://api.example.test/v1/teams");
     assert.equal(requests[0].headers.get("authorization"), `Bearer ${kind}-credential-value`);
     assert.deepEqual(await requests[0].json(), { name: "Example" });
   }
@@ -74,7 +74,7 @@ test("surfaces stable server errors and never echoes arbitrary response bodies",
           apiVersion: "v1",
           error: {
             code: "permission_denied",
-            message: "viewer cannot mutate organization",
+            message: "viewer cannot mutate team",
             requestId: "req_denied",
             retry: { kind: "never" },
           },
@@ -83,7 +83,7 @@ test("surfaces stable server errors and never echoes arbitrary response bodies",
       ),
   });
   await assert.rejects(
-    () => stable.updateOrganization("org_abcdefgh", "Denied"),
+    () => stable.updateTeam("org_abcdefgh", "Denied"),
     (error) =>
       error instanceof ManagementApiError &&
       error.code === "permission_denied" &&
@@ -97,7 +97,7 @@ test("surfaces stable server errors and never echoes arbitrary response bodies",
     fetch: async () => new Response("secret database diagnostic", { status: 503 }),
   });
   await assert.rejects(
-    () => untrusted.getOrganization("org_abcdefgh"),
+    () => untrusted.getTeam("org_abcdefgh"),
     (error) =>
       error instanceof ManagementApiError &&
       error.message === "management request failed" &&
@@ -131,7 +131,7 @@ test("operator client uses only same-origin HttpOnly cookie credentials", async 
       return Response.json({
         project: {
           id: "prj_abcdefgh",
-          organizationId: "org_abcdefgh",
+          teamId: "org_abcdefgh",
           name: "Example",
           region: "us-east",
           state: "active",
@@ -251,7 +251,7 @@ test("operator inventory covers every operator operation in the OpenAPI contract
   assert.deepEqual([...OPERATOR_OPERATIONS].sort(), operations);
 });
 
-function organization() {
+function team() {
   return {
     id: "org_abcdefgh",
     name: "Example",

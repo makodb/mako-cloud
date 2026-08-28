@@ -57,7 +57,7 @@ Run `npm run validate:traceability` whenever a scenario or row changes. The vali
 | ID | Scenario | Primary automated evidence | Status |
 | --- | --- | --- | --- |
 | BP-01 | A plan's terms change | `crates/mako-control-plane/src/organization.rs::an_invoice_closes_exactly_once_and_reads_back_unchanged` | Automated |
-| BP-02 | An organization changes plan mid-period | `crates/mako-control-plane/src/model.rs::plan_changes_leave_stretches_a_billing_period_can_be_split_by` and `crates/mako-billing/src/rating.rs::an_upgrade_mid_month_prorates_the_base_and_the_flow_allowances` | Automated |
+| BP-02 | A team changes plan mid-period | `crates/mako-control-plane/src/model.rs::plan_changes_leave_stretches_a_billing_period_can_be_split_by` and `crates/mako-billing/src/rating.rs::an_upgrade_mid_month_prorates_the_base_and_the_flow_allowances` | Automated |
 | BP-03 | Two tenants on different plans | `crates/mako-gateway/src/quota.rs::an_installed_policy_applies_to_one_tenant_and_the_default_to_the_rest` | Automated |
 | BP-04 | An operator raises a tenant's limit | `crates/mako-control-plane/src/operator.rs::plan_exceptions_replace_as_a_set_and_expired_ones_are_not_in_force` | Automated |
 | BP-05 | Plan resolution fails | `crates/mako-gateway/src/quota.rs::an_installed_policy_applies_to_one_tenant_and_the_default_to_the_rest` | Automated |

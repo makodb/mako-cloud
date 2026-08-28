@@ -1,7 +1,7 @@
 # Billing
 
 The beta charges nobody. It measures what every tenant uses, shows each
-organization the bill that use would imply, and keeps a balance that may go
+team the bill that use would imply, and keeps a balance that may go
 negative. Nothing is collected: every bill response carries
 `collectable: false` and says in words that no charge will be made, and
 `npm run validate:no-collection` proves in CI that no payment-provider
@@ -50,22 +50,22 @@ blocked, because capping there would stop a customer at the moment they
 started paying more. Platform rate limits are neither: every plan carries
 them and no plan removes them.
 
-An organization records its plan (`free` by default, including organizations
+A team records its plan (`free` by default, including teams
 stored before plans existed). The only way onto another plan in the beta is
 an audited operator action, which also reinstalls the limits every one of
-the organization's environments is held to. Operator plan exceptions
+the team's environments is held to. Operator plan exceptions
 ("ignore the plan for this resource") replace as a set, expire, and apply
 everywhere entitlements are read -- enforcement and the bill move together.
 
 ## The bill
 
-`GET /v1/organizations/{organizationId}/bill` rates the current calendar
-month so far against the organization's effective plan and the rate card,
+`GET /v1/teams/{teamId}/bill` rates the current calendar
+month so far against the team's effective plan and the rate card,
 whose prices were verified against supabase.com/pricing on 2026-08-25. Money
 is integer micro-dollars end to end; only the display divides. Credits are
 operator-granted, exactly-once per credit id, and the balance is credits
 minus all charges -- every closed period plus the live month -- unclamped.
-The console renders the bill on the organization page with the non-payable
+The console renders the bill on the team page with the non-payable
 notice ahead of any number.
 
 ### Proration
@@ -78,7 +78,7 @@ the full included level and prorates the resulting charge by time held. Use
 under a free stretch stays uncharged, because a plan that cannot bill
 overage cannot start billing it retroactively. One plan for the whole period
 rates identically to the unsegmented arithmetic. Time before the
-organization existed is covered by the free plan's zero-priced terms, which
+team existed is covered by the free plan's zero-priced terms, which
 is what prorates a mid-month signup's base fee by construction.
 
 ### Period close

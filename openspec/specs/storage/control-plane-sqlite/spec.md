@@ -7,7 +7,7 @@ Define the independent server-side SQLite authority that preserves control-plane
 ## Requirements
 
 ### Requirement: SQLite is the sole control-plane storage authority
-The production control plane SHALL store all control-plane-owned durable state in one exclusively owned server-side SQLite database. This state SHALL include developer identities and credentials, verification and recovery records, wait-list decisions, operator entitlements and sessions, organizations, projects, environments, provisioning state, control-plane audit records, idempotency outcomes, mail outbox state, function metadata, and other control metadata. Browser storage and tenant RocksDB databases MUST NOT become alternate authorities for that state.
+The production control plane SHALL store all control-plane-owned durable state in one exclusively owned server-side SQLite database. This state SHALL include developer identities and credentials, verification and recovery records, wait-list decisions, operator entitlements and sessions, teams, projects, environments, provisioning state, control-plane audit records, idempotency outcomes, mail outbox state, function metadata, and other control metadata. Browser storage and tenant RocksDB databases MUST NOT become alternate authorities for that state.
 
 #### Scenario: Control-plane state is committed
 - **WHEN** an authorized control-plane operation mutates identity or management state

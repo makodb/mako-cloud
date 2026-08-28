@@ -7,7 +7,7 @@ Provide developers with a coherent project and environment workspace for underst
 ## Requirements
 
 ### Requirement: Persistent project workspace
-The developer console SHALL provide persistent, responsive navigation for project overview, Data Explorer, collections and indexes, synchronization, application users, policies, functions, logs and metrics, backups, API & Connect, and settings. The active organization, project, environment, and developer identity MUST remain visible, and navigation MUST show only resources allowed by the current membership.
+The developer console SHALL provide persistent, responsive navigation for project overview, Data Explorer, collections and indexes, synchronization, application users, policies, functions, logs and metrics, backups, API & Connect, and settings. The active team, project, environment, and developer identity MUST remain visible, and navigation MUST show only resources allowed by the current membership.
 
 #### Scenario: Developer changes environments
 - **WHEN** an authorized developer selects another environment in the project switcher
@@ -75,7 +75,7 @@ An authorized project owner or administrator SHALL be able to request restoratio
 - **THEN** the system rejects the request and directs the developer to the separately authorized operator recovery process
 
 ### Requirement: Workspace context and accessibility
-Workspace URLs SHALL preserve safe organization, project, environment, destination, filter, and time context without secrets, tokens, raw email addresses, or document content. Navigation, summaries, setup instructions, diagnostic tables, and recovery progress SHALL be keyboard accessible and usable with assistive technology.
+Workspace URLs SHALL preserve safe team, project, environment, destination, filter, and time context without secrets, tokens, raw email addresses, or document content. Navigation, summaries, setup instructions, diagnostic tables, and recovery progress SHALL be keyboard accessible and usable with assistive technology.
 
 #### Scenario: Developer opens a shared diagnostic URL
 - **WHEN** an authorized colleague opens a workspace URL containing safe project, environment, sync filter, and time context

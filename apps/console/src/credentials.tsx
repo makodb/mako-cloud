@@ -48,7 +48,7 @@ export function CredentialsScreen({
   readonly onBack: () => void;
 }) {
   const client = useManagementClient();
-  const [organizationId, setOrganizationId] = useState<string | null>(null);
+  const [teamId, setTeamId] = useState<string | null>(null);
   const [tokens, setTokens] = useState<AutomationToken[] | null>(null);
   const [selectedToken, setSelectedToken] = useState<AutomationToken | null>(null);
   const [signingKeys, setSigningKeys] = useState<JwtSigningKey[] | null>(null);
@@ -60,10 +60,10 @@ export function CredentialsScreen({
     try {
       const project = await client.getProject(projectId);
       const [nextTokens, nextSigningKeys] = await Promise.all([
-        client.listAutomationTokens(project.organizationId),
+        client.listAutomationTokens(project.teamId),
         client.listJwtSigningKeys(projectId, environmentId),
       ]);
-      setOrganizationId(project.organizationId);
+      setTeamId(project.teamId);
       setTokens(nextTokens);
       setSigningKeys(nextSigningKeys);
       setSelectedToken((current) =>
@@ -246,12 +246,12 @@ export function CredentialsScreen({
 
   const createToken = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (organizationId === null) {
+    if (teamId === null) {
       return;
     }
     const data = new FormData(event.currentTarget);
     try {
-      const issue = await client.createAutomationToken(organizationId, {
+      const issue = await client.createAutomationToken(teamId, {
         name: requiredText(data, "name"),
         scope: automationScope(data, projectId, environmentId),
         expiresAt: dateTime(data, "expiresAt"),
@@ -265,13 +265,13 @@ export function CredentialsScreen({
   };
   const rotateToken = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (organizationId === null || selectedToken === null) {
+    if (teamId === null || selectedToken === null) {
       return;
     }
     const data = new FormData(event.currentTarget);
     try {
       const issue = await client.rotateAutomationToken(
-        organizationId,
+        teamId,
         selectedToken.id,
         requiredText(data, "replacementId"),
         dateTime(data, "expiresAt"),
@@ -285,7 +285,7 @@ export function CredentialsScreen({
     }
   };
   const revokeToken = async () => {
-    if (organizationId === null || selectedToken === null) {
+    if (teamId === null || selectedToken === null) {
       return;
     }
     if (
@@ -298,7 +298,7 @@ export function CredentialsScreen({
       return;
     }
     try {
-      await client.revokeAutomationToken(organizationId, selectedToken.id);
+      await client.revokeAutomationToken(teamId, selectedToken.id);
       await reload();
       setFailure(null);
     } catch (error) {

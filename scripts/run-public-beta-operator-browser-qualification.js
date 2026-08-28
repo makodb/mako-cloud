@@ -302,7 +302,7 @@ async function qualifyBrowser(origin, expectedPermissions) {
         await json(route, {
           project: {
             id: projectId,
-            organizationId: "org_qualify01",
+            teamId: "org_qualify01",
             name: "Qualification Project",
             region: "us-east-1-beta",
             state: "active",

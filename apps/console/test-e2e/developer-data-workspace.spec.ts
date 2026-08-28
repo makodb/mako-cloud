@@ -551,7 +551,7 @@ test("sync filters and isolated restore safeguards remain tenant scoped", async 
 function project() {
   return {
     id: PROJECT_ID,
-    organizationId: "org_abcdefgh",
+    teamId: "org_abcdefgh",
     name: "Workspace project",
     region: "local",
     state: "active",

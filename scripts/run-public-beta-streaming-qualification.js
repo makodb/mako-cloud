@@ -58,13 +58,13 @@ mkdirSync(privateRoot, { recursive: true, mode: 0o700 });
 chmodSync(privateRoot, 0o700);
 let state = readState();
 let developerToken = null;
-let organization;
+let team;
 let project;
 let environment;
 
 if (reuseFixture) {
   validateReusableState(state);
-  organization = { id: state.organizationId };
+  team = { id: state.teamId };
   project = { id: state.projectId };
   environment = { id: state.environmentId };
 } else {
@@ -72,18 +72,14 @@ if (reuseFixture) {
   assert(existsSync(sessionBinary), "build target/release/mako-control-session first");
   developerToken = issueDeveloperToken(qualificationDeveloper());
 
-  organization = await findOrCreate(
-    "/v1/organizations",
-    (item) => item.name === "Public Beta Qualification",
-    {
-      method: "POST",
-      developer: true,
-      body: { name: "Public Beta Qualification" },
-      expected: [201],
-    },
-  );
+  team = await findOrCreate("/v1/teams", (item) => item.name === "Public Beta Qualification", {
+    method: "POST",
+    developer: true,
+    body: { name: "Public Beta Qualification" },
+    expected: [201],
+  });
   project = await findOrCreate(
-    `/v1/projects?organizationId=${encodeURIComponent(organization.id)}`,
+    `/v1/projects?teamId=${encodeURIComponent(team.id)}`,
     (item) => item.name === "Public Beta Qualification",
     {
       path: "/v1/projects",
@@ -91,7 +87,7 @@ if (reuseFixture) {
       developer: true,
       headers: { "Idempotency-Key": "qualification-project-v1" },
       body: {
-        organizationId: organization.id,
+        teamId: team.id,
         name: "Public Beta Qualification",
         region: "us-east-1-beta",
       },
@@ -140,7 +136,7 @@ state = {
   ...state,
   schemaVersion: 1,
   releaseDigest,
-  organizationId: organization.id,
+  teamId: team.id,
   projectId: project.id,
   environmentId: environment.id,
   collectionId,
@@ -195,7 +191,7 @@ writeJson(evidencePath, {
   planHash: manifest.planHash,
   qualificationMode: reuseFixture ? "existing-isolated-fixture" : "developer-managed-fixture",
   tenant: {
-    organizationId: organization.id,
+    teamId: team.id,
     projectId: project.id,
     environmentId: environment.id,
     collectionId,
@@ -520,7 +516,7 @@ function readState() {
 
 function validateReusableState(value) {
   assert(value.schemaVersion === 1, "qualification fixture state schema is invalid");
-  assertIdentifier(value.organizationId, "org_");
+  assertIdentifier(value.teamId, "org_");
   assertIdentifier(value.projectId, "prj_");
   assertIdentifier(value.environmentId, "env_");
   assert(value.collectionId === collectionId, "qualification collection is invalid");

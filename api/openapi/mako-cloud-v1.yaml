@@ -19,14 +19,14 @@ tags:
 security:
   - managementBearer: []
 paths:
-  /v1/organizations:
+  /v1/teams:
     get:
       tags: [Management]
-      operationId: listOrganizations
-      summary: List organizations visible to the developer
+      operationId: listTeams
+      summary: List teams visible to the developer
       responses:
         "200":
-          description: Organization page
+          description: Team page
           content:
             application/json:
               schema:
@@ -36,13 +36,13 @@ paths:
                   items:
                     type: array
                     items:
-                      $ref: "#/components/schemas/Organization"
+                      $ref: "#/components/schemas/Team"
         default:
           $ref: "#/components/responses/ApiError"
     post:
       tags: [Management]
-      operationId: createOrganization
-      summary: Create an organization
+      operationId: createTeam
+      summary: Create a team
       requestBody:
         required: true
         content:
@@ -57,20 +57,20 @@ paths:
                   maxLength: 120
       responses:
         "201":
-          description: Organization created
+          description: Team created
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Organization"
+                $ref: "#/components/schemas/Team"
         default:
           $ref: "#/components/responses/ApiError"
-  /v1/organizations/{organizationId}/bill:
+  /v1/teams/{teamId}/bill:
     get:
       tags: [Management]
-      operationId: getOrganizationBill
-      summary: The organization's informational bill
+      operationId: getTeamBill
+      summary: The team's informational bill
       description: >-
-        What the organization's metered use would cost under its plan and the
+        What the team's metered use would cost under its plan and the
         current rate card, and the balance it implies. Without a period, the
         live current month; with one, the finalized invoice of a closed past
         month. Ended months are closed on read while their evidence is still
@@ -79,7 +79,7 @@ paths:
         time. Informational only: nothing is payable and no charge is made
         during the beta, and the response says so explicitly.
       parameters:
-        - $ref: "#/components/parameters/OrganizationId"
+        - $ref: "#/components/parameters/TeamId"
         - name: period
           in: query
           required: false
@@ -96,7 +96,7 @@ paths:
                 type: object
                 additionalProperties: false
                 required:
-                  - organizationId
+                  - teamId
                   - planId
                   - periodStart
                   - periodEnd
@@ -110,7 +110,7 @@ paths:
                   - collectable
                   - notice
                 properties:
-                  organizationId: {$ref: "#/components/schemas/OrganizationId"}
+                  teamId: {$ref: "#/components/schemas/TeamId"}
                   planId: {type: string}
                   periodStart: {type: string, format: date-time}
                   periodEnd: {type: string, format: date-time}
@@ -143,26 +143,26 @@ paths:
                   collectable: {type: boolean}
                   notice: {type: string}
         default: {$ref: "#/components/responses/ApiError"}
-  /v1/organizations/{organizationId}:
+  /v1/teams/{teamId}:
     parameters:
-      - $ref: "#/components/parameters/OrganizationId"
+      - $ref: "#/components/parameters/TeamId"
     get:
       tags: [Management]
-      operationId: getOrganization
-      summary: Inspect an organization visible to the developer or automation token
+      operationId: getTeam
+      summary: Inspect a team visible to the developer or automation token
       responses:
         "200":
-          description: Organization
+          description: Team
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Organization"
+                $ref: "#/components/schemas/Team"
         default:
           $ref: "#/components/responses/ApiError"
     patch:
       tags: [Management]
-      operationId: updateOrganization
-      summary: Update organization metadata
+      operationId: updateTeam
+      summary: Update team metadata
       requestBody:
         required: true
         content:
@@ -178,17 +178,17 @@ paths:
                   maxLength: 200
       responses:
         "200":
-          description: Updated organization
+          description: Updated team
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Organization"
+                $ref: "#/components/schemas/Team"
         default:
           $ref: "#/components/responses/ApiError"
     delete:
       tags: [Management]
-      operationId: requestOrganizationDeletion
-      summary: Enter the organization deletion grace period
+      operationId: requestTeamDeletion
+      summary: Enter the team deletion grace period
       parameters:
         - name: confirmation
           in: header
@@ -203,32 +203,32 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Organization"
+                $ref: "#/components/schemas/Team"
         default:
           $ref: "#/components/responses/ApiError"
-  /v1/organizations/{organizationId}/actions/restore:
+  /v1/teams/{teamId}/actions/restore:
     post:
       tags: [Management]
-      operationId: restoreOrganization
-      summary: Restore an organization before its deletion grace deadline
+      operationId: restoreTeam
+      summary: Restore a team before its deletion grace deadline
       parameters:
-        - $ref: "#/components/parameters/OrganizationId"
+        - $ref: "#/components/parameters/TeamId"
         - $ref: "#/components/parameters/IdempotencyKey"
       responses:
         "202":
-          description: Organization restoration accepted
+          description: Team restoration accepted
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Organization"
+                $ref: "#/components/schemas/Team"
         default:
           $ref: "#/components/responses/ApiError"
-  /v1/organizations/{organizationId}/invitations:
+  /v1/teams/{teamId}/invitations:
     post:
       tags: [Management]
-      operationId: createOrganizationInvitation
+      operationId: createTeamInvitation
       parameters:
-        - $ref: "#/components/parameters/OrganizationId"
+        - $ref: "#/components/parameters/TeamId"
       requestBody:
         required: true
         content:
@@ -242,7 +242,7 @@ paths:
                   type: string
                   format: email
                 role:
-                  $ref: "#/components/schemas/OrganizationRole"
+                  $ref: "#/components/schemas/TeamRole"
                 expiresAt:
                   type: string
                   format: date-time
@@ -258,7 +258,7 @@ paths:
   /v1/invitations/{invitationId}/accept:
     post:
       tags: [Management]
-      operationId: acceptOrganizationInvitation
+      operationId: acceptTeamInvitation
       parameters:
         - $ref: "#/components/parameters/InvitationId"
       requestBody:
@@ -276,22 +276,22 @@ paths:
                   maxLength: 512
       responses:
         "200":
-          description: Accepted organization membership
+          description: Accepted team membership
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/OrganizationMembership"
+                $ref: "#/components/schemas/TeamMembership"
         default:
           $ref: "#/components/responses/ApiError"
-  /v1/organizations/{organizationId}/members:
+  /v1/teams/{teamId}/members:
     get:
       tags: [Management]
-      operationId: listOrganizationMembers
+      operationId: listTeamMembers
       parameters:
-        - $ref: "#/components/parameters/OrganizationId"
+        - $ref: "#/components/parameters/TeamId"
       responses:
         "200":
-          description: Organization members
+          description: Team members
           content:
             application/json:
               schema:
@@ -301,16 +301,16 @@ paths:
                   items:
                     type: array
                     items:
-                      $ref: "#/components/schemas/OrganizationMembership"
+                      $ref: "#/components/schemas/TeamMembership"
         default:
           $ref: "#/components/responses/ApiError"
-  /v1/organizations/{organizationId}/members/{developerIdentityId}:
+  /v1/teams/{teamId}/members/{developerIdentityId}:
     parameters:
-      - $ref: "#/components/parameters/OrganizationId"
+      - $ref: "#/components/parameters/TeamId"
       - $ref: "#/components/parameters/DeveloperIdentityId"
     patch:
       tags: [Management]
-      operationId: updateOrganizationMember
+      operationId: updateTeamMember
       requestBody:
         required: true
         content:
@@ -321,30 +321,30 @@ paths:
               required: [role]
               properties:
                 role:
-                  $ref: "#/components/schemas/OrganizationRole"
+                  $ref: "#/components/schemas/TeamRole"
       responses:
         "200":
           description: Updated membership
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/OrganizationMembership"
+                $ref: "#/components/schemas/TeamMembership"
         default:
           $ref: "#/components/responses/ApiError"
     delete:
       tags: [Management]
-      operationId: removeOrganizationMember
+      operationId: removeTeamMember
       responses:
         "204":
           description: Membership removed
         default:
           $ref: "#/components/responses/ApiError"
-  /v1/organizations/{organizationId}/automation-tokens:
+  /v1/teams/{teamId}/automation-tokens:
     get:
       tags: [Management]
       operationId: listAutomationTokens
       parameters:
-        - $ref: "#/components/parameters/OrganizationId"
+        - $ref: "#/components/parameters/TeamId"
       responses:
         "200":
           description: Automation token metadata without token secrets
@@ -364,7 +364,7 @@ paths:
       tags: [Management]
       operationId: createAutomationToken
       parameters:
-        - $ref: "#/components/parameters/OrganizationId"
+        - $ref: "#/components/parameters/TeamId"
       requestBody:
         required: true
         content:
@@ -392,24 +392,24 @@ paths:
                 $ref: "#/components/schemas/AutomationTokenIssue"
         default:
           $ref: "#/components/responses/ApiError"
-  /v1/organizations/{organizationId}/automation-tokens/{automationTokenId}:
+  /v1/teams/{teamId}/automation-tokens/{automationTokenId}:
     delete:
       tags: [Management]
       operationId: revokeAutomationToken
       parameters:
-        - $ref: "#/components/parameters/OrganizationId"
+        - $ref: "#/components/parameters/TeamId"
         - $ref: "#/components/parameters/AutomationTokenId"
       responses:
         "204":
           description: Automation token revoked
         default:
           $ref: "#/components/responses/ApiError"
-  /v1/organizations/{organizationId}/automation-tokens/{automationTokenId}/actions/rotate:
+  /v1/teams/{teamId}/automation-tokens/{automationTokenId}/actions/rotate:
     post:
       tags: [Management]
       operationId: rotateAutomationToken
       parameters:
-        - $ref: "#/components/parameters/OrganizationId"
+        - $ref: "#/components/parameters/TeamId"
         - $ref: "#/components/parameters/AutomationTokenId"
         - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
@@ -439,16 +439,16 @@ paths:
     get:
       tags: [Management]
       operationId: listProjects
-      summary: List projects visible in an organization
+      summary: List projects visible in a team
       parameters:
-        - name: organizationId
+        - name: teamId
           in: query
           required: true
           schema:
-            $ref: "#/components/schemas/OrganizationId"
+            $ref: "#/components/schemas/TeamId"
       responses:
         "200":
-          description: Organization projects
+          description: Team projects
           content:
             application/json:
               schema:
@@ -474,10 +474,10 @@ paths:
           application/json:
             schema:
               type: object
-              required: [organizationId, name, region]
+              required: [teamId, name, region]
               properties:
-                organizationId:
-                  $ref: "#/components/schemas/OrganizationId"
+                teamId:
+                  $ref: "#/components/schemas/TeamId"
                 name:
                   type: string
                   minLength: 1
@@ -3132,21 +3132,21 @@ paths:
                 $ref: "#/components/schemas/ProvisioningWorkflow"
         default:
           $ref: "#/components/responses/ApiError"
-  /v1/operator/organizations/{organizationId}/plan:
+  /v1/operator/teams/{teamId}/plan:
     post:
       tags: [Operator]
-      operationId: changeOrganizationPlan
-      summary: Move an organization to another plan
+      operationId: changeTeamPlan
+      summary: Move a team to another plan
       description: >-
         The beta's comped plan change: nothing sells plans, so an operator
         granting one is the only way onto a paid tier. The change is audited,
-        and the limits each of the organization's environments is held to are
+        and the limits each of the team's environments is held to are
         reinstalled before the change is reported.
       security:
         - operatorSessionCookie: []
         - operatorBearer: []
       parameters:
-        - $ref: "#/components/parameters/OrganizationId"
+        - $ref: "#/components/parameters/TeamId"
       requestBody:
         required: true
         content:
@@ -3160,34 +3160,34 @@ paths:
                 reason: {type: string, minLength: 1, maxLength: 500}
       responses:
         "200":
-          description: The organization's plan after the change
+          description: The team's plan after the change
           content:
             application/json:
               schema:
                 type: object
                 additionalProperties: false
-                required: [organizationId, planId, updatedAt]
+                required: [teamId, planId, updatedAt]
                 properties:
-                  organizationId: {$ref: "#/components/schemas/OrganizationId"}
+                  teamId: {$ref: "#/components/schemas/TeamId"}
                   planId: {type: string}
                   updatedAt: {type: string, format: date-time}
         default: {$ref: "#/components/responses/ApiError"}
-  /v1/operator/organizations/{organizationId}/plan-exceptions:
+  /v1/operator/teams/{teamId}/plan-exceptions:
     put:
       tags: [Operator]
-      operationId: setOrganizationPlanExceptions
-      summary: Replace the exceptions to an organization's plan
+      operationId: setTeamPlanExceptions
+      summary: Replace the exceptions to a team's plan
       description: >-
         The operator states what is exceptional right now; an empty set clears
         everything. Each exception names one resource, carries a reason, and
-        may expire, after which the organization is back on its plan. The
+        may expire, after which the team is back on its plan. The
         limits every environment is held to are reinstalled before the change
         is reported.
       security:
         - operatorSessionCookie: []
         - operatorBearer: []
       parameters:
-        - $ref: "#/components/parameters/OrganizationId"
+        - $ref: "#/components/parameters/TeamId"
       requestBody:
         required: true
         content:
@@ -3211,20 +3211,20 @@ paths:
               schema:
                 type: object
                 additionalProperties: false
-                required: [organizationId, exceptions]
+                required: [teamId, exceptions]
                 properties:
-                  organizationId: {$ref: "#/components/schemas/OrganizationId"}
+                  teamId: {$ref: "#/components/schemas/TeamId"}
                   exceptions:
                     type: array
                     maxItems: 16
                     items:
                       $ref: "#/components/schemas/PlanException"
         default: {$ref: "#/components/responses/ApiError"}
-  /v1/operator/organizations/{organizationId}/credits:
+  /v1/operator/teams/{teamId}/credits:
     post:
       tags: [Operator]
-      operationId: grantOrganizationCredit
-      summary: Grant an organization a credit
+      operationId: grantTeamCredit
+      summary: Grant a team a credit
       description: >-
         Moves the shown balance and nothing else. Exactly-once per credit id:
         replaying the same id conflicts rather than granting twice. A credit
@@ -3233,7 +3233,7 @@ paths:
         - operatorSessionCookie: []
         - operatorBearer: []
       parameters:
-        - $ref: "#/components/parameters/OrganizationId"
+        - $ref: "#/components/parameters/TeamId"
       requestBody:
         required: true
         content:
@@ -4588,12 +4588,12 @@ components:
       name: X-Mako-Explorer-Capability
       description: In-memory-only signed capability with a maximum five-minute lifetime
   parameters:
-    OrganizationId:
-      name: organizationId
+    TeamId:
+      name: teamId
       in: path
       required: true
       schema:
-        $ref: "#/components/schemas/OrganizationId"
+        $ref: "#/components/schemas/TeamId"
     InvitationId:
       name: invitationId
       in: path
@@ -5542,12 +5542,12 @@ components:
     OperatorTenantSummary:
       type: object
       additionalProperties: false
-      required: [projectId, projectName, organizationId, organizationName, lifecycle, region, environmentCount, health, plan, updatedAt]
+      required: [projectId, projectName, teamId, teamName, lifecycle, region, environmentCount, health, plan, updatedAt]
       properties:
         projectId: {$ref: "#/components/schemas/ProjectId"}
         projectName: {type: string, maxLength: 200}
-        organizationId: {$ref: "#/components/schemas/OrganizationId"}
-        organizationName: {type: [string, "null"], maxLength: 200}
+        teamId: {$ref: "#/components/schemas/TeamId"}
+        teamName: {type: [string, "null"], maxLength: 200}
         lifecycle: {$ref: "#/components/schemas/LifecycleState"}
         region: {type: string, maxLength: 64}
         environmentCount: {type: integer, minimum: 0, maximum: 100}
@@ -6106,7 +6106,7 @@ components:
     DeveloperIdentityId:
       type: string
       pattern: "^dev_[A-Za-z0-9_-]{8,64}$"
-    OrganizationId:
+    TeamId:
       type: string
       pattern: "^org_[A-Za-z0-9_-]{8,64}$"
     InvitationId:
@@ -6147,12 +6147,12 @@ components:
     FunctionName:
       type: string
       pattern: "^[a-z][a-z0-9-]{0,62}$"
-    Organization:
+    Team:
       type: object
       required: [id, name, state, createdAt, updatedAt]
       properties:
         id:
-          $ref: "#/components/schemas/OrganizationId"
+          $ref: "#/components/schemas/TeamId"
         name:
           type: string
         state:
@@ -6167,20 +6167,20 @@ components:
         deletionDeadline:
           type: string
           format: date-time
-    OrganizationRole:
+    TeamRole:
       type: string
       enum: [owner, administrator, developer, viewer]
-    OrganizationMembership:
+    TeamMembership:
       type: object
       additionalProperties: false
-      required: [organizationId, developerIdentityId, role, createdAt, updatedAt]
+      required: [teamId, developerIdentityId, role, createdAt, updatedAt]
       properties:
-        organizationId:
-          $ref: "#/components/schemas/OrganizationId"
+        teamId:
+          $ref: "#/components/schemas/TeamId"
         developerIdentityId:
           $ref: "#/components/schemas/DeveloperIdentityId"
         role:
-          $ref: "#/components/schemas/OrganizationRole"
+          $ref: "#/components/schemas/TeamRole"
         createdAt:
           type: string
           format: date-time
@@ -6190,17 +6190,17 @@ components:
     Invitation:
       type: object
       additionalProperties: false
-      required: [id, organizationId, email, role, status, expiresAt, createdAt]
+      required: [id, teamId, email, role, status, expiresAt, createdAt]
       properties:
         id:
           $ref: "#/components/schemas/InvitationId"
-        organizationId:
-          $ref: "#/components/schemas/OrganizationId"
+        teamId:
+          $ref: "#/components/schemas/TeamId"
         email:
           type: string
           format: email
         role:
-          $ref: "#/components/schemas/OrganizationRole"
+          $ref: "#/components/schemas/TeamRole"
         status:
           type: string
           enum: [pending, accepted, revoked, expired]
@@ -6250,12 +6250,12 @@ components:
     AutomationToken:
       type: object
       additionalProperties: false
-      required: [id, organizationId, name, scope, status, expiresAt, createdAt]
+      required: [id, teamId, name, scope, status, expiresAt, createdAt]
       properties:
         id:
           $ref: "#/components/schemas/AutomationTokenId"
-        organizationId:
-          $ref: "#/components/schemas/OrganizationId"
+        teamId:
+          $ref: "#/components/schemas/TeamId"
         name:
           type: string
         scope:
@@ -6284,12 +6284,12 @@ components:
           minLength: 32
     Project:
       type: object
-      required: [id, organizationId, name, region, state, createdAt, updatedAt]
+      required: [id, teamId, name, region, state, createdAt, updatedAt]
       properties:
         id:
           $ref: "#/components/schemas/ProjectId"
-        organizationId:
-          $ref: "#/components/schemas/OrganizationId"
+        teamId:
+          $ref: "#/components/schemas/TeamId"
         name:
           type: string
         region:
@@ -7325,10 +7325,10 @@ components:
     Credit:
       type: object
       additionalProperties: false
-      required: [id, organizationId, amountMicroDollars, reason, operatorId, grantedAtUnixSeconds]
+      required: [id, teamId, amountMicroDollars, reason, operatorId, grantedAtUnixSeconds]
       properties:
         id: {type: string}
-        organizationId: {$ref: "#/components/schemas/OrganizationId"}
+        teamId: {$ref: "#/components/schemas/TeamId"}
         amountMicroDollars: {type: integer, format: int64, minimum: 1}
         reason: {type: string}
         operatorId: {type: string}
@@ -7574,12 +7574,12 @@ components:
     AuditSignal:
       type: object
       additionalProperties: false
-      required: [kind, organizationId, actorId, action, target, outcome, requestId, details]
+      required: [kind, teamId, actorId, action, target, outcome, requestId, details]
       properties:
         kind:
           const: audit
-        organizationId:
-          $ref: "#/components/schemas/OrganizationId"
+        teamId:
+          $ref: "#/components/schemas/TeamId"
         actorId:
           type: string
           minLength: 1

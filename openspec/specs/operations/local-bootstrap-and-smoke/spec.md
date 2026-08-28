@@ -18,7 +18,7 @@ The documented local development quickstart SHALL bring the control plane and da
 - **THEN** the service refuses to start with an addressed configuration error naming the field path, and the documentation names the value that must be supplied
 
 ### Requirement: Local tenant bootstrap
-A bootstrap capability SHALL create a complete, usable local tenant — a developer identity, organization, project, environment, public project key, and collection — without requiring outbound mail, authenticated TLS SMTP, or an operator wait-list decision. The bootstrap SHALL be deterministic, so that repeated runs against clean state produce the same identifiers, and idempotent, so that a repeated run against existing state neither duplicates nor corrupts records. It MUST write only to stores it exclusively owns at the time it runs.
+A bootstrap capability SHALL create a complete, usable local tenant — a developer identity, team, project, environment, public project key, and collection — without requiring outbound mail, authenticated TLS SMTP, or an operator wait-list decision. The bootstrap SHALL be deterministic, so that repeated runs against clean state produce the same identifiers, and idempotent, so that a repeated run against existing state neither duplicates nor corrupts records. It MUST write only to stores it exclusively owns at the time it runs.
 
 #### Scenario: Bootstrap produces a usable tenant
 - **WHEN** the bootstrap runs against prepared local state

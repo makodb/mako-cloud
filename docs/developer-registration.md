@@ -16,7 +16,7 @@ An operator with the separate `waitlist_review` permission can list applicantsâ€
 developer applicationâ€”and atomically
 approve or reject one with a private reason and idempotency key. Approval advances the durable
 developer authorization epoch, revokes pending developer sessions, and requires a fresh developer
-sign-in. It leaves operator entitlement and sessions unchanged and does not create an organization,
+sign-in. It leaves operator entitlement and sessions unchanged and does not create a team,
 project, membership, or quota grant. Every protected management request loads the current developer
 role and epoch, so an old or manually signed claim cannot bypass review.
 

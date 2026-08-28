@@ -24,18 +24,18 @@ export const DEVELOPER_AUTH_OPERATIONS = [
 ] as const;
 
 export const MANAGEMENT_OPERATIONS = [
-  "listOrganizations",
-  "createOrganization",
-  "getOrganization",
-  "getOrganizationBill",
-  "updateOrganization",
-  "requestOrganizationDeletion",
-  "restoreOrganization",
-  "createOrganizationInvitation",
-  "acceptOrganizationInvitation",
-  "listOrganizationMembers",
-  "updateOrganizationMember",
-  "removeOrganizationMember",
+  "listTeams",
+  "createTeam",
+  "getTeam",
+  "getTeamBill",
+  "updateTeam",
+  "requestTeamDeletion",
+  "restoreTeam",
+  "createTeamInvitation",
+  "acceptTeamInvitation",
+  "listTeamMembers",
+  "updateTeamMember",
+  "removeTeamMember",
   "listAutomationTokens",
   "createAutomationToken",
   "revokeAutomationToken",
@@ -182,9 +182,9 @@ export const OPERATOR_OPERATIONS = [
   "applyOperatorEntitlementChange",
   "getOperatorProject",
   "repairOperatorProvisioning",
-  "changeOrganizationPlan",
-  "setOrganizationPlanExceptions",
-  "grantOrganizationCredit",
+  "changeTeamPlan",
+  "setTeamPlanExceptions",
+  "grantTeamCredit",
   "createOperatorQuotaOverride",
   "createOperatorAbuseResponse",
   "createSupportSession",
@@ -196,9 +196,9 @@ export const OPERATOR_OPERATIONS = [
 ] as const;
 
 export type ManagementOperation = (typeof MANAGEMENT_OPERATIONS)[number];
-export type Organization = components["schemas"]["Organization"];
-export type OrganizationRole = components["schemas"]["OrganizationRole"];
-export type OrganizationMembership = components["schemas"]["OrganizationMembership"];
+export type Team = components["schemas"]["Team"];
+export type TeamRole = components["schemas"]["TeamRole"];
+export type TeamMembership = components["schemas"]["TeamMembership"];
 export type InvitationIssue = components["schemas"]["InvitationIssue"];
 export type AutomationPermission = components["schemas"]["AutomationPermission"];
 export type AutomationScope = components["schemas"]["AutomationScope"];
@@ -394,66 +394,63 @@ export class MakoManagementClient {
     });
   }
 
-  async listOrganizations(): Promise<Organization[]> {
-    const result = await this.#client.GET("/v1/organizations");
+  async listTeams(): Promise<Team[]> {
+    const result = await this.#client.GET("/v1/teams");
     return unwrap(result).items;
   }
 
-  async createOrganization(name: string): Promise<Organization> {
+  async createTeam(name: string): Promise<Team> {
     return unwrap(
-      await this.#client.POST("/v1/organizations", {
+      await this.#client.POST("/v1/teams", {
         body: { name },
       }),
     );
   }
 
-  async getOrganization(organizationId: string): Promise<Organization> {
+  async getTeam(teamId: string): Promise<Team> {
     return unwrap(
-      await this.#client.GET("/v1/organizations/{organizationId}", {
-        params: { path: { organizationId } },
+      await this.#client.GET("/v1/teams/{teamId}", {
+        params: { path: { teamId } },
       }),
     );
   }
 
-  async getOrganizationBill(
-    organizationId: string,
+  async getTeamBill(
+    teamId: string,
     period?: string,
-  ): Promise<operations["getOrganizationBill"]["responses"]["200"]["content"]["application/json"]> {
+  ): Promise<operations["getTeamBill"]["responses"]["200"]["content"]["application/json"]> {
     return unwrap(
-      await this.#client.GET("/v1/organizations/{organizationId}/bill", {
+      await this.#client.GET("/v1/teams/{teamId}/bill", {
         params: {
-          path: { organizationId },
+          path: { teamId },
           query: period === undefined ? {} : { period },
         },
       }),
     );
   }
 
-  async updateOrganization(organizationId: string, name: string): Promise<Organization> {
+  async updateTeam(teamId: string, name: string): Promise<Team> {
     return unwrap(
-      await this.#client.PATCH("/v1/organizations/{organizationId}", {
-        params: { path: { organizationId } },
+      await this.#client.PATCH("/v1/teams/{teamId}", {
+        params: { path: { teamId } },
         body: { name },
       }),
     );
   }
 
-  async requestOrganizationDeletion(
-    organizationId: string,
-    confirmation: string,
-  ): Promise<Organization> {
+  async requestTeamDeletion(teamId: string, confirmation: string): Promise<Team> {
     return unwrap(
-      await this.#client.DELETE("/v1/organizations/{organizationId}", {
-        params: { path: { organizationId }, header: { confirmation } },
+      await this.#client.DELETE("/v1/teams/{teamId}", {
+        params: { path: { teamId }, header: { confirmation } },
       }),
     );
   }
 
-  async restoreOrganization(organizationId: string, idempotencyKey: string): Promise<Organization> {
+  async restoreTeam(teamId: string, idempotencyKey: string): Promise<Team> {
     return unwrap(
-      await this.#client.POST("/v1/organizations/{organizationId}/actions/restore", {
+      await this.#client.POST("/v1/teams/{teamId}/actions/restore", {
         params: {
-          path: { organizationId },
+          path: { teamId },
           header: { "Idempotency-Key": idempotencyKey },
         },
       }),
@@ -461,18 +458,18 @@ export class MakoManagementClient {
   }
 
   async createInvitation(
-    organizationId: string,
-    input: { readonly email: string; readonly role: OrganizationRole; readonly expiresAt: string },
+    teamId: string,
+    input: { readonly email: string; readonly role: TeamRole; readonly expiresAt: string },
   ): Promise<InvitationIssue> {
     return unwrap(
-      await this.#client.POST("/v1/organizations/{organizationId}/invitations", {
-        params: { path: { organizationId } },
+      await this.#client.POST("/v1/teams/{teamId}/invitations", {
+        params: { path: { teamId } },
         body: input,
       }),
     );
   }
 
-  async acceptInvitation(invitationId: string, token: string): Promise<OrganizationMembership> {
+  async acceptInvitation(invitationId: string, token: string): Promise<TeamMembership> {
     return unwrap(
       await this.#client.POST("/v1/invitations/{invitationId}/accept", {
         params: { path: { invitationId } },
@@ -481,44 +478,43 @@ export class MakoManagementClient {
     );
   }
 
-  async listMembers(organizationId: string): Promise<OrganizationMembership[]> {
-    const result = await this.#client.GET("/v1/organizations/{organizationId}/members", {
-      params: { path: { organizationId } },
+  async listMembers(teamId: string): Promise<TeamMembership[]> {
+    const result = await this.#client.GET("/v1/teams/{teamId}/members", {
+      params: { path: { teamId } },
     });
     return unwrap(result).items;
   }
 
   async updateMember(
-    organizationId: string,
+    teamId: string,
     developerIdentityId: string,
-    role: OrganizationRole,
-  ): Promise<OrganizationMembership> {
+    role: TeamRole,
+  ): Promise<TeamMembership> {
     return unwrap(
-      await this.#client.PATCH("/v1/organizations/{organizationId}/members/{developerIdentityId}", {
-        params: { path: { organizationId, developerIdentityId } },
+      await this.#client.PATCH("/v1/teams/{teamId}/members/{developerIdentityId}", {
+        params: { path: { teamId, developerIdentityId } },
         body: { role },
       }),
     );
   }
 
-  async removeMember(organizationId: string, developerIdentityId: string): Promise<void> {
+  async removeMember(teamId: string, developerIdentityId: string): Promise<void> {
     expectNoContent(
-      await this.#client.DELETE(
-        "/v1/organizations/{organizationId}/members/{developerIdentityId}",
-        { params: { path: { organizationId, developerIdentityId } } },
-      ),
+      await this.#client.DELETE("/v1/teams/{teamId}/members/{developerIdentityId}", {
+        params: { path: { teamId, developerIdentityId } },
+      }),
     );
   }
 
-  async listAutomationTokens(organizationId: string): Promise<AutomationToken[]> {
-    const result = await this.#client.GET("/v1/organizations/{organizationId}/automation-tokens", {
-      params: { path: { organizationId } },
+  async listAutomationTokens(teamId: string): Promise<AutomationToken[]> {
+    const result = await this.#client.GET("/v1/teams/{teamId}/automation-tokens", {
+      params: { path: { teamId } },
     });
     return unwrap(result).items;
   }
 
   async createAutomationToken(
-    organizationId: string,
+    teamId: string,
     input: {
       readonly name: string;
       readonly scope: AutomationScope;
@@ -526,24 +522,23 @@ export class MakoManagementClient {
     },
   ): Promise<AutomationTokenIssue> {
     return unwrap(
-      await this.#client.POST("/v1/organizations/{organizationId}/automation-tokens", {
-        params: { path: { organizationId } },
+      await this.#client.POST("/v1/teams/{teamId}/automation-tokens", {
+        params: { path: { teamId } },
         body: input,
       }),
     );
   }
 
-  async revokeAutomationToken(organizationId: string, automationTokenId: string): Promise<void> {
+  async revokeAutomationToken(teamId: string, automationTokenId: string): Promise<void> {
     expectNoContent(
-      await this.#client.DELETE(
-        "/v1/organizations/{organizationId}/automation-tokens/{automationTokenId}",
-        { params: { path: { organizationId, automationTokenId } } },
-      ),
+      await this.#client.DELETE("/v1/teams/{teamId}/automation-tokens/{automationTokenId}", {
+        params: { path: { teamId, automationTokenId } },
+      }),
     );
   }
 
   async rotateAutomationToken(
-    organizationId: string,
+    teamId: string,
     automationTokenId: string,
     replacementId: string,
     expiresAt: string,
@@ -551,10 +546,10 @@ export class MakoManagementClient {
   ): Promise<AutomationTokenIssue> {
     return unwrap(
       await this.#client.POST(
-        "/v1/organizations/{organizationId}/automation-tokens/{automationTokenId}/actions/rotate",
+        "/v1/teams/{teamId}/automation-tokens/{automationTokenId}/actions/rotate",
         {
           params: {
-            path: { organizationId, automationTokenId },
+            path: { teamId, automationTokenId },
             header: { "Idempotency-Key": idempotencyKey },
           },
           body: { replacementId, expiresAt },
@@ -564,7 +559,7 @@ export class MakoManagementClient {
   }
 
   async createProject(
-    input: { readonly organizationId: string; readonly name: string; readonly region: string },
+    input: { readonly teamId: string; readonly name: string; readonly region: string },
     idempotencyKey: string,
   ): Promise<Project> {
     return unwrap(
@@ -575,9 +570,9 @@ export class MakoManagementClient {
     );
   }
 
-  async listProjects(organizationId: string): Promise<Project[]> {
+  async listProjects(teamId: string): Promise<Project[]> {
     const result = await this.#client.GET("/v1/projects", {
-      params: { query: { organizationId } },
+      params: { query: { teamId } },
     });
     return unwrap(result).items;
   }
@@ -2539,43 +2534,43 @@ export class MakoOperatorClient {
     );
   }
 
-  async changeOrganizationPlan(
-    organizationId: string,
+  async changeTeamPlan(
+    teamId: string,
     planId: string,
     reason: string,
-  ): Promise<{ organizationId: string; planId: string; updatedAt: string }> {
+  ): Promise<{ teamId: string; planId: string; updatedAt: string }> {
     return unwrap(
-      await this.#client.POST("/v1/operator/organizations/{organizationId}/plan", {
-        params: { path: { organizationId } },
+      await this.#client.POST("/v1/operator/teams/{teamId}/plan", {
+        params: { path: { teamId } },
         body: { planId, reason },
       }),
     );
   }
 
-  async setOrganizationPlanExceptions(
-    organizationId: string,
+  async setTeamPlanExceptions(
+    teamId: string,
     exceptions: components["schemas"]["PlanException"][],
     reason: string,
   ): Promise<
-    operations["setOrganizationPlanExceptions"]["responses"]["200"]["content"]["application/json"]
+    operations["setTeamPlanExceptions"]["responses"]["200"]["content"]["application/json"]
   > {
     return unwrap(
-      await this.#client.PUT("/v1/operator/organizations/{organizationId}/plan-exceptions", {
-        params: { path: { organizationId } },
+      await this.#client.PUT("/v1/operator/teams/{teamId}/plan-exceptions", {
+        params: { path: { teamId } },
         body: { exceptions, reason },
       }),
     );
   }
 
-  async grantOrganizationCredit(
-    organizationId: string,
+  async grantTeamCredit(
+    teamId: string,
     id: string,
     amountMicroDollars: number,
     reason: string,
   ): Promise<components["schemas"]["Credit"]> {
     return unwrap(
-      await this.#client.POST("/v1/operator/organizations/{organizationId}/credits", {
-        params: { path: { organizationId } },
+      await this.#client.POST("/v1/operator/teams/{teamId}/credits", {
+        params: { path: { teamId } },
         body: { id, amountMicroDollars, reason },
       }),
     );

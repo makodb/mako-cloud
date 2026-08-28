@@ -214,7 +214,7 @@ export function EnvironmentWorkspaceLayout({
               navigate("/");
             }}
           >
-            Organizations
+            Teams
           </a>
           <span aria-hidden="true">/</span>
           <a

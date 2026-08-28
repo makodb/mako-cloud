@@ -79,7 +79,7 @@ test("registration, fragment verification, pending sign-in, and product isolatio
   await expect(page.getByText("Status: pending review")).toBeVisible();
   await expect(page.getByRole("link", { name: "Recover account" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
-  expect(requests.some((request) => request.startsWith("GET /v1/organizations"))).toBe(false);
+  expect(requests.some((request) => request.startsWith("GET /v1/teams"))).toBe(false);
   expect(requests.some((request) => request.includes("/v1/projects"))).toBe(false);
 
   await page.getByRole("button", { name: "Sign out" }).click();

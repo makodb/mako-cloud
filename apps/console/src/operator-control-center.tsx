@@ -273,7 +273,7 @@ function TenantDirectoryPage({ navigate }: { readonly navigate: (path: string) =
     >
       <form className="operator-filter-bar" onSubmit={submit}>
         <label>
-          Organization, project, environment, region, developer email, or identifier
+          Team, project, environment, region, developer email, or identifier
           <input
             type="search"
             value={query}
@@ -295,7 +295,7 @@ function TenantDirectoryPage({ navigate }: { readonly navigate: (path: string) =
               <thead>
                 <tr>
                   <th scope="col">Project</th>
-                  <th scope="col">Organization</th>
+                  <th scope="col">Team</th>
                   <th scope="col">Lifecycle</th>
                   <th scope="col">Region</th>
                   <th scope="col">Environments</th>
@@ -311,7 +311,7 @@ function TenantDirectoryPage({ navigate }: { readonly navigate: (path: string) =
                       <br />
                       <code>{tenant.projectId}</code>
                     </td>
-                    <td>{tenant.organizationName ?? tenant.organizationId}</td>
+                    <td>{tenant.teamName ?? tenant.teamId}</td>
                     <td>{humanize(tenant.lifecycle)}</td>
                     <td>{tenant.region}</td>
                     <td>{tenant.environmentCount}</td>
@@ -390,9 +390,7 @@ function Tenant360Content({ value }: { readonly value: OperatorTenant360 }) {
     <>
       <section className="panel operator-tenant-identity">
         <div>
-          <p className="eyebrow">
-            {value.project.organizationName ?? value.project.organizationId}
-          </p>
+          <p className="eyebrow">{value.project.teamName ?? value.project.teamId}</p>
           <h2>{value.project.projectName}</h2>
           <code>{value.project.projectId}</code>
         </div>

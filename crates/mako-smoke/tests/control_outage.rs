@@ -175,7 +175,7 @@ fn control_operations_continue_while_the_data_plane_is_unavailable() {
 
     // --- And the control API is still whole afterwards. --------------------
 
-    let (status, body) = request(control_port, "GET", "/v1/organizations", &authorized, None);
+    let (status, body) = request(control_port, "GET", "/v1/teams", &authorized, None);
     assert_eq!(
         status, 200,
         "the control API stopped serving after one tenant-dependent failure: {body}"

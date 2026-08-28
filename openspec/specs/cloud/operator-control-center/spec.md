@@ -33,7 +33,7 @@ The system SHALL provide a global overview containing bounded summaries of tenan
 - **THEN** the operator can sign in, inspect affected tenants and retained incident evidence, and access permitted recovery coordination while data-dependent panels show a scoped unavailable state
 
 ### Requirement: Searchable tenant directory
-The system SHALL provide a cursor-paginated tenant directory that can be searched by bounded organization, project, environment, developer-email, and identifier criteria and filtered by lifecycle, health, region, and plan or quota class. Results MUST contain only operator-safe summary fields and MUST use stable ordering for pagination.
+The system SHALL provide a cursor-paginated tenant directory that can be searched by bounded team, project, environment, developer-email, and identifier criteria and filtered by lifecycle, health, region, and plan or quota class. Results MUST contain only operator-safe summary fields and MUST use stable ordering for pagination.
 
 #### Scenario: Operator searches for a tenant
 - **WHEN** an entitled operator submits a valid tenant search
