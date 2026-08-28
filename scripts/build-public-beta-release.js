@@ -144,21 +144,28 @@ function isGeneratedDirectory(name) {
 }
 
 async function collectArtifacts() {
-  // The candidate packages target/release verbatim, so compile it here:
-  // a candidate quietly staged from yesterday's binaries once shipped a
-  // release whose services did not contain the sources it claimed to.
-  await new Promise((resolvePromise, rejectPromise) => {
-    const build = spawn("cargo", ["build", "--release", "--workspace", "--bins"], {
-      cwd: repositoryRoot,
-      stdio: ["ignore", "inherit", "inherit"],
+  // The candidate packages target/release and the console's web-dist
+  // verbatim, so build both here: a candidate quietly staged from
+  // yesterday's binaries once shipped a release whose services did not
+  // contain the sources it claimed to, and a stale console bundle would
+  // ship a UI calling routes the services no longer serve.
+  for (const [command, args] of [
+    ["cargo", ["build", "--release", "--workspace", "--bins"]],
+    ["npm", ["run", "build", "--workspace", "@mako-cloud/console"]],
+  ]) {
+    await new Promise((resolvePromise, rejectPromise) => {
+      const build = spawn(command, args, {
+        cwd: repositoryRoot,
+        stdio: ["ignore", "inherit", "inherit"],
+      });
+      build.on("error", rejectPromise);
+      build.on("exit", (code) =>
+        code === 0
+          ? resolvePromise()
+          : rejectPromise(new Error(`${command} ${args.join(" ")} exited with ${code}`)),
+      );
     });
-    build.on("error", rejectPromise);
-    build.on("exit", (code) =>
-      code === 0
-        ? resolvePromise()
-        : rejectPromise(new Error(`cargo build --release exited with ${code}`)),
-    );
-  });
+  }
   const files = [];
   for (const binary of [
     "mako-control-plane",
