@@ -9,7 +9,7 @@
 - [x] 1.7 Usage per project and environment, bill and balance per team including the personal space, all carrying the non-payable notice.
 - [x] 1.8 Activity feed from audit events at project and team level.
 - [x] 1.9 Keyboard and assistive-technology pass over the shell; home and project URLs follow the workspace context rules.
-- [ ] 1.10 Console e2e: home with projects, empty-state onboarding, deep link inside the shell, logs and activity screens; docs and traceability rows; deploy and requalify.
+- [x] 1.10 Console e2e: home with projects, empty-state onboarding, deep link inside the shell, logs and activity screens; docs and traceability rows; deploy and requalify.
 
 ## 2. Phase 2 — settings and ownership
 

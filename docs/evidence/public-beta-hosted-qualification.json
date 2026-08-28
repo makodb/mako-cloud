@@ -1,54 +1,54 @@
 {
   "schemaVersion": 1,
-  "startedAt": "2026-08-28T05:02:03.428Z",
-  "completedAt": "2026-08-28T06:32:16.872Z",
+  "startedAt": "2026-08-28T18:30:32.106Z",
+  "completedAt": "2026-08-28T19:59:26.476Z",
   "environment": "public-beta",
   "vmId": 124,
   "address": "130.245.173.11",
   "publicOrigin": "https://cloud-test.makodb.com",
   "planHash": "d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073",
-  "releaseDigest": "d26d4b8263e9c3e3795759d48e48c2f3b82e9ce6a6e753e7a604933f7a313af0",
-  "sourceDigest": "065b9a6aef426f8d3b42dadc0b65ee86e31f226144a7eaaf282c17dcd2ec0820",
+  "releaseDigest": "3eb12fae6c92bf77e3e836282c07052810f5c4194f16be583f69b664786edb75",
+  "sourceDigest": "abf875b5668dbca06da8ff33c4308fb37c1e7b8e2683ba7aaebda7072d30d796",
   "runtimeDigest": "b0e4ea7b66166492c3c29910858dc5d1b7f9786df81aed7057d80f34a1ad2abd",
   "dependencyDigest": "3d50927106f68259e794845b661c11abb480b448e4084c8efc5cc18b7aa56379",
-  "artifactDigest": "6e4325108e7340062d9c5a97678bcfed1832fdc3fe0c1e0bbaf540096fe570fe",
+  "artifactDigest": "cab226a41521330cd43b3f6d6e6962fab35893fbb2eee0026f8cc2998ae69cbb",
   "selectedReleaseVerifiedBeforeAndAfter": true,
   "publicAdmissionEnabled": false,
   "suites": [
     {
       "name": "auth",
       "passed": true,
-      "log": ".local/qualification/public-beta-d26d4b8263e9-auth.log"
+      "log": ".local/qualification/public-beta-3eb12fae6c92-auth.log"
     },
     {
       "name": "policy",
       "passed": true,
-      "log": ".local/qualification/public-beta-d26d4b8263e9-policy.log"
+      "log": ".local/qualification/public-beta-3eb12fae6c92-policy.log"
     },
     {
       "name": "rxdb-chaos",
       "passed": true,
-      "log": ".local/qualification/public-beta-d26d4b8263e9-rxdb-chaos.log"
+      "log": ".local/qualification/public-beta-3eb12fae6c92-rxdb-chaos.log"
     },
     {
       "name": "tenant-boundaries",
       "passed": true,
-      "log": ".local/qualification/public-beta-d26d4b8263e9-tenant-boundaries.log"
+      "log": ".local/qualification/public-beta-3eb12fae6c92-tenant-boundaries.log"
     },
     {
       "name": "edge-runtime",
       "passed": true,
-      "log": ".local/qualification/public-beta-d26d4b8263e9-edge-runtime.log"
+      "log": ".local/qualification/public-beta-3eb12fae6c92-edge-runtime.log"
     },
     {
       "name": "dependency-pins",
       "passed": true,
-      "log": ".local/qualification/public-beta-d26d4b8263e9-dependency-pins.log"
+      "log": ".local/qualification/public-beta-3eb12fae6c92-dependency-pins.log"
     },
     {
       "name": "production-rocksdb",
       "passed": true,
-      "log": ".local/qualification/public-beta-d26d4b8263e9-production-rocksdb.log"
+      "log": ".local/qualification/public-beta-3eb12fae6c92-production-rocksdb.log"
     }
   ],
   "hostedCompositionProbes": [

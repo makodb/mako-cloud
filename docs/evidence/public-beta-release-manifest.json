@@ -10,7 +10,7 @@
   },
   "planHash": "d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073",
   "source": {
-    "digest": "065b9a6aef426f8d3b42dadc0b65ee86e31f226144a7eaaf282c17dcd2ec0820",
+    "digest": "abf875b5668dbca06da8ff33c4308fb37c1e7b8e2683ba7aaebda7072d30d796",
     "files": [
       {
         "path": ".env.example",
@@ -67,6 +67,12 @@
         "mode": 420
       },
       {
+        "path": "apps/console/src/activity.tsx",
+        "sha256": "f7420a10f5174186f509c28c707ee3077460d9816f4dcf954d561fbb87e1d71a",
+        "size": 14341,
+        "mode": 420
+      },
+      {
         "path": "apps/console/src/api-error.tsx",
         "sha256": "d16e84cbb4b4398b257d6b33fc30d7bfdc15f48f5f8de9cb5dc037dddaf5492b",
         "size": 783,
@@ -74,8 +80,8 @@
       },
       {
         "path": "apps/console/src/app.tsx",
-        "sha256": "becfa95b99b5b6e09f3012f1c1651e3be0568a6a54c54543b3719a5fce03f881",
-        "size": 16864,
+        "sha256": "ca5801a7aaa603927eddde729e40515a40ddfd931e2772ea3cc4971e15730cc7",
+        "size": 17350,
         "mode": 420
       },
       {
@@ -110,14 +116,14 @@
       },
       {
         "path": "apps/console/src/credentials.tsx",
-        "sha256": "41e685369e8ad93800144cc208653a2715cb1df7d313ca40c5334bdf9e2f82e4",
-        "size": 22254,
+        "sha256": "9dbc9ab624517615433251f7d249ae35b09dc0bc33d55230fba85fc76ca79661",
+        "size": 24098,
         "mode": 420
       },
       {
         "path": "apps/console/src/data-explorer.tsx",
-        "sha256": "d82dbdc4b62441bd5cd65d9a161e44a55a22c657a833a980e3a480e9232969a9",
-        "size": 43920,
+        "sha256": "dfae298cc5086db663113fb38fc1e5a891b3fb34ce20eb7bc2b4ad9913c75e5f",
+        "size": 50193,
         "mode": 420
       },
       {
@@ -128,8 +134,8 @@
       },
       {
         "path": "apps/console/src/developer-workspace.tsx",
-        "sha256": "0c6338e61ea07ac640092a41557703714034e02c86924fe359a09a9dcbf23e72",
-        "size": 31922,
+        "sha256": "9931a08a67046007114f80576e9e1910d3690f57d23b29ca23d1c858e18a24d9",
+        "size": 34017,
         "mode": 420
       },
       {
@@ -142,6 +148,18 @@
         "path": "apps/console/src/functions.tsx",
         "sha256": "a0f159a9853d06aebbb53ea4adfad60c2b49145986e52688444e17dbdb4577d1",
         "size": 31759,
+        "mode": 420
+      },
+      {
+        "path": "apps/console/src/home.css",
+        "sha256": "05ed85f5b726ecb6c5f48b800d853784bf67fc7908c38919d46004f13c77cdd2",
+        "size": 4030,
+        "mode": 420
+      },
+      {
+        "path": "apps/console/src/home.tsx",
+        "sha256": "8e32d007b51589d1d4cee2e5b2bccee1f73ea4b7e74a2c62e011c7a9c8b544a4",
+        "size": 44134,
         "mode": 420
       },
       {
@@ -163,9 +181,15 @@
         "mode": 420
       },
       {
+        "path": "apps/console/src/logs.tsx",
+        "sha256": "e5f41b3aaea463071c21b29a124bd0b2fd5c0088a5004292b2469bc6cbe3b436",
+        "size": 12038,
+        "mode": 420
+      },
+      {
         "path": "apps/console/src/main.tsx",
-        "sha256": "4338b6dac84271b9d2906f21754ac16ad0ce924ad8d0a72100e47018899c97da",
-        "size": 2251,
+        "sha256": "d31885ff3794240f0a7617ce97914115f9135b03d0a2bd044a5ec0b927cc5740",
+        "size": 2357,
         "mode": 420
       },
       {
@@ -176,8 +200,8 @@
       },
       {
         "path": "apps/console/src/observability.tsx",
-        "sha256": "5eba139b660c23294a24942fc3992ea2712f76b7e85fb52df212c040e86567db",
-        "size": 14934,
+        "sha256": "e4fda824f225a98762bf0193e877bd0dd7894782b7d5a81eef3951466046286a",
+        "size": 22029,
         "mode": 420
       },
       {
@@ -217,6 +241,18 @@
         "mode": 420
       },
       {
+        "path": "apps/console/src/project-home.css",
+        "sha256": "772545a782ef7e029890c6f49977d492edd137a16d4b2fe7bacfc620e39245bc",
+        "size": 4790,
+        "mode": 420
+      },
+      {
+        "path": "apps/console/src/project-home.tsx",
+        "sha256": "d1779ba14c5ab78d40a9e7cf0ac862370133eb0d4e592f22a8dc2015872e6c61",
+        "size": 40680,
+        "mode": 420
+      },
+      {
         "path": "apps/console/src/projects.tsx",
         "sha256": "8581e0a4d2e61b01e2902ba5fd32c763dc8450967eec2052ecf2b425c9b5dc7b",
         "size": 17279,
@@ -224,8 +260,8 @@
       },
       {
         "path": "apps/console/src/router.tsx",
-        "sha256": "d0fda576630c58327df013c9eeeaa01cac38d53e2dafa801e798328742da10bd",
-        "size": 14432,
+        "sha256": "fce091d110ba057bff679a43a2d564401b6cff502f4ca878386def9975d78cb8",
+        "size": 15473,
         "mode": 420
       },
       {
@@ -236,14 +272,38 @@
       },
       {
         "path": "apps/console/src/styles.css",
-        "sha256": "00841a541dff21b6e359773aa67b4c3b1ad650d893c17e5ffcee94efadadf2c1",
-        "size": 20752,
+        "sha256": "1edf6d538d8301bcd3480902d0875b1e96b4bcf65fb1c9e06a9486dd2053d7da",
+        "size": 20970,
+        "mode": 420
+      },
+      {
+        "path": "apps/console/src/surfaced.css",
+        "sha256": "ff616764d5a4a6a14dbe5fcda406e8fa39e85d69da28c4536a3cacb2b7e5609d",
+        "size": 2332,
         "mode": 420
       },
       {
         "path": "apps/console/src/teams.tsx",
-        "sha256": "32771ce4b53f2b06fdc5b7f891df672019e9fc1e908f98047448e2962d098de8",
-        "size": 13314,
+        "sha256": "785d36f5bfbce5277e165b2f610f914a62a14498065102b139da67c7d7e0c401",
+        "size": 15699,
+        "mode": 420
+      },
+      {
+        "path": "apps/console/src/usage-activity.css",
+        "sha256": "eeb578432d16fe235407756a8bebfb5a3b17bbfb23bb3cd1e2c16891d6e960ba",
+        "size": 2285,
+        "mode": 420
+      },
+      {
+        "path": "apps/console/src/usage.tsx",
+        "sha256": "364f13c658ad7f9d2a30400f8ef7e9a3ad78aaff3fc376071834f4a8b6fa81ac",
+        "size": 19817,
+        "mode": 420
+      },
+      {
+        "path": "apps/console/test-e2e/console-shell.spec.ts",
+        "sha256": "5b444b76a56115ddfbb56bd4f8cdf7d6eb072ebda0fdd195163289724ad5592b",
+        "size": 5863,
         "mode": 420
       },
       {
@@ -259,15 +319,39 @@
         "mode": 420
       },
       {
+        "path": "apps/console/test-e2e/home-dashboard.spec.ts",
+        "sha256": "924707a0408f8d405c23583869f5267836c77335083509376c118b6215752ff3",
+        "size": 20393,
+        "mode": 420
+      },
+      {
         "path": "apps/console/test-e2e/management-workflows.spec.ts",
-        "sha256": "2b452910762f9a19121152e07857f198bb3bb8cfbe2367e4f3281aba018c3ad9",
-        "size": 29084,
+        "sha256": "7cc262b4cb33cd8ec9a1dab849fa5b536d95ba666f101ea54573fca597715073",
+        "size": 30287,
         "mode": 420
       },
       {
         "path": "apps/console/test-e2e/operator-control-center.spec.ts",
         "sha256": "3b1d060a6ebc90fb4bea659ecc5657dd7dec72ba9a99ea3b736fbe68aea4afea",
         "size": 12408,
+        "mode": 420
+      },
+      {
+        "path": "apps/console/test-e2e/project-home.spec.ts",
+        "sha256": "1b1278907336400c0f22357c62856ca59aaa21f12660bf52a42d67628b6721ca",
+        "size": 19090,
+        "mode": 420
+      },
+      {
+        "path": "apps/console/test-e2e/surfaced-capabilities.spec.ts",
+        "sha256": "a070eb1437b9bac146711e76e81c289282c07512608acef5e0a4ff2de2e69074",
+        "size": 22957,
+        "mode": 420
+      },
+      {
+        "path": "apps/console/test-e2e/usage-activity.spec.ts",
+        "sha256": "bed4fc938c5e60e1679e0e3cb0f4ace40c7f4f95d1c11edab91c5669e81e7af7",
+        "size": 22117,
         "mode": 420
       },
       {
@@ -278,8 +362,8 @@
       },
       {
         "path": "apps/console/test/scaffold.test.mjs",
-        "sha256": "ad0e16d2e79421c729dbfe4421ee87894ed05de82a7552902a3a567e969f954d",
-        "size": 11129,
+        "sha256": "9ff3278ef8c57f2f4d90c9b7b08eeea54b58da568cb1889fe07206012de78810",
+        "size": 11897,
         "mode": 420
       },
       {
@@ -1862,8 +1946,8 @@
       },
       {
         "path": "infra/ansible/roles/runtime/templates/Caddyfile.j2",
-        "sha256": "86069d19085fe55ab920059dda63ffc3ef5449a11d67abd4f5c73cb9f5298e6b",
-        "size": 12408,
+        "sha256": "d84cebce824692fddeedca331a140d30a61ab0474097acda993a90f75aa03cb5",
+        "size": 12466,
         "mode": 420
       },
       {
@@ -3250,7 +3334,7 @@
     ]
   },
   "artifacts": {
-    "digest": "6e4325108e7340062d9c5a97678bcfed1832fdc3fe0c1e0bbaf540096fe570fe",
+    "digest": "cab226a41521330cd43b3f6d6e6962fab35893fbb2eee0026f8cc2998ae69cbb",
     "files": [
       {
         "path": "bin/mako-control-plane",
@@ -3330,32 +3414,32 @@
         "mode": 493
       },
       {
-        "path": "console/assets/index-DRtptmRX.js",
-        "source": "apps/console/web-dist/assets/index-DRtptmRX.js",
-        "sha256": "c2eaf20925efb7e48859c765428e69434ea4b4cd79490249d32683524a73c09d",
-        "size": 454838,
+        "path": "console/assets/index-D106bz7C.css",
+        "source": "apps/console/web-dist/assets/index-D106bz7C.css",
+        "sha256": "3a4e1beb4651fd7a7a313616bb65e5d1734941f1fc5e10c452779b975ed75d22",
+        "size": 27091,
         "mode": 420
       },
       {
-        "path": "console/assets/index-WmmwJK2F.css",
-        "source": "apps/console/web-dist/assets/index-WmmwJK2F.css",
-        "sha256": "f38dabed417cf898d7113dc3b093dda637c488efcfce7f88a28c3bd9d5ab3b5f",
-        "size": 16615,
+        "path": "console/assets/index-DioLP7ru.js",
+        "source": "apps/console/web-dist/assets/index-DioLP7ru.js",
+        "sha256": "01e7ea9422ecf0b783b590cd9be446f65416d512f3ef3b31b6e3b4fe401fc4db",
+        "size": 524135,
         "mode": 420
       },
       {
         "path": "console/index.html",
         "source": "apps/console/web-dist/index.html",
-        "sha256": "1cae3210d2eda42fd43b644735c6b5676a11563d177a9730e2d4fce27eab143d",
+        "sha256": "7e5ad40cd6848441b1be9ca216065d48d11e8508f3c8a19f4634225e21c40534",
         "size": 885,
         "mode": 420
       }
     ]
   },
-  "releaseDigest": "d26d4b8263e9c3e3795759d48e48c2f3b82e9ce6a6e753e7a604933f7a313af0",
-  "generatedAt": "2026-08-28T04:59:51.251Z",
+  "releaseDigest": "3eb12fae6c92bf77e3e836282c07052810f5c4194f16be583f69b664786edb75",
+  "generatedAt": "2026-08-28T18:28:13.931Z",
   "candidateLayout": {
-    "root": ".local/public-beta-candidates/d26d4b8263e9c3e3795759d48e48c2f3b82e9ce6a6e753e7a604933f7a313af0",
+    "root": ".local/public-beta-candidates/3eb12fae6c92bf77e3e836282c07052810f5c4194f16be583f69b664786edb75",
     "manifest": "manifest.json",
     "binaries": "bin",
     "console": "console"

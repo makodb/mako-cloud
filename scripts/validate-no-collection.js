@@ -70,7 +70,14 @@ const allowedBalanceReaders = new Set([
   // The console page that shows the bill is the surface the balance exists
   // for; its e2e spec asserts what that page renders.
   "apps/console/src/billing.tsx",
+  // The usage screen repeats the bill summary beside the quantities it explains;
+  // it renders the balance and takes no decision from it.
+  "apps/console/src/usage.tsx",
   "apps/console/test-e2e/management-workflows.spec.ts",
+  // Fixtures that mock the bill response for the screens above.
+  "apps/console/test-e2e/home-dashboard.spec.ts",
+  "apps/console/test-e2e/surfaced-capabilities.spec.ts",
+  "apps/console/test-e2e/usage-activity.spec.ts",
 ]);
 for (const path of balanceReaders) {
   if (!allowedBalanceReaders.has(path)) {
