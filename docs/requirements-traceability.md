@@ -1,6 +1,6 @@
 # Requirements-to-test traceability
 
-This matrix is the release-facing index from every scenario in the eleven capability specs named in `scripts/validate-requirements-traceability.js` to its primary evidence. The remaining capability specs under `openspec/specs/` are not indexed here. `Automated` means the cited test executes in the repository test suites. Supporting tests may exercise more behavior than the scenario named here.
+This matrix is the release-facing index from every scenario in the twelve capability specs named in `scripts/validate-requirements-traceability.js` to its primary evidence. The remaining capability specs under `openspec/specs/` are not indexed here. `Automated` means the cited test executes in the repository test suites. Supporting tests may exercise more behavior than the scenario named here.
 
 Evidence marked `(mocked backend)` runs against intercepted HTTP responses rather than a running service, so it proves client behavior and not that the server implements the scenario. Evidence marked `(end-to-end)` drives the real service binaries. A scenario whose only evidence is mocked has no automated proof that the server side works.
 
@@ -237,3 +237,19 @@ Run `npm run validate:traceability` whenever a scenario or row changes. The vali
 | LS-08 | Credentials are required | `crates/mako-smoke/tests/happy_path.rs::application_happy_path_succeeds_against_the_real_services` (end-to-end) | Automated |
 | LS-09 | Happy path breaks on a branch | `.github/workflows/ci.yml` and `crates/mako-smoke/tests/happy_path.rs::application_happy_path_succeeds_against_the_real_services` (end-to-end) | Automated |
 | LS-10 | Coverage is claimed for a mocked test | `scripts/validate-requirements-traceability.js` | Automated |
+
+## Cloud / developer CLI
+
+| ID | Scenario | Primary automated evidence | Status |
+| --- | --- | --- | --- |
+| CL-01 | The API grows an operation the CLI does not expose | `packages/cli/test/parity.test.mjs` (loads the OpenAPI document; fails on any unmapped developer-facing operation) | Automated |
+| CL-02 | A developer completes a console workflow from the terminal | `crates/mako-smoke/tests/developer_cli.rs::a_developer_completes_a_console_workflow_from_the_terminal` (end-to-end) | Automated |
+| CL-03 | A developer signs in and the session is kept safely | `packages/cli/test/foundation.test.mjs` "login stores the session privately, later commands use it, logout revokes it" and "a credential store other users can read is refused" (mocked backend) | Automated |
+| CL-04 | CI runs with a token from the environment | `packages/cli/test/foundation.test.mjs` "MAKO_TOKEN authenticates without touching the store and names the missing permission" (mocked backend) and `crates/mako-smoke/tests/developer_cli.rs` (end-to-end, environment token) | Automated |
+| CL-05 | A step-up action without a terminal | `packages/cli/test/foundation.test.mjs` "a step-up action without a terminal fails closed" (mocked backend) | Automated |
+| CL-06 | A script reads a list | `packages/cli/test/foundation.test.mjs` "--all follows cursors into one document; without it one page and its cursor" (mocked backend) | Automated |
+| CL-07 | An API refusal reaches a script | `packages/cli/test/foundation.test.mjs` "errors map to exit codes and carry the API's retry advice" (mocked backend) | Automated |
+| CL-08 | A key is issued from the terminal | `packages/cli/test/users-keys.test.mjs` "public keys print their secret exactly once: block, JSON field, or 0600 file" (mocked backend) and `crates/mako-smoke/tests/developer_cli.rs` (end-to-end) | Automated |
+| CL-09 | Deletion without confirmation | `packages/cli/test/foundation.test.mjs` "destructive commands need --yes or the typed resource name" and `packages/cli/test/ownership.test.mjs` "teams delete needs confirmation and sends the confirmation header" (mocked backend) | Automated |
+| CL-10 | A function is deployed in one command | `packages/cli/test/functions.test.mjs` "functions deploy uploads, creates the version, checks health, and promotes in order" (mocked backend) | Automated |
+| CL-11 | A lifecycle wait times out | `packages/cli/test/ownership.test.mjs` "projects create sends an idempotency key, waits for provisioning, and exits 6 on the deadline" and `packages/cli/test/foundation.test.mjs` "--wait polls to a terminal state and exits 6 on the deadline" (mocked backend) | Automated |

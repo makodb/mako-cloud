@@ -135,6 +135,10 @@ jobs:
       - run: npm ci
       - name: Build the RxDB client the reference application imports
         run: npm run build --workspace @mako-cloud/rxdb
+      - name: Build the developer CLI
+        run: npm run build --workspace @mako-cloud/cli
+      - name: Drive the developer CLI through a console workflow against the real services
+        run: cargo test -p mako-smoke --test developer_cli -- --nocapture
       - name: Install the browser runtime
         run: npx playwright install --with-deps chromium
       - name: Drive the reference application against the real services

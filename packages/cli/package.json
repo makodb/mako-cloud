@@ -15,5 +15,9 @@
     "typecheck": "tsc -b --pretty false && tsc -p runtime/tsconfig.json --pretty false",
     "test:unit": "npm run build && node --test test/*.test.mjs",
     "test:integration": "npm run build && node --test --test-concurrency=1 test/*.integration.mjs"
+  },
+  "dependencies": {
+    "@mako-cloud/api-types": "*",
+    "@mako-cloud/management-sdk": "*"
   }
 }

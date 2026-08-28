@@ -15,6 +15,7 @@ const capabilities = [
   ["RR", "openspec/specs/sync/rxdb-replication/spec.md"],
   ["DR", "openspec/specs/identity/developer-registration/spec.md"],
   ["LS", "openspec/specs/operations/local-bootstrap-and-smoke/spec.md"],
+  ["CL", "openspec/specs/cloud/developer-cli/spec.md"],
 ];
 
 const mockedEvidence = ["apps/console/test-e2e/", "examples/local-first/test/"];

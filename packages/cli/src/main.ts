@@ -1,14 +1,13 @@
 #!/usr/bin/env node
+import { processIo, run } from "./cli/run.js";
+import { commands } from "./commands/index.js";
 
-import { parseServeArguments, runLocalServe } from "./serve.js";
-
-async function main(): Promise<void> {
-  const config = parseServeArguments(process.argv.slice(2), process.cwd());
-  await runLocalServe(config);
-}
-
-main().catch((error: unknown) => {
-  const message = error instanceof Error ? error.message : "local function serve failed";
-  process.stderr.write(`${message}\n`);
-  process.exitCode = 1;
-});
+run(process.argv.slice(2), processIo(), commands).then(
+  (code) => {
+    process.exitCode = code;
+  },
+  (error: unknown) => {
+    process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+    process.exitCode = 1;
+  },
+);

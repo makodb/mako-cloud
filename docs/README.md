@@ -23,6 +23,7 @@ changing this index or a published guide.
 | Document policies | [Policy guide](document-policies.md) | Default deny, state-aware writes, visibility changes, activation, and rollback |
 | Project auth | [Authentication guide](project-auth.md) | Sign-up, sign-in, refresh rotation, revocation, JWKS rotation, and administration |
 | Edge functions | [Hosted edge functions](edge-functions.md), [local serve](local-functions.md), and [runtime protocol](edge-runtime-protocol.md) | Bundle, deploy, promote, invoke, roll back, isolate, limit, and observe |
+| Developer CLI | [Developer CLI](cli.md) | Sign in from a terminal, reach every console operation, script-stable output and exit codes, composed deploy and data flows |
 
 ## Storage and reliability
 
