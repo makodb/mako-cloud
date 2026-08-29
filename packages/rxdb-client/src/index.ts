@@ -1,11 +1,29 @@
 /** RxDB replication and project-auth client. */
-export {
-  createMakoApiClient as createReplicationClient,
-  type MakoApiClient as ReplicationClient,
-} from "@mako-cloud/api-types";
 
 export const PACKAGE_NAME = "@mako-cloud/rxdb" as const;
 export const PACKAGE_VERSION = "0.1.0" as const;
+
+export {
+  API_ERROR_VERSION,
+  ERROR_CODES,
+  ScopeValidationError,
+  isApiErrorEnvelope,
+  type ApiError,
+  type CollectionId,
+  type EnvironmentId,
+  type ErrorCode,
+  type MakoAuthSession,
+  type MakoAuthUser,
+  type MakoMagicLinkAccepted,
+  type MakoProviderSignInStart,
+  type MakoSignUpAccepted,
+  type MakoStorageObjectPage,
+  type ProjectId,
+  type RetryAdvice,
+  type SafeDetail,
+  type SafeDetails,
+  type ScopeValidationCode,
+} from "./wire.js";
 
 export {
   MAKO_RXDB_CONNECT_TEMPLATE_VERSION,
@@ -21,9 +39,38 @@ export {
   type AuthSessionPersistence,
   type AuthUser,
   type MakoAuthClientOptions,
+  type MakoAuthErrorOptions,
+  type MakoAuthEvent,
+  type MakoAuthEventKind,
+  type MakoAuthEventListener,
+  type MakoAuthUnsubscribe,
+  type MakoSignInFragment,
   type MakoUserSession,
   type PersistedAuthSession,
+  type ProviderSignInStart,
+  type SignUpAccepted,
 } from "./auth.js";
+
+export {
+  BrowserAuthSessionPersistence,
+  type BrowserAuthSessionPersistenceOptions,
+  type BrowserAuthSessionPersistenceScope,
+} from "./browser-session.js";
+
+export {
+  MakoStorageClient,
+  MakoStorageError,
+  encodeObjectPath,
+  type MakoStorageBody,
+  type MakoStorageClientOptions,
+  type MakoStorageListOptions,
+  type MakoStorageListResult,
+  type MakoStorageObject,
+  type MakoStorageObjectRecord,
+  type MakoStoragePutOptions,
+  type MakoStoragePutResult,
+  type MakoStorageScope,
+} from "./storage.js";
 
 export {
   MakoRxdbConfigurationError,
@@ -64,9 +111,24 @@ export {
 
 export {
   MakoReplicationRecoveryCoordinator,
+  MemoryReplicationRecoveryStatePersistence,
+  type MakoReplicationRecoveryCoordinatorOptions,
   type MakoReplicationRecoveryHooks,
   type MakoReplicationRecoveryState,
+  type ReplicationRecoveryStatePersistence,
 } from "./recovery.js";
+
+export {
+  DEFAULT_REPLICATION_STATE_DATABASE,
+  DexieReplicationStatePersistence,
+  DexieReplicationStateStore,
+  MemoryReplicationStateStore,
+  type DexieReplicationStatePersistenceOptions,
+  type DexieReplicationStatePersistenceScope,
+  type DexieReplicationStateStoreOptions,
+  type ReplicationCheckpointPersistence,
+  type ReplicationStateStore,
+} from "./replication-state.js";
 
 export {
   MakoReplicationSignals,
@@ -83,5 +145,7 @@ export {
 
 export {
   MakoReplicationError,
+  makoReplicationErrorFrom,
   type ApiErrorEnvelope,
+  type MakoReplicationErrorExtensions,
 } from "./replication-error.js";

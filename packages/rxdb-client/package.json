@@ -3,11 +3,33 @@
   "version": "0.1.0",
   "private": false,
   "description": "Supported RxDB replication and project-auth client for Mako Cloud",
+  "keywords": [
+    "mako",
+    "mako-cloud",
+    "rxdb",
+    "replication",
+    "local-first",
+    "offline-first",
+    "sync",
+    "authentication",
+    "storage"
+  ],
   "license": "Apache-2.0",
+  "homepage": "https://github.com/makodb/mako-cloud/blob/main/docs/rxdb-client.md",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/makodb/mako-cloud.git",
+    "directory": "packages/rxdb-client"
+  },
+  "bugs": {
+    "url": "https://github.com/makodb/mako-cloud/issues"
+  },
   "type": "module",
   "sideEffects": false,
   "files": [
-    "dist"
+    "dist",
+    "README.md",
+    "LICENSE"
   ],
   "exports": {
     ".": {
@@ -21,20 +43,25 @@
   "types": "./dist/browser/index.d.ts",
   "module": "./dist/browser/index.js",
   "main": "./dist/node/index.js",
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc -b tsconfig.browser.json tsconfig.node.json",
-    "clean": "tsc -b tsconfig.browser.json tsconfig.node.json --clean",
+    "clean": "tsc -b tsconfig.browser.json tsconfig.node.json tsconfig.conformance.json --clean",
+    "prepublishOnly": "npm run build && npm run test:unit",
     "test:unit": "npm run build && node --test test/*.test.mjs",
-    "typecheck": "tsc -b tsconfig.browser.json tsconfig.node.json --pretty false"
+    "typecheck": "tsc -b tsconfig.browser.json tsconfig.node.json tsconfig.conformance.json --pretty false"
   },
   "dependencies": {
-    "@mako-cloud/api-types": "*"
+    "dexie": "4.4.2"
   },
   "peerDependencies": {
     "rxdb": ">=17.0.0 <18.0.0",
     "rxjs": ">=7.8.0 <8.0.0"
   },
   "devDependencies": {
+    "@mako-cloud/api-types": "*",
     "rxdb": "17.4.0",
     "rxjs": "7.8.2"
   },

@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   MakoAuthClient,
+  MakoReplicationError,
   createMakoLivePullStream,
   normalizeMakoRxdbConfig,
 } from "../dist/node/index.js";
@@ -87,6 +88,59 @@ test("turns bounded-buffer overflow into RESYNC", async () => {
     stream.start();
   });
   assert.equal(event, "RESYNC");
+});
+
+test("renews once on a refused stream and ends it rather than reconnecting forever", async () => {
+  const counts = { stream: 0, token: 0 };
+  const bearers = [];
+  const fetch = async (input, init) => {
+    const url = String(input);
+    if (url.endsWith("/auth/signin")) {
+      return Response.json(session());
+    }
+    if (url.endsWith("/auth/token")) {
+      counts.token += 1;
+      return Response.json({ ...session(), accessToken: "renewed-access-token" });
+    }
+    counts.stream += 1;
+    bearers.push(init.headers.Authorization);
+    return Response.json(
+      {
+        apiVersion: "v1",
+        error: {
+          code: "unauthenticated",
+          message: "the access token is not valid",
+          requestId: "req_401",
+          retry: { kind: "never" },
+        },
+      },
+      { status: 401 },
+    );
+  };
+  const auth = new MakoAuthClient(config(), { fetch });
+  await auth.signInWithPassword("user@example.test", "password");
+  const stream = createMakoLivePullStream(config(), auth, {
+    fetch,
+    reconnectMinimumDelayMs: 10,
+    reconnectMaximumDelayMs: 10,
+  });
+  const events = [];
+  const failure = await new Promise((resolve) => {
+    stream.stream$.subscribe({
+      next: (event) => events.push(event),
+      error: resolve,
+    });
+    stream.start();
+  });
+  assert.ok(failure instanceof MakoReplicationError);
+  assert.equal(failure.code, "unauthenticated");
+  assert.equal(failure.retryable, false);
+  assert.deepEqual(counts, { stream: 2, token: 1 });
+  assert.deepEqual(bearers, ["Bearer access-token", "Bearer renewed-access-token"]);
+  assert.deepEqual(events, []);
+  // The stream is finished: nothing reconnects behind the error.
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  assert.deepEqual(counts, { stream: 2, token: 1 });
 });
 
 function sse(value) {

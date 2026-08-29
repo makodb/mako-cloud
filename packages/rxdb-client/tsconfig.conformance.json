@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "noEmit": true,
+    "tsBuildInfoFile": ".tsbuild/conformance.tsbuildinfo"
+  },
+  "references": [{ "path": "../api-types" }, { "path": "./tsconfig.browser.json" }],
+  "include": ["test-types/**/*.ts"]
+}

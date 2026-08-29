@@ -4,7 +4,12 @@ import { Subject, type Observable } from "rxjs";
 import { MakoAuthenticationRequiredError, type MakoAuthClient } from "./auth.js";
 import type { NormalizedMakoRxdbClientConfig } from "./config.js";
 import type { MakoCheckpoint } from "./pull.js";
-import { replicationNetworkError, replicationResponseError } from "./replication-error.js";
+import { MakoReplicationError, replicationNetworkError } from "./replication-error.js";
+import { sendReplicationRequest } from "./replication-session.js";
+import type { ReplicationCheckpointPersistence } from "./replication-state.js";
+import type { MakoLiveStreamEvent, MakoResyncReason } from "./wire.js";
+
+export type { MakoResyncReason };
 
 export interface MakoLiveStreamOptions {
   readonly fetch?: typeof globalThis.fetch;
@@ -12,14 +17,9 @@ export interface MakoLiveStreamOptions {
   readonly reconnectMinimumDelayMs?: number;
   readonly reconnectMaximumDelayMs?: number;
   readonly onResyncReason?: (reason: MakoResyncReason) => Promise<void> | void;
+  /** Records every checkpoint the stream advances to so a restart can resume from it. */
+  readonly checkpoints?: ReplicationCheckpointPersistence;
 }
-
-export type MakoResyncReason =
-  | "reconnected"
-  | "stream_gap"
-  | "checkpoint_expired"
-  | "authorization_epoch_changed"
-  | "service_failover";
 
 export class MakoLivePullStream<RxDocType> {
   readonly #config: NormalizedMakoRxdbClientConfig;
@@ -29,6 +29,7 @@ export class MakoLivePullStream<RxDocType> {
   readonly #minimumDelay: number;
   readonly #maximumDelay: number;
   readonly #onResyncReason: ((reason: MakoResyncReason) => Promise<void> | void) | undefined;
+  readonly #checkpoints: ReplicationCheckpointPersistence | undefined;
   readonly #subject = new Subject<RxReplicationPullStreamItem<RxDocType, MakoCheckpoint>>();
   readonly #queue: RxReplicationPullStreamItem<RxDocType, MakoCheckpoint>[] = [];
   #abort: AbortController | null = null;
@@ -50,6 +51,7 @@ export class MakoLivePullStream<RxDocType> {
     this.#minimumDelay = boundedInteger(options.reconnectMinimumDelayMs ?? 500, 10, 60_000);
     this.#maximumDelay = boundedInteger(options.reconnectMaximumDelayMs ?? 30_000, 10, 300_000);
     this.#onResyncReason = options.onResyncReason;
+    this.#checkpoints = options.checkpoints;
     if (this.#maximumDelay < this.#minimumDelay) {
       throw new TypeError("reconnectMaximumDelayMs must not be less than the minimum delay");
     }
@@ -99,7 +101,9 @@ export class MakoLivePullStream<RxDocType> {
         if (this.#closed) {
           break;
         }
-        if (error instanceof MakoAuthenticationRequiredError) {
+        // A failure the service said not to repeat -- a refused session above
+        // all -- ends the stream rather than reconnecting against a verdict.
+        if (error instanceof MakoAuthenticationRequiredError || isTerminalError(error)) {
           this.#subject.error(error);
           this.#closed = true;
           break;
@@ -108,6 +112,7 @@ export class MakoLivePullStream<RxDocType> {
           reconnecting = true;
           continue;
         }
+        delay = this.#advisedDelay(error, delay);
         reconnecting = true;
         continue;
       }
@@ -116,29 +121,36 @@ export class MakoLivePullStream<RxDocType> {
     this.#running = false;
   }
 
+  /** Honour an `after_delay` advice for the next reconnect, inside the configured bounds. */
+  #advisedDelay(error: unknown, current: number): number {
+    const advised = error instanceof MakoReplicationError ? error.retryAfterMilliseconds : null;
+    if (advised === null) {
+      return current;
+    }
+    return Math.min(Math.max(advised, this.#minimumDelay), this.#maximumDelay);
+  }
+
   async #connect(): Promise<void> {
     const accessToken = await this.#auth.validAccessToken();
     const abort = new AbortController();
     this.#abort = abort;
-    let response: Response;
-    try {
-      response = await this.#fetch(streamUrl(this.#config, this.#checkpoint, this.#cursor), {
-        headers: {
-          Accept: "text/event-stream",
-          Authorization: `Bearer ${accessToken}`,
-          "X-Mako-Key": this.#config.publicProjectKey,
-        },
-        signal: abort.signal,
-      });
-    } catch (error) {
-      if (abort.signal.aborted) {
-        throw new DOMException("stream aborted", "AbortError");
+    const response = await sendReplicationRequest(this.#auth, accessToken, async (token) => {
+      try {
+        return await this.#fetch(streamUrl(this.#config, this.#checkpoint, this.#cursor), {
+          headers: {
+            Accept: "text/event-stream",
+            Authorization: `Bearer ${token}`,
+            "X-Mako-Key": this.#config.publicProjectKey,
+          },
+          signal: abort.signal,
+        });
+      } catch (error) {
+        if (abort.signal.aborted) {
+          throw new DOMException("stream aborted", "AbortError");
+        }
+        throw error;
       }
-      throw error;
-    }
-    if (!response.ok) {
-      throw await replicationResponseError(response);
-    }
+    });
     if (response.body === null) {
       throw replicationNetworkError();
     }
@@ -187,14 +199,14 @@ export class MakoLivePullStream<RxDocType> {
     }
     if (event.event === "documents") {
       const checkpoint = { token: event.data.checkpoint };
-      this.#checkpoint = checkpoint;
+      this.#advance(checkpoint);
       this.#enqueue({
         documents: event.data.documents as WithDeleted<RxDocType>[],
         checkpoint,
       });
     } else if (event.event === "checkpoint") {
       const checkpoint = { token: event.data.checkpoint };
-      this.#checkpoint = checkpoint;
+      this.#advance(checkpoint);
       this.#enqueue({ documents: [], checkpoint });
     } else if (event.event === "resync") {
       if (this.#onResyncReason !== undefined) {
@@ -202,6 +214,13 @@ export class MakoLivePullStream<RxDocType> {
       }
       this.#enqueue("RESYNC");
     }
+  }
+
+  #advance(checkpoint: MakoCheckpoint): void {
+    this.#checkpoint = checkpoint;
+    // A persistence failure must not stall the stream: RxDB's own checkpoint
+    // stays authoritative for pulls, and a restart only resumes less precisely.
+    void this.#checkpoints?.save(checkpoint).catch(ignore);
   }
 
   #enqueue(event: RxReplicationPullStreamItem<RxDocType, MakoCheckpoint>): void {
@@ -269,16 +288,12 @@ function streamUrl(
   return url;
 }
 
-type LiveEvent =
-  | {
-      event: "documents";
-      data: { documents: unknown[]; checkpoint: string; cursor: string };
-    }
-  | { event: "checkpoint"; data: { checkpoint: string; cursor: string } }
-  | { event: "heartbeat"; data: { cursor: string } }
-  | { event: "resync"; data: { reason: MakoResyncReason } };
+/** A failure the service refused to have repeated: reconnecting cannot fix it. */
+function isTerminalError(error: unknown): boolean {
+  return error instanceof MakoReplicationError && !error.retryable;
+}
 
-function isLiveEvent(value: unknown): value is LiveEvent {
+function isLiveEvent(value: unknown): value is MakoLiveStreamEvent {
   if (typeof value !== "object" || value === null) {
     return false;
   }
@@ -334,4 +349,8 @@ function boundedInteger(value: number, minimum: number, maximum: number): number
 
 function wait(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+function ignore(): void {
+  // Intentionally empty: see MakoLivePullStream.#advance.
 }

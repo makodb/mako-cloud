@@ -8,11 +8,10 @@ import type { Observable } from "rxjs";
 
 import type { MakoAuthClient } from "./auth.js";
 import type { NormalizedMakoRxdbClientConfig } from "./config.js";
-import {
-  authenticationRequiredError,
-  replicationNetworkError,
-  replicationResponseError,
-} from "./replication-error.js";
+import { replicationNetworkError } from "./replication-error.js";
+import { replicationAccessToken, sendReplicationRequest } from "./replication-session.js";
+import type { ReplicationCheckpointPersistence } from "./replication-state.js";
+import type { MakoReplicationDocument } from "./wire.js";
 
 /** RxDB checkpoints must be mergeable objects; the service token stays opaque. */
 export interface MakoCheckpoint {
@@ -22,6 +21,8 @@ export interface MakoCheckpoint {
 export interface MakoPullAdapterOptions<RxDocType = unknown> {
   readonly fetch?: typeof globalThis.fetch;
   readonly stream$?: Observable<RxReplicationPullStreamItem<RxDocType, MakoCheckpoint>>;
+  /** Records every checkpoint a pull returns so a restart can resume the live stream from it. */
+  readonly checkpoints?: ReplicationCheckpointPersistence;
 }
 
 export function createMakoPullHandler<RxDocType>(
@@ -30,39 +31,38 @@ export function createMakoPullHandler<RxDocType>(
   options: MakoPullAdapterOptions<RxDocType> = {},
 ): ReplicationPullHandler<RxDocType, MakoCheckpoint> {
   const fetch = options.fetch ?? globalThis.fetch;
+  const checkpoints = options.checkpoints;
   return async (checkpoint, _rxdbBatchSize) => {
-    const accessToken = await auth.validAccessToken().catch(() => {
-      throw authenticationRequiredError();
+    const accessToken = await replicationAccessToken(auth);
+    const response = await sendReplicationRequest(auth, accessToken, async (token) => {
+      try {
+        return await fetch(replicationUrl(config, "pull"), {
+          method: "POST",
+          headers: {
+            Accept: "application/json",
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+            "X-Mako-Key": config.publicProjectKey,
+          },
+          body: JSON.stringify({
+            checkpoint: checkpoint?.token ?? null,
+            schemaVersion: config.schemaVersion,
+            batchSize: config.pullBatchSize,
+          }),
+        });
+      } catch {
+        throw replicationNetworkError();
+      }
     });
-    let response: Response;
-    try {
-      response = await fetch(replicationUrl(config, "pull"), {
-        method: "POST",
-        headers: {
-          Accept: "application/json",
-          Authorization: `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-          "X-Mako-Key": config.publicProjectKey,
-        },
-        body: JSON.stringify({
-          checkpoint: checkpoint?.token ?? null,
-          schemaVersion: config.schemaVersion,
-          batchSize: config.pullBatchSize,
-        }),
-      });
-    } catch {
-      throw replicationNetworkError();
-    }
-    if (!response.ok) {
-      throw await replicationResponseError(response);
-    }
     const body: unknown = await response.json();
     if (!isPullResponse(body)) {
       throw replicationNetworkError();
     }
+    const nextCheckpoint: MakoCheckpoint = { token: body.checkpoint };
+    await checkpoints?.save(nextCheckpoint);
     return {
       documents: body.documents as WithDeleted<RxDocType>[],
-      checkpoint: { token: body.checkpoint },
+      checkpoint: nextCheckpoint,
     };
   };
 }
@@ -93,10 +93,9 @@ function replicationUrl(config: NormalizedMakoRxdbClientConfig, route: string): 
   );
 }
 
-function isPullResponse(value: unknown): value is {
-  documents: (Record<string, unknown> & { _deleted: boolean })[];
-  checkpoint: string;
-} {
+function isPullResponse(
+  value: unknown,
+): value is { documents: MakoReplicationDocument[]; checkpoint: string } {
   if (typeof value !== "object" || value === null) {
     return false;
   }

@@ -3,7 +3,7 @@ import type { RxReplicationState } from "rxdb/plugins/replication";
 import { BehaviorSubject, Subject, Subscription, type Observable } from "rxjs";
 
 import type { AuthorizationEpochResetEvent } from "./security-reset.js";
-import { MakoReplicationError } from "./replication-error.js";
+import { makoReplicationErrorFrom, type MakoReplicationError } from "./replication-error.js";
 
 export type MakoReplicationActivity =
   | "idle"
@@ -89,20 +89,27 @@ export class MakoReplicationSignals<RxDocType> {
     this.#securityResets.next(event);
   }
 
+  /**
+   * Classify a replication failure, including one RxDB wrapped in an `RC_PULL`
+   * or `RC_PUSH` error before it reached `error$` -- an unrecognized failure
+   * would otherwise be reported as a retryable `internal`, which is how a
+   * refused session once looked like an ordinary connectivity blip.
+   */
   reportError(error: unknown): void {
-    const sanitized = sanitizeError(error);
-    this.#errors.next(sanitized);
-    if (error instanceof MakoReplicationError) {
-      if (error.code === "rate_limited" || error.code === "quota_exceeded") {
+    const replicationError = makoReplicationErrorFrom(error);
+    this.#errors.next(sanitizeError(replicationError));
+    if (replicationError !== null) {
+      const { code } = replicationError;
+      if (code === "rate_limited" || code === "quota_exceeded") {
         this.#throttling.next({
-          code: error.code,
-          retryAfterMilliseconds: error.retry.kind === "after_delay" ? error.retry.afterMs : null,
+          code,
+          retryAfterMilliseconds: replicationError.retryAfterMilliseconds,
         });
-      } else if (error.code === "unauthenticated") {
+      } else if (code === "unauthenticated") {
         this.#activity.next("authentication_required");
-      } else if (error.code === "schema_mismatch") {
+      } else if (code === "schema_mismatch") {
         this.#activity.next("schema_migration_required");
-      } else if (error.code === "checkpoint_expired") {
+      } else if (code === "checkpoint_expired") {
         this.#activity.next("full_resync_required");
       }
     }
@@ -120,8 +127,8 @@ export class MakoReplicationSignals<RxDocType> {
   }
 }
 
-function sanitizeError(error: unknown): MakoSanitizedReplicationError {
-  if (error instanceof MakoReplicationError) {
+function sanitizeError(error: MakoReplicationError | null): MakoSanitizedReplicationError {
+  if (error !== null) {
     return {
       code: error.code,
       message: error.message,

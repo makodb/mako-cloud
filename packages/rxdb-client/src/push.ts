@@ -1,4 +1,3 @@
-import { isApiErrorEnvelope } from "@mako-cloud/api-types";
 import type {
   ReplicationPushHandler,
   ReplicationPushOptions,
@@ -8,12 +7,9 @@ import type {
 
 import type { MakoAuthClient } from "./auth.js";
 import type { NormalizedMakoRxdbClientConfig } from "./config.js";
-import {
-  MakoReplicationError,
-  authenticationRequiredError,
-  replicationNetworkError,
-  replicationResponseError,
-} from "./replication-error.js";
+import { MakoReplicationError, replicationNetworkError } from "./replication-error.js";
+import { replicationAccessToken, sendReplicationRequest } from "./replication-session.js";
+import { isApiErrorEnvelope } from "./wire.js";
 
 export interface MakoPushAdapterOptions {
   readonly fetch?: typeof globalThis.fetch;
@@ -29,9 +25,7 @@ export function createMakoPushHandler<RxDocType>(
     if (rows.length < 1 || rows.length > config.pushBatchSize) {
       throw clientError("invalid_request", "push batch exceeds the configured limit");
     }
-    const accessToken = await auth.validAccessToken().catch(() => {
-      throw authenticationRequiredError();
-    });
+    const accessToken = await replicationAccessToken(auth);
     const wireRows = await Promise.all(
       rows.map(async (row) => ({
         mutationId: await mutationId(row),
@@ -43,25 +37,23 @@ export function createMakoPushHandler<RxDocType>(
       canonicalJson(wireRows.map((row) => row.mutationId)),
       "batch",
     );
-    let response: Response;
-    try {
-      response = await fetch(replicationUrl(config), {
-        method: "POST",
-        headers: {
-          Accept: "application/json",
-          Authorization: `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-          "Idempotency-Key": idempotencyKey,
-          "X-Mako-Key": config.publicProjectKey,
-        },
-        body: JSON.stringify({ schemaVersion: config.schemaVersion, rows: wireRows }),
-      });
-    } catch {
-      throw replicationNetworkError();
-    }
-    if (!response.ok) {
-      throw await replicationResponseError(response);
-    }
+    const response = await sendReplicationRequest(auth, accessToken, async (token) => {
+      try {
+        return await fetch(replicationUrl(config), {
+          method: "POST",
+          headers: {
+            Accept: "application/json",
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+            "Idempotency-Key": idempotencyKey,
+            "X-Mako-Key": config.publicProjectKey,
+          },
+          body: JSON.stringify({ schemaVersion: config.schemaVersion, rows: wireRows }),
+        });
+      } catch {
+        throw replicationNetworkError();
+      }
+    });
     const body: unknown = await response.json();
     if (!isPushResponse(body) || body.outcomes.length !== rows.length) {
       throw replicationNetworkError();

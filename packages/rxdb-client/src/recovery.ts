@@ -1,5 +1,5 @@
 import type { MakoResyncReason } from "./live.js";
-import { MakoReplicationError } from "./replication-error.js";
+import { makoReplicationErrorFrom, type MakoReplicationError } from "./replication-error.js";
 
 export type MakoReplicationRecoveryState =
   | { readonly kind: "active" }
@@ -22,20 +22,67 @@ export interface MakoReplicationRecoveryHooks {
   }): Promise<void> | void;
 }
 
+export interface ReplicationRecoveryStatePersistence {
+  load(): Promise<MakoReplicationRecoveryState | null>;
+  save(state: MakoReplicationRecoveryState): Promise<void>;
+}
+
+export class MemoryReplicationRecoveryStatePersistence
+  implements ReplicationRecoveryStatePersistence
+{
+  #state: MakoReplicationRecoveryState | null = null;
+
+  async load(): Promise<MakoReplicationRecoveryState | null> {
+    return this.#state;
+  }
+
+  async save(state: MakoReplicationRecoveryState): Promise<void> {
+    this.#state = state;
+  }
+}
+
+export interface MakoReplicationRecoveryCoordinatorOptions {
+  readonly persistence?: ReplicationRecoveryStatePersistence;
+}
+
 export class MakoReplicationRecoveryCoordinator {
   readonly #hooks: MakoReplicationRecoveryHooks;
+  readonly #persistence: ReplicationRecoveryStatePersistence;
   #state: MakoReplicationRecoveryState = { kind: "active" };
 
-  constructor(hooks: MakoReplicationRecoveryHooks) {
+  constructor(
+    hooks: MakoReplicationRecoveryHooks,
+    options: MakoReplicationRecoveryCoordinatorOptions = {},
+  ) {
     this.#hooks = hooks;
+    this.#persistence = options.persistence ?? new MemoryReplicationRecoveryStatePersistence();
   }
 
   get state(): MakoReplicationRecoveryState {
     return this.#state;
   }
 
-  async handleError(error: unknown): Promise<boolean> {
-    if (!(error instanceof MakoReplicationError)) {
+  /**
+   * Restore the state persisted by an earlier run. A restored
+   * `schema_migration_required` or `full_resync_required` state means the
+   * application must finish that recovery before it starts replication.
+   */
+  async initialize(): Promise<MakoReplicationRecoveryState> {
+    const persisted = await this.#persistence.load();
+    if (persisted !== null) {
+      this.#state = persisted;
+    }
+    return this.#state;
+  }
+
+  /**
+   * Accepts the error RxDB emits on `error$` as well as a raw
+   * `MakoReplicationError`: RxDB wraps a handler failure in an `RC_PULL` /
+   * `RC_PUSH` error, and a recovery state must not be missed because of it.
+   */
+  async handleError(rawError: unknown): Promise<boolean> {
+    const error = makoReplicationErrorFrom(rawError);
+    if (error === null) {
       return false;
     }
     if (error.code === "schema_mismatch") {
@@ -45,6 +92,7 @@ export class MakoReplicationRecoveryCoordinator {
       };
       await this.#hooks.pauseReplication();
       this.#state = state;
+      await this.#persistence.save(state);
       await this.#hooks.onSchemaMigrationRequired(state);
       return true;
     }
@@ -67,8 +115,10 @@ export class MakoReplicationRecoveryCoordinator {
     return false;
   }
 
-  markActive(): void {
-    this.#state = { kind: "active" };
+  async markActive(): Promise<void> {
+    const state = { kind: "active" as const };
+    this.#state = state;
+    await this.#persistence.save(state);
   }
 
   async #requireFullResync(
@@ -77,6 +127,7 @@ export class MakoReplicationRecoveryCoordinator {
     const state = { kind: "full_resync_required" as const, reason };
     await this.#hooks.pauseReplication();
     this.#state = state;
+    await this.#persistence.save(state);
     await this.#hooks.onFullResyncRequired(state);
   }
 }

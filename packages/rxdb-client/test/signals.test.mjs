@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { errorToPlainJson } from "rxdb/plugins/utils";
 import { BehaviorSubject, Subject } from "rxjs";
 
 import { MakoReplicationError, MakoReplicationSignals } from "../dist/node/index.js";
@@ -43,4 +44,51 @@ test("exposes activity, documents, conflicts, throttling, resets, and sanitized 
   assert.equal(observed.errors[1].message, "replication operation failed");
   assert.equal(JSON.stringify(observed.errors).includes("protected raw error content"), false);
   binding.unsubscribe();
+});
+
+test("classifies a refused session RxDB wrapped in its own RC_PULL error", () => {
+  const signals = new MakoReplicationSignals();
+  const observed = { activity: [], errors: [] };
+  signals.activity$.subscribe((value) => observed.activity.push(value));
+  signals.errors$.subscribe((value) => observed.errors.push(value));
+  const refused = new MakoReplicationError(
+    {
+      code: "unauthenticated",
+      message: "the access token is not valid",
+      requestId: "req_401",
+      retry: { kind: "never" },
+    },
+    401,
+  );
+  // What a pull handler failure looks like by the time it reaches `error$`.
+  signals.reportError({
+    rxdb: true,
+    code: "RC_PULL",
+    parameters: { direction: "pull", errors: [errorToPlainJson(refused)] },
+  });
+  assert.deepEqual(observed.errors[0], {
+    code: "unauthenticated",
+    message: "the access token is not valid",
+    requestId: "req_401",
+    retryable: false,
+    status: 401,
+  });
+  assert.equal(observed.activity.at(-1), "authentication_required");
+});
+
+test("keeps an unrecognized wrapped failure opaque", () => {
+  const signals = new MakoReplicationSignals();
+  const errors = [];
+  signals.errors$.subscribe((value) => errors.push(value));
+  signals.reportError({
+    rxdb: true,
+    code: "RC_PULL",
+    parameters: {
+      direction: "pull",
+      errors: [errorToPlainJson(new Error("protected raw error content"))],
+    },
+  });
+  assert.equal(errors[0].code, "internal");
+  assert.equal(errors[0].message, "replication operation failed");
+  assert.equal(JSON.stringify(errors).includes("protected raw error content"), false);
 });

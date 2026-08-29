@@ -4,8 +4,8 @@
     "composite": true,
     "rootDir": "src",
     "outDir": "dist/node",
-    "tsBuildInfoFile": "dist/node/.tsbuildinfo"
+    "tsBuildInfoFile": ".tsbuild/node.tsbuildinfo",
+    "inlineSources": true
   },
-  "references": [{ "path": "../api-types" }],
   "include": ["src/**/*.ts"]
 }

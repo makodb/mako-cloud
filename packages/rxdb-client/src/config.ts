@@ -5,7 +5,7 @@ import {
   type CollectionId,
   type EnvironmentId,
   type ProjectId,
-} from "@mako-cloud/api-types";
+} from "./wire.js";
 
 export const SUPPORTED_RXDB_MAJOR = 17 as const;
 export const SUPPORTED_RXDB_RANGE = ">=17.0.0 <18.0.0" as const;

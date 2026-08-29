@@ -12,6 +12,13 @@ export interface ReplicationSecurityState {
 export interface ReplicationSecurityStatePersistence {
   load(): Promise<ReplicationSecurityState | null>;
   save(state: ReplicationSecurityState): Promise<void>;
+  /**
+   * Forget the replication state (checkpoint, recovery state) that belonged
+   * to the generation being replaced. Called by the coordinator during a
+   * security reset, after the collection was cleared and before the new
+   * state is saved.
+   */
+  clearReplicationState?(): Promise<void>;
 }
 
 export class MemoryReplicationSecurityStatePersistence
@@ -74,9 +81,16 @@ export class MakoAuthorizationEpochCoordinator {
   ): Promise<ReplicationSecurityState> {
     validateEpochs(authorizationEpochs);
     const persisted = await this.#persistence.load();
-    if (persisted !== null && sameEpochs(persisted.authorizationEpochs, authorizationEpochs)) {
-      this.#state = persisted;
-      return persisted;
+    if (persisted !== null) {
+      if (sameEpochs(persisted.authorizationEpochs, authorizationEpochs)) {
+        this.#state = persisted;
+        return persisted;
+      }
+      // Durable local data was replicated under other epochs: clear it before
+      // adopting the current ones. Nothing is running yet, so there is
+      // nothing to pause and the caller starts replication with the returned
+      // identifier.
+      return this.#reset(persisted, authorizationEpochs, { restart: false });
     }
     const state: ReplicationSecurityState = {
       authorizationEpochs,
@@ -98,7 +112,7 @@ export class MakoAuthorizationEpochCoordinator {
     if (sameEpochs(state.authorizationEpochs, current)) {
       return state;
     }
-    this.#resetInFlight ??= this.#reset(state, current).finally(() => {
+    this.#resetInFlight ??= this.#reset(state, current, { restart: true }).finally(() => {
       this.#resetInFlight = null;
     });
     return this.#resetInFlight;
@@ -111,9 +125,13 @@ export class MakoAuthorizationEpochCoordinator {
   async #reset(
     previousState: ReplicationSecurityState,
     current: AuthorizationEpochSnapshot,
+    options: { readonly restart: boolean },
   ): Promise<ReplicationSecurityState> {
-    await this.#hooks.pauseReplication();
+    if (options.restart) {
+      await this.#hooks.pauseReplication();
+    }
     await this.#hooks.clearReplicatedCollection();
+    await this.#persistence.clearReplicationState?.();
     const generation = previousState.generation + 1;
     const state: ReplicationSecurityState = {
       authorizationEpochs: current,
@@ -128,7 +146,9 @@ export class MakoAuthorizationEpochCoordinator {
       current,
       replicationIdentifier: state.replicationIdentifier,
     });
-    await this.#hooks.startReplication(state.replicationIdentifier);
+    if (options.restart) {
+      await this.#hooks.startReplication(state.replicationIdentifier);
+    }
     return state;
   }
 }
