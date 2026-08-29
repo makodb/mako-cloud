@@ -1,0 +1,424 @@
+:root {
+  color: #17211d;
+  background: #f3f6f4;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+}
+
+h1 {
+  margin: 0;
+  font-size: 1.5rem;
+}
+
+h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1.1rem;
+}
+
+a {
+  color: #0b6e57;
+}
+
+small {
+  color: #5a6d65;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.eyebrow {
+  color: #0b6e57;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 0.8rem;
+}
+
+.centered {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  padding: 1rem;
+}
+
+.panel {
+  width: min(28rem, 100%);
+  padding: 1.5rem;
+  border: 1px solid #c9d8d1;
+  border-radius: 0.8rem;
+  background: white;
+  box-shadow: 0 0.8rem 2rem rgb(20 60 45 / 8%);
+}
+
+button {
+  border: 0;
+  border-radius: 0.5rem;
+  padding: 0.55rem 0.9rem;
+  color: white;
+  background: #0b6e57;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+button.secondary {
+  color: #124b3d;
+  background: #d9e9e3;
+}
+
+button.link {
+  padding: 0.2rem 0.4rem;
+  color: #0b6e57;
+  background: transparent;
+  text-decoration: underline;
+  font-weight: 500;
+}
+
+input,
+select {
+  width: 100%;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid #b7c9c1;
+  border-radius: 0.45rem;
+  font: inherit;
+  background: white;
+}
+
+label {
+  display: block;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+label input,
+label select {
+  margin-top: 0.25rem;
+  font-weight: 400;
+}
+
+form.inline {
+  display: flex;
+  gap: 0.75rem;
+  align-items: end;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
+.actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.error {
+  color: #a4261c;
+  font-weight: 600;
+}
+
+.hint {
+  color: #5a6d65;
+  font-size: 0.9rem;
+}
+
+.shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.topbar {
+  display: flex;
+  gap: 1.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 0.75rem 1.25rem;
+  border-bottom: 1px solid #c9d8d1;
+  background: white;
+}
+
+.brand {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.switcher select {
+  width: auto;
+  min-width: 14rem;
+}
+
+.topbar nav {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.topbar nav a {
+  padding: 0.4rem 0.7rem;
+  border-radius: 0.5rem;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.topbar nav a[aria-current="page"] {
+  background: #d9e9e3;
+}
+
+.session {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  margin-left: auto;
+}
+
+.banner {
+  padding: 0.6rem 1.25rem;
+  font-weight: 500;
+}
+
+.banner.offline {
+  background: #fff3d6;
+  color: #6b4b00;
+}
+
+.banner.notice {
+  background: #dcecff;
+  color: #123a6b;
+}
+
+.banner.blocking {
+  background: #fde2df;
+  color: #7a1d15;
+}
+
+.banner.demo {
+  background: #ece6ff;
+  color: #372a63;
+  text-align: center;
+}
+
+.banner.demo a {
+  color: inherit;
+}
+
+.content {
+  flex: 1;
+  width: min(72rem, 100%);
+  margin: 0 auto;
+  padding: 1.25rem;
+}
+
+.statusbar {
+  display: flex;
+  gap: 1.5rem;
+  padding: 0.5rem 1.25rem;
+  border-top: 1px solid #c9d8d1;
+  color: #5a6d65;
+  font-size: 0.85rem;
+  background: white;
+}
+
+.heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.totals {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
+.total {
+  display: grid;
+  padding: 0.75rem 1rem;
+  border: 1px solid #c9d8d1;
+  border-radius: 0.6rem;
+  background: white;
+}
+
+.total strong {
+  font-size: 1.3rem;
+}
+
+.editor {
+  margin: 0 0 1.25rem;
+  padding: 1rem 1.25rem;
+  border: 1px solid #c9d8d1;
+  border-radius: 0.8rem;
+  background: white;
+}
+
+.editor .grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: 0.75rem;
+}
+
+fieldset {
+  margin: 0.75rem 0 0;
+  padding: 0.6rem 0.9rem;
+  border: 1px solid #dbe6e1;
+  border-radius: 0.6rem;
+}
+
+legend {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.chip-option {
+  display: inline-flex;
+  gap: 0.3rem;
+  align-items: center;
+  margin: 0 0.75rem 0.25rem 0;
+  font-weight: 500;
+}
+
+.chip-option input {
+  width: auto;
+  margin: 0;
+}
+
+.split-row {
+  display: grid;
+  grid-template-columns: 1.5fr 1fr 1.5fr auto;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.split-footer {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+}
+
+table.list {
+  width: 100%;
+  border-collapse: collapse;
+  background: white;
+  border: 1px solid #c9d8d1;
+  border-radius: 0.6rem;
+  overflow: hidden;
+  margin-bottom: 1.25rem;
+}
+
+table.list caption {
+  text-align: left;
+  padding: 0.5rem 0;
+  font-weight: 700;
+}
+
+table.list th,
+table.list td {
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid #e6eeea;
+  text-align: left;
+  vertical-align: top;
+}
+
+table.list th {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #5a6d65;
+}
+
+table.list td.amount,
+table.list th.amount {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+table.list td.actions {
+  white-space: nowrap;
+  text-align: right;
+}
+
+table.list td.empty {
+  color: #5a6d65;
+  text-align: center;
+}
+
+tr.muted {
+  color: #8a9a93;
+}
+
+.splits {
+  margin: 0.25rem 0 0;
+  padding-left: 1rem;
+  font-size: 0.85rem;
+  color: #5a6d65;
+}
+
+.chip {
+  display: inline-block;
+  margin: 0 0.25rem 0.25rem 0;
+  padding: 0.1rem 0.5rem;
+  border-radius: 1rem;
+  background: #e3eee9;
+  font-size: 0.8rem;
+}
+
+ul.chips {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 0.4rem;
+}
+
+ul.chips li {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+ul.chips input {
+  width: 14rem;
+}
+
+.filters {
+  display: flex;
+  gap: 1rem;
+  align-items: end;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
+.filters select {
+  width: auto;
+  min-width: 10rem;
+}
+
+.filters .summary {
+  margin-left: auto;
+  color: #5a6d65;
+}

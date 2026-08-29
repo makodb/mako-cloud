@@ -24,10 +24,11 @@ changing this index or a published guide.
 | Project auth | [Authentication guide](project-auth.md) | Sign-up, sign-in, refresh rotation, revocation, JWKS rotation, and administration |
 | Edge functions | [Hosted edge functions](edge-functions.md), [local serve](local-functions.md), and [runtime protocol](edge-runtime-protocol.md) | Bundle, deploy, promote, invoke, roll back, isolate, limit, and observe |
 | Developer CLI | [Developer CLI](cli.md) | Sign in from a terminal, reach every console operation, script-stable output and exit codes, composed deploy and data flows |
-| Application file storage | [Application file storage](file-storage.md) | Buckets, policy-governed objects, encryption at rest, metering, limits |
+| Application file storage | [Application file storage](file-storage.md) | Buckets, policy-governed objects, conditional uploads, encryption at rest, metering, limits |
 | Application mail | [Application mail](application-mail.md) | Mail intents drained from the data plane, per-environment plain-text templates with allowlisted variables, the encrypted outbox, and plaintext SMTP for local relays |
 | Scheduled functions | [Scheduled functions](scheduled-functions.md) | Cron schedules in UTC, the configured request, the next run, overlap skipping and the lease, missed due times, run-now, run history and its retention, and how a scheduled invocation looks to the function |
 | Database webhooks | [Database webhooks](webhooks.md) | Registering endpoints, the secret shown once, the signed delivery body and its verification, retries, the retry window, pause and resume, redelivery, and retention |
+| Allowed origins | [Allowed origins (CORS)](allowed-origins.md) | The per-environment cross-origin allowlist, what an origin may be, the headers the platform emits and when, which routes are never answered cross-origin, and the browser-application topology |
 | Custom domains | [Custom domains](custom-domains.md) | Adding a domain, the TXT verification record, the check cadence and the two-check failure rule, what a domain serves and what it never serves, on-demand certificates and the ask gate, and removal |
 | Application sign-in providers | [Sign-in providers and magic links](auth-providers.md) | Google, GitHub, and OpenID Connect providers, the redirect allowlist, the start, callback, and exchange flow, magic links, and sealed secrets never returned |
 

@@ -9,9 +9,9 @@ The platform now has the surface a real application needs — auth with provider
 - Platform work Rational forces, done as part of this change:
   - `@mako-cloud/rxdb` gains provider sign-in and magic-link helpers (start, callback fragment handling, exchange, request, redeem), a session persistence for browsers, and a storage object client (put, get, list, delete under the same auth), so an app no longer hand-rolls those requests.
   - Applications can manage membership as trusted claims: a service-credential route lets a function set a user's administrator-controlled app metadata (the input policies trust) with a bypass reason and audit record, and the edge SDK exposes it. Today only a management session can, which makes app-managed sharing impossible.
-  - Custom domains gain a per-domain allowlist of application origins: the platform answers CORS preflights and emits CORS headers on a custom domain only for those origins, so a browser app hosted anywhere can use its own API domain (the data plane sends no CORS today and every browser app must sit behind a same-origin proxy).
+  - Every environment gains an allowlist of browser origins: a browser app served from a listed origin can call that environment's application API cross-origin, on the platform's own hostname and on any custom domain serving it. Today the data plane sends no CORS at all, so every browser app must sit behind a same-origin proxy or own a DNS name — a project's ordinary API URL must work from an ordinary web host, with no special treatment for anyone.
   - The supported RxDB integration is proven on durable storage: the replication state (checkpoints, security state) survives an app restart on IndexedDB and resumes rather than re-syncing.
-- Rational is deployed to the beta with its API on a custom domain and the app served from its own hostname, and the beta is requalified with Rational's smoke in the suite.
+- Rational is created on the beta the way a developer creates any project — the repository owner's developer account, the ordinary project API URL, no custom domain and no bespoke routing — with its static bundle's origin in the environment's allowlist, and the beta is requalified with Rational's smoke in the suite.
 
 ## Capabilities
 
@@ -19,8 +19,7 @@ The platform now has the surface a real application needs — auth with provider
 - `samples/rational-money-app`: what Rational must do for its users — sign-in, households, accounts, transactions, rules, budgets, recurring, goals, reports, receipts, alerts, offline behavior — and what it must prove about the platform (findings loop, live suites, beta deployment).
 
 ### Modified Capabilities
-- `identity/project-auth`: "Trusted and user-editable metadata" gains a supported path for an application's own function to set administrator-controlled app metadata under a service credential, audited, so trusted claims can be managed by the app rather than only by a developer session.
-- `operations/custom-domains`: "Developer-managed custom domains" gains a per-domain allowlist of application origins governing CORS on the domain.
+- `identity/project-auth`: a new requirement for the environment's browser-origin allowlist governing cross-origin access to the application API, and "Trusted and user-editable metadata" gains a supported path for an application's own function to set administrator-controlled app metadata under a service credential, audited, so trusted claims can be managed by the app rather than only by a developer session.
 - `sync/rxdb-replication`: "Supported RxDB client integration" gains durable local storage as a supported configuration — replication resumes from persisted checkpoints after a restart — and the client library's sign-in helpers cover every application sign-in method.
 
 ## Impact
@@ -28,7 +27,7 @@ The platform now has the surface a real application needs — auth with provider
 - New: `examples/rational` (React + Vite + RxDB on Dexie/IndexedDB, edge functions, test suites, docs), `docs/rational.md`.
 - `packages/rxdb-client`: auth helpers for providers and magic links, browser session persistence, storage object client; unit tests and the console's Connect template unchanged.
 - `packages/edge-sdk`, `api/openapi/mako-cloud-v1.yaml`, `services/mako-data-plane` (service route to set app metadata), `crates/mako-identity` (audited metadata write), regenerated types.
-- `operations/custom-domains` end to end: control plane domain record and API gain `allowedOrigins`; the data plane and gateway emit CORS on custom-domain requests for allowlisted origins and answer preflights; Caddy's custom-domain site forwards `OPTIONS`; console Domains page, CLI `domains`, SDK, docs.
+- Cross-origin access end to end: a per-environment `allowed-origins` setting in the control plane installed into the data plane like the quota policy; the data plane and gateway answer preflights and echo listed origins on application routes only (never management, operator, or service), on the platform hostname and on custom domains; Caddy forwards `OPTIONS`; console environment settings, CLI, SDK, docs.
 - `crates/mako-smoke`: a Rational smoke suite; the beta qualification includes it.
-- Beta: two DNS names to be created by the operator (the app hostname and the API custom domain) — the plan records this as a prerequisite with a local fallback.
+- Beta: no DNS or infrastructure prerequisite — Rational uses the platform's ordinary project URL, and its static bundle is hosted like any application's would be.
 - No breaking changes: every platform addition is additive; existing examples and clients keep working.

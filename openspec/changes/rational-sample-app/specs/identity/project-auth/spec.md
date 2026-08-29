@@ -1,3 +1,16 @@
+## ADDED Requirements
+
+### Requirement: Browser origins allowed to call an environment
+Each environment SHALL carry an allowlist of browser origins, matched exactly. A browser application served from a listed origin SHALL be able to call that environment's application API — authentication, documents, replication, storage, and function invocation — cross-origin, on the platform's own hostname and on any custom domain serving the environment, with the platform answering preflights and echoing the origin. An origin that is not listed MUST receive no cross-origin response headers. The management, operator, and service APIs MUST never answer cross-origin requests, whatever the environment lists. An empty allowlist means no cross-origin access.
+
+#### Scenario: An application on a listed origin calls its project
+- **WHEN** an application served from an origin the environment lists sends a preflighted request to the environment's application API
+- **THEN** the preflight and the request succeed with cross-origin headers naming that origin, on the platform's hostname and on a custom domain alike
+
+#### Scenario: An unlisted origin and a management route
+- **WHEN** the same request arrives from an origin the environment does not list, or a listed origin calls a management, operator, or service route
+- **THEN** no cross-origin headers are returned and the browser blocks the response
+
 ## MODIFIED Requirements
 
 ### Requirement: Trusted and user-editable metadata

@@ -1,0 +1,37 @@
+{
+  "id": "receipts",
+  "access": "policy",
+  "maxObjectBytes": 8388608,
+  "allowedContentTypes": ["image/*", "application/pdf"],
+  "notes": [
+    "Receipts live at households/<household_id>/transactions/<transaction_id>/<file>.",
+    "Limitation (findings log): the bucket rule language sees the object document (path, owner_id, ...) but cannot derive the household from the path prefix, and an object carries no household_id field to index the claim by. Until rules can read a path segment (or objects carry application fields), access is owner-only: the uploader is the only member who can read or delete the receipt, so a household member who did not upload it cannot open it.",
+    "Task 2.6 revisits this with the household claim once the platform supports it."
+  ],
+  "rules": [
+    {
+      "id": "owner-create",
+      "effect": "allow",
+      "operations": ["create"],
+      "expression": "new.owner_id == identity.user_id"
+    },
+    {
+      "id": "owner-update",
+      "effect": "allow",
+      "operations": ["update"],
+      "expression": "old.owner_id == identity.user_id && new.owner_id == identity.user_id"
+    },
+    {
+      "id": "owner-read",
+      "effect": "allow",
+      "operations": ["read"],
+      "expression": "old.owner_id == identity.user_id"
+    },
+    {
+      "id": "owner-delete",
+      "effect": "allow",
+      "operations": ["delete"],
+      "expression": "old.owner_id == identity.user_id"
+    }
+  ]
+}

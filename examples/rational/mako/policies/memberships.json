@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "rules": [
+    {
+      "id": "members-read",
+      "effect": "allow",
+      "operations": ["read"],
+      "expression": "claims.households[old.household_id] != null"
+    },
+    {
+      "id": "invited-read",
+      "effect": "allow",
+      "operations": ["read"],
+      "expression": "identity.user_id != null && old.status == \"invited\""
+    }
+  ]
+}

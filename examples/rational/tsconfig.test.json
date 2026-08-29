@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "types": ["node", "@playwright/test"]
+  },
+  "include": [
+    "playwright.config.ts",
+    "playwright.live.config.ts",
+    "vite.config.ts",
+    "test-support/**/*.d.ts",
+    "test/**/*.ts",
+    "test-live/**/*.ts"
+  ]
+}

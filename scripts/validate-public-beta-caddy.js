@@ -298,6 +298,29 @@ assert(
   !platformSite.includes("header_up X-Mako-Custom-Domain {"),
   "the platform hostname must not assert a custom domain",
 );
+// Cross-origin access belongs to the services, which answer it only for an
+// origin the domain's allowlist names. A header directive here would label a
+// response the platform decided not to label, and on the platform hostname it
+// would label one that must never carry a cross-origin header at all.
+for (const [name, site] of [
+  ["platform hostname", platformSite],
+  ["custom-domain", customDomainSite],
+]) {
+  assert(!/access-control-/iu.test(site), `${name} site emits its own Access-Control header`);
+}
+// Preflights have to reach the services to be answered from the environment's
+// allowlist, and they arrive on both names: every application route on either
+// site is matched by path alone, so OPTIONS is forwarded exactly like the
+// request it precedes.
+for (const [name, site] of [
+  ["platform hostname", platformSite],
+  ["custom-domain", customDomainSite],
+]) {
+  assert(
+    !/^\t*(?:@\w+ )?(?:not )?method\s/mu.test(site),
+    `${name} site filters by method, which would drop OPTIONS preflights`,
+  );
+}
 assert(
   (platformSite.match(/header_up -X-Mako-Custom-Domain/gu) ?? []).length ===
     (platformSite.match(/reverse_proxy @/gu) ?? []).length,
@@ -401,5 +424,5 @@ assert(
 );
 
 console.log(
-  `validated ${openapiPaths.length} exact public API paths, four admission modes, preview guard, the custom-domain site, and fail-closed Caddy defaults`,
+  `validated ${openapiPaths.length} exact public API paths, four admission modes, preview guard, the custom-domain site (methods unfiltered, no proxy-owned CORS), and fail-closed Caddy defaults`,
 );

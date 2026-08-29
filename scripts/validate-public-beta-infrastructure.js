@@ -629,6 +629,17 @@ function validateCustomDomainInfrastructure({ caddyTemplate, guestFirewall, serv
       !platformSite.includes("on_demand"),
     "platform hostname site does not refuse a client-supplied custom-domain assertion",
   );
+  // The services decide cross-origin access from each domain's allowlist, so
+  // the proxy neither emits a cross-origin header nor filters the methods a
+  // preflight needs to reach them.
+  assert(
+    !/access-control-/iu.test(caddyTemplate),
+    "Caddy emits its own Access-Control header; CORS is the services' decision",
+  );
+  assert(
+    !/^\t*(?:@\w+ )?(?:not )?method\s/mu.test(caddyTemplate),
+    "a site filters by method, which would drop OPTIONS preflights",
+  );
   // The verifier's resolver is the host's stub resolver on loopback by
   // default; the guest may reach the configured name servers on port 53.
   assert(

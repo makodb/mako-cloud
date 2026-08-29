@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "rules": [
+    {
+      "id": "members-read",
+      "effect": "allow",
+      "operations": ["read"],
+      "expression": "claims.households[old.household_id] != null"
+    },
+    {
+      "id": "signed-in-create",
+      "effect": "allow",
+      "operations": ["create"],
+      "expression": "identity.user_id != null && new.household_id == new.id"
+    },
+    {
+      "id": "owner-update",
+      "effect": "allow",
+      "operations": ["update"],
+      "expression": "claims.households[old.household_id] == \"owner\" && old.household_id == new.household_id && new.household_id == new.id"
+    },
+    {
+      "id": "owner-delete",
+      "effect": "allow",
+      "operations": ["delete"],
+      "expression": "claims.households[old.household_id] == \"owner\""
+    }
+  ]
+}

@@ -1,0 +1,82 @@
+import { existsSync, readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
+import { defineConfig, type ProxyOptions } from "vite";
+
+/**
+ * `mako.env.json` is written by `scripts/bootstrap.mjs` and names the tenant
+ * the app talks to. The data plane emits no CORS headers, so in development
+ * the dev server proxies `/v1` to it and the app calls same-origin — the
+ * topology a deployment has behind its reverse proxy. `MAKO_LIVE_ENDPOINT`
+ * overrides the proxy target (the live suite points it at a throwaway stack).
+ * Without an env file the app runs against its in-browser fake backend.
+ */
+interface RationalEnvFile {
+  readonly endpoint: string;
+  readonly projectId: string;
+  readonly environmentId: string;
+  readonly publicProjectKey: string;
+  /** Where the edge gateway serves the environment's functions, when deployed. */
+  readonly functionsEndpoint?: string | null;
+  readonly signIn?: {
+    readonly providers: ReadonlyArray<{
+      readonly name: string;
+      readonly enabled: boolean;
+      readonly label?: string;
+    }>;
+    readonly magicLinks: boolean;
+  };
+}
+
+function readEnvFile(): RationalEnvFile | null {
+  const path = fileURLToPath(new URL("./mako.env.json", import.meta.url));
+  if (!existsSync(path)) return null;
+  return JSON.parse(readFileSync(path, "utf8")) as RationalEnvFile;
+}
+
+export default defineConfig(({ command }) => {
+  const envFile = readEnvFile();
+  const liveEndpoint = process.env.MAKO_LIVE_ENDPOINT ?? envFile?.endpoint;
+  // The edge gateway is a second origin, and it sends no CORS headers either,
+  // so the dev server proxies the function route as well and the app calls
+  // both same-origin.
+  const functionsEndpoint =
+    process.env.MAKO_FUNCTIONS_ENDPOINT ?? envFile?.functionsEndpoint ?? undefined;
+  const runtimeEnvironment =
+    envFile === null
+      ? null
+      : {
+          ...envFile,
+          endpoint: command === "serve" ? "same-origin" : envFile.endpoint,
+          functionsEndpoint:
+            command === "serve" && functionsEndpoint !== undefined
+              ? "same-origin"
+              : (envFile.functionsEndpoint ?? null),
+        };
+  const proxy: Record<string, ProxyOptions> = {};
+  if (liveEndpoint !== undefined) {
+    proxy["/v1"] = {
+      target: liveEndpoint,
+      changeOrigin: false,
+      configure: (server) => {
+        server.on("proxyRes", (proxyRes) => {
+          // The live pull stream is server-sent events; never buffer it.
+          if (proxyRes.headers["content-type"]?.includes("text/event-stream")) {
+            proxyRes.headers["cache-control"] = "no-cache";
+          }
+        });
+      },
+    };
+  }
+  if (functionsEndpoint !== undefined && functionsEndpoint !== null) {
+    proxy["^/[^/]+--[^/]+/functions/v1/"] = {
+      target: functionsEndpoint,
+      changeOrigin: false,
+    };
+  }
+  return {
+    define: { __RATIONAL_ENV__: JSON.stringify(runtimeEnvironment) },
+    build: { outDir: "web-dist", emptyOutDir: true },
+    server: Object.keys(proxy).length === 0 ? {} : { proxy },
+  };
+});
