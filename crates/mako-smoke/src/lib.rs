@@ -81,19 +81,78 @@ impl Drop for ServiceProcess {
     }
 }
 
-/// Where the service binaries live. Defaults to the workspace target directory
-/// so `cargo test` works, and is overridable for a release-profile run.
+/// Where the service binaries live: `MAKO_SMOKE_BINARY_DIR`, else the target
+/// directory cargo is actually using, else the workspace's own.
+///
+/// Honouring `CARGO_TARGET_DIR` matters more than it looks. A run with a
+/// custom target directory builds its test binaries there and leaves
+/// `<workspace>/target/debug` untouched, so the suite used to pick up
+/// whatever service binaries happened to be lying there -- yesterday's, or
+/// none at all. A smoke test that exercises a service it did not build proves
+/// nothing, and says so in the most confusing way available: a readiness
+/// timeout in a service whose source is fine.
 pub fn binary_directory() -> PathBuf {
     if let Ok(configured) = std::env::var("MAKO_SMOKE_BINARY_DIR") {
         return PathBuf::from(configured);
     }
-    let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let workspace = manifest
+    if let Ok(target) = std::env::var("CARGO_TARGET_DIR") {
+        return PathBuf::from(target).join("debug");
+    }
+    workspace_root().join("target").join("debug")
+}
+
+fn workspace_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .and_then(Path::parent)
         .expect("workspace root")
-        .to_path_buf();
-    workspace.join("target").join("debug")
+        .to_path_buf()
+}
+
+/// Refuse to run against binaries older than the sources they are meant to
+/// exercise. Silently testing a stale build is worse than not testing: it
+/// reports on code nobody wrote and hides the code somebody did.
+fn assert_binaries_are_current(binaries: &Path, name: &str) {
+    let Ok(built) = std::fs::metadata(binaries.join(name)).and_then(|meta| meta.modified()) else {
+        return;
+    };
+    let root = workspace_root();
+    let mut newest_source: Option<(std::time::SystemTime, PathBuf)> = None;
+    for area in ["crates", "services"] {
+        let mut pending = vec![root.join(area)];
+        while let Some(directory) = pending.pop() {
+            let Ok(entries) = std::fs::read_dir(&directory) else {
+                continue;
+            };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    if path.file_name().is_some_and(|name| name != "target") {
+                        pending.push(path);
+                    }
+                } else if path.extension().is_some_and(|extension| extension == "rs")
+                    && let Ok(modified) = entry.metadata().and_then(|meta| meta.modified())
+                    && newest_source
+                        .as_ref()
+                        .is_none_or(|(seen, _)| modified > *seen)
+                {
+                    newest_source = Some((modified, path));
+                }
+            }
+        }
+    }
+    if let Some((modified, path)) = newest_source
+        && modified > built
+    {
+        let relative = path.strip_prefix(&root).unwrap_or(&path).display();
+        panic!(
+            "{} in {} is older than {relative}; rebuild before running the smoke suite \
+             (`cargo build --workspace --bins`, and set MAKO_SMOKE_BINARY_DIR when \
+             CARGO_TARGET_DIR points elsewhere)",
+            name,
+            binaries.display()
+        );
+    }
 }
 
 pub fn scratch_root() -> PathBuf {
@@ -292,6 +351,7 @@ pub fn start_service(
          set MAKO_SMOKE_BINARY_DIR",
         executable.display()
     );
+    assert_binaries_are_current(binaries, name);
     let output = std::fs::File::create(&log).expect("service log");
     let errors = output.try_clone().expect("service log");
     let child = Command::new(&executable)
