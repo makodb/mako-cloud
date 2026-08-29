@@ -46,13 +46,13 @@
 
 - [x] 6.1 Control plane: schedule records with validated cron expressions in UTC targeting a function's active deployment.
 - [x] 6.2 Worker: due-time evaluation, invocation through the gateway with a scheduler credential, per-schedule lease for overlap skipping, run history.
-- [ ] 6.3 Console: schedules on the function page with next run and history; OpenAPI, SDK, allowlist; tests for overlap skipping; deploy and requalify.
+- [x] 6.3 Console: schedules on the function page with next run and history; OpenAPI, SDK, allowlist; tests for overlap skipping; deploy and requalify.
 
 ## 7. Phase 3 — custom domains
 
 - [x] 7.1 Control plane: domain records with DNS challenge, verification worker, verified-domain list publication.
 - [x] 7.2 Caddy: on-demand TLS with an `ask` endpoint answering from the verified list; routing of verified domains to the project's API and functions; converge and validators.
-- [ ] 7.3 Console: add domain, show challenge, verification state, remove; OpenAPI, SDK; tests for unverified refusal and re-verification failure; deploy and requalify.
+- [x] 7.3 Console: add domain, show challenge, verification state, remove; OpenAPI, SDK; tests for unverified refusal and re-verification failure; deploy and requalify.
 
 ## 8. Phase 3 — generated API documentation
 

@@ -1,12 +1,12 @@
 {
   "schemaVersion": 1,
-  "recordedAt": "2026-08-29T07:21:10Z",
+  "recordedAt": "2026-08-29T09:08:52Z",
   "label": "risk-accepted-public-preview",
   "status": "active",
   "admissionMode": "risk_accepted_preview",
   "qualifiedBetaStatus": "blocked",
   "planHash": "d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073",
-  "releaseDigest": "0bd09d7f4f7ae6f4f30357cb36e9e61a63096a4f5279f328dc7e53128cfc0f80",
+  "releaseDigest": "e3bb0229cdf833f7c5dab1f6b4b629139aff31258ee8483dd2cb35f5e93ae56a",
   "acceptedBlockers": [
     "complete the 30-day resource, capacity, availability, and cost window with provider or facility evidence",
     "measured auth, RxDB pull, and RxDB push latency exceed their single-region beta p95 budgets"
