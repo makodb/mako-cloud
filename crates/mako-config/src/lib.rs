@@ -7,7 +7,7 @@ use std::{
     env,
     ffi::OsString,
     fmt, fs,
-    net::SocketAddr,
+    net::{IpAddr, Ipv4Addr, SocketAddr},
     num::{NonZeroU32, NonZeroUsize},
     path::Component,
     path::{Path, PathBuf},
@@ -164,6 +164,14 @@ pub struct ServiceConfig {
     /// Where the control plane's scheduler invokes functions: the edge
     /// gateway's loopback listener.
     pub edge_gateway_address: SocketAddr,
+    /// The DNS resolver the control plane's custom-domain verifier asks for
+    /// TXT records. Defaults to the first `nameserver` in `/etc/resolv.conf`
+    /// read at startup, else the systemd-resolved stub at `127.0.0.53:53`.
+    pub dns_resolver: SocketAddr,
+    /// The host of `server.public_url` when it is a DNS name: the platform's
+    /// own public hostname, which a custom domain may not equal or sit under.
+    /// `None` without a public URL or when its host is an IP address.
+    pub public_hostname: Option<String>,
     pub runtime_supervisor_address: SocketAddr,
     pub telemetry_query_address: SocketAddr,
     pub otlp_address: SocketAddr,
@@ -509,6 +517,7 @@ struct RawConfig {
     object_store_endpoint: String,
     data_plane_address: String,
     edge_gateway_address: String,
+    dns_resolver: Option<String>,
     runtime_supervisor_address: String,
     telemetry_query_address: String,
     otlp_address: String,
@@ -617,6 +626,7 @@ impl RawConfig {
             object_store_endpoint: "http://127.0.0.1:8333".into(),
             data_plane_address: "127.0.0.1:8080".into(),
             edge_gateway_address: "127.0.0.1:8082".into(),
+            dns_resolver: None,
             runtime_supervisor_address: "127.0.0.1:9001".into(),
             telemetry_query_address: "127.0.0.1:9465".into(),
             otlp_address: "127.0.0.1:4317".into(),
@@ -841,6 +851,9 @@ impl RawConfig {
         }
         if let Some(value) = overlay.dependencies.edge_gateway_address {
             self.edge_gateway_address = value;
+        }
+        if let Some(value) = overlay.dependencies.dns_resolver {
+            self.dns_resolver = Some(value);
         }
         if let Some(value) = overlay.dependencies.runtime_supervisor_address {
             self.runtime_supervisor_address = value;
@@ -1170,6 +1183,7 @@ impl RawConfig {
             "MAKO_EDGE_GATEWAY_ENDPOINT",
             &mut self.edge_gateway_address,
         )?;
+        apply_optional_string(loader, "MAKO_DNS_RESOLVER", &mut self.dns_resolver)?;
         apply_string(
             loader,
             "MAKO_RUNTIME_SUPERVISOR_ENDPOINT",
@@ -1888,6 +1902,16 @@ impl RawConfig {
                 "control-plane edge gateway must use a loopback address",
             ));
         }
+        // The verifier's resolver is the host's: read once here so a
+        // resolv.conf that changes later never changes a running service.
+        let dns_resolver = match self.dns_resolver.as_deref() {
+            Some(value) => parse_socket(value, "dependencies.dns_resolver")?,
+            None => default_dns_resolver(),
+        };
+        let public_hostname = public_url.as_ref().and_then(|url| match url.host() {
+            Some(url::Host::Domain(host)) => Some(host.trim_end_matches('.').to_ascii_lowercase()),
+            _ => None,
+        });
         let runtime_supervisor_address = parse_socket(
             &self.runtime_supervisor_address,
             "dependencies.runtime_supervisor_address",
@@ -1982,6 +2006,8 @@ impl RawConfig {
             object_store_endpoint,
             data_plane_address,
             edge_gateway_address,
+            dns_resolver,
+            public_hostname,
             runtime_supervisor_address,
             telemetry_query_address,
             otlp_address,
@@ -2069,6 +2095,7 @@ struct DependenciesOverlay {
     object_store_endpoint: Option<String>,
     data_plane_address: Option<String>,
     edge_gateway_address: Option<String>,
+    dns_resolver: Option<String>,
     runtime_supervisor_address: Option<String>,
     telemetry_query_address: Option<String>,
     otlp_address: Option<String>,
@@ -2217,6 +2244,40 @@ fn validate_region(region: &str) -> Result<(), ConfigDiagnostic> {
         ));
     }
     Ok(())
+}
+
+/// The systemd-resolved stub listener, which is what a host without a
+/// readable `/etc/resolv.conf` most likely runs.
+const FALLBACK_DNS_RESOLVER: SocketAddr =
+    SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 53)), 53);
+
+/// The first `nameserver` line of a resolv.conf, as a port-53 socket address.
+fn first_nameserver(contents: &str) -> Option<SocketAddr> {
+    contents
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.starts_with(['#', ';']))
+        .filter_map(|line| {
+            let mut words = line.split_whitespace();
+            (words.next() == Some("nameserver"))
+                .then(|| words.next())
+                .flatten()
+        })
+        .find_map(|address| {
+            // `nameserver 127.0.0.53%lo` style scope suffixes are dropped.
+            let address = address.split('%').next().unwrap_or_default();
+            address
+                .parse::<IpAddr>()
+                .ok()
+                .map(|ip| SocketAddr::new(ip, 53))
+        })
+}
+
+fn default_dns_resolver() -> SocketAddr {
+    fs::read_to_string("/etc/resolv.conf")
+        .ok()
+        .and_then(|contents| first_nameserver(&contents))
+        .unwrap_or(FALLBACK_DNS_RESOLVER)
 }
 
 fn parse_socket(value: &str, field: &str) -> Result<SocketAddr, ConfigDiagnostic> {
@@ -2537,6 +2598,80 @@ mod tests {
                 .load(ServiceKind::ControlPlane)
                 .expect_err("malformed");
         assert_eq!(error.field, "dependencies.edge_gateway_address");
+    }
+
+    #[test]
+    fn the_dns_resolver_is_overridable_and_the_public_hostname_is_derived() {
+        let control = ConfigLoader::from_environment([
+            ("MAKO_DNS_RESOLVER", "10.0.0.2:5353"),
+            ("MAKO_PUBLIC_URL", "https://Cloud.Example.Test."),
+        ])
+        .load(ServiceKind::ControlPlane)
+        .expect("resolver override");
+        assert_eq!(
+            control.dns_resolver,
+            "10.0.0.2:5353".parse().expect("socket"),
+            "the resolver need not be loopback: it is the host's"
+        );
+        assert_eq!(
+            control.public_hostname.as_deref(),
+            Some("cloud.example.test"),
+            "the platform hostname is the public URL's host, lowercased, without a trailing dot"
+        );
+        let error = ConfigLoader::from_environment([("MAKO_DNS_RESOLVER", "not-a-socket")])
+            .load(ServiceKind::ControlPlane)
+            .expect_err("malformed");
+        assert_eq!(error.code, ConfigErrorCode::InvalidValue);
+        assert_eq!(error.field, "dependencies.dns_resolver");
+        let defaults = ConfigLoader::default()
+            .load(ServiceKind::ControlPlane)
+            .expect("defaults");
+        assert_eq!(
+            defaults.dns_resolver.port(),
+            53,
+            "the default is a name server"
+        );
+        assert!(
+            defaults.public_hostname.is_none(),
+            "no public URL, no platform hostname"
+        );
+        let numeric =
+            ConfigLoader::from_environment([("MAKO_PUBLIC_URL", "http://127.0.0.1:8081")])
+                .load(ServiceKind::ControlPlane)
+                .expect("numeric public URL");
+        assert!(
+            numeric.public_hostname.is_none(),
+            "an IP address is not a hostname a custom domain could collide with"
+        );
+        let file = temporary_file(
+            "dns-resolver",
+            br#"{"dependencies":{"dns_resolver":"127.0.0.1:1053"}}"#,
+        );
+        let from_file = ConfigLoader::from_environment([(
+            "MAKO_CONFIG_FILE",
+            file.to_str().expect("UTF-8 path"),
+        )])
+        .load(ServiceKind::ControlPlane)
+        .expect("JSON overlay");
+        assert_eq!(from_file.dns_resolver.port(), 1053);
+    }
+
+    #[test]
+    fn the_first_nameserver_of_a_resolv_conf_is_used() {
+        assert_eq!(
+            first_nameserver(
+                "# generated\nsearch example.test\nnameserver 127.0.0.53%lo\nnameserver 10.0.0.1\n"
+            ),
+            Some("127.0.0.53:53".parse().expect("socket"))
+        );
+        assert_eq!(
+            first_nameserver("nameserver 2001:db8::1\noptions edns0\n"),
+            Some("[2001:db8::1]:53".parse().expect("socket"))
+        );
+        assert_eq!(first_nameserver("search example.test\n"), None);
+        assert_eq!(first_nameserver("nameserver not-an-address\n"), None);
+        assert_eq!(FALLBACK_DNS_RESOLVER.port(), 53);
+        assert!(FALLBACK_DNS_RESOLVER.ip().is_loopback());
     }
 
     #[test]

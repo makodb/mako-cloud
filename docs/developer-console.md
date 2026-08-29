@@ -23,7 +23,7 @@ nothing to show.
 A project's home summarises its environments and their readiness, the selected
 environment's API URL, public key, and quickstart, its usage against quota,
 data-plane health, and recent activity, and offers Overview, Usage, Activity,
-and Settings alongside the environment list. Settings show the owner, region, identifiers, and lifecycle, and offer the three
+Domains, and Settings alongside the environment list. Settings show the owner, region, identifiers, and lifecycle, and offer the three
 changes an owner may make: renaming the project, transferring it between the
 personal space and the teams the developer administers, and requesting deletion
 with its grace period. Each asks for confirmation and is audited; a transfer
@@ -31,7 +31,19 @@ keeps the identifier, environments, data, policies, users, keys, and functions,
 holds every environment to the new owner's plan before the owner changes, and
 is recorded under both the previous and the new owner.
 
-Routes: `/projects/{projectId}` and `/projects/{projectId}/{overview|usage|activity|settings}`.
+Domains are project-level: the Domains section lists every custom domain with
+the environment whose API and functions it serves, its state — pending,
+verified, or failed — and when it was verified and last checked. Adding one
+takes a hostname and an environment and answers with the DNS TXT record that
+proves control of the name (name, type, value, each copyable), which stays
+available per row under "Show DNS record"; nothing is served on the name until
+the platform has seen that record. "Verify now" checks the record immediately
+instead of at the next periodic check and shows the outcome with the reason
+when it did not verify. A domain whose record later disappears is marked
+failed with why serving stopped, and a confirmed "Remove" stops serving the
+name and its certificate renewal.
+
+Routes: `/projects/{projectId}` and `/projects/{projectId}/{overview|usage|activity|domains|settings}`.
 
 ## Environment
 
@@ -77,9 +89,27 @@ its run history newest first, filtered by outcome and paged, with due time,
 start, duration, outcome — including runs skipped because the previous one
 was still executing — response status, error, and whether the run was manual.
 
-Product areas the deployment does not provide yet — Domains — are listed and
-disabled with a reason, never hidden: the shape of the product is visible
-before every area is enabled.
+API docs (`/projects/{projectId}/environments/{environmentId}/api-docs`) is
+the environment's own API reference, generated in the browser from what the
+console already reads and stamped with the time it was observed — nothing is
+rendered by the server or stored. It shows the API URL, the public key id, and
+the headers each route takes; the auth endpoints (sign-up, sign-in, refresh,
+current user, sign-out, provider start → callback → exchange, magic link
+request and redeem) with request and response bodies for this environment;
+for each collection its document shape from the schema (properties with type,
+required, description, and the primary key), its indexes, the operations the
+active policy allows — an allow rule whose expression is `true` makes an
+operation allowed, any other allow expression makes it conditional on that
+expression, an operation no allow rule names is denied, and deny rules are
+listed beside — and example create, read, query, update, delete, and RxDB
+pull, push, and stream requests built from a sample document; each function's
+route, active version, and an invocation; each bucket's upload, download, list,
+and delete; and copyable curl, JavaScript (`fetch`), and RxDB replication
+quickstarts carrying the environment's API URL and public key. Each part loads
+on its own, so one unreadable source marks only its section. Only public key
+material can appear: a public key's value is shown only when the console
+already has it (otherwise a placeholder stands where it belongs), and a service
+credential is refused before it can reach a snippet.
 
 Routes: `/projects/{projectId}/environments/{environmentId}/{storage|webhooks|auth-providers|email-templates|logs|usage|activity}`,
 `…/storage/{bucketId}`, and `…/webhooks/{webhookId}` join the existing environment routes; every pre-existing deep link keeps working and

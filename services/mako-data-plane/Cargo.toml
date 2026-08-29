@@ -34,6 +34,7 @@ serde.workspace = true
 serde_json.workspace = true
 
 [dev-dependencies]
+mako-service-runtime = { path = "../../crates/mako-service-runtime", features = ["test-support"] }
 tempfile.workspace = true
 
 [lints]

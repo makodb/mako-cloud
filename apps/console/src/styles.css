@@ -1322,16 +1322,3 @@ main.workspace:has(> .developer-workspace-shell) {
     border: 1px solid CanvasText;
   }
 }
-
-.destination-unavailable {
-  display: block;
-  border-radius: 0.5rem;
-  padding: 0.65rem 0.75rem;
-  color: #6b7a75;
-  cursor: not-allowed;
-}
-
-.destination-unavailable small {
-  display: block;
-  font-size: 0.75rem;
-}

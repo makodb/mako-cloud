@@ -31,7 +31,7 @@ use crate::{
     DataPlaneGraph,
     auth_http::{
         append_audit, append_audit_with_details, invalid, json, now_unix_seconds, parse_json,
-        tenant, unauthenticated, unavailable, verify_bearer,
+        tenant_for, unauthenticated, unavailable, verify_bearer,
     },
 };
 
@@ -110,7 +110,7 @@ fn handle_get(
     request: &HttpRequest,
     service: bool,
 ) -> Result<HttpResponse, HttpApiError> {
-    let tenant = tenant(request)?;
+    let tenant = tenant_for(graph, request)?;
     let scope = collection_scope(request, &tenant)?;
     let document_id = document_id(request)?;
     let now = now_unix_seconds(request.request_id())?;
@@ -174,7 +174,7 @@ fn handle_mutation(
     service: bool,
 ) -> Result<HttpResponse, HttpApiError> {
     require_json(request)?;
-    let tenant = tenant(request)?;
+    let tenant = tenant_for(graph, request)?;
     let scope = collection_scope(request, &tenant)?;
     let document_id = document_id(request)?;
     let now = now_unix_seconds(request.request_id())?;
@@ -323,7 +323,7 @@ fn handle_query(
     service: bool,
 ) -> Result<HttpResponse, HttpApiError> {
     require_json(request)?;
-    let tenant = tenant(request)?;
+    let tenant = tenant_for(graph, request)?;
     let scope = collection_scope(request, &tenant)?;
     let now = now_unix_seconds(request.request_id())?;
     block_on(async {

@@ -32,7 +32,7 @@ use serde_json::{Value, json};
 
 use crate::{
     DataPlaneGraph,
-    auth_http::{self, invalid, now_unix_seconds, tenant, unauthenticated, unavailable},
+    auth_http::{self, invalid, now_unix_seconds, tenant_for, unauthenticated, unavailable},
     document_http, internal_http,
 };
 
@@ -79,7 +79,7 @@ fn handle_put(
     service: bool,
 ) -> Result<HttpResponse, HttpApiError> {
     block_on(async {
-        let tenant = tenant(request)?;
+        let tenant = tenant_for(graph, request)?;
         let bucket_id = bucket_id(request)?;
         let path = object_path(request)?;
         let now = now_unix_seconds(request.request_id())?;
@@ -133,7 +133,7 @@ fn handle_get(
     service: bool,
 ) -> Result<HttpResponse, HttpApiError> {
     block_on(async {
-        let tenant = tenant(request)?;
+        let tenant = tenant_for(graph, request)?;
         let bucket_id = bucket_id(request)?;
         let path = object_path(request)?;
         let now = now_unix_seconds(request.request_id())?;
@@ -207,7 +207,7 @@ fn handle_delete(
     service: bool,
 ) -> Result<HttpResponse, HttpApiError> {
     block_on(async {
-        let tenant = tenant(request)?;
+        let tenant = tenant_for(graph, request)?;
         let bucket_id = bucket_id(request)?;
         let path = object_path(request)?;
         let now = now_unix_seconds(request.request_id())?;
@@ -254,7 +254,7 @@ fn handle_list(
     service: bool,
 ) -> Result<HttpResponse, HttpApiError> {
     block_on(async {
-        let tenant = tenant(request)?;
+        let tenant = tenant_for(graph, request)?;
         let bucket_id = bucket_id(request)?;
         let now = now_unix_seconds(request.request_id())?;
         let (principal, actor) = principal(

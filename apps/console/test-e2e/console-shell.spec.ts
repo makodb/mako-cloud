@@ -44,9 +44,9 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
-// The shell is what frames every environment screen: the context it shows,
-// the destinations it offers, and the areas it admits it does not have yet.
-// Screen bodies are covered by their own specs; this one asserts the frame.
+// The shell is what frames every environment screen: the context it shows
+// and the destinations it offers. Screen bodies are covered by their own
+// specs; this one asserts the frame.
 test("a deep link opens inside the shell with its context and every destination", async ({
   page,
 }) => {
@@ -67,6 +67,7 @@ test("a deep link opens inside the shell with its context and every destination"
     "functions",
     "Storage",
     "Webhooks",
+    "API docs",
     "Logs",
     "Usage",
     "Activity",
@@ -77,17 +78,13 @@ test("a deep link opens inside the shell with its context and every destination"
     destinations.getByRole("link", { name: "collections", exact: true }),
   ).toHaveAttribute("aria-current", "page");
 
-  // Areas the deployment lacks are shown, disabled, with a reason -- never hidden.
-  for (const label of ["Domains"]) {
-    const item = destinations.locator(".destination-unavailable", { hasText: label });
-    await expect(item).toBeVisible();
-    await expect(item).toHaveAttribute("aria-disabled", "true");
-    await expect(item).toContainText("Not available on this deployment");
-  }
-  await expect(destinations.locator(".destination-unavailable")).toHaveCount(1);
-  // Schedules are neither a destination nor unavailable: they live on each
-  // function's page, so the sidebar says nothing about them.
+  // Every product area is served now: nothing is listed as unavailable.
+  await expect(destinations.locator(".destination-unavailable")).toHaveCount(0);
+  await expect(destinations.getByText("Not available on this deployment")).toHaveCount(0);
+  // Schedules live on each function's page and custom domains on the
+  // project's, so the environment sidebar says nothing about either.
   await expect(destinations.getByText("Schedules")).toHaveCount(0);
+  await expect(destinations.getByText("Domains")).toHaveCount(0);
   await expect(
     destinations.getByRole("link", { name: "Auth providers", exact: true }),
   ).toHaveAttribute(

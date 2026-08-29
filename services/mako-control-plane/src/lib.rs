@@ -6,6 +6,7 @@ mod audit;
 mod auth_settings_http;
 mod collection_http;
 mod credential_http;
+mod custom_domain_http;
 mod data_job_http;
 mod developer_auth_http;
 mod developer_metrics;
@@ -62,6 +63,7 @@ pub fn control_plane_router(
     email_template_http::add_email_template_routes(&mut router, Arc::clone(&graph))?;
     function_http::add_function_routes(&mut router, Arc::clone(&graph))?;
     function_schedule_http::add_function_schedule_routes(&mut router, Arc::clone(&graph))?;
+    custom_domain_http::add_custom_domain_routes(&mut router, Arc::clone(&graph))?;
     observability_http::add_observability_routes(&mut router, Arc::clone(&graph))?;
     operator_http::add_operator_routes(&mut router, Arc::clone(&graph))?;
     collection_http::add_collection_routes(&mut router, Arc::clone(&graph))?;

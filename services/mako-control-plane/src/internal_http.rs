@@ -28,6 +28,10 @@ pub fn add_internal_routes(
         InternalRoute::FunctionSecretsResolve.path(),
         move |request| handle_resolution(&resolution_graph, &request),
     )?;
+    let ask_graph = Arc::clone(&graph);
+    router.add_route(HttpMethod::Get, CUSTOM_DOMAIN_ASK_PATH, move |request| {
+        handle_custom_domain_ask(&ask_graph, &request)
+    })?;
     let plan_graph = Arc::clone(&graph);
     router.add_route(
         HttpMethod::Post,
@@ -39,6 +43,68 @@ pub fn add_internal_routes(
         InternalRoute::OperatorEntitlementApply.path(),
         move |request| handle_operator_entitlement(&graph, &request, true),
     )
+}
+
+/// Caddy's on-demand TLS `ask` endpoint, and the edge gateway's hostname
+/// lookup: `200` with the environment for a verified custom domain, `404`
+/// for anything else. Unauthenticated, so it answers loopback peers only
+/// and says nothing a public caller could not learn by connecting.
+pub(crate) const CUSTOM_DOMAIN_ASK_PATH: &str = "/_internal/v1/custom-domains/ask";
+
+fn handle_custom_domain_ask(
+    graph: &Arc<ControlPlaneGraph>,
+    request: &HttpRequest,
+) -> Result<HttpResponse, HttpApiError> {
+    if !request
+        .remote_address()
+        .is_some_and(|address| address.ip().is_loopback())
+    {
+        return Err(HttpApiError::new(
+            403,
+            ErrorCode::PermissionDenied,
+            "custom domain lookup is available only over loopback",
+            request.request_id(),
+            RetryAdvice::Never,
+        ));
+    }
+    if !request.body().is_empty() {
+        return Err(invalid(request, "request body is not supported"));
+    }
+    let mut domains = request
+        .query()
+        .iter()
+        .filter(|(name, _)| name == "domain")
+        .map(|(_, value)| value.as_str());
+    let domain = domains
+        .next()
+        .ok_or_else(|| invalid(request, "domain query is required"))?;
+    if domains.next().is_some() || request.query().len() != 1 {
+        return Err(invalid(request, "domain query is invalid"));
+    }
+    let not_found = || {
+        HttpApiError::new(
+            404,
+            ErrorCode::NotFound,
+            "custom domain is not verified",
+            request.request_id(),
+            RetryAdvice::Never,
+        )
+    };
+    if domain.is_empty() || domain.len() > 253 || domain.chars().any(char::is_control) {
+        return Err(not_found());
+    }
+    let verified = block_on(graph.custom_domain_service().lookup_verified(domain))
+        .map_err(|_| unavailable(request, "custom domain lookup is unavailable"))?
+        .ok_or_else(not_found)?;
+    HttpResponse::json(
+        200,
+        &serde_json::json!({
+            "hostname": verified.hostname(),
+            "projectId": verified.project_id().as_str(),
+            "environmentId": verified.environment_id().as_str(),
+        }),
+    )
+    .map_err(|_| unavailable(request, "custom domain lookup response is unavailable"))
 }
 
 fn handle_operator_entitlement(
@@ -463,6 +529,13 @@ fn handle_resolution(
             .ok_or_else(|| {
                 unavailable(request, "function organization resolution is unavailable")
             })?;
+        let custom_domains = graph
+            .custom_domain_service()
+            .verified_hostnames(&verified.tenant)
+            .await
+            .map_err(|_| {
+                unavailable(request, "function custom domain resolution is unavailable")
+            })?;
         let response = FunctionSecretResolutionResponse {
             organization_id: project.organization_id().as_str().to_owned(),
             function_name: resolved.function_name.as_str().to_owned(),
@@ -483,6 +556,7 @@ fn handle_resolution(
                     value: secret.expose_to_runtime().to_owned(),
                 })
                 .collect(),
+            custom_domains,
         };
         HttpResponse::json(200, &response)
             .map_err(|_| unavailable(request, "function resolution response is unavailable"))

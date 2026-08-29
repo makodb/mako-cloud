@@ -244,6 +244,44 @@ fn start(service: ServiceKind) -> ExitCode {
             }
         })
     };
+    // Custom domains: once a minute, look each domain's verification record
+    // up and publish every environment's verified list. A pass looks the
+    // records up one after another, so the cadence is a floor.
+    let custom_domain_worker = {
+        let stopping = Arc::clone(&mail_stopping);
+        let graph = Arc::clone(&graph);
+        thread::spawn(move || {
+            let mut failures: u64 = 0;
+            while !stopping.load(Ordering::Acquire) {
+                match SystemTime::now()
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .map(|duration| duration.as_secs())
+                {
+                    Ok(now) => match block_on(graph.custom_domain_verifier().run_once(now)) {
+                        Ok(report) => {
+                            failures = 0;
+                            graph.observe_custom_domains(&report);
+                            if report.publish_failures > 0 {
+                                eprintln!(
+                                    "custom domain list could not be published: class=data_plane count={}",
+                                    report.publish_failures
+                                );
+                            }
+                        }
+                        Err(_) => {
+                            graph.observe_custom_domain_worker_failure();
+                            if failures.is_multiple_of(5) {
+                                eprintln!("custom domain verifier pass failed: class=storage");
+                            }
+                            failures = failures.saturating_add(1);
+                        }
+                    },
+                    Err(_) => eprintln!("custom domain verifier pass failed: class=clock"),
+                }
+                thread::park_timeout(Duration::from_secs(60));
+            }
+        })
+    };
     // Project and environment creation enqueue provisioning and report an
     // asynchronous state. Without this pass those resources stay in
     // `provisioning` and never expose a usable data plane.
@@ -300,6 +338,7 @@ fn start(service: ServiceKind) -> ExitCode {
     data_job_worker.thread().unpark();
     webhook_worker.thread().unpark();
     function_schedule_worker.thread().unpark();
+    custom_domain_worker.thread().unpark();
     provisioning_worker.thread().unpark();
     function_log_worker.thread().unpark();
     if let Some(worker) = &mail_worker {
@@ -327,6 +366,11 @@ fn start(service: ServiceKind) -> ExitCode {
             function_schedule_worker
                 .join()
                 .map_err(|_| "function schedule worker did not stop")
+        })
+        .and_then(|()| {
+            custom_domain_worker
+                .join()
+                .map_err(|_| "custom domain worker did not stop")
         });
     let provisioning_worker_shutdown = provisioning_worker
         .join()

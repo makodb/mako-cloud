@@ -29,11 +29,11 @@ pub use contract::{
     IdentityAdminOperation, IdentityAdminPermission, IdentityVerificationOperation,
     IdentityVerificationRequest, IdentityVerificationResponse, IndexFieldInput, InspectBucketInput,
     InspectIndexInput, InstallAuthProvidersInput, InstallBucketInput, InstallCollectionInput,
-    InstallIndexInput, InstallPolicyInput, InstallQuotaPolicyInput, InternalCaller, InternalRoute,
-    ListBucketObjectsInput, MAX_INTERNAL_BODY_BYTES, OPERATOR_ADMIN_ENVIRONMENT_ID,
-    OPERATOR_ADMIN_PROJECT_ID, OperatorEntitlementApplyResponse, OperatorEntitlementCommand,
-    OperatorEntitlementOperation, OperatorEntitlementPlanResponse, ReadChangeFeedInput,
-    ReadChangeFeedOutput, RemoveBucketInput, ResolvedFunctionSecret,
+    InstallCustomDomainsInput, InstallIndexInput, InstallPolicyInput, InstallQuotaPolicyInput,
+    InternalCaller, InternalRoute, ListBucketObjectsInput, MAX_INTERNAL_BODY_BYTES,
+    OPERATOR_ADMIN_ENVIRONMENT_ID, OPERATOR_ADMIN_PROJECT_ID, OperatorEntitlementApplyResponse,
+    OperatorEntitlementCommand, OperatorEntitlementOperation, OperatorEntitlementPlanResponse,
+    ReadChangeFeedInput, ReadChangeFeedOutput, RemoveBucketInput, ResolvedFunctionSecret,
 };
 pub use guard::{
     GuardDecision, InternalReplayGuard, NoopReplayGuard, RocksInternalReplayGuard,

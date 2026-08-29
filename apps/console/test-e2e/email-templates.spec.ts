@@ -16,6 +16,11 @@ declare global {
         signOut(): Promise<void>;
         subscribe(): () => void;
       };
+      developerWorkspaceEnabled?: boolean;
+      developerExplorerAdminEnabled?: boolean;
+      developerDataJobsEnabled?: boolean;
+      developerSyncDetailsEnabled?: boolean;
+      developerRestoreEnabled?: boolean;
     };
   }
 }

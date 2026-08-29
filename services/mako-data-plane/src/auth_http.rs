@@ -91,7 +91,7 @@ fn handle_signup(
     request: &HttpRequest,
 ) -> Result<HttpResponse, HttpApiError> {
     require_json(request)?;
-    let tenant = tenant(request)?;
+    let tenant = tenant_for(graph, request)?;
     let now = now_unix_seconds(request.request_id())?;
     block_on(async {
         verify_public_key(graph, &tenant, request, now).await?;
@@ -148,7 +148,7 @@ fn handle_jwks(
     graph: &Arc<DataPlaneGraph>,
     request: &HttpRequest,
 ) -> Result<HttpResponse, HttpApiError> {
-    let tenant = tenant(request)?;
+    let tenant = tenant_for(graph, request)?;
     let now = now_unix_seconds(request.request_id())?;
     block_on(async {
         verify_public_key(graph, &tenant, request, now).await?;
@@ -193,7 +193,7 @@ fn handle_signin(
     request: &HttpRequest,
 ) -> Result<HttpResponse, HttpApiError> {
     require_json(request)?;
-    let tenant = tenant(request)?;
+    let tenant = tenant_for(graph, request)?;
     let now = now_unix_seconds(request.request_id())?;
     block_on(async {
         verify_public_key(graph, &tenant, request, now).await?;
@@ -253,7 +253,7 @@ fn handle_refresh(
     request: &HttpRequest,
 ) -> Result<HttpResponse, HttpApiError> {
     require_json(request)?;
-    let tenant = tenant(request)?;
+    let tenant = tenant_for(graph, request)?;
     let now = now_unix_seconds(request.request_id())?;
     block_on(async {
         verify_public_key(graph, &tenant, request, now).await?;
@@ -304,7 +304,7 @@ fn handle_signout(
     graph: &Arc<DataPlaneGraph>,
     request: &HttpRequest,
 ) -> Result<HttpResponse, HttpApiError> {
-    let tenant = tenant(request)?;
+    let tenant = tenant_for(graph, request)?;
     let now = now_unix_seconds(request.request_id())?;
     block_on(async {
         let identity = verify_bearer(graph, &tenant, request, now).await?;
@@ -337,7 +337,7 @@ fn handle_current_user(
     graph: &Arc<DataPlaneGraph>,
     request: &HttpRequest,
 ) -> Result<HttpResponse, HttpApiError> {
-    let tenant = tenant(request)?;
+    let tenant = tenant_for(graph, request)?;
     let now = now_unix_seconds(request.request_id())?;
     block_on(async {
         let identity = verify_bearer(graph, &tenant, request, now).await?;
@@ -731,6 +731,64 @@ pub(crate) fn tenant(request: &HttpRequest) -> Result<TenantScope, HttpApiError>
     .map_err(|_| invalid(request, "tenant path is invalid"))
 }
 
+/// Set by the reverse proxy on the custom-domain listener and stripped on
+/// the platform's own hostname.
+pub(crate) const CUSTOM_DOMAIN_HEADER: &str = "x-mako-custom-domain";
+
+/// The path's tenant, on a hostname that may serve it: every application
+/// route resolves its tenant here, so a request that arrived on a custom
+/// domain is refused unless that domain is verified for exactly this
+/// environment. Nothing is said about whether the environment exists.
+pub(crate) fn tenant_for(
+    graph: &DataPlaneGraph,
+    request: &HttpRequest,
+) -> Result<TenantScope, HttpApiError> {
+    let tenant = tenant(request)?;
+    require_custom_domain(graph, request, &tenant)?;
+    Ok(tenant)
+}
+
+pub(crate) fn require_custom_domain(
+    graph: &DataPlaneGraph,
+    request: &HttpRequest,
+    tenant: &TenantScope,
+) -> Result<(), HttpApiError> {
+    let Some(header) = request.header(CUSTOM_DOMAIN_HEADER) else {
+        return Ok(());
+    };
+    let permitted = normalize_custom_domain(header)
+        .is_some_and(|hostname| graph.custom_domains().permits(tenant, &hostname));
+    if permitted {
+        Ok(())
+    } else {
+        Err(not_found(
+            request,
+            "resource was not found on this hostname",
+        ))
+    }
+}
+
+/// The header value as the control plane stores hostnames: lowercase,
+/// without a port or trailing dot; `None` if it is not a name.
+fn normalize_custom_domain(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    let without_port = trimmed
+        .rsplit_once(':')
+        .filter(|(_, port)| !port.is_empty() && port.bytes().all(|byte| byte.is_ascii_digit()))
+        .map_or(trimmed, |(host, _)| host);
+    let hostname = without_port
+        .strip_suffix('.')
+        .unwrap_or(without_port)
+        .to_ascii_lowercase();
+    let valid = !hostname.is_empty()
+        && hostname.len() <= 253
+        && hostname.contains('.')
+        && hostname.bytes().all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'-' | b'.')
+        });
+    valid.then_some(hostname)
+}
+
 pub(crate) fn now_unix_seconds(request_id: &str) -> Result<u64, HttpApiError> {
     SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
@@ -768,6 +826,16 @@ pub(crate) fn invalid(request: &HttpRequest, message: &'static str) -> HttpApiEr
     HttpApiError::new(
         400,
         ErrorCode::InvalidRequest,
+        message,
+        request.request_id(),
+        RetryAdvice::Never,
+    )
+}
+
+pub(crate) fn not_found(request: &HttpRequest, message: &'static str) -> HttpApiError {
+    HttpApiError::new(
+        404,
+        ErrorCode::NotFound,
         message,
         request.request_id(),
         RetryAdvice::Never,

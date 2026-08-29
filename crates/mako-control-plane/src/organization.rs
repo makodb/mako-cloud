@@ -556,6 +556,10 @@ pub enum ControlAuditAction {
     FunctionScheduleUpdate,
     FunctionScheduleDelete,
     FunctionScheduleRunNow,
+    CustomDomainRead,
+    CustomDomainCreate,
+    CustomDomainDelete,
+    CustomDomainVerify,
 }
 
 impl ControlAuditAction {
@@ -641,6 +645,10 @@ impl ControlAuditAction {
             Self::FunctionScheduleUpdate => "function_schedule_update",
             Self::FunctionScheduleDelete => "function_schedule_delete",
             Self::FunctionScheduleRunNow => "function_schedule_run_now",
+            Self::CustomDomainRead => "custom_domain_read",
+            Self::CustomDomainCreate => "custom_domain_create",
+            Self::CustomDomainDelete => "custom_domain_delete",
+            Self::CustomDomainVerify => "custom_domain_verify",
         }
     }
 }

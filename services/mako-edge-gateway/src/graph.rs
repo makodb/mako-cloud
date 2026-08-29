@@ -116,6 +116,7 @@ struct CachedRoute {
     verify_jwt: bool,
     request_limit_bytes: u64,
     response_limit_bytes: u64,
+    custom_domains: Vec<String>,
 }
 
 /// Resolves a function's routing configuration from the control plane.
@@ -207,6 +208,7 @@ impl PrivateRouteResolver {
             verify_jwt: cached.verify_jwt,
             request_limit_bytes: cached.request_limit_bytes,
             response_limit_bytes: cached.response_limit_bytes,
+            custom_domains: cached.custom_domains,
         }
     }
 }
@@ -271,10 +273,143 @@ impl FunctionRouteResolver for PrivateRouteResolver {
             verify_jwt: response.verify_jwt,
             request_limit_bytes: response.request_limit_bytes,
             response_limit_bytes: response.response_limit_bytes,
+            custom_domains: response.custom_domains,
         };
         self.remember(key, cached.clone());
         Ok(Some(self.route_from(tenant, cached)))
     }
+}
+
+/// How long a hostname's tenant (or its absence) is reused, like a route.
+const CUSTOM_DOMAIN_CACHE_TTL: Duration = ROUTE_CACHE_TTL;
+const CUSTOM_DOMAIN_CACHE_CAPACITY: usize = ROUTE_CACHE_CAPACITY;
+const CUSTOM_DOMAIN_LOOKUP_TIMEOUT: Duration = Duration::from_secs(2);
+const CUSTOM_DOMAIN_LOOKUP_PATH: &str = "/_internal/v1/custom-domains/ask";
+const MAXIMUM_LOOKUP_RESPONSE_BYTES: usize = 16 * 1024;
+
+/// Which environment a custom hostname belongs to, from the control plane's
+/// loopback-only `ask` endpoint -- the same answer Caddy's on-demand TLS
+/// consults, so a hostname is served here only if a certificate could be
+/// issued for it. The answer is the *candidate* tenant; the route the
+/// control plane then resolves for that tenant repeats the verified list,
+/// and the request is served only if its host is in it.
+pub(crate) struct CustomDomainLookup {
+    endpoint: SocketAddr,
+    cache: Mutex<HashMap<String, (Instant, Option<TenantScope>)>>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum CustomDomainLookupError {
+    Unavailable,
+}
+
+impl CustomDomainLookup {
+    fn new(endpoint: SocketAddr) -> Self {
+        Self {
+            endpoint,
+            cache: Mutex::new(HashMap::new()),
+        }
+    }
+
+    /// The environment `hostname` is verified for, or `None`.
+    pub(crate) fn tenant_for(
+        &self,
+        hostname: &str,
+    ) -> Result<Option<TenantScope>, CustomDomainLookupError> {
+        if let Ok(cache) = self.cache.lock()
+            && let Some((resolved_at, tenant)) = cache.get(hostname)
+            && resolved_at.elapsed() <= CUSTOM_DOMAIN_CACHE_TTL
+        {
+            return Ok(tenant.clone());
+        }
+        let tenant = self.fetch(hostname)?;
+        if let Ok(mut cache) = self.cache.lock() {
+            if cache.len() >= CUSTOM_DOMAIN_CACHE_CAPACITY {
+                cache
+                    .retain(|_, (resolved_at, _)| resolved_at.elapsed() <= CUSTOM_DOMAIN_CACHE_TTL);
+            }
+            if cache.len() < CUSTOM_DOMAIN_CACHE_CAPACITY {
+                cache.insert(hostname.to_owned(), (Instant::now(), tenant.clone()));
+            }
+        }
+        Ok(tenant)
+    }
+
+    fn fetch(&self, hostname: &str) -> Result<Option<TenantScope>, CustomDomainLookupError> {
+        let (status, body) = loopback_get(
+            self.endpoint,
+            &format!("{CUSTOM_DOMAIN_LOOKUP_PATH}?domain={hostname}"),
+        )
+        .map_err(|_| CustomDomainLookupError::Unavailable)?;
+        match status {
+            200 => {
+                let answer: CustomDomainAnswer = serde_json::from_slice(&body)
+                    .map_err(|_| CustomDomainLookupError::Unavailable)?;
+                if answer.hostname != hostname {
+                    return Err(CustomDomainLookupError::Unavailable);
+                }
+                Ok(Some(TenantScope::new(
+                    ProjectId::parse(answer.project_id)
+                        .map_err(|_| CustomDomainLookupError::Unavailable)?,
+                    EnvironmentId::parse(answer.environment_id)
+                        .map_err(|_| CustomDomainLookupError::Unavailable)?,
+                )))
+            }
+            404 => Ok(None),
+            _ => Err(CustomDomainLookupError::Unavailable),
+        }
+    }
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CustomDomainAnswer {
+    hostname: String,
+    project_id: String,
+    environment_id: String,
+}
+
+/// One plain HTTP/1.1 GET over loopback: the status and the body.
+fn loopback_get(endpoint: SocketAddr, path_and_query: &str) -> std::io::Result<(u16, Vec<u8>)> {
+    use std::io::{Read as _, Write as _};
+
+    if !endpoint.ip().is_loopback() {
+        return Err(std::io::Error::other("lookup endpoint is not loopback"));
+    }
+    let mut stream = std::net::TcpStream::connect_timeout(&endpoint, CUSTOM_DOMAIN_LOOKUP_TIMEOUT)?;
+    stream.set_read_timeout(Some(CUSTOM_DOMAIN_LOOKUP_TIMEOUT))?;
+    stream.set_write_timeout(Some(CUSTOM_DOMAIN_LOOKUP_TIMEOUT))?;
+    stream.write_all(
+        format!(
+            "GET {path_and_query} HTTP/1.1\r\nHost: {}\r\nAccept: application/json\r\nConnection: close\r\n\r\n",
+            endpoint.ip()
+        )
+        .as_bytes(),
+    )?;
+    let mut raw = Vec::new();
+    stream
+        .take(u64::try_from(MAXIMUM_LOOKUP_RESPONSE_BYTES).unwrap_or(u64::MAX))
+        .read_to_end(&mut raw)?;
+    let head_end = raw
+        .windows(4)
+        .position(|window| window == b"\r\n\r\n")
+        .ok_or_else(|| std::io::Error::other("response has no header block"))?;
+    let head = String::from_utf8_lossy(&raw[..head_end]).into_owned();
+    let mut lines = head.lines();
+    let status = lines
+        .next()
+        .and_then(|line| line.split_whitespace().nth(1))
+        .and_then(|code| code.parse::<u16>().ok())
+        .ok_or_else(|| std::io::Error::other("response has no status"))?;
+    let content_length = lines
+        .filter_map(|line| line.split_once(':'))
+        .find(|(name, _)| name.trim().eq_ignore_ascii_case("content-length"))
+        .and_then(|(_, value)| value.trim().parse::<usize>().ok());
+    let body = raw[head_end + 4..].to_vec();
+    if content_length.is_some_and(|length| body.len() < length) {
+        return Err(std::io::Error::other("response body is incomplete"));
+    }
+    Ok((status, body))
 }
 
 #[derive(Clone)]
@@ -479,6 +614,7 @@ pub struct EdgeGatewayGraph {
     _storage: StorageOwner,
     adapter: Arc<dyn KvAdapter>,
     pub(crate) routes: PrivateRouteResolver,
+    pub(crate) custom_domains: CustomDomainLookup,
     pub(crate) tokens: PrivateTokenVerifier,
     pub(crate) admission: GatewayFunctionInvocationAdmission,
     pub(crate) audit: Arc<PersistentFunctionAudit>,
@@ -577,6 +713,7 @@ impl EdgeGatewayGraph {
             },
             telemetry,
             routes: PrivateRouteResolver::new(control_client.clone(), config.region.clone()),
+            custom_domains: CustomDomainLookup::new(CONTROL_PLANE_ENDPOINT),
             tokens: PrivateTokenVerifier {
                 client: data_client.clone(),
             },
@@ -757,6 +894,7 @@ mod tests {
             verify_jwt: true,
             request_limit_bytes: 1_024,
             response_limit_bytes: 2_048,
+            custom_domains: vec!["api.example.com".to_owned()],
         };
 
         resolver.remember(key.clone(), entry.clone());
@@ -794,7 +932,9 @@ mod tests {
         let config = config_for(directory.path(), DeploymentEnvironment::Local);
         let graph = Arc::new(EdgeGatewayGraph::open(&config).expect("edge graph"));
         let router = crate::edge_gateway_router(graph).expect("edge routes");
-        assert_eq!(router.route_count(), 8);
+        // Seven methods on the public shape, seven on the custom-domain
+        // shape, and the scheduler's internal hop.
+        assert_eq!(router.route_count(), 15);
         for method in [
             mako_service_runtime::HttpMethod::Get,
             mako_service_runtime::HttpMethod::Head,
@@ -808,6 +948,10 @@ mod tests {
                 method,
                 "/prj_example00--env_example00/functions/v1/hello-world"
             ));
+            // The custom-domain shape: the hostname names the environment.
+            assert!(router.permits(method, "/functions/v1/hello-world"));
+            assert!(!router.permits(method, "/functions/v1/hello-world/private"));
+            assert!(!router.permits(method, "/functions/v2/hello-world"));
         }
         assert!(!router.permits(
             mako_service_runtime::HttpMethod::Get,

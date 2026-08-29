@@ -2405,6 +2405,110 @@ paths:
                 $ref: "#/components/schemas/FunctionScheduleRunPage"
         default:
           $ref: "#/components/responses/ApiError"
+  /v1/projects/{projectId}/domains:
+    get:
+      tags: [Management]
+      operationId: listCustomDomains
+      summary: List a project's custom domains
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: Custom domains with their verification state
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/CustomDomain"
+        default:
+          $ref: "#/components/responses/ApiError"
+    post:
+      tags: [Management]
+      operationId: createCustomDomain
+      summary: Add a custom domain to a project environment
+      description: >-
+        Registers a hostname to serve one environment's application API and
+        functions. The response carries the DNS TXT record that proves
+        control of the name; the platform checks it periodically and on
+        request, obtains and renews a certificate once verified, and serves
+        nothing on the name before that. A hostname already claimed by any
+        project is refused with `conflict`.
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CustomDomainCreate"
+      responses:
+        "201":
+          description: Domain registered, pending verification
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomDomain"
+        default:
+          $ref: "#/components/responses/ApiError"
+  /v1/projects/{projectId}/domains/{domainId}:
+    get:
+      tags: [Management]
+      operationId: getCustomDomain
+      summary: Read a custom domain
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/DomainId"
+      responses:
+        "200":
+          description: Custom domain
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomDomain"
+        default:
+          $ref: "#/components/responses/ApiError"
+    delete:
+      tags: [Management]
+      operationId: deleteCustomDomain
+      summary: Remove a custom domain
+      description: Serving on the name stops; its certificate is no longer renewed.
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/DomainId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "204":
+          description: Domain removed
+        default:
+          $ref: "#/components/responses/ApiError"
+  /v1/projects/{projectId}/domains/{domainId}/actions/verify:
+    post:
+      tags: [Management]
+      operationId: verifyCustomDomain
+      summary: Check the domain's verification record now
+      description: >-
+        Looks the TXT record up immediately instead of waiting for the next
+        periodic check and returns the domain with the outcome.
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/DomainId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: The domain after the check
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomDomain"
+        default:
+          $ref: "#/components/responses/ApiError"
   /v1/projects/{projectId}/environments/{environmentId}/auth-settings:
     get:
       tags: [Management]
@@ -5885,6 +5989,12 @@ components:
       required: true
       schema:
         $ref: "#/components/schemas/FunctionScheduleId"
+    DomainId:
+      name: domainId
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/CustomDomainId"
     ProviderName:
       name: provider
       in: path
@@ -9020,6 +9130,88 @@ components:
         nextCursor:
           type: [string, "null"]
           maxLength: 256
+    CustomDomainId:
+      type: string
+      pattern: "^dom_[a-z0-9]{12,32}$"
+    CustomDomainState:
+      type: string
+      description: >-
+        `pending` is registered and not yet proven; `verified` is proven and
+        served; `failed` was proven before and the record has since gone
+        missing or changed, so serving stopped.
+      enum: [pending, verified, failed]
+    CustomDomainVerification:
+      type: object
+      description: The DNS record that proves control of the name.
+      additionalProperties: false
+      required: [recordName, recordType, recordValue]
+      properties:
+        recordName:
+          type: string
+          maxLength: 253
+          description: Fully qualified name to create, `_mako-verify.<hostname>`.
+        recordType:
+          type: string
+          const: TXT
+        recordValue:
+          type: string
+          maxLength: 255
+    CustomDomain:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - projectId
+        - environmentId
+        - hostname
+        - state
+        - verification
+        - verifiedAt
+        - lastCheckedAt
+        - lastError
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          $ref: "#/components/schemas/CustomDomainId"
+        projectId:
+          $ref: "#/components/schemas/ProjectId"
+        environmentId:
+          $ref: "#/components/schemas/EnvironmentId"
+        hostname:
+          type: string
+          maxLength: 253
+          description: A lowercase fully qualified DNS name; the platform's own names are refused.
+        state:
+          $ref: "#/components/schemas/CustomDomainState"
+        verification:
+          $ref: "#/components/schemas/CustomDomainVerification"
+        verifiedAt:
+          type: [string, "null"]
+          format: date-time
+        lastCheckedAt:
+          type: [string, "null"]
+          format: date-time
+        lastError:
+          type: [string, "null"]
+          maxLength: 256
+          description: Why the last check did not verify, e.g. `record_missing`, `record_mismatch`, `dns_unavailable`.
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    CustomDomainCreate:
+      type: object
+      additionalProperties: false
+      required: [hostname, environmentId]
+      properties:
+        hostname:
+          type: string
+          maxLength: 253
+        environmentId:
+          $ref: "#/components/schemas/EnvironmentId"
     MagicLinkRedeemRequest:
       type: object
       additionalProperties: false

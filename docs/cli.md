@@ -3,9 +3,9 @@
 `mako` is the terminal counterpart of the developer console. Everything a
 developer can do in a browser — sign in, own teams and projects, shape
 collections and policies, issue keys, deploy functions, read logs, move data,
-manage file storage, register webhooks — can be done from a shell, a script,
-or CI with the same
-authorization and the same audit trail. It lives in `packages/cli`
+manage file storage, register webhooks, serve on custom domains — can be done
+from a shell, a script, or CI with the same authorization and the same audit
+trail. It lives in `packages/cli`
 (`@mako-cloud/cli`) and drives the management API through
 `@mako-cloud/management-sdk`.
 
@@ -26,7 +26,7 @@ are printed by the test so a new one is a visible decision: `/v1/operator*`
 (a separate identity), `/{projectRef}/functions` (invocation, an application
 concern), and the application-runtime routes under an environment (`auth/*`,
 `documents`, `service/*`, `replication/*`), which SDKs and RxDB clients call
-with project credentials. Every other operation — 159 at the time of writing —
+with project credentials. Every other operation — 164 at the time of writing —
 maps to a command.
 
 ## Signing in
@@ -190,6 +190,20 @@ Identifiers that name the resource acted on are positional.
   history after confirmation (see
   [scheduled-functions.md](scheduled-functions.md) for the cron syntax and
   overlap rules).
+- Custom domains: domains belong to the project, so these commands take
+  `--project` only; `mako domains add --hostname <name> --env <environment-id>`
+  registers a hostname to serve that environment's API and functions (here
+  `--env` names the environment served, not the command's scope) and prints
+  the TXT record to publish — name, type, value — in its own block after the
+  domain, with `--json` carrying it as `verification`. Nothing is served on
+  the name until the platform has seen the record: `verify <id>` checks it
+  now instead of at the next periodic check and prints the outcome on stderr
+  (`verified`, or `pending`/`failed` with the reason, e.g. `record_missing`);
+  a domain that later loses its record is marked `failed` and stops being
+  served until it verifies again. `list` and `get <id>` show the state, the
+  last check, and its error; `remove <id>` stops serving the name after
+  confirmation (see [custom-domains.md](custom-domains.md) for the record,
+  the verification cadence, and what is served on the name).
 
 ## Hosted deployment
 
@@ -277,6 +291,16 @@ Generated from the command registry; every command also answers `--help` with it
 | `mako data jobs cancel <job-id>` | Cancel a queued or running data job (committed rows are kept) *(confirmed)* |
 | `mako data jobs get <job-id>` | Show one data job; --wait polls it to a terminal state |
 | `mako data jobs list` | List import and export jobs of an environment |
+
+### `mako domains`
+
+| command | does |
+| ------- | ---- |
+| `mako domains add` | Add a custom domain that serves one environment's API and functions; prints the TXT record to publish |
+| `mako domains get <domain-id>` | Show a custom domain, its DNS verification record, and why the last check failed |
+| `mako domains list` | List the project's custom domains with the environment each serves, its state, and the last check |
+| `mako domains remove <domain-id>` | Remove a custom domain; serving on its name stops and its certificate is no longer renewed *(confirmed)* |
+| `mako domains verify <domain-id>` | Check a domain's DNS record now instead of at the next periodic check and show the outcome |
 
 ### `mako email-templates`
 

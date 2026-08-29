@@ -281,6 +281,11 @@ pub enum IdentityAdminOperation {
     /// worker consumes it; a slow webhook endpoint must never touch the
     /// data plane's write path.
     ReadChangeFeed,
+    /// Install the complete list of verified custom domains an environment
+    /// is served on. The control plane verifies domains and publishes the
+    /// list on every change; the data plane refuses a request that arrives
+    /// on any other custom domain for that environment.
+    InstallCustomDomains,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
@@ -421,6 +426,14 @@ pub struct ApplicationMailAcknowledgeRequest {
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct ApplicationMailAcknowledgeResponse {
     pub acknowledged: u64,
+}
+
+/// Every verified hostname an environment is served on; an empty list
+/// withdraws serving on custom domains for the environment.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct InstallCustomDomainsInput {
+    pub hostnames: Vec<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -619,6 +632,11 @@ pub struct FunctionSecretResolutionResponse {
     pub request_limit_bytes: u64,
     pub response_limit_bytes: u64,
     pub secrets: Vec<ResolvedFunctionSecret>,
+    /// The verified custom domains the function's environment is served
+    /// on. A request that arrives on a custom domain is served only when
+    /// its host is in this list. Absent from older control planes.
+    #[serde(default)]
+    pub custom_domains: Vec<String>,
 }
 
 /// One scheduled invocation the control plane asks the edge gateway to

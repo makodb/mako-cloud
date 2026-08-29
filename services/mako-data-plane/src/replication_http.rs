@@ -32,7 +32,7 @@ use mako_sync::{
 use crate::{
     DataPlaneGraph,
     auth_http::{
-        append_audit, internal_from_id, invalid, json, now_unix_seconds, parse_json, tenant,
+        append_audit, internal_from_id, invalid, json, now_unix_seconds, parse_json, tenant_for,
         unavailable,
     },
     document_http::{active_collection_metadata, active_policy},
@@ -91,7 +91,7 @@ fn handle_pull(
     request: &HttpRequest,
 ) -> Result<HttpResponse, HttpApiError> {
     require_json(request)?;
-    let tenant = tenant(request)?;
+    let tenant = tenant_for(graph, request)?;
     let scope = collection_scope(request, &tenant)?;
     let body: PullRequest = parse_json(request)?;
     body.validate()
@@ -145,7 +145,7 @@ fn handle_push(
 ) -> Result<HttpResponse, HttpApiError> {
     require_json(request)?;
     validate_idempotency_key(request)?;
-    let tenant = tenant(request)?;
+    let tenant = tenant_for(graph, request)?;
     let scope = collection_scope(request, &tenant)?;
     let body: PushRequest = parse_json(request)?;
     body.validate()
@@ -207,7 +207,7 @@ fn handle_stream(
     if !request.body().is_empty() {
         return Err(invalid(request, "replication stream body must be empty"));
     }
-    let tenant = tenant(request)?;
+    let tenant = tenant_for(graph, request)?;
     let scope = collection_scope(request, &tenant)?;
     let live_request = live_request(request)?;
     let now = now_unix_seconds(request.request_id())?;

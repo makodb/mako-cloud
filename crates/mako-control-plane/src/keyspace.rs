@@ -47,6 +47,8 @@ const FUNCTION_SCHEDULE_INDEX: &[u8] = b"control/function-schedules/v1/schedule-
 const FUNCTION_SCHEDULE_RUNS: &str = "control/function-schedules/v1/runs";
 const FUNCTION_SCHEDULE_LEASES: &str = "control/function-schedules/v1/leases";
 const FUNCTION_SCHEDULE_DUE: &[u8] = b"control/function-schedules/v1/due";
+const CUSTOM_DOMAINS: &str = "control/custom-domains/v1/domains";
+const CUSTOM_DOMAIN_HOSTNAMES: &[u8] = b"control/custom-domains/v1/hostnames";
 
 /// Encodes every management record below the storage adapter's reserved system namespace.
 #[derive(Clone, Copy, Debug, Default)]
@@ -963,6 +965,31 @@ impl ControlKeyspace {
     pub fn function_schedule_due_range() -> Result<KeyRange, ControlKeyspaceError> {
         TenantKeyspace::system_domain_range(FUNCTION_SCHEDULE_DUE).map_err(ControlKeyspaceError)
     }
+
+    /// A custom domain registered for a project.
+    pub fn custom_domain_key(
+        project_id: &ProjectId,
+        domain_id: &str,
+    ) -> Result<Vec<u8>, ControlKeyspaceError> {
+        system_key(&custom_domain_project_domain(project_id), domain_id)
+    }
+
+    pub fn custom_domains_range(project_id: &ProjectId) -> Result<KeyRange, ControlKeyspaceError> {
+        TenantKeyspace::system_domain_range(custom_domain_project_domain(project_id))
+            .map_err(ControlKeyspaceError)
+    }
+
+    /// The node-wide owner index of custom hostnames: one entry per
+    /// hostname naming the project and domain record that claimed it, so a
+    /// hostname belongs to at most one project and the verifier can walk
+    /// every domain without knowing the projects.
+    pub fn custom_domain_hostname_key(hostname: &str) -> Result<Vec<u8>, ControlKeyspaceError> {
+        system_key(CUSTOM_DOMAIN_HOSTNAMES, hostname)
+    }
+
+    pub fn custom_domain_hostnames_range() -> Result<KeyRange, ControlKeyspaceError> {
+        TenantKeyspace::system_domain_range(CUSTOM_DOMAIN_HOSTNAMES).map_err(ControlKeyspaceError)
+    }
 }
 
 #[derive(Debug)]
@@ -1045,6 +1072,10 @@ fn schema_migration_domain(
         collection_id.as_str()
     )
     .into_bytes()
+}
+
+fn custom_domain_project_domain(project_id: &ProjectId) -> Vec<u8> {
+    format!("{CUSTOM_DOMAINS}/{}", project_id.as_str()).into_bytes()
 }
 
 fn function_domain(project_id: &ProjectId, environment_id: &EnvironmentId) -> Vec<u8> {

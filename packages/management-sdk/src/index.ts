@@ -139,6 +139,11 @@ export const MANAGEMENT_OPERATIONS = [
   "deleteFunctionSchedule",
   "runFunctionScheduleNow",
   "listFunctionScheduleRuns",
+  "listCustomDomains",
+  "createCustomDomain",
+  "getCustomDomain",
+  "deleteCustomDomain",
+  "verifyCustomDomain",
   "queryProjectUsage",
   "queryProjectQuotas",
   "queryProjectHealth",
@@ -313,6 +318,10 @@ export type FunctionScheduleRun = components["schemas"]["FunctionScheduleRun"];
 export type FunctionScheduleRunSummary = components["schemas"]["FunctionScheduleRunSummary"];
 export type FunctionScheduleRunOutcome = components["schemas"]["FunctionScheduleRunOutcome"];
 export type FunctionScheduleRunPage = components["schemas"]["FunctionScheduleRunPage"];
+export type CustomDomain = components["schemas"]["CustomDomain"];
+export type CustomDomainState = components["schemas"]["CustomDomainState"];
+export type CustomDomainVerification = components["schemas"]["CustomDomainVerification"];
+export type CustomDomainCreate = components["schemas"]["CustomDomainCreate"];
 export type ObservabilityPage = components["schemas"]["ObservabilityPage"];
 export type ObservabilityRecord = components["schemas"]["ObservabilityRecord"];
 export type ObservabilityPayload = components["schemas"]["ObservabilityPayload"];
@@ -2180,6 +2189,65 @@ export class MakoManagementClient {
           params: { path: { projectId, environmentId, functionName, scheduleId }, query: options },
         },
       ),
+    );
+  }
+
+  async listCustomDomains(projectId: string): Promise<CustomDomain[]> {
+    const result = await this.#client.GET("/v1/projects/{projectId}/domains", {
+      params: { path: { projectId } },
+    });
+    return unwrap(result).items;
+  }
+
+  /**
+   * Registers a hostname for one environment. The answer carries the DNS TXT
+   * record that proves control of the name; nothing is served on it until
+   * the platform has seen that record.
+   */
+  async createCustomDomain(
+    projectId: string,
+    input: CustomDomainCreate,
+    idempotencyKey: string,
+  ): Promise<CustomDomain> {
+    return unwrap(
+      await this.#client.POST("/v1/projects/{projectId}/domains", {
+        params: { path: { projectId }, header: { "Idempotency-Key": idempotencyKey } },
+        body: input,
+      }),
+    );
+  }
+
+  async getCustomDomain(projectId: string, domainId: string): Promise<CustomDomain> {
+    return unwrap(
+      await this.#client.GET("/v1/projects/{projectId}/domains/{domainId}", {
+        params: { path: { projectId, domainId } },
+      }),
+    );
+  }
+
+  /** Serving on the name stops; its certificate is no longer renewed. */
+  async deleteCustomDomain(
+    projectId: string,
+    domainId: string,
+    idempotencyKey: string,
+  ): Promise<void> {
+    expectNoContent(
+      await this.#client.DELETE("/v1/projects/{projectId}/domains/{domainId}", {
+        params: { path: { projectId, domainId }, header: { "Idempotency-Key": idempotencyKey } },
+      }),
+    );
+  }
+
+  /** Looks the TXT record up now instead of at the next periodic check. */
+  async verifyCustomDomain(
+    projectId: string,
+    domainId: string,
+    idempotencyKey: string,
+  ): Promise<CustomDomain> {
+    return unwrap(
+      await this.#client.POST("/v1/projects/{projectId}/domains/{domainId}/actions/verify", {
+        params: { path: { projectId, domainId }, header: { "Idempotency-Key": idempotencyKey } },
+      }),
     );
   }
 

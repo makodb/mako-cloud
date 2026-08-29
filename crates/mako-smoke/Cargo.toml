@@ -13,6 +13,7 @@ serde_json.workspace = true
 sha2.workspace = true
 
 [dev-dependencies]
+mako-control-plane = { path = "../mako-control-plane" }
 serde_json.workspace = true
 tempfile.workspace = true
 

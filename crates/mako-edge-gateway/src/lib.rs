@@ -162,6 +162,10 @@ pub struct ResolvedFunctionRoute {
     pub verify_jwt: bool,
     pub request_limit_bytes: u64,
     pub response_limit_bytes: u64,
+    /// The verified custom domains the function's environment is served on;
+    /// a request arriving on a custom domain is served only when its host
+    /// is one of them. Empty for an environment with none.
+    pub custom_domains: Vec<String>,
 }
 
 impl ResolvedFunctionRoute {
@@ -179,6 +183,11 @@ impl ResolvedFunctionRoute {
             || self.selected_regions.is_empty()
             || self.selected_regions.len() > 16
             || has_invalid_or_duplicate_regions(&self.selected_regions)
+            || self.custom_domains.len() > MAX_CUSTOM_DOMAINS
+            || self
+                .custom_domains
+                .iter()
+                .any(|hostname| !valid_custom_domain(hostname))
             || self.regional_deployments.len() > 64
             || self
                 .regional_deployments
@@ -1099,6 +1108,23 @@ fn optional_bearer_token(
     Ok(Some(token))
 }
 
+/// A route may name at most this many custom domains.
+const MAX_CUSTOM_DOMAINS: usize = 64;
+
+/// A lowercase DNS name of at least two labels, as the control plane
+/// stores verified custom domains.
+fn valid_custom_domain(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 253
+        && value.contains('.')
+        && value
+            .split('.')
+            .all(|label| !label.is_empty() && !label.starts_with('-') && !label.ends_with('-'))
+        && value.bytes().all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'-' | b'.')
+        })
+}
+
 fn valid_project_ref(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= MAX_PROJECT_REF_BYTES
@@ -1872,6 +1898,44 @@ mod tests {
         });
     }
 
+    /// The verified custom domains a route carries are trusted metadata
+    /// from the control plane, checked to the shape it stores them in.
+    #[test]
+    fn route_metadata_refuses_malformed_custom_domains() {
+        let mut route = routes(tenant("prj_example00"), 1_024).route;
+        route
+            .validate_for("hello-world", "req_1")
+            .expect("no custom domains");
+        route.custom_domains = vec!["api.example.com".to_owned(), "a-1.b2.example".to_owned()];
+        route
+            .validate_for("hello-world", "req_1")
+            .expect("lowercase DNS names");
+        for invalid in [
+            "",
+            "API.example.com",
+            "example",
+            "-api.example.com",
+            "api-.example.com",
+            "api_1.example.com",
+            "api..example.com",
+            "api.example.com/",
+            "api.example.com:443",
+        ] {
+            route.custom_domains = vec![invalid.to_owned()];
+            assert!(
+                route.validate_for("hello-world", "req_1").is_err(),
+                "{invalid:?} must be refused"
+            );
+        }
+        route.custom_domains = (0..=MAX_CUSTOM_DOMAINS)
+            .map(|index| format!("h{index}.example.com"))
+            .collect();
+        assert!(
+            route.validate_for("hello-world", "req_1").is_err(),
+            "the list is bounded"
+        );
+    }
+
     fn request(token: &str, body: Vec<u8>) -> FunctionGatewayRequest {
         FunctionGatewayRequest {
             request_id: "req_testgateway0001".to_owned(),
@@ -1918,6 +1982,7 @@ mod tests {
                 verify_jwt: true,
                 request_limit_bytes,
                 response_limit_bytes: 4096,
+                custom_domains: Vec::new(),
             },
         }
     }

@@ -1,4 +1,11 @@
-use std::{error::Error, fmt, num::NonZeroU64, num::NonZeroUsize, sync::Arc, time::Duration};
+use std::{
+    collections::HashMap,
+    error::Error,
+    fmt,
+    num::{NonZeroU64, NonZeroUsize},
+    sync::{Arc, RwLock},
+    time::Duration,
+};
 
 use futures::executor::block_on;
 use mako_api::{CollectionScope, ExplorerCapabilityKey, ExplorerCapabilityKeyRing, TenantScope};
@@ -37,7 +44,8 @@ use mako_policy::{
 use mako_service_runtime::{ReadinessProbe, ReadinessSnapshot};
 use mako_storage::{
     Durability, KvAdapter, ProductionRocksDb, ProductionRocksDbConfig, ProductionVolumeIdentity,
-    RocksDbAdapter, RocksDbConfig, StorageError, StorageReadiness, check_storage_readiness,
+    RocksDbAdapter, RocksDbConfig, ScanDirection, ScanRequest, StorageError, StorageReadiness,
+    TenantKeyspace, WriteBatch, check_storage_readiness,
 };
 use mako_sync::ReplicationTokenKey;
 
@@ -145,6 +153,7 @@ struct DataPlaneComponents {
     quotas: Arc<GatewayQuotaEngine>,
     quota_policy: GatewayQuotaPolicy,
     quota_policies: Arc<PersistentQuotaPolicySource>,
+    custom_domains: CustomDomainRegistry,
     audit: AuditStore,
     redactor: TelemetryRedactor,
     password_service: PasswordService,
@@ -160,6 +169,135 @@ struct DataPlaneComponents {
     explorer_capability_keys: ExplorerCapabilityKeyRing,
     explorer_cursor_key: [u8; 32],
     explorer_metrics: ExplorerMetrics,
+}
+
+const CUSTOM_DOMAINS_DOMAIN: &[u8] = b"data/custom-domains/v1";
+/// Environments with custom domains on one node, within the adapter's own
+/// scan bound; a saturated scan at startup fails closed.
+const MAXIMUM_CUSTOM_DOMAIN_ENTRIES: usize = 10_000;
+/// The most hostnames one environment may be served on.
+pub const MAXIMUM_CUSTOM_DOMAINS_PER_ENVIRONMENT: usize = 64;
+
+/// The verified custom hostnames the control plane installed, per
+/// environment: persisted in this node's keyspace and mirrored in memory
+/// so every application request can be checked without a read.
+pub struct CustomDomainRegistry {
+    adapter: Arc<dyn KvAdapter>,
+    hosts: RwLock<HashMap<String, TenantScope>>,
+}
+
+impl fmt::Debug for CustomDomainRegistry {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("CustomDomainRegistry")
+            .finish_non_exhaustive()
+    }
+}
+
+#[derive(serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct CustomDomainEntry {
+    project_id: String,
+    environment_id: String,
+    hostnames: Vec<String>,
+}
+
+impl CustomDomainRegistry {
+    fn key(tenant: &TenantScope) -> Result<Vec<u8>, StorageError> {
+        TenantKeyspace::system_key(
+            CUSTOM_DOMAINS_DOMAIN,
+            format!("{}/{}", tenant.project_id(), tenant.environment_id()),
+        )
+        .map_err(|error| StorageError::invalid("custom_domain_key", error.to_string()))
+    }
+
+    fn load(adapter: Arc<dyn KvAdapter>) -> Result<Self, DataPlaneGraphError> {
+        let range = TenantKeyspace::system_domain_range(CUSTOM_DOMAINS_DOMAIN)
+            .map_err(|_| DataPlaneGraphError::StorageNotReady)?;
+        let entries = block_on(adapter.scan(ScanRequest::new(
+            range,
+            ScanDirection::Forward,
+            NonZeroUsize::new(MAXIMUM_CUSTOM_DOMAIN_ENTRIES).expect("nonzero"),
+        )))?;
+        if entries.len() >= MAXIMUM_CUSTOM_DOMAIN_ENTRIES {
+            return Err(DataPlaneGraphError::StorageNotReady);
+        }
+        let mut hosts = HashMap::new();
+        for entry in entries {
+            let entry: CustomDomainEntry = serde_json::from_slice(&entry.value)
+                .map_err(|_| DataPlaneGraphError::StorageNotReady)?;
+            let tenant = TenantScope::require(Some(&entry.project_id), Some(&entry.environment_id))
+                .map_err(|_| DataPlaneGraphError::StorageNotReady)?;
+            for hostname in entry.hostnames {
+                hosts.insert(hostname, tenant.clone());
+            }
+        }
+        Ok(Self {
+            adapter,
+            hosts: RwLock::new(hosts),
+        })
+    }
+
+    /// Whether `hostname` is a verified custom domain of exactly `tenant`.
+    #[must_use]
+    pub fn permits(&self, tenant: &TenantScope, hostname: &str) -> bool {
+        self.hosts
+            .read()
+            .ok()
+            .is_some_and(|hosts| hosts.get(hostname) == Some(tenant))
+    }
+
+    /// The hostnames installed for an environment, sorted.
+    #[must_use]
+    pub fn hostnames(&self, tenant: &TenantScope) -> Vec<String> {
+        let mut hostnames = self.hosts.read().map_or_else(
+            |_| Vec::new(),
+            |hosts| {
+                hosts
+                    .iter()
+                    .filter(|(_, owner)| *owner == tenant)
+                    .map(|(hostname, _)| hostname.clone())
+                    .collect::<Vec<_>>()
+            },
+        );
+        hostnames.sort();
+        hostnames
+    }
+
+    /// Replaces an environment's list: persisted first, then mirrored, so a
+    /// restart sees what a request saw.
+    pub async fn install(
+        &self,
+        tenant: &TenantScope,
+        hostnames: Vec<String>,
+    ) -> Result<(), StorageError> {
+        let key = Self::key(tenant)?;
+        let mut batch = WriteBatch::with_capacity(1);
+        if hostnames.is_empty() {
+            batch.delete(key);
+        } else {
+            let encoded = serde_json::to_vec(&CustomDomainEntry {
+                project_id: tenant.project_id().as_str().to_owned(),
+                environment_id: tenant.environment_id().as_str().to_owned(),
+                hostnames: hostnames.clone(),
+            })
+            .map_err(|_| {
+                StorageError::invalid(
+                    "custom_domain_install",
+                    "custom domain entry could not be encoded",
+                )
+            })?;
+            batch.put(key, encoded);
+        }
+        self.adapter.write(batch, Durability::Sync).await?;
+        if let Ok(mut hosts) = self.hosts.write() {
+            hosts.retain(|_, owner| owner != tenant);
+            for hostname in hostnames {
+                hosts.insert(hostname, tenant.clone());
+            }
+        }
+        Ok(())
+    }
 }
 
 /// Complete storage-backed dependency graph for the production data plane.
@@ -336,6 +474,7 @@ impl DataPlaneGraph {
             adapter: Arc::clone(&adapter),
         };
 
+        let custom_domains = CustomDomainRegistry::load(Arc::clone(&adapter))?;
         // Built before the adapter is moved into the graph.
         let quota_policies = Arc::new(PersistentQuotaPolicySource::new(
             Arc::clone(&adapter),
@@ -371,6 +510,7 @@ impl DataPlaneGraph {
                 quotas,
                 quota_policies,
                 quota_policy,
+                custom_domains,
                 audit,
                 redactor,
                 password_service,
@@ -448,6 +588,12 @@ impl DataPlaneGraph {
     #[must_use]
     pub fn quota_policy(&self) -> &GatewayQuotaPolicy {
         &self.components.quota_policy
+    }
+
+    /// The verified custom hostnames each environment is served on.
+    #[must_use]
+    pub fn custom_domains(&self) -> &CustomDomainRegistry {
+        &self.components.custom_domains
     }
 
     #[must_use]
@@ -1280,6 +1426,103 @@ mod tests {
     use tempfile::{Builder, TempDir};
 
     use super::*;
+
+    /// A request that arrived on a custom hostname is served only for the
+    /// environment that hostname is installed for, and the installed list
+    /// survives a restart.
+    #[test]
+    fn custom_domains_gate_application_requests_and_survive_reopening() {
+        use mako_service_runtime::{HttpMethod, HttpRequest};
+
+        let directory = local_tempdir("data-plane-custom-domains");
+        let config = config_for(directory.path(), DeploymentEnvironment::Local);
+        let own = tenant();
+        let other = TenantScope::new(
+            ProjectId::parse("prj_example00").expect("project"),
+            EnvironmentId::parse("env_example01").expect("environment"),
+        );
+        let request = |header: Option<&str>| {
+            HttpRequest::for_test(
+                HttpMethod::Get,
+                "/v1/projects/prj_example00/environments/env_example00/auth/jwks",
+                header.map(|value| ("X-Mako-Custom-Domain".to_owned(), value.to_owned())),
+                Vec::new(),
+                None,
+            )
+        };
+        {
+            let graph = DataPlaneGraph::open(&config).expect("graph");
+            assert!(
+                crate::auth_http::require_custom_domain(&graph, &request(None), &own).is_ok(),
+                "the platform hostname carries no header and is always served"
+            );
+            let refused = crate::auth_http::require_custom_domain(
+                &graph,
+                &request(Some("api.example.com")),
+                &own,
+            )
+            .expect_err("nothing installed");
+            assert_eq!(refused.envelope().error.code, mako_api::ErrorCode::NotFound);
+            block_on(
+                graph
+                    .custom_domains()
+                    .install(&own, vec!["api.example.com".to_owned()]),
+            )
+            .expect("installed");
+            assert!(graph.custom_domains().permits(&own, "api.example.com"));
+            assert!(!graph.custom_domains().permits(&other, "api.example.com"));
+            assert!(
+                crate::auth_http::require_custom_domain(
+                    &graph,
+                    &request(Some("API.example.com:443")),
+                    &own
+                )
+                .is_ok(),
+                "the header is normalized before the check"
+            );
+            assert!(
+                crate::auth_http::require_custom_domain(
+                    &graph,
+                    &request(Some("api.example.com")),
+                    &other
+                )
+                .is_err(),
+                "a hostname serves exactly its own environment"
+            );
+            assert!(
+                crate::auth_http::require_custom_domain(
+                    &graph,
+                    &request(Some("other.example.com")),
+                    &own
+                )
+                .is_err()
+            );
+            assert!(
+                crate::auth_http::require_custom_domain(&graph, &request(Some("")), &own).is_err()
+            );
+            block_on(graph.shutdown()).expect("shutdown");
+        }
+        {
+            let graph = DataPlaneGraph::open(&config).expect("reopened graph");
+            assert_eq!(
+                graph.custom_domains().hostnames(&own),
+                vec!["api.example.com".to_owned()],
+                "the installed list is read back at startup"
+            );
+            // Replacing the list withdraws what is no longer in it.
+            block_on(
+                graph
+                    .custom_domains()
+                    .install(&own, vec!["app.example.com".to_owned()]),
+            )
+            .expect("replaced");
+            assert!(!graph.custom_domains().permits(&own, "api.example.com"));
+            assert!(graph.custom_domains().permits(&own, "app.example.com"));
+            block_on(graph.custom_domains().install(&own, Vec::new())).expect("withdrawn");
+            assert!(graph.custom_domains().hostnames(&own).is_empty());
+            block_on(graph.shutdown()).expect("shutdown");
+        }
+    }
 
     #[test]
     fn local_graph_uses_rocksdb_and_persists_identity_authority() {

@@ -157,6 +157,7 @@ validateOperatorAlertInfrastructure({
   observabilityTasks,
   alertmanagerHardening,
 });
+validateCustomDomainInfrastructure({ caddyTemplate, guestFirewall, serviceUnit });
 validateEvidence({
   plan,
   releaseManifest,
@@ -585,6 +586,58 @@ function validateOperatorAlertInfrastructure({
     guestFirewall.includes("tcp dport { 465, 587 } accept") &&
       !guestFirewall.includes("tcp dport 25 accept"),
     "operator alert egress is not restricted to authenticated TLS SMTP ports",
+  );
+}
+
+function validateCustomDomainInfrastructure({ caddyTemplate, guestFirewall, serviceUnit }) {
+  // Certificates for developers' domains are issued on demand and only after
+  // the control plane confirms the hostname is verified; the catch-all site
+  // never serves the console or the management API.
+  const siteStart = caddyTemplate.indexOf("\nhttps:// {");
+  assert(siteStart > 0, "Caddy template omits the custom-domain catch-all site");
+  const platformSite = caddyTemplate.slice(
+    caddyTemplate.indexOf("{{ mako_public_fqdn }} {"),
+    siteStart,
+  );
+  const customDomainSite = caddyTemplate.slice(siteStart);
+  for (const required of [
+    "on_demand_tls {",
+    "ask http://127.0.0.1:8081/_internal/v1/custom-domains/ask",
+  ])
+    assert(caddyTemplate.includes(required), `on-demand TLS gate omits ${required}`);
+  for (const required of [
+    "\ttls {\n\t\ton_demand\n\t}",
+    "respond @internal_rpc 404",
+    "respond @service_credential_api 404",
+    "@custom_domain_function path_regexp custom_domain_function ^/functions/v1/[^/]+$",
+    "header_up X-Mako-Custom-Domain {http.request.host}",
+    "\trespond 404\n",
+  ])
+    assert(customDomainSite.includes(required), `custom-domain site omits ${required}`);
+  for (const forbidden of [
+    "127.0.0.1:8081",
+    "@console_route",
+    "@control_api",
+    "@operator_control_api",
+    "@developer_workspace_api",
+    "file_server",
+  ])
+    assert(!customDomainSite.includes(forbidden), `custom-domain site serves ${forbidden}`);
+  assert(
+    platformSite.includes("header_up -X-Mako-Custom-Domain") &&
+      !platformSite.includes("header_up X-Mako-Custom-Domain {") &&
+      !platformSite.includes("on_demand"),
+    "platform hostname site does not refuse a client-supplied custom-domain assertion",
+  );
+  // The verifier's resolver is the host's stub resolver on loopback by
+  // default; the guest may reach the configured name servers on port 53.
+  assert(
+    guestFirewall.includes("udp dport 53 accept"),
+    "guest firewall does not allow DNS lookups for domain verification",
+  );
+  assert(
+    serviceUnit.includes("IPAddressAllow=localhost"),
+    "control plane cannot reach the loopback stub resolver",
   );
 }
 

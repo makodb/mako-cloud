@@ -1,0 +1,192 @@
+/* API docs screen: reference pages and quickstarts generated from the environment. */
+
+.api-docs {
+  display: grid;
+  gap: 1rem;
+}
+
+.api-docs .panel {
+  width: 100%;
+}
+
+.api-docs .section-heading {
+  margin-bottom: 0;
+}
+
+.api-docs-generated {
+  margin: 0;
+  color: #31594f;
+  font-variant-numeric: tabular-nums;
+}
+
+.api-docs-toc {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  margin: 0 0 0.5rem;
+}
+
+.api-docs-toc a {
+  color: #08745b;
+  font-weight: 650;
+}
+
+.api-docs h3 {
+  margin: 1.5rem 0 0.35rem;
+}
+
+.api-docs h4 {
+  margin: 1.25rem 0 0.5rem;
+  color: #31594f;
+  font-size: 0.85rem;
+  font-weight: 750;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.api-docs h5 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.api-docs-headers th,
+.api-docs-shape th {
+  vertical-align: top;
+}
+
+.api-docs-shape th small {
+  display: block;
+  color: #08745b;
+  font-weight: 650;
+}
+
+.api-docs-indexes {
+  margin: 0.5rem 0;
+  padding-left: 1.25rem;
+}
+
+.api-docs-collection,
+.api-docs-function,
+.api-docs-bucket {
+  padding-top: 0.5rem;
+  border-top: 1px solid #dce7e2;
+}
+
+.api-docs-collection:first-of-type,
+.api-docs-function:first-of-type,
+.api-docs-bucket:first-of-type {
+  border-top: 0;
+}
+
+.api-docs-derivation {
+  color: #31594f;
+  font-size: 0.9rem;
+}
+
+.api-docs-operations {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  gap: 0.75rem;
+  margin: 0.75rem 0;
+}
+
+.api-docs-operation {
+  display: grid;
+  gap: 0.4rem;
+  border: 1px solid #cadbd4;
+  border-radius: 0.65rem;
+  padding: 0.9rem;
+  background: #fff;
+}
+
+.api-docs-operation .section-heading {
+  grid-template-columns: 1fr auto;
+  align-items: center;
+}
+
+.api-docs-operation ul {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.api-docs-operation li {
+  overflow-wrap: anywhere;
+}
+
+.api-docs-operation[data-access="denied"] {
+  background: #fff7f6;
+}
+
+.api-docs-operation[data-access="conditional"] {
+  background: #fffbf0;
+}
+
+.api-docs-denies {
+  color: #8a2522;
+}
+
+.api-docs-example {
+  margin: 1rem 0;
+}
+
+.api-docs-example p {
+  margin: 0.35rem 0;
+}
+
+.api-docs-example details {
+  margin-top: 0.5rem;
+}
+
+.api-docs-example summary {
+  cursor: pointer;
+  color: #31594f;
+  font-weight: 650;
+}
+
+.api-docs-example .json-view {
+  border-radius: 0.5rem;
+  padding: 0.75rem;
+  background: rgb(255 255 255 / 70%);
+  font-size: 0.85rem;
+}
+
+.api-docs-url {
+  overflow-wrap: anywhere;
+}
+
+.api-docs-method {
+  display: inline-block;
+  min-width: 3.5rem;
+  border-radius: 0.35rem;
+  padding: 0.1rem 0.45rem;
+  color: #fff;
+  background: #31594f;
+  font-size: 0.75rem;
+  font-weight: 750;
+  text-align: center;
+}
+
+.api-docs-method.method-get {
+  background: #08745b;
+}
+
+.api-docs-method.method-put {
+  background: #9a6b06;
+}
+
+.api-docs-method.method-delete {
+  background: #a52b29;
+}
+
+.api-docs-service-note {
+  color: #31594f;
+  font-weight: 650;
+}
+
+.api-docs .tab-list {
+  margin-top: 0.75rem;
+}
+
+.api-docs .code-block pre {
+  font-size: 0.85rem;
+}

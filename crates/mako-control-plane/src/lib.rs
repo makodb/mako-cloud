@@ -8,11 +8,13 @@ mod automation;
 mod collection;
 mod credentials;
 mod cron;
+mod custom_domain;
 mod data_job;
 mod deletion;
 mod developer_identity;
 mod developer_registration;
 mod developer_workflow;
+mod dns;
 mod email_template;
 mod explorer;
 mod function;
@@ -35,6 +37,20 @@ mod webhook;
 mod workspace;
 
 pub use cron::{CronError, CronField, CronSchedule};
+pub use custom_domain::{
+    CustomDomainCheckOutcome, CustomDomainError, CustomDomainId, CustomDomainPublishError,
+    CustomDomainPublisher, CustomDomainRecord, CustomDomainService, CustomDomainState,
+    CustomDomainStore, CustomDomainVerifier, CustomDomainVerifierReport,
+    ERROR_DNS_UNAVAILABLE as CUSTOM_DOMAIN_ERROR_DNS_UNAVAILABLE,
+    ERROR_RECORD_MISMATCH as CUSTOM_DOMAIN_ERROR_RECORD_MISMATCH,
+    ERROR_RECORD_MISSING as CUSTOM_DOMAIN_ERROR_RECORD_MISSING,
+    FAILURES_BEFORE_REVOCATION as CUSTOM_DOMAIN_FAILURES_BEFORE_REVOCATION,
+    MAXIMUM_DOMAINS_PER_PROJECT as MAXIMUM_CUSTOM_DOMAINS_PER_PROJECT, NewCustomDomain,
+    VERIFICATION_RECORD_PREFIX as CUSTOM_DOMAIN_VERIFICATION_RECORD_PREFIX,
+    VERIFICATION_RECORD_TYPE as CUSTOM_DOMAIN_VERIFICATION_RECORD_TYPE,
+    VERIFICATION_VALUE_PREFIX as CUSTOM_DOMAIN_VERIFICATION_VALUE_PREFIX, normalize_hostname,
+    validate_hostname, verification_record_name,
+};
 pub use developer_identity::{
     ControlPlaneAuthenticator, DeveloperAuthenticationError, DeveloperIdentityProvider,
     DeveloperPrincipal, DeveloperSessionClaims, DeveloperSessionToken, IdentityProviderError,
@@ -56,6 +72,10 @@ pub use developer_workflow::{
     DeveloperOutboxWorkerReport, DeveloperRecoveryOutcome, DeveloperRegistrationConfig,
     DeveloperRegistrationService, DeveloperSessionGrant, DeveloperVerificationOutcome,
     DeveloperWaitlistStatus, DeveloperWorkflowError,
+};
+pub use dns::{
+    DnsError, QUERY_ATTEMPTS as DNS_QUERY_ATTEMPTS, QUERY_TIMEOUT as DNS_QUERY_TIMEOUT,
+    TxtResolver, UdpTxtResolver, decode_txt_response, encode_txt_query,
 };
 pub use explorer::{ExplorerGrantError, ExplorerGrantService};
 pub use function_schedule::{

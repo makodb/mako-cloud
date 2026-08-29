@@ -35,7 +35,7 @@ export type ConsoleRoute =
   | {
       readonly name: "project";
       readonly projectId: string;
-      readonly section: "overview" | "usage" | "activity" | "settings";
+      readonly section: "overview" | "usage" | "activity" | "settings" | "domains";
     }
   | {
       readonly name: "logs";
@@ -71,6 +71,11 @@ export type ConsoleRoute =
     }
   | {
       readonly name: "email_templates";
+      readonly projectId: string;
+      readonly environmentId: string;
+    }
+  | {
+      readonly name: "api_docs";
       readonly projectId: string;
       readonly environmentId: string;
     }
@@ -181,7 +186,7 @@ export function matchConsoleRoute(pathname: string): ConsoleRoute {
     return { name: "invitation", invitationId: invitation[1] };
   }
   const project = normalized.match(
-    /^\/projects\/(prj_[A-Za-z0-9_-]{8,64})(?:\/(overview|usage|activity|settings))?$/u,
+    /^\/projects\/(prj_[A-Za-z0-9_-]{8,64})(?:\/(overview|usage|activity|settings|domains))?$/u,
   );
   if (project?.[1] !== undefined) {
     return {
@@ -222,6 +227,12 @@ export function matchConsoleRoute(pathname: string): ConsoleRoute {
       projectId: emailTemplates[1],
       environmentId: emailTemplates[2],
     };
+  }
+  const apiDocs = normalized.match(
+    /^\/projects\/(prj_[A-Za-z0-9_-]{8,64})\/environments\/(env_[A-Za-z0-9_-]{8,64})\/api-docs$/u,
+  );
+  if (apiDocs?.[1] !== undefined && apiDocs[2] !== undefined) {
+    return { name: "api_docs", projectId: apiDocs[1], environmentId: apiDocs[2] };
   }
   const storage = normalized.match(
     /^\/projects\/(prj_[A-Za-z0-9_-]{8,64})\/environments\/(env_[A-Za-z0-9_-]{8,64})\/storage(?:\/([a-z][a-z0-9-]{1,62}))?$/u,

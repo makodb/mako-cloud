@@ -1,18 +1,26 @@
 use std::sync::Arc;
 
+use async_trait::async_trait;
 use futures::{StreamExt, executor::block_on};
-use mako_api::{ErrorCode, RetryAdvice};
+use mako_api::{ErrorCode, RetryAdvice, TenantScope};
 use mako_edge_gateway::{
-    FunctionGateway, FunctionGatewayRequest, FunctionHttpMethod, RuntimeResponseStream,
+    FunctionGateway, FunctionGatewayRequest, FunctionHttpMethod, FunctionRouteError,
+    FunctionRouteResolver, ResolvedFunctionRoute, RuntimeResponseStream,
 };
 use mako_service_runtime::{
     HttpApiError, HttpMethod, HttpRequest, HttpResponse, HttpRouter, RouteRegistrationError,
     spawn_streaming_body,
 };
 
-use crate::EdgeGatewayGraph;
+use crate::{EdgeGatewayGraph, graph::CustomDomainLookupError};
 
 const INVOCATION_ROUTE: &str = "/{project_ref}/functions/v1/{function_name}";
+/// The shape a function request has on a custom domain: the hostname names
+/// the environment, so there is no project reference in the path.
+const CUSTOM_DOMAIN_ROUTE: &str = "/functions/v1/{function_name}";
+/// Set by the reverse proxy on the custom-domain listener only, and
+/// stripped on the platform's own hostname.
+pub(crate) const CUSTOM_DOMAIN_HEADER: &str = "x-mako-custom-domain";
 
 pub(crate) fn add_routes(
     router: &mut HttpRouter,
@@ -27,9 +35,13 @@ pub(crate) fn add_routes(
         HttpMethod::Delete,
         HttpMethod::Options,
     ] {
-        let graph = Arc::clone(&graph);
+        let public_graph = Arc::clone(&graph);
         router.add_route(method, INVOCATION_ROUTE, move |request| {
-            handle_invocation(&graph, &request)
+            handle_invocation(&public_graph, &request)
+        })?;
+        let graph = Arc::clone(&graph);
+        router.add_route(method, CUSTOM_DOMAIN_ROUTE, move |request| {
+            handle_custom_domain_invocation(&graph, &request)
         })?;
     }
     Ok(())
@@ -39,12 +51,108 @@ fn handle_invocation(
     graph: &Arc<EdgeGatewayGraph>,
     request: &HttpRequest,
 ) -> Result<HttpResponse, HttpApiError> {
+    // The public shape is never served on a custom domain, and the platform
+    // hostname's proxy strips the header; one that arrives anyway is not
+    // ours to honor.
+    if request.header(CUSTOM_DOMAIN_HEADER).is_some() {
+        return Err(not_found(request, "function route was not found"));
+    }
     let project_ref = request
         .path_parameter("project_ref")
         .ok_or_else(|| invalid(request, "function route is invalid"))?;
     let function_name = request
         .path_parameter("function_name")
         .ok_or_else(|| invalid(request, "function route is invalid"))?;
+    invoke(graph, request, project_ref, function_name, &graph.routes)
+}
+
+/// `/functions/v1/{name}` on a verified custom domain: the hostname's
+/// environment is the project reference, and the route the control plane
+/// resolves for it must list the hostname.
+fn handle_custom_domain_invocation(
+    graph: &Arc<EdgeGatewayGraph>,
+    request: &HttpRequest,
+) -> Result<HttpResponse, HttpApiError> {
+    let hostname = request
+        .header(CUSTOM_DOMAIN_HEADER)
+        .and_then(normalize_custom_domain)
+        .ok_or_else(|| not_found(request, "function route was not found"))?;
+    let function_name = request
+        .path_parameter("function_name")
+        .ok_or_else(|| invalid(request, "function route is invalid"))?;
+    let tenant = match graph.custom_domains.tenant_for(&hostname) {
+        Ok(Some(tenant)) => tenant,
+        Ok(None) => return Err(not_found(request, "function route was not found")),
+        Err(CustomDomainLookupError::Unavailable) => {
+            return Err(unavailable(request, "custom domain routing is unavailable"));
+        }
+    };
+    let project_ref = format!("{}--{}", tenant.project_id(), tenant.environment_id());
+    let routes = CustomDomainRoutes {
+        inner: &graph.routes,
+        hostname: &hostname,
+        tenant: &tenant,
+    };
+    invoke(graph, request, &project_ref, function_name, &routes)
+}
+
+/// The `X-Mako-Custom-Domain` value as the control plane stores hostnames:
+/// lowercase, without a port or trailing dot; `None` if it is not a name.
+pub(crate) fn normalize_custom_domain(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    let without_port = trimmed
+        .rsplit_once(':')
+        .filter(|(_, port)| !port.is_empty() && port.bytes().all(|byte| byte.is_ascii_digit()))
+        .map_or(trimmed, |(host, _)| host);
+    let hostname = without_port
+        .strip_suffix('.')
+        .unwrap_or(without_port)
+        .to_ascii_lowercase();
+    let valid = !hostname.is_empty()
+        && hostname.len() <= 253
+        && hostname.contains('.')
+        && hostname.bytes().all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'-' | b'.')
+        });
+    valid.then_some(hostname)
+}
+
+/// Serves a route only when the request's custom hostname is one the route
+/// lists for the hostname's own environment.
+struct CustomDomainRoutes<'a> {
+    inner: &'a dyn FunctionRouteResolver,
+    hostname: &'a str,
+    tenant: &'a TenantScope,
+}
+
+#[async_trait]
+impl FunctionRouteResolver for CustomDomainRoutes<'_> {
+    async fn resolve(
+        &self,
+        project_ref: &str,
+        function_name: &str,
+    ) -> Result<Option<ResolvedFunctionRoute>, FunctionRouteError> {
+        Ok(self
+            .inner
+            .resolve(project_ref, function_name)
+            .await?
+            .filter(|route| {
+                &route.tenant == self.tenant
+                    && route
+                        .custom_domains
+                        .iter()
+                        .any(|hostname| hostname == self.hostname)
+            }))
+    }
+}
+
+fn invoke(
+    graph: &Arc<EdgeGatewayGraph>,
+    request: &HttpRequest,
+    project_ref: &str,
+    function_name: &str,
+    routes: &dyn FunctionRouteResolver,
+) -> Result<HttpResponse, HttpApiError> {
     let query = (!request.query().is_empty()).then(|| {
         request
             .query()
@@ -65,7 +173,7 @@ fn handle_invocation(
     };
     match block_on(FunctionGateway.invoke(
         input,
-        &graph.routes,
+        routes,
         &graph.tokens,
         &graph.admission,
         graph.audit.as_ref(),
@@ -193,6 +301,26 @@ fn invalid(request: &HttpRequest, message: &'static str) -> HttpApiError {
     )
 }
 
+fn not_found(request: &HttpRequest, message: &'static str) -> HttpApiError {
+    HttpApiError::new(
+        404,
+        ErrorCode::NotFound,
+        message,
+        request.request_id(),
+        RetryAdvice::Never,
+    )
+}
+
+fn unavailable(request: &HttpRequest, message: &'static str) -> HttpApiError {
+    HttpApiError::new(
+        503,
+        ErrorCode::Unavailable,
+        message,
+        request.request_id(),
+        RetryAdvice::AfterDelay { after_ms: 1_000 },
+    )
+}
+
 fn internal(request: &HttpRequest, message: &'static str) -> HttpApiError {
     HttpApiError::new(
         500,
@@ -201,4 +329,104 @@ fn internal(request: &HttpRequest, message: &'static str) -> HttpApiError {
         request.request_id(),
         RetryAdvice::AfterDelay { after_ms: 1_000 },
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use mako_api::{EnvironmentId, ProjectId};
+    use mako_edge_gateway::RegionalDeploymentHealth;
+
+    use super::*;
+
+    fn tenant(project: &str, environment: &str) -> TenantScope {
+        TenantScope::new(
+            ProjectId::parse(project).expect("project"),
+            EnvironmentId::parse(environment).expect("environment"),
+        )
+    }
+
+    struct FixedRoutes(ResolvedFunctionRoute);
+
+    #[async_trait]
+    impl FunctionRouteResolver for FixedRoutes {
+        async fn resolve(
+            &self,
+            _project_ref: &str,
+            function_name: &str,
+        ) -> Result<Option<ResolvedFunctionRoute>, FunctionRouteError> {
+            Ok((function_name == self.0.function_name).then(|| self.0.clone()))
+        }
+    }
+
+    fn route(custom_domains: &[&str]) -> ResolvedFunctionRoute {
+        ResolvedFunctionRoute {
+            tenant: tenant("prj_example00", "env_example00"),
+            organization_id: "org_example00".to_owned(),
+            function_name: "hello".to_owned(),
+            active_version: 1,
+            selected_regions: vec!["local".to_owned()],
+            regional_deployments: vec![RegionalDeploymentHealth {
+                region: "local".to_owned(),
+                healthy: true,
+                valid_until_unix_seconds: u64::MAX,
+            }],
+            verify_jwt: false,
+            request_limit_bytes: 1_024,
+            response_limit_bytes: 1_024,
+            custom_domains: custom_domains
+                .iter()
+                .map(|hostname| (*hostname).to_owned())
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn the_custom_domain_header_is_normalized_to_a_stored_hostname() {
+        for (raw, expected) in [
+            ("API.Example.COM", Some("api.example.com")),
+            (" api.example.com. ", Some("api.example.com")),
+            ("api.example.com:443", Some("api.example.com")),
+            ("", None),
+            ("localhost", None),
+            ("api.example.com/path", None),
+            ("api_1.example.com", None),
+            ("api.example.com:abc", None),
+        ] {
+            assert_eq!(normalize_custom_domain(raw).as_deref(), expected, "{raw:?}");
+        }
+    }
+
+    #[test]
+    fn a_custom_domain_route_is_served_only_for_a_listed_hostname_of_its_own_tenant() {
+        let resolved = route(&["api.example.com", "app.example.org"]);
+        let own = tenant("prj_example00", "env_example00");
+        let other = tenant("prj_example00", "env_example01");
+        let inner = FixedRoutes(resolved);
+        for (hostname, tenant, served) in [
+            ("api.example.com", &own, true),
+            ("app.example.org", &own, true),
+            ("other.example.com", &own, false),
+            ("api.example.com", &other, false),
+        ] {
+            let routes = CustomDomainRoutes {
+                inner: &inner,
+                hostname,
+                tenant,
+            };
+            let outcome = block_on(routes.resolve("prj_example00--env_example00", "hello"))
+                .expect("resolved");
+            assert_eq!(outcome.is_some(), served, "{hostname} for {tenant:?}");
+        }
+        let routes = CustomDomainRoutes {
+            inner: &FixedRoutes(route(&[])),
+            hostname: "api.example.com",
+            tenant: &own,
+        };
+        assert!(
+            block_on(routes.resolve("prj_example00--env_example00", "hello"))
+                .expect("resolved")
+                .is_none(),
+            "an environment without custom domains serves none"
+        );
+    }
 }

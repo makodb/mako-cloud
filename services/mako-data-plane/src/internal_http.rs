@@ -27,9 +27,10 @@ use mako_internal_rpc::{
     DataJobImportBatchInput, DataJobImportBatchOutput, DataJobRowError, GuardDecision,
     IdentityAdminCommand, IdentityAdminOperation, IdentityAdminPermission,
     IdentityVerificationOperation, IdentityVerificationRequest, IdentityVerificationResponse,
-    InstallCollectionInput, InstallPolicyInput, InternalCaller, InternalReplayGuard, InternalRoute,
-    PreparedResponseJournal, ReadChangeFeedInput, ReadChangeFeedOutput, ResponseJournalLookup,
-    ResponseJournalStoreOutcome, RocksInternalReplayGuardError,
+    InstallCollectionInput, InstallCustomDomainsInput, InstallPolicyInput, InternalCaller,
+    InternalReplayGuard, InternalRoute, PreparedResponseJournal, ReadChangeFeedInput,
+    ReadChangeFeedOutput, ResponseJournalLookup, ResponseJournalStoreOutcome,
+    RocksInternalReplayGuardError,
 };
 use mako_policy::{ExplorerGrantAuthorityRecord, SubjectId};
 use mako_service_runtime::{
@@ -509,6 +510,9 @@ async fn execute_operation(
         IdentityAdminOperation::ReadChangeFeed => {
             execute_change_feed(graph, request, tenant, command, now).await
         }
+        IdentityAdminOperation::InstallCustomDomains => {
+            execute_custom_domains_install(graph, request, tenant, command, now).await
+        }
         IdentityAdminOperation::CreateProjectCredential
         | IdentityAdminOperation::RotateProjectCredential => Err(auth_http::invalid(
             request,
@@ -525,6 +529,73 @@ const CHANGE_FEED_MAXIMUM_LIMIT: u32 = 500;
 /// plane's webhook worker. Only positions, revisions, and the kind of change
 /// cross this boundary; document fields stay in the data plane, so a webhook
 /// delivery can never carry data the endpoint was not entitled to.
+/// Replaces the verified custom hostnames an environment is served on. The
+/// list is validated to the shape the control plane stores -- lowercase
+/// DNS names -- and installed whole; an empty list withdraws every
+/// hostname.
+async fn execute_custom_domains_install(
+    graph: &Arc<DataPlaneGraph>,
+    request: &HttpRequest,
+    tenant: &mako_api::TenantScope,
+    command: &IdentityAdminCommand,
+    now: u64,
+) -> Result<Vec<u8>, HttpApiError> {
+    require_permission(
+        graph,
+        request,
+        tenant,
+        command,
+        IdentityAdminPermission::ManageProjectCredentials,
+        "custom_domains_install",
+        "custom-domains",
+        now,
+    )
+    .await?;
+    let input: InstallCustomDomainsInput = parse_input(request, &command.input)?;
+    if input.hostnames.len() > crate::graph::MAXIMUM_CUSTOM_DOMAINS_PER_ENVIRONMENT {
+        return Err(auth_http::invalid(
+            request,
+            "custom domain list is too long",
+        ));
+    }
+    let mut hostnames = Vec::with_capacity(input.hostnames.len());
+    for hostname in input.hostnames {
+        let valid = !hostname.is_empty()
+            && hostname.len() <= 253
+            && hostname.contains('.')
+            && hostname.bytes().all(|byte| {
+                byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'-' | b'.')
+            });
+        if !valid || hostnames.contains(&hostname) {
+            return Err(auth_http::invalid(
+                request,
+                "custom domain hostname is invalid",
+            ));
+        }
+        hostnames.push(hostname);
+    }
+    let installed = hostnames.len();
+    graph
+        .custom_domains()
+        .install(tenant, hostnames)
+        .await
+        .map_err(|_| auth_http::unavailable(request, "custom domains could not be recorded"))?;
+    append_admin_audit(
+        graph,
+        tenant,
+        command,
+        "custom_domains_install",
+        "custom-domains",
+        AuditOutcome::Allowed,
+        "installed",
+        request.request_id(),
+        now,
+    )
+    .await?;
+    serde_json::to_vec(&serde_json::json!({ "installed": installed }))
+        .map_err(|_| auth_http::unavailable(request, "custom domain response could not be encoded"))
+}
+
 async fn execute_change_feed(
     graph: &Arc<DataPlaneGraph>,
     request: &HttpRequest,
@@ -2258,6 +2329,7 @@ const fn operation_name(operation: IdentityAdminOperation) -> &'static str {
         IdentityAdminOperation::DeleteBucketObject => "delete_bucket_object",
         IdentityAdminOperation::InstallIndex => "install_index",
         IdentityAdminOperation::InstallQuotaPolicy => "install_quota_policy",
+        IdentityAdminOperation::InstallCustomDomains => "install_custom_domains",
         IdentityAdminOperation::InspectIndex => "inspect_index",
         IdentityAdminOperation::SearchUsers => "search_users",
         IdentityAdminOperation::InspectUser => "inspect_user",

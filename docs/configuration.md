@@ -20,11 +20,14 @@ The example at `config/mako.local.json.example` documents every JSON section for
 - Control plane only: `MAKO_CONTROL_SQLITE_MAX_BATCH_OPERATIONS`, `MAKO_CONTROL_SQLITE_MAX_SCAN_ITEMS`, `MAKO_CONTROL_SQLITE_BUSY_TIMEOUT_SECONDS`, `MAKO_CONTROL_SQLITE_TRANSACTION_EXPIRATION_SECONDS`, `MAKO_CONTROL_SQLITE_SHUTDOWN_TIMEOUT_SECONDS`
 - Control plane only: `MAKO_CONTROL_SQLITE_WAL_AUTOCHECKPOINT_PAGES`, `MAKO_CONTROL_SQLITE_MAX_WAL_BYTES`, `MAKO_CONTROL_SQLITE_INTEGRITY_INTERVAL_SECONDS`, `MAKO_CONTROL_SQLITE_BACKUP_RETENTION_COUNT`, and its warning/critical disk thresholds
 - `MAKO_SMTP_ENDPOINT`, `MAKO_OBJECT_STORE_ENDPOINT`, `MAKO_DATA_PLANE_ENDPOINT`, `MAKO_EDGE_GATEWAY_ENDPOINT`, `MAKO_RUNTIME_SUPERVISOR_ENDPOINT`, `MAKO_TELEMETRY_QUERY_ENDPOINT`, `MAKO_OTLP_ENDPOINT`
+- Control plane only: `MAKO_DNS_RESOLVER`
 - `MAKO_MAX_REQUEST_BYTES`, `MAKO_SHUTDOWN_GRACE_SECONDS`
 - `MAKO_INTERNAL_AUTH_SECRET_REF`
 - `MAKO_OBJECT_STORE_ACCESS_KEY_REF`, `MAKO_OBJECT_STORE_SECRET_KEY_REF`
 
 `MAKO_EDGE_GATEWAY_ENDPOINT` (JSON `dependencies.edge_gateway_address`, default `127.0.0.1:8082`) is where the control plane's function scheduler invokes functions: the edge gateway's own listener, over the loopback-only internal RPC. Like `dependencies.data_plane_address`, the control plane refuses a non-loopback value; the other services ignore it. See [scheduled functions](scheduled-functions.md).
+
+`MAKO_DNS_RESOLVER` (JSON `dependencies.dns_resolver`, `host:port`) is the DNS resolver the control plane's custom-domain verifier asks for `TXT` records. It is the host's resolver, so it need not be loopback. When unset, the first `nameserver` of `/etc/resolv.conf` is read **once at startup**, and `127.0.0.53:53` (the systemd-resolved stub) is used if there is none; a resolv.conf that changes later does not change a running service. The other services ignore it. The platform's own public hostname, which a custom domain may not equal or sit under, is not configured separately: it is derived from the host of `server.public_url` (`MAKO_PUBLIC_URL`) when that host is a DNS name. See [custom domains](custom-domains.md).
 
 Relative paths are resolved from the service working directory only outside production. A production stateful service requires normalized absolute database and backup paths outside known ephemeral filesystems. Control SQLite live, lock, migration, backup, restore, and reserve paths are mutually non-overlapping and reject symlink components. Batch/scan limits and transaction timeouts are positive and bounded. The warning disk reserve must exceed the critical reserve, whose production minimum is 64 MiB. Durability and backend kind are not configurable: the control plane uses synchronous WAL SQLite, while data-plane, edge-gateway, and telemetry use synchronous RocksDB. A production control plane rejects legacy `storage.rocksdb_path`; the other services still require it.
 

@@ -5,6 +5,7 @@ import { authSettingsCommands } from "./auth-settings.js";
 import { authTokensCommands } from "./auth-tokens.js";
 import { collectionsCommands } from "./collections.js";
 import { dataCommands } from "./data.js";
+import { domainsCommands } from "./domains.js";
 import { emailTemplatesCommands } from "./email-templates.js";
 import { envsCommands } from "./envs.js";
 import { explorerCommands } from "./explorer.js";
@@ -54,4 +55,5 @@ export const commands: readonly Command[] = [
   ...emailTemplatesCommands,
   ...webhooksCommands,
   ...schedulesCommands,
+  ...domainsCommands,
 ];

@@ -42,11 +42,12 @@ const assert = (condition, message) => {
   if (!condition) throw new Error(message);
 };
 
-const matcher = (name) => {
+const rawMatcher = (name) => {
   const match = caddy.match(new RegExp(`^\\t@${name} path_regexp ${name} (.+)$`, "m"));
   assert(match?.[1], `missing ${name} route matcher`);
-  return new RegExp(match[1]);
+  return match[1];
 };
+const matcher = (name) => new RegExp(rawMatcher(name));
 
 const data = matcher("data_api");
 const control = matcher("control_api");
@@ -57,6 +58,18 @@ const edge = matcher("edge_function");
 const operatorAuth = matcher("operator_auth");
 const openapiPaths = [...openapi.matchAll(/^ {2}(\/[^:]+):$/gm)].map((match) => match[1]);
 assert(openapiPaths.length > 70, "unexpectedly small OpenAPI route inventory");
+const consoleRoute = matcher("console_route");
+for (const path of [
+  "/projects/prj_example0001/domains",
+  "/projects/prj_example0001/environments/env_example0001/api-docs",
+  "/projects/prj_example0001/settings",
+]) {
+  assert(consoleRoute.test(path), `console client route ${path} is not served`);
+}
+assert(
+  !consoleRoute.test("/projects/prj_example0001/environments/env_example0001/domains"),
+  "domains is a project-level console route only",
+);
 assert(operatorAuth.test("/v1/operator-auth/sessions"), "operator auth no-store matcher is absent");
 assert(
   operatorAuth.test("/v1/operator-auth/sessions/current/actions/verify-password"),
@@ -87,6 +100,7 @@ const samplePath = (path) =>
     .replaceAll("{webhookId}", "whk_abcdefghijklmnop")
     .replaceAll("{deliveryId}", "whd_abcdefghijklmnop")
     .replaceAll("{scheduleId}", "sch_abcdefghijklmnop")
+    .replaceAll("{domainId}", "dom_abcdefghijklmnop")
     .replaceAll("{functionName}", "health")
     .replaceAll("{functionVersion}", "1")
     .replaceAll("{projectRef}", "prj_example0001")
@@ -165,6 +179,129 @@ for (const directive of orderedRouteDirectives) {
   previousRouteDirective = index;
 }
 assert(!caddy.includes("http://{{ mako_public_fqdn }}"), "plaintext application site exists");
+
+// Custom domains: a catch-all HTTPS site whose certificates are issued on
+// demand only for hostnames the control plane has verified, serving nothing
+// but the application data-plane routes and function invocations.
+const customDomainSiteStart = caddy.indexOf("\nhttps:// {");
+assert(customDomainSiteStart > 0, "custom-domain catch-all site is absent");
+assert(
+  customDomainSiteStart > caddy.indexOf("{{ mako_public_fqdn }} {"),
+  "custom-domain site must follow the platform hostname site",
+);
+const platformSite = caddy.slice(caddy.indexOf("{{ mako_public_fqdn }} {"), customDomainSiteStart);
+const customDomainSite = caddy.slice(customDomainSiteStart);
+assert(
+  caddy.includes("on_demand_tls {") &&
+    caddy.includes("ask http://127.0.0.1:8081/_internal/v1/custom-domains/ask"),
+  "on-demand TLS is not gated by the control plane's ask endpoint",
+);
+assert(
+  caddy.indexOf("on_demand_tls {") < caddy.indexOf("{{ mako_public_fqdn }} {"),
+  "on_demand_tls must be a global option",
+);
+assert(
+  /\ttls \{\n\t\ton_demand\n\t\}/u.test(customDomainSite),
+  "custom-domain site does not use on-demand TLS",
+);
+assert(
+  !platformSite.includes("on_demand"),
+  "the platform hostname must never issue certificates on demand",
+);
+const customDomainMatcher = (name) => {
+  const match = customDomainSite.match(new RegExp(`^\\t@${name} path_regexp ${name} (.+)$`, "m"));
+  assert(match?.[1], `missing ${name} custom-domain route matcher`);
+  return match[1];
+};
+assert(
+  customDomainMatcher("custom_domain_data_api") === rawMatcher("data_api"),
+  "custom-domain data API inventory differs from the platform hostname's",
+);
+assert(
+  customDomainMatcher("custom_domain_replication_stream") === rawMatcher("replication_stream"),
+  "custom-domain replication stream matcher differs from the platform hostname's",
+);
+const customDomainFunction = new RegExp(customDomainMatcher("custom_domain_function"));
+assert(
+  customDomainFunction.test("/functions/v1/health") &&
+    !customDomainFunction.test("/prj_example0001/functions/v1/health") &&
+    !customDomainFunction.test("/functions/v1/health/private") &&
+    !customDomainFunction.test("/functions/v1/") &&
+    !edge.test("/functions/v1/health"),
+  "custom-domain function shape is not exactly /functions/v1/{name}",
+);
+for (const template of openapiPaths) {
+  const path = samplePath(template);
+  const served = customDomainFunction.test(path) || (data.test(path) && !serviceCredential.test(path));
+  assert(
+    served === (data.test(path) && !template.includes("/service/")),
+    `${template} custom-domain exposure differs from the data-plane inventory`,
+  );
+}
+for (const path of [
+  "/",
+  "/login",
+  "/projects/prj_example0001/domains",
+  "/projects/prj_example0001/environments/env_example0001/api-docs",
+  "/assets/index-abc123.js",
+  "/v1/projects",
+  "/v1/projects/prj_example0001/domains",
+  "/v1/operator/overview",
+  "/v1/developer-auth/sessions",
+  "/v1/projects/prj_example0001/environments/env_example0001/explorer/grants",
+  "/prj_example0001/functions/v1/health",
+  "/_internal/v1/custom-domains/ask",
+  "/v1/projects/prj_example0001/environments/env_example0001/service/collections/documents/query",
+]) {
+  assert(
+    !customDomainFunction.test(path) && !(data.test(path) && !serviceCredential.test(path)),
+    `${path} would be served on a custom domain`,
+  );
+}
+for (const forbidden of [
+  "127.0.0.1:8081",
+  "@control_api",
+  "@operator_control_api",
+  "@developer_workspace_api",
+  "@console_route",
+  "@console_workspace_route",
+  "@console_asset",
+  "file_server",
+  "/opt/mako/current/console",
+  "@edge_function",
+  "Strict-Transport-Security \"max-age",
+]) {
+  assert(!customDomainSite.includes(forbidden), `custom-domain site contains ${forbidden}`);
+}
+for (const required of [
+  "respond @internal_rpc 404",
+  "respond @service_credential_api 404",
+  "respond 503",
+  "respond @outside_qualification_sources 403",
+  "max_size 32MB",
+  "X-Frame-Options DENY",
+  "-Strict-Transport-Security",
+  "reverse_proxy @custom_domain_replication_stream 127.0.0.1:8080",
+  "reverse_proxy @custom_domain_data_api 127.0.0.1:8080",
+  "reverse_proxy @custom_domain_function 127.0.0.1:8082",
+  "\trespond 404\n",
+]) {
+  assert(customDomainSite.includes(required), `custom-domain site omits ${required}`);
+}
+assert(
+  (customDomainSite.match(/header_up X-Mako-Custom-Domain \{http\.request\.host\}/gu) ?? [])
+    .length === 3,
+  "every custom-domain upstream must learn the hostname",
+);
+assert(
+  !platformSite.includes("header_up X-Mako-Custom-Domain {"),
+  "the platform hostname must not assert a custom domain",
+);
+assert(
+  (platformSite.match(/header_up -X-Mako-Custom-Domain/gu) ?? []).length ===
+    (platformSite.match(/reverse_proxy @/gu) ?? []).length,
+  "every platform-hostname upstream must strip a client-supplied X-Mako-Custom-Domain",
+);
 assert(caddy.includes("127.0.0.1:8080"), "data-plane upstream is absent");
 assert(caddy.includes("127.0.0.1:8081"), "control-plane upstream is absent");
 assert(caddy.includes("127.0.0.1:8082"), "edge-gateway upstream is absent");
@@ -263,5 +400,5 @@ assert(
 );
 
 console.log(
-  `validated ${openapiPaths.length} exact public API paths, four admission modes, preview guard, and fail-closed Caddy defaults`,
+  `validated ${openapiPaths.length} exact public API paths, four admission modes, preview guard, the custom-domain site, and fail-closed Caddy defaults`,
 );

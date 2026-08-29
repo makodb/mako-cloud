@@ -21,8 +21,10 @@ use std::{
 
 use serde_json::Value;
 
+mod dns_stub;
 mod sign_in;
 mod webhook_sink;
+pub use dns_stub::DnsStub;
 pub use sign_in::{CapturedMail, OidcProviderStub, SmtpCaptureStub};
 pub use webhook_sink::{CapturedDelivery, WebhookSinkStub};
 

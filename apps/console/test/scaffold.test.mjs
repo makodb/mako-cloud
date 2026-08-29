@@ -78,7 +78,17 @@ test("route matching fails closed for unknown and malformed locations", () => {
     projectId: "prj_abcdefgh",
     section: "usage",
   });
+  assert.deepEqual(matchConsoleRoute("/projects/prj_abcdefgh/domains"), {
+    name: "project",
+    projectId: "prj_abcdefgh",
+    section: "domains",
+  });
   assert.equal(matchConsoleRoute("/projects/prj_abcdefgh/billing").name, "not_found");
+  assert.equal(
+    matchConsoleRoute("/projects/prj_abcdefgh/domains/dom_abcdef123456").name,
+    "not_found",
+    "domains have no per-domain page",
+  );
   assert.deepEqual(
     matchConsoleRoute("/projects/prj_abcdefgh/environments/env_abcdefgh/logs"),
     { name: "logs", projectId: "prj_abcdefgh", environmentId: "env_abcdefgh" },
@@ -98,6 +108,15 @@ test("route matching fails closed for unknown and malformed locations", () => {
   assert.deepEqual(
     matchConsoleRoute("/projects/prj_abcdefgh/environments/env_abcdefgh/email-templates"),
     { name: "email_templates", projectId: "prj_abcdefgh", environmentId: "env_abcdefgh" },
+  );
+  assert.deepEqual(
+    matchConsoleRoute("/projects/prj_abcdefgh/environments/env_abcdefgh/api-docs"),
+    { name: "api_docs", projectId: "prj_abcdefgh", environmentId: "env_abcdefgh" },
+  );
+  assert.equal(
+    matchConsoleRoute("/projects/prj_abcdefgh/environments/env_abcdefgh/api-docs/todos").name,
+    "not_found",
+    "API docs have no per-collection page",
   );
   assert.deepEqual(
     matchConsoleRoute("/projects/prj_abcdefgh/environments/env_abcdefgh/storage/avatars"),

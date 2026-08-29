@@ -1192,6 +1192,68 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/projects/{projectId}/domains": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List a project's custom domains */
+        get: operations["listCustomDomains"];
+        put?: never;
+        /**
+         * Add a custom domain to a project environment
+         * @description Registers a hostname to serve one environment's application API and functions. The response carries the DNS TXT record that proves control of the name; the platform checks it periodically and on request, obtains and renews a certificate once verified, and serves nothing on the name before that. A hostname already claimed by any project is refused with `conflict`.
+         */
+        post: operations["createCustomDomain"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/projects/{projectId}/domains/{domainId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read a custom domain */
+        get: operations["getCustomDomain"];
+        put?: never;
+        post?: never;
+        /**
+         * Remove a custom domain
+         * @description Serving on the name stops; its certificate is no longer renewed.
+         */
+        delete: operations["deleteCustomDomain"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/projects/{projectId}/domains/{domainId}/actions/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Check the domain's verification record now
+         * @description Looks the TXT record up immediately instead of waiting for the next periodic check and returns the domain with the outcome.
+         */
+        post: operations["verifyCustomDomain"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/projects/{projectId}/environments/{environmentId}/auth-settings": {
         parameters: {
             query?: never;
@@ -4743,6 +4805,43 @@ export interface components {
             items: components["schemas"]["FunctionScheduleRun"][];
             nextCursor: string | null;
         };
+        CustomDomainId: string;
+        /**
+         * @description `pending` is registered and not yet proven; `verified` is proven and served; `failed` was proven before and the record has since gone missing or changed, so serving stopped.
+         * @enum {string}
+         */
+        CustomDomainState: "pending" | "verified" | "failed";
+        /** @description The DNS record that proves control of the name. */
+        CustomDomainVerification: {
+            /** @description Fully qualified name to create, `_mako-verify.<hostname>`. */
+            recordName: string;
+            /** @constant */
+            recordType: "TXT";
+            recordValue: string;
+        };
+        CustomDomain: {
+            id: components["schemas"]["CustomDomainId"];
+            projectId: components["schemas"]["ProjectId"];
+            environmentId: components["schemas"]["EnvironmentId"];
+            /** @description A lowercase fully qualified DNS name; the platform's own names are refused. */
+            hostname: string;
+            state: components["schemas"]["CustomDomainState"];
+            verification: components["schemas"]["CustomDomainVerification"];
+            /** Format: date-time */
+            verifiedAt: string | null;
+            /** Format: date-time */
+            lastCheckedAt: string | null;
+            /** @description Why the last check did not verify, e.g. `record_missing`, `record_mismatch`, `dns_unavailable`. */
+            lastError: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        CustomDomainCreate: {
+            hostname: string;
+            environmentId: components["schemas"]["EnvironmentId"];
+        };
         MagicLinkRedeemRequest: {
             token: string;
         };
@@ -5469,6 +5568,7 @@ export interface components {
         WebhookId: components["schemas"]["WebhookId"];
         DeliveryId: components["schemas"]["WebhookDeliveryId"];
         ScheduleId: components["schemas"]["FunctionScheduleId"];
+        DomainId: components["schemas"]["CustomDomainId"];
         ProviderName: components["schemas"]["ProviderName"];
         TemplateKind: components["schemas"]["EmailTemplateKind"];
         FunctionName: components["schemas"]["FunctionName"];
@@ -8233,6 +8333,134 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FunctionScheduleRunPage"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    listCustomDomains: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Custom domains with their verification state */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["CustomDomain"][];
+                    };
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    createCustomDomain: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CustomDomainCreate"];
+            };
+        };
+        responses: {
+            /** @description Domain registered, pending verification */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomDomain"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    getCustomDomain: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                domainId: components["parameters"]["DomainId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Custom domain */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomDomain"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    deleteCustomDomain: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                domainId: components["parameters"]["DomainId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Domain removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    verifyCustomDomain: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                domainId: components["parameters"]["DomainId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The domain after the check */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomDomain"];
                 };
             };
             default: components["responses"]["ApiError"];

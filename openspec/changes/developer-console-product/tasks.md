@@ -50,12 +50,12 @@
 
 ## 7. Phase 3 — custom domains
 
-- [ ] 7.1 Control plane: domain records with DNS challenge, verification worker, verified-domain list publication.
-- [ ] 7.2 Caddy: on-demand TLS with an `ask` endpoint answering from the verified list; routing of verified domains to the project's API and functions; converge and validators.
+- [x] 7.1 Control plane: domain records with DNS challenge, verification worker, verified-domain list publication.
+- [x] 7.2 Caddy: on-demand TLS with an `ask` endpoint answering from the verified list; routing of verified domains to the project's API and functions; converge and validators.
 - [ ] 7.3 Console: add domain, show challenge, verification state, remove; OpenAPI, SDK; tests for unverified refusal and re-verification failure; deploy and requalify.
 
 ## 8. Phase 3 — generated API documentation
 
-- [ ] 8.1 Console: reference pages generated from live collections, schemas, indexes, policies, and function routes with observation time.
-- [ ] 8.2 Quickstarts per supported client with the environment's API URL and public key; never a service credential.
+- [x] 8.1 Console: reference pages generated from live collections, schemas, indexes, policies, and function routes with observation time.
+- [x] 8.2 Quickstarts per supported client with the environment's API URL and public key; never a service credential.
 - [ ] 8.3 Console e2e over a schema-bearing collection; docs and traceability rows.

@@ -154,7 +154,13 @@ test("sidebar destinations navigate to usage and activity and mark the current o
 
   await page.goto(`/projects/${PROJECT_ID}`);
   const nav = page.getByRole("navigation", { name: "Project destinations" });
-  await expect(nav.getByRole("link")).toHaveText(["Overview", "Usage", "Activity", "Settings"]);
+  await expect(nav.getByRole("link")).toHaveText([
+    "Overview",
+    "Usage",
+    "Activity",
+    "Domains",
+    "Settings",
+  ]);
   await expect(nav.getByRole("link", { name: "Overview" })).toHaveAttribute("aria-current", "page");
   await expect(nav.getByRole("link", { name: "Usage" })).not.toHaveAttribute(
     "aria-current",

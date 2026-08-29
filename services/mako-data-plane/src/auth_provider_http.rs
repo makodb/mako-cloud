@@ -297,7 +297,7 @@ fn handle_start(
     request: &HttpRequest,
 ) -> Result<HttpResponse, HttpApiError> {
     auth_http::require_json(request)?;
-    let tenant = auth_http::tenant(request)?;
+    let tenant = auth_http::tenant_for(graph, request)?;
     let provider_name = provider_name(request)?;
     let now = auth_http::now_unix_seconds(request.request_id())?;
     block_on(async {
@@ -343,7 +343,7 @@ fn handle_callback(
     graph: &Arc<DataPlaneGraph>,
     request: &HttpRequest,
 ) -> Result<HttpResponse, HttpApiError> {
-    let tenant = auth_http::tenant(request)?;
+    let tenant = auth_http::tenant_for(graph, request)?;
     let provider_name = provider_name(request)?;
     let now = auth_http::now_unix_seconds(request.request_id())?;
     let query: BTreeMap<&str, &str> = request
@@ -622,7 +622,7 @@ fn handle_exchange(
     request: &HttpRequest,
 ) -> Result<HttpResponse, HttpApiError> {
     auth_http::require_json(request)?;
-    let tenant = auth_http::tenant(request)?;
+    let tenant = auth_http::tenant_for(graph, request)?;
     let now = auth_http::now_unix_seconds(request.request_id())?;
     block_on(async {
         auth_http::verify_public_key(graph, &tenant, request, now).await?;
@@ -665,7 +665,7 @@ fn handle_magic_link_request(
     request: &HttpRequest,
 ) -> Result<HttpResponse, HttpApiError> {
     auth_http::require_json(request)?;
-    let tenant = auth_http::tenant(request)?;
+    let tenant = auth_http::tenant_for(graph, request)?;
     let now = auth_http::now_unix_seconds(request.request_id())?;
     block_on(async {
         auth_http::verify_public_key(graph, &tenant, request, now).await?;
@@ -785,7 +785,7 @@ fn handle_magic_link_redeem(
     request: &HttpRequest,
 ) -> Result<HttpResponse, HttpApiError> {
     auth_http::require_json(request)?;
-    let tenant = auth_http::tenant(request)?;
+    let tenant = auth_http::tenant_for(graph, request)?;
     let now = auth_http::now_unix_seconds(request.request_id())?;
     block_on(async {
         auth_http::verify_public_key(graph, &tenant, request, now).await?;

@@ -32,8 +32,9 @@ use mako_control_plane::{
     WebhookWorkerConfig,
 };
 use mako_control_plane::{
-    FunctionScheduleInvoker, FunctionScheduleService, FunctionScheduleStore,
-    FunctionScheduleWorker, FunctionScheduleWorkerConfig,
+    CustomDomainService, CustomDomainStore, CustomDomainVerifier, FunctionScheduleInvoker,
+    FunctionScheduleService, FunctionScheduleStore, FunctionScheduleWorker,
+    FunctionScheduleWorkerConfig, UdpTxtResolver,
 };
 use mako_identity::KeyEncryptionKey;
 use mako_internal_rpc::{
@@ -145,6 +146,8 @@ struct ControlPlaneComponents {
     webhook_worker: WebhookWorker,
     function_schedules: FunctionScheduleService,
     function_schedule_worker: FunctionScheduleWorker,
+    custom_domains: CustomDomainService,
+    custom_domain_verifier: CustomDomainVerifier,
     developer_metrics: Arc<DeveloperMetrics>,
     operator_authenticator: OperatorAuthenticator,
     operator_password_authentication: OperatorAuthenticationService,
@@ -615,6 +618,24 @@ impl ControlPlaneGraph {
             FunctionScheduleWorkerConfig::default(),
         )
         .map_err(|_| ControlPlaneGraphError::Composition("function schedule worker"))?;
+        // Custom domains: the verifier asks the host's resolver for the
+        // proof record and publishes each environment's verified list to
+        // the data plane over the identity-administration route quota
+        // policies travel on.
+        let custom_domain_store = CustomDomainStore::new(Arc::clone(&adapter), Durability::Sync)
+            .map_err(|_| ControlPlaneGraphError::Composition("custom domain store"))?;
+        let custom_domain_verifier = CustomDomainVerifier::new(
+            custom_domain_store,
+            Arc::new(UdpTxtResolver::new(config.dns_resolver)),
+            Arc::new(data_plane_identity_admin.clone()),
+        );
+        let custom_domains = CustomDomainService::new(
+            projects.clone(),
+            organizations.clone(),
+            Arc::clone(&control_audit),
+            custom_domain_verifier.clone(),
+            config.public_hostname.clone(),
+        );
         let object_access = config
             .object_store_access_key
             .as_ref()
@@ -780,6 +801,8 @@ impl ControlPlaneGraph {
                 webhook_worker,
                 function_schedules,
                 function_schedule_worker,
+                custom_domains,
+                custom_domain_verifier,
                 developer_metrics,
                 operator_authenticator,
                 operator_password_authentication,
@@ -895,6 +918,28 @@ impl ControlPlaneGraph {
         self.components
             .developer_metrics
             .observe_function_schedule_worker_failure();
+    }
+
+    #[must_use]
+    pub fn custom_domain_service(&self) -> &CustomDomainService {
+        &self.components.custom_domains
+    }
+
+    #[must_use]
+    pub fn custom_domain_verifier(&self) -> &CustomDomainVerifier {
+        &self.components.custom_domain_verifier
+    }
+
+    pub fn observe_custom_domains(&self, report: &mako_control_plane::CustomDomainVerifierReport) {
+        self.components
+            .developer_metrics
+            .observe_custom_domains(report);
+    }
+
+    pub fn observe_custom_domain_worker_failure(&self) {
+        self.components
+            .developer_metrics
+            .observe_custom_domain_worker_failure();
     }
 
     pub(crate) fn developer_metrics(&self) -> &Arc<DeveloperMetrics> {

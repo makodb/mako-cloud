@@ -731,3 +731,92 @@ test("function schedules are created, read, patched, run now, paged by run outco
   assert.equal(requests[7].url, `${base}/${schedule.id}`);
   assert.equal(requests[7].headers.get("idempotency-key"), "idempotency-key-schedule-delete");
 });
+
+test("custom domains are project-level: created with an idempotency key and the TXT record in the answer, listed, read, verified on request, and deleted", async () => {
+  const requests = [];
+  const domain = {
+    id: "dom_api000000001",
+    projectId: "prj_example0001",
+    environmentId: "env_example0001",
+    hostname: "api.example.com",
+    state: "pending",
+    verification: {
+      recordName: "_mako-verify.api.example.com",
+      recordType: "TXT",
+      recordValue: "mako-verify=0123456789abcdef",
+    },
+    verifiedAt: null,
+    lastCheckedAt: null,
+    lastError: null,
+    createdAt: "2026-08-29T10:00:00Z",
+    updatedAt: "2026-08-29T10:00:00Z",
+  };
+  const client = createManagementClient({
+    endpoint: "https://api.example.test",
+    credential: { kind: "developer_session", accessToken: "developer-session-token" },
+    fetch: async (request) => {
+      requests.push(request);
+      const path = new URL(request.url).pathname;
+      if (request.method === "DELETE") return new Response(null, { status: 204 });
+      if (path.endsWith("/domains") && request.method === "GET") {
+        return Response.json({ items: [domain] });
+      }
+      if (path.endsWith("/domains") && request.method === "POST") {
+        return Response.json(domain, { status: 201 });
+      }
+      if (path.endsWith("/actions/verify")) {
+        return Response.json({
+          ...domain,
+          state: "verified",
+          verifiedAt: "2026-08-29T10:05:00Z",
+          lastCheckedAt: "2026-08-29T10:05:00Z",
+        });
+      }
+      return Response.json(domain);
+    },
+  });
+  const base = "https://api.example.test/v1/projects/prj_example0001/domains";
+
+  const created = await client.createCustomDomain(
+    "prj_example0001",
+    { hostname: "api.example.com", environmentId: "env_example0001" },
+    "idempotency-key-domain-create",
+  );
+  assert.deepEqual(created, domain);
+  assert.equal(created.verification.recordType, "TXT", "the record to publish is in the answer");
+  assert.equal(requests[0].method, "POST");
+  assert.equal(requests[0].url, base, "domains hang off the project, not an environment");
+  assert.equal(requests[0].headers.get("idempotency-key"), "idempotency-key-domain-create");
+  assert.deepEqual(await requests[0].json(), {
+    hostname: "api.example.com",
+    environmentId: "env_example0001",
+  });
+
+  assert.deepEqual(await client.listCustomDomains("prj_example0001"), [domain]);
+  assert.equal(requests[1].method, "GET");
+  assert.equal(requests[1].url, base);
+
+  assert.deepEqual(await client.getCustomDomain("prj_example0001", domain.id), domain);
+  assert.equal(requests[2].method, "GET");
+  assert.equal(requests[2].url, `${base}/${domain.id}`);
+
+  const verified = await client.verifyCustomDomain(
+    "prj_example0001",
+    domain.id,
+    "idempotency-key-domain-verify",
+  );
+  assert.equal(verified.state, "verified");
+  assert.equal(verified.verifiedAt, "2026-08-29T10:05:00Z");
+  assert.equal(requests[3].method, "POST");
+  assert.equal(requests[3].url, `${base}/${domain.id}/actions/verify`);
+  assert.equal(requests[3].headers.get("idempotency-key"), "idempotency-key-domain-verify");
+  assert.equal(await requests[3].text(), "", "an action carries no body");
+
+  assert.equal(
+    await client.deleteCustomDomain("prj_example0001", domain.id, "idempotency-key-domain-delete"),
+    undefined,
+  );
+  assert.equal(requests[4].method, "DELETE");
+  assert.equal(requests[4].url, `${base}/${domain.id}`);
+  assert.equal(requests[4].headers.get("idempotency-key"), "idempotency-key-domain-delete");
+});

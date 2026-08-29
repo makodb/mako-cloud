@@ -24,6 +24,7 @@ import { HomeDashboard } from "./home.js";
 import { LogsScreen } from "./logs.js";
 import { PolicyScreen } from "./policies.js";
 import { ProjectHome } from "./project-home.js";
+import { ApiDocsScreen } from "./api-docs.js";
 import { AuthProvidersScreen } from "./auth-providers.js";
 import { EmailTemplatesScreen } from "./email-templates.js";
 import { StorageScreen } from "./storage.js";
@@ -371,6 +372,16 @@ export function ConsoleApp({
                   projectId={route.projectId}
                   environmentId={route.environmentId}
                 />
+              </StagedEnvironmentLayout>
+            ) : route.name === "api_docs" ? (
+              <StagedEnvironmentLayout
+                enabled={developerWorkspaceEnabled}
+                projectId={route.projectId}
+                environmentId={route.environmentId}
+                section="api-docs"
+                navigate={navigate}
+              >
+                <ApiDocsScreen projectId={route.projectId} environmentId={route.environmentId} />
               </StagedEnvironmentLayout>
             ) : route.name === "storage" ? (
               <StagedEnvironmentLayout

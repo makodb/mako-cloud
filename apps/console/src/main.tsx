@@ -7,12 +7,14 @@ import { HostedOperatorAuthAdapter } from "./hosted-operator-auth.js";
 import "./styles.css";
 import "./home.css";
 import "./project-home.css";
+import "./custom-domains.css";
 import "./surfaced.css";
 import "./usage-activity.css";
 import "./storage.css";
 import "./webhooks.css";
 import "./function-schedules.css";
 import "./auth.css";
+import "./api-docs.css";
 
 declare global {
   interface Window {

@@ -27,12 +27,13 @@ import { createMakoRxdbConnectTemplateV1 } from "@mako-cloud/rxdb";
 
 import { ActivityScreen } from "./activity.js";
 import { ApiFailureNotice, type ConsoleApiFailure, toConsoleApiFailure } from "./api-error.js";
+import { CustomDomainsScreen } from "./custom-domains.js";
 import { useManagementClient } from "./management.js";
 import { LifecycleBadge } from "./projects.js";
 import { confirmDestructiveAction } from "./safety.js";
 import { UsageScreen } from "./usage.js";
 
-export type ProjectSection = "overview" | "usage" | "activity" | "settings";
+export type ProjectSection = "overview" | "usage" | "activity" | "settings" | "domains";
 
 type ProjectAction = "suspend" | "restore" | "delete";
 type Navigate = (path: string, replace?: boolean) => void;
@@ -41,6 +42,7 @@ const PROJECT_DESTINATIONS: readonly { readonly id: ProjectSection; readonly lab
   { id: "overview", label: "Overview" },
   { id: "usage", label: "Usage" },
   { id: "activity", label: "Activity" },
+  { id: "domains", label: "Domains" },
   { id: "settings", label: "Settings" },
 ];
 
@@ -52,6 +54,7 @@ const SECTION_EYEBROW: Record<ProjectSection, string> = {
   overview: "Project overview",
   usage: "Project usage",
   activity: "Project activity",
+  domains: "Custom domains",
   settings: "Project settings",
 };
 
@@ -167,6 +170,8 @@ export function ProjectHome({
     content = <UsageScreen projectId={projectId} />;
   } else if (section === "activity") {
     content = <ActivityScreen projectId={projectId} />;
+  } else if (section === "domains") {
+    content = <CustomDomainsScreen projectId={projectId} environments={environments} />;
   } else if (section === "settings") {
     content = (
       <ProjectSettings

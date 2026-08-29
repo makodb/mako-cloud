@@ -2,8 +2,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use mako_api::ErrorCode;
 use mako_control_plane::{
-    ApplicationMailWorkerReport, DeveloperOutboxWorkerReport, DeveloperRegistrationHealthSnapshot,
-    FunctionScheduleWorkerReport, OperatorAuthenticationHealthSnapshot, WebhookWorkerReport,
+    ApplicationMailWorkerReport, CustomDomainVerifierReport, DeveloperOutboxWorkerReport,
+    DeveloperRegistrationHealthSnapshot, FunctionScheduleWorkerReport,
+    OperatorAuthenticationHealthSnapshot, WebhookWorkerReport,
 };
 use mako_service_runtime::{HttpApiError, HttpResponse};
 use mako_storage::SqliteHealthSignals;
@@ -75,6 +76,13 @@ pub(crate) struct DeveloperMetrics {
     function_schedule_runs_errored: AtomicU64,
     function_schedule_runs_skipped_overlap: AtomicU64,
     function_schedule_worker_failures: AtomicU64,
+    custom_domain_checks_verified: AtomicU64,
+    custom_domain_checks_record_missing: AtomicU64,
+    custom_domain_checks_record_mismatch: AtomicU64,
+    custom_domain_checks_dns_unavailable: AtomicU64,
+    custom_domain_revocations: AtomicU64,
+    custom_domain_publish_failures: AtomicU64,
+    custom_domain_worker_failures: AtomicU64,
     operator_sign_in_successes: AtomicU64,
     operator_sign_in_failures: AtomicU64,
     operator_throttles: AtomicU64,
@@ -194,6 +202,26 @@ impl DeveloperMetrics {
 
     pub(crate) fn observe_function_schedule_worker_failure(&self) {
         self.function_schedule_worker_failures
+            .fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub(crate) fn observe_custom_domains(&self, report: &CustomDomainVerifierReport) {
+        self.custom_domain_checks_verified
+            .fetch_add(report.verified as u64, Ordering::Relaxed);
+        self.custom_domain_checks_record_missing
+            .fetch_add(report.record_missing as u64, Ordering::Relaxed);
+        self.custom_domain_checks_record_mismatch
+            .fetch_add(report.record_mismatch as u64, Ordering::Relaxed);
+        self.custom_domain_checks_dns_unavailable
+            .fetch_add(report.dns_unavailable as u64, Ordering::Relaxed);
+        self.custom_domain_revocations
+            .fetch_add(report.revoked as u64, Ordering::Relaxed);
+        self.custom_domain_publish_failures
+            .fetch_add(report.publish_failures as u64, Ordering::Relaxed);
+    }
+
+    pub(crate) fn observe_custom_domain_worker_failure(&self) {
+        self.custom_domain_worker_failures
             .fetch_add(1, Ordering::Relaxed);
     }
 
@@ -422,6 +450,38 @@ impl DeveloperMetrics {
             "mako_function_schedule_worker_failures_total",
             self.function_schedule_worker_failures
                 .load(Ordering::Relaxed),
+        );
+        for (outcome, counter) in [
+            ("verified", &self.custom_domain_checks_verified),
+            ("record_missing", &self.custom_domain_checks_record_missing),
+            (
+                "record_mismatch",
+                &self.custom_domain_checks_record_mismatch,
+            ),
+            (
+                "dns_unavailable",
+                &self.custom_domain_checks_dns_unavailable,
+            ),
+        ] {
+            output.push_str(&format!(
+                "mako_custom_domain_checks_total{{outcome=\"{outcome}\"}} {}\n",
+                counter.load(Ordering::Relaxed)
+            ));
+        }
+        metric(
+            &mut output,
+            "mako_custom_domain_revocations_total",
+            self.custom_domain_revocations.load(Ordering::Relaxed),
+        );
+        metric(
+            &mut output,
+            "mako_custom_domain_publish_failures_total",
+            self.custom_domain_publish_failures.load(Ordering::Relaxed),
+        );
+        metric(
+            &mut output,
+            "mako_custom_domain_worker_failures_total",
+            self.custom_domain_worker_failures.load(Ordering::Relaxed),
         );
         metric(
             &mut output,

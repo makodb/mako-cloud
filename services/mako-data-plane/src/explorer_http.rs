@@ -162,7 +162,7 @@ fn handle_get(
     request: &HttpRequest,
 ) -> Result<HttpResponse, HttpApiError> {
     require_no_query_or_body(request)?;
-    let (tenant, scope) = request_scope(request)?;
+    let (tenant, scope) = request_scope(graph, request)?;
     let document_id = document_id(request)?;
     let now = now_unix_seconds(request.request_id())?;
     block_on(async {
@@ -234,7 +234,7 @@ fn handle_browse(
     let body: ExplorerPageRequest = parse_json(request)?;
     body.validate()
         .map_err(|_| invalid(request, "explorer page limits are invalid"))?;
-    let (tenant, scope) = request_scope(request)?;
+    let (tenant, scope) = request_scope(graph, request)?;
     let now = now_unix_seconds(request.request_id())?;
     block_on(async {
         let operation = if body.include_retained_tombstones {
@@ -373,7 +373,7 @@ fn query_operation(
     let body: ExplorerQueryRequest = parse_json(request)?;
     body.validate()
         .map_err(|_| invalid(request, "explorer query limits are invalid"))?;
-    let (tenant, scope) = request_scope(request)?;
+    let (tenant, scope) = request_scope(graph, request)?;
     let now = now_unix_seconds(request.request_id())?;
     block_on(async {
         let operation = if plan_only {
@@ -528,7 +528,7 @@ fn handle_history(
     request: &HttpRequest,
 ) -> Result<HttpResponse, HttpApiError> {
     require_no_query_or_body(request)?;
-    let (tenant, scope) = request_scope(request)?;
+    let (tenant, scope) = request_scope(graph, request)?;
     let document_id = document_id(request)?;
     let now = now_unix_seconds(request.request_id())?;
     block_on(async {
@@ -601,7 +601,7 @@ fn handle_simulate(
 ) -> Result<HttpResponse, HttpApiError> {
     require_json_without_query(request)?;
     let body: ExplorerMutationRequest = parse_json(request)?;
-    let (tenant, scope) = request_scope(request)?;
+    let (tenant, scope) = request_scope(graph, request)?;
     let now = now_unix_seconds(request.request_id())?;
     block_on(async {
         let claims = authorize_capability(
@@ -719,7 +719,7 @@ fn handle_mutate(
 ) -> Result<HttpResponse, HttpApiError> {
     require_json_without_query(request)?;
     let body: ExplorerMutationRequest = parse_json(request)?;
-    let (tenant, scope) = request_scope(request)?;
+    let (tenant, scope) = request_scope(graph, request)?;
     let now = now_unix_seconds(request.request_id())?;
     block_on(async {
         let claims = authorize_capability(
@@ -1827,8 +1827,11 @@ fn document_view(document: &CanonicalDocument) -> ExplorerDocumentView {
     }
 }
 
-fn request_scope(request: &HttpRequest) -> Result<(TenantScope, CollectionScope), HttpApiError> {
-    let tenant = crate::auth_http::tenant(request)?;
+fn request_scope(
+    graph: &DataPlaneGraph,
+    request: &HttpRequest,
+) -> Result<(TenantScope, CollectionScope), HttpApiError> {
+    let tenant = crate::auth_http::tenant_for(graph, request)?;
     let collection = CollectionId::parse(
         request
             .path_parameter("collectionId")
