@@ -4,14 +4,17 @@
 //! published nothing is served on the name and no certificate may be issued
 //! for it (the `ask` gate says no). Publishing the record verifies the
 //! domain: the gate says yes and the application API answers requests that
-//! arrive on the name. Removing the record fails re-verification, serving
-//! stops, and the developer is told why. Removing the domain ends it.
+//! arrive on the name. The environment's own cross-origin allowlist decides
+//! which browser origins may call that API -- the same answer on the
+//! platform's hostname and on the domain, and never on the management API.
+//! Removing the record fails re-verification, serving stops, and the
+//! developer is told why. Removing the domain ends it.
 use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
 
 use mako_smoke::{
     DnsStub, await_readiness, binary_directory, free_ports, mint_developer_session, request,
-    run_bootstrap, scratch_root, service_environment, start_service,
+    run_bootstrap, scratch_root, service_environment, start_service, try_request_full,
 };
 use serde_json::{Value, json};
 
@@ -285,6 +288,190 @@ fn a_domain_is_served_only_while_its_dns_proof_stands() {
         status, 404,
         "a name not installed for the tenant is refused"
     );
+
+    // --- A browser on an allowlisted origin may call the API. --------------
+    // The allowlist belongs to the environment, so it answers on the
+    // platform's own hostname and on the verified domain alike.
+    const APP_ORIGIN: &str = "http://127.0.0.1:5173";
+    const OTHER_ORIGIN: &str = "http://127.0.0.1:5174";
+    let origins_path = format!("{scope}/allowed-origins");
+    let put_origins = |key: &str, origins: Value| -> (u16, String) {
+        request(
+            control_port,
+            "PUT",
+            &origins_path,
+            &manage(key),
+            Some(&json!({ "allowedOrigins": origins })),
+        )
+    };
+    // The header set is the platform's, not a header a caller may choose.
+    let cross_origin = |method: &str, path: &str, origin: Option<&str>, on_domain: bool| {
+        let mut headers = keyed.clone();
+        if on_domain {
+            headers.insert("x-mako-custom-domain".to_owned(), HOSTNAME.to_owned());
+        }
+        if let Some(origin) = origin {
+            headers.insert("origin".to_owned(), origin.to_owned());
+            if method == "OPTIONS" {
+                headers.insert(
+                    "access-control-request-method".to_owned(),
+                    "POST".to_owned(),
+                );
+            }
+        }
+        let body = (method == "POST").then_some(&credentials);
+        try_request_full(data_port, method, path, &headers, body).expect("request completes")
+    };
+    let signin = format!("{scope}/auth/signin");
+    let labelled = |headers: &BTreeMap<String, String>| {
+        headers
+            .keys()
+            .any(|name| name.starts_with("access-control-"))
+    };
+
+    let (status, body) = request(control_port, "GET", &origins_path, &bearer, None);
+    assert_eq!(status, 200, "reading the allowlist failed: {body}");
+    let listed: Value = serde_json::from_str(&body).expect("origins json");
+    assert_eq!(
+        listed["allowedOrigins"],
+        json!([]),
+        "an environment allows no origin until one is set"
+    );
+    // Before an origin is listed nothing is labelled and no preflight is
+    // answered: the sign-in route has no `OPTIONS`.
+    let (status, headers, _) = cross_origin("OPTIONS", &signin, Some(APP_ORIGIN), false);
+    assert_eq!(
+        status, 405,
+        "an unanswered preflight routes as it always did"
+    );
+    assert!(!labelled(&headers), "{headers:?}");
+
+    for malformed in [
+        json!(["http://app.example.test"]),
+        json!(["https://app.example.test/"]),
+        json!(["app.example.test"]),
+        json!(["https://App.Example.test/path"]),
+    ] {
+        let (status, body) = put_origins(
+            &format!("origins-bad-{}", malformed.to_string().len()),
+            malformed.clone(),
+        );
+        assert_eq!(status, 400, "{malformed} must be refused: {body}");
+    }
+
+    let (status, body) = put_origins("origins-add", json!([APP_ORIGIN]));
+    assert_eq!(status, 200, "setting the allowlist failed: {body}");
+    let updated: Value = serde_json::from_str(&body).expect("origins json");
+    assert_eq!(updated["allowedOrigins"], json!([APP_ORIGIN]));
+
+    // On the platform hostname: the preflight is answered and the request
+    // that follows it is labelled.
+    let (status, headers, body) = cross_origin("OPTIONS", &signin, Some(APP_ORIGIN), false);
+    assert_eq!(
+        status, 204,
+        "the preflight is answered without routing: {body}"
+    );
+    assert_eq!(
+        headers
+            .get("access-control-allow-origin")
+            .map(String::as_str),
+        Some(APP_ORIGIN)
+    );
+    assert_eq!(
+        headers
+            .get("access-control-allow-methods")
+            .map(String::as_str),
+        Some("GET, POST, PUT, PATCH, DELETE, OPTIONS")
+    );
+    assert_eq!(
+        headers
+            .get("access-control-allow-headers")
+            .map(String::as_str),
+        Some("authorization, content-type, x-mako-key, idempotency-key, if-none-match, if-match")
+    );
+    assert_eq!(
+        headers.get("access-control-max-age").map(String::as_str),
+        Some("600")
+    );
+    assert_eq!(headers.get("vary").map(String::as_str), Some("Origin"));
+
+    let (status, headers, body) = cross_origin("POST", &signin, Some(APP_ORIGIN), false);
+    assert_eq!(status, 200, "sign-in failed: {body}");
+    assert_eq!(
+        headers
+            .get("access-control-allow-origin")
+            .map(String::as_str),
+        Some(APP_ORIGIN)
+    );
+    assert_eq!(
+        headers
+            .get("access-control-expose-headers")
+            .map(String::as_str),
+        Some("etag, x-mako-request-id, content-type")
+    );
+    assert_eq!(headers.get("vary").map(String::as_str), Some("Origin"));
+
+    // The same answers on the environment's verified domain.
+    let (status, headers, _) = cross_origin("OPTIONS", &signin, Some(APP_ORIGIN), true);
+    assert_eq!(status, 204);
+    assert_eq!(
+        headers
+            .get("access-control-allow-origin")
+            .map(String::as_str),
+        Some(APP_ORIGIN)
+    );
+    let (status, headers, body) = cross_origin("POST", &signin, Some(APP_ORIGIN), true);
+    assert_eq!(status, 200, "sign-in on the domain failed: {body}");
+    assert_eq!(
+        headers
+            .get("access-control-allow-origin")
+            .map(String::as_str),
+        Some(APP_ORIGIN)
+    );
+
+    // An origin the environment does not list learns nothing.
+    for on_domain in [false, true] {
+        let (status, headers, _) = cross_origin("OPTIONS", &signin, Some(OTHER_ORIGIN), on_domain);
+        assert_eq!(
+            status, 405,
+            "an unlisted origin's preflight is not answered"
+        );
+        assert!(!labelled(&headers), "{headers:?}");
+        let (status, headers, _) = cross_origin("POST", &signin, Some(OTHER_ORIGIN), on_domain);
+        assert_eq!(
+            status, 200,
+            "the request itself is not refused by the platform"
+        );
+        assert!(
+            !labelled(&headers),
+            "an unlisted origin receives no cross-origin header: {headers:?}"
+        );
+    }
+
+    // The management API is never answered cross-origin, whatever the
+    // environment allows for its application API.
+    let mut managed = manage("origins-cors");
+    managed.insert("origin".to_owned(), APP_ORIGIN.to_owned());
+    let (status, headers, _) =
+        try_request_full(control_port, "GET", &origins_path, &managed, None).expect("read");
+    assert_eq!(status, 200);
+    assert!(
+        !labelled(&headers),
+        "the management API never emits cross-origin headers: {headers:?}"
+    );
+
+    // Clearing the list withdraws cross-origin access at once.
+    let (status, body) = put_origins("origins-clear", json!([]));
+    assert_eq!(status, 200, "clearing the allowlist failed: {body}");
+    let cleared: Value = serde_json::from_str(&body).expect("origins json");
+    assert_eq!(cleared["allowedOrigins"], json!([]));
+    for on_domain in [false, true] {
+        let (_, headers, _) = cross_origin("POST", &signin, Some(APP_ORIGIN), on_domain);
+        assert!(
+            !labelled(&headers),
+            "an emptied allowlist ends cross-origin access: {headers:?}"
+        );
+    }
 
     // --- The record disappears; re-verification fails and serving stops. ----
     dns.clear(&format!("_mako-verify.{HOSTNAME}"));

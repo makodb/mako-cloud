@@ -14,13 +14,13 @@ use mako_audit::{AuditStore, AuditStoreConfig, CursorSigningKey, TelemetryRedact
 use mako_auth_providers::ProviderSecretKey;
 use mako_config::{DeploymentEnvironment, ServiceConfig, ServiceKind};
 use mako_control_plane::{
-    ApplicationMailConfig, ApplicationMailStore, ApplicationMailWorker, ApplicationUserAccess,
-    AutomationTokenService, CollectionAdminService, ControlAuditSink, ControlPlaneAuthenticator,
-    CredentialAdminService, DataJobService, DeveloperLookupKey, DeveloperMailCipher,
-    DeveloperMailEncryptionKey, DeveloperMailOutboxWorker, DeveloperMailTransport,
-    DeveloperRegistrationConfig, DeveloperRegistrationService, DeveloperRegistrationStore,
-    DeveloperRestoreService, DeveloperWorkspaceSecurity, EmailTemplateService,
-    ExplorerGrantService, FunctionAdminService, FunctionDeploymentBackend,
+    AllowedOriginsService, ApplicationMailConfig, ApplicationMailStore, ApplicationMailWorker,
+    ApplicationUserAccess, AutomationTokenService, CollectionAdminService, ControlAuditSink,
+    ControlPlaneAuthenticator, CredentialAdminService, DataJobService, DeveloperLookupKey,
+    DeveloperMailCipher, DeveloperMailEncryptionKey, DeveloperMailOutboxWorker,
+    DeveloperMailTransport, DeveloperRegistrationConfig, DeveloperRegistrationService,
+    DeveloperRegistrationStore, DeveloperRestoreService, DeveloperWorkspaceSecurity,
+    EmailTemplateService, ExplorerGrantService, FunctionAdminService, FunctionDeploymentBackend,
     FunctionSecretEncryptionKey, LifecycleState, ManagementAuthorizer, ObservabilityBackend,
     ObservabilityService, OperatorAuditSink, OperatorAuthenticationAuditSink,
     OperatorAuthenticationConfig, OperatorAuthenticationKey, OperatorAuthenticationService,
@@ -142,6 +142,7 @@ struct ControlPlaneComponents {
     developer_mail_worker: Option<DeveloperMailOutboxWorker>,
     application_mail_worker: Option<ApplicationMailWorker>,
     email_templates: EmailTemplateService,
+    allowed_origins: AllowedOriginsService,
     webhooks: WebhookService,
     webhook_worker: WebhookWorker,
     function_schedules: FunctionScheduleService,
@@ -531,6 +532,14 @@ impl ControlPlaneGraph {
             Arc::clone(&control_audit),
         )
         .map_err(|_| ControlPlaneGraphError::Composition("email templates"))?;
+        let allowed_origins = AllowedOriginsService::new(
+            Arc::clone(&adapter),
+            Durability::Sync,
+            projects.clone(),
+            organizations.clone(),
+            Arc::clone(&control_audit),
+        )
+        .map_err(|_| ControlPlaneGraphError::Composition("allowed origins"))?;
         // Application mail shares the developer transport and the developer
         // mail key; without a relay there is nothing to drain intents into.
         let application_mail_worker = smtp_transport
@@ -797,6 +806,7 @@ impl ControlPlaneGraph {
                 developer_mail_worker,
                 application_mail_worker,
                 email_templates,
+                allowed_origins,
                 webhooks,
                 webhook_worker,
                 function_schedules,
@@ -873,6 +883,11 @@ impl ControlPlaneGraph {
     #[must_use]
     pub fn email_template_service(&self) -> &EmailTemplateService {
         &self.components.email_templates
+    }
+
+    #[must_use]
+    pub fn allowed_origins_service(&self) -> &AllowedOriginsService {
+        &self.components.allowed_origins
     }
 
     #[must_use]
@@ -1707,6 +1722,60 @@ mod tests {
 
     /// An object path is the one management path parameter that spans
     /// segments, so its escapes are checked where the route binds it, before
+    /// The management API is never answered cross-origin. Cross-origin
+    /// access is a property of an application's own API -- the data plane's
+    /// and the gateway's application routes -- and no origin an environment
+    /// allows for that ever reaches a management, operator, or developer
+    /// workspace route: the control plane installs no cross-origin
+    /// middleware at all, so there is nothing to misconfigure.
+    #[test]
+    fn the_management_api_never_answers_cross_origin() {
+        let directory = local_tempdir("control-plane-cors");
+        let config = config_for(directory.path(), DeploymentEnvironment::Local);
+        let unavailable = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("unused listener");
+        let endpoint = unavailable.local_addr().expect("unused endpoint");
+        drop(unavailable);
+        let graph = Arc::new(
+            ControlPlaneGraph::open_with_data_plane_endpoint(&config, endpoint)
+                .expect("control-plane graph"),
+        );
+        let router = crate::control_plane_router(Arc::clone(&graph)).expect("router");
+        let listed = "https://app.example.com";
+        for (method, path) in [
+            (HttpMethod::Get, "/v1/projects"),
+            (
+                HttpMethod::Get,
+                "/v1/projects/prj_example0001/environments/env_example0001/allowed-origins",
+            ),
+            (HttpMethod::Get, "/v1/operator/overview"),
+            (
+                HttpMethod::Options,
+                "/v1/projects/prj_example0001/environments/env_example0001/collections",
+            ),
+        ] {
+            let response = router.respond_for_test(request(
+                method,
+                path,
+                Some(listed),
+                None,
+                b"",
+                "127.0.0.9:1000",
+            ));
+            for header in [
+                "access-control-allow-origin",
+                "access-control-allow-methods",
+                "access-control-expose-headers",
+                "vary",
+            ] {
+                assert_eq!(
+                    response.header_for_test(header),
+                    None,
+                    "{path} answered {header}"
+                );
+            }
+        }
+    }
+
     /// the developer is even authenticated and long before the data plane is
     /// asked to delete anything.
     #[test]

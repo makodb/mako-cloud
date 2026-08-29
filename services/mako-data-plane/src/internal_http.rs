@@ -27,10 +27,11 @@ use mako_internal_rpc::{
     DataJobImportBatchInput, DataJobImportBatchOutput, DataJobRowError, GuardDecision,
     IdentityAdminCommand, IdentityAdminOperation, IdentityAdminPermission,
     IdentityVerificationOperation, IdentityVerificationRequest, IdentityVerificationResponse,
-    InstallCollectionInput, InstallCustomDomainsInput, InstallPolicyInput, InternalCaller,
-    InternalReplayGuard, InternalRoute, PreparedResponseJournal, ReadChangeFeedInput,
-    ReadChangeFeedOutput, ResponseJournalLookup, ResponseJournalStoreOutcome,
-    RocksInternalReplayGuardError,
+    InstallAllowedOriginsInput, InstallCollectionInput, InstallCustomDomainsInput,
+    InstallPolicyInput, InternalCaller, InternalReplayGuard, InternalRoute,
+    MAXIMUM_ALLOWED_ORIGINS, PreparedResponseJournal, ReadChangeFeedInput, ReadChangeFeedOutput,
+    ResponseJournalLookup, ResponseJournalStoreOutcome, RocksInternalReplayGuardError,
+    is_allowed_origin,
 };
 use mako_policy::{ExplorerGrantAuthorityRecord, SubjectId};
 use mako_service_runtime::{
@@ -513,6 +514,9 @@ async fn execute_operation(
         IdentityAdminOperation::InstallCustomDomains => {
             execute_custom_domains_install(graph, request, tenant, command, now).await
         }
+        IdentityAdminOperation::InstallAllowedOrigins => {
+            execute_allowed_origins_install(graph, request, tenant, command, now).await
+        }
         IdentityAdminOperation::CreateProjectCredential
         | IdentityAdminOperation::RotateProjectCredential => Err(auth_http::invalid(
             request,
@@ -594,6 +598,67 @@ async fn execute_custom_domains_install(
     .await?;
     serde_json::to_vec(&serde_json::json!({ "installed": installed }))
         .map_err(|_| auth_http::unavailable(request, "custom domain response could not be encoded"))
+}
+
+/// Replaces the browser origins an environment answers cross-origin. The
+/// list is validated exactly as the control plane validates it before
+/// storing it -- exact origins, `http` only for a loopback host, unique,
+/// bounded -- so an origin that could not be matched byte for byte is
+/// refused here rather than becoming an echoed header. An empty list
+/// withdraws cross-origin access from the environment.
+async fn execute_allowed_origins_install(
+    graph: &Arc<DataPlaneGraph>,
+    request: &HttpRequest,
+    tenant: &mako_api::TenantScope,
+    command: &IdentityAdminCommand,
+    now: u64,
+) -> Result<Vec<u8>, HttpApiError> {
+    require_permission(
+        graph,
+        request,
+        tenant,
+        command,
+        IdentityAdminPermission::ManageProjectCredentials,
+        "allowed_origins_install",
+        "allowed-origins",
+        now,
+    )
+    .await?;
+    let input: InstallAllowedOriginsInput = parse_input(request, &command.input)?;
+    if input.origins.len() > MAXIMUM_ALLOWED_ORIGINS {
+        return Err(auth_http::invalid(
+            request,
+            "allowed origin list is too long",
+        ));
+    }
+    let mut origins: Vec<String> = Vec::with_capacity(input.origins.len());
+    for origin in input.origins {
+        if !is_allowed_origin(&origin) || origins.contains(&origin) {
+            return Err(auth_http::invalid(request, "allowed origin is invalid"));
+        }
+        origins.push(origin);
+    }
+    let installed = origins.len();
+    graph
+        .allowed_origins()
+        .install(tenant, origins)
+        .await
+        .map_err(|_| auth_http::unavailable(request, "allowed origins could not be recorded"))?;
+    append_admin_audit(
+        graph,
+        tenant,
+        command,
+        "allowed_origins_install",
+        "allowed-origins",
+        AuditOutcome::Allowed,
+        "installed",
+        request.request_id(),
+        now,
+    )
+    .await?;
+    serde_json::to_vec(&serde_json::json!({ "installed": installed })).map_err(|_| {
+        auth_http::unavailable(request, "allowed origin response could not be encoded")
+    })
 }
 
 async fn execute_change_feed(
@@ -2330,6 +2395,7 @@ const fn operation_name(operation: IdentityAdminOperation) -> &'static str {
         IdentityAdminOperation::InstallIndex => "install_index",
         IdentityAdminOperation::InstallQuotaPolicy => "install_quota_policy",
         IdentityAdminOperation::InstallCustomDomains => "install_custom_domains",
+        IdentityAdminOperation::InstallAllowedOrigins => "install_allowed_origins",
         IdentityAdminOperation::InspectIndex => "inspect_index",
         IdentityAdminOperation::SearchUsers => "search_users",
         IdentityAdminOperation::InspectUser => "inspect_user",

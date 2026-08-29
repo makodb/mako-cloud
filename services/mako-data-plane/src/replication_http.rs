@@ -746,6 +746,7 @@ const fn status_for(code: ErrorCode) -> u16 {
         ErrorCode::PermissionDenied => 403,
         ErrorCode::NotFound => 404,
         ErrorCode::Conflict | ErrorCode::SchemaMismatch | ErrorCode::CheckpointExpired => 409,
+        ErrorCode::PreconditionFailed => 412,
         ErrorCode::RateLimited | ErrorCode::QuotaExceeded => 429,
         ErrorCode::Unavailable => 503,
         ErrorCode::Internal => 500,

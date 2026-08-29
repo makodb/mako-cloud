@@ -26,6 +26,7 @@ const ORGANIZATIONS: &[u8] = b"control/organizations";
 const INVITATIONS: &[u8] = b"control/invitations";
 const PROJECTS: &[u8] = b"control/projects";
 const QUOTAS: &[u8] = b"control/quotas";
+const ALLOWED_ORIGINS: &[u8] = b"control/allowed-origins/v1";
 const AUTOMATION_TOKENS: &[u8] = b"control/automation-tokens";
 const OPERATOR_INCIDENTS: &[u8] = b"control/operator-control-center/v1/incidents";
 const OPERATOR_RECOVERY_JOBS: &[u8] = b"control/operator-control-center/v1/recovery-jobs";
@@ -263,6 +264,18 @@ impl ControlKeyspace {
 
     pub fn application_mail_outbox_range() -> Result<KeyRange, ControlKeyspaceError> {
         TenantKeyspace::system_domain_range(APPLICATION_MAIL_OUTBOX).map_err(ControlKeyspaceError)
+    }
+
+    /// An environment's cross-origin allowlist; the absence of a record
+    /// means no origin is allowed.
+    pub fn allowed_origins_key(
+        project_id: &ProjectId,
+        environment_id: &EnvironmentId,
+    ) -> Result<Vec<u8>, ControlKeyspaceError> {
+        system_key(
+            ALLOWED_ORIGINS,
+            &format!("{}/{}", project_id.as_str(), environment_id.as_str()),
+        )
     }
 
     /// An environment's customized email template for one kind of mail; the

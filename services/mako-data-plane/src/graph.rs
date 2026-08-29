@@ -41,7 +41,7 @@ use mako_policy::{
     AuthorizationEpochError, AuthorizationEpochStore, ExplorerAuthorizationError,
     ExplorerAuthorizationStore, PolicyContextError, PolicyStore, PolicyStoreError, SubjectId,
 };
-use mako_service_runtime::{ReadinessProbe, ReadinessSnapshot};
+use mako_service_runtime::{CrossOriginPolicy, HttpRequestHead, ReadinessProbe, ReadinessSnapshot};
 use mako_storage::{
     Durability, KvAdapter, ProductionRocksDb, ProductionRocksDbConfig, ProductionVolumeIdentity,
     RocksDbAdapter, RocksDbConfig, ScanDirection, ScanRequest, StorageError, StorageReadiness,
@@ -154,6 +154,7 @@ struct DataPlaneComponents {
     quota_policy: GatewayQuotaPolicy,
     quota_policies: Arc<PersistentQuotaPolicySource>,
     custom_domains: CustomDomainRegistry,
+    allowed_origins: AllowedOriginRegistry,
     audit: AuditStore,
     redactor: TelemetryRedactor,
     password_service: PasswordService,
@@ -298,6 +299,180 @@ impl CustomDomainRegistry {
         }
         Ok(())
     }
+}
+
+const ALLOWED_ORIGINS_DOMAIN: &[u8] = b"data/allowed-origins/v1";
+/// Environments with an allowlist on one node, within the adapter's own
+/// scan bound; a saturated scan at startup fails closed.
+const MAXIMUM_ALLOWED_ORIGIN_ENTRIES: usize = 10_000;
+
+/// The browser origins each environment allows cross-origin, as the control
+/// plane installed them: persisted in this node's keyspace and mirrored in
+/// memory so every request can be answered without a read.
+///
+/// The list belongs to the environment, not to a hostname, so it decides a
+/// request on the platform's own hostname exactly as it decides one on a
+/// custom domain the environment is served on.
+pub struct AllowedOriginRegistry {
+    adapter: Arc<dyn KvAdapter>,
+    origins: RwLock<HashMap<TenantScope, Vec<String>>>,
+}
+
+impl fmt::Debug for AllowedOriginRegistry {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("AllowedOriginRegistry")
+            .finish_non_exhaustive()
+    }
+}
+
+#[derive(serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct AllowedOriginEntry {
+    project_id: String,
+    environment_id: String,
+    origins: Vec<String>,
+}
+
+impl AllowedOriginRegistry {
+    fn key(tenant: &TenantScope) -> Result<Vec<u8>, StorageError> {
+        TenantKeyspace::system_key(
+            ALLOWED_ORIGINS_DOMAIN,
+            format!("{}/{}", tenant.project_id(), tenant.environment_id()),
+        )
+        .map_err(|error| StorageError::invalid("allowed_origin_key", error.to_string()))
+    }
+
+    fn load(adapter: Arc<dyn KvAdapter>) -> Result<Self, DataPlaneGraphError> {
+        let range = TenantKeyspace::system_domain_range(ALLOWED_ORIGINS_DOMAIN)
+            .map_err(|_| DataPlaneGraphError::StorageNotReady)?;
+        let entries = block_on(adapter.scan(ScanRequest::new(
+            range,
+            ScanDirection::Forward,
+            NonZeroUsize::new(MAXIMUM_ALLOWED_ORIGIN_ENTRIES).expect("nonzero"),
+        )))?;
+        if entries.len() >= MAXIMUM_ALLOWED_ORIGIN_ENTRIES {
+            return Err(DataPlaneGraphError::StorageNotReady);
+        }
+        let mut origins = HashMap::new();
+        for entry in entries {
+            let entry: AllowedOriginEntry = serde_json::from_slice(&entry.value)
+                .map_err(|_| DataPlaneGraphError::StorageNotReady)?;
+            let tenant = TenantScope::require(Some(&entry.project_id), Some(&entry.environment_id))
+                .map_err(|_| DataPlaneGraphError::StorageNotReady)?;
+            origins.insert(tenant, entry.origins);
+        }
+        Ok(Self {
+            adapter,
+            origins: RwLock::new(origins),
+        })
+    }
+
+    /// Whether `origin` may call `tenant`'s application API cross-origin: an
+    /// exact match against the installed list, and never a match for an
+    /// environment with none.
+    #[must_use]
+    pub fn allows(&self, tenant: &TenantScope, origin: &str) -> bool {
+        self.origins.read().ok().is_some_and(|origins| {
+            origins
+                .get(tenant)
+                .is_some_and(|allowed| allowed.iter().any(|listed| listed == origin))
+        })
+    }
+
+    /// The list installed for an environment, in the order it was given.
+    #[must_use]
+    pub fn installed(&self, tenant: &TenantScope) -> Vec<String> {
+        self.origins.read().map_or_else(
+            |_| Vec::new(),
+            |origins| origins.get(tenant).cloned().unwrap_or_default(),
+        )
+    }
+
+    /// Replaces an environment's list: persisted first, then mirrored, so a
+    /// restart sees what a request saw.
+    pub async fn install(
+        &self,
+        tenant: &TenantScope,
+        origins: Vec<String>,
+    ) -> Result<(), StorageError> {
+        let key = Self::key(tenant)?;
+        let mut batch = WriteBatch::with_capacity(1);
+        if origins.is_empty() {
+            batch.delete(key);
+        } else {
+            let encoded = serde_json::to_vec(&AllowedOriginEntry {
+                project_id: tenant.project_id().as_str().to_owned(),
+                environment_id: tenant.environment_id().as_str().to_owned(),
+                origins: origins.clone(),
+            })
+            .map_err(|_| {
+                StorageError::invalid(
+                    "allowed_origin_install",
+                    "allowed origin entry could not be encoded",
+                )
+            })?;
+            batch.put(key, encoded);
+        }
+        self.adapter.write(batch, Durability::Sync).await?;
+        if let Ok(mut installed) = self.origins.write() {
+            if origins.is_empty() {
+                installed.remove(tenant);
+            } else {
+                installed.insert(tenant.clone(), origins);
+            }
+        }
+        Ok(())
+    }
+}
+
+/// The data plane's answer to "may this origin call this environment": the
+/// allowlist the control plane installed for the environment the path
+/// names. Only an application route has one -- the developer workspace and
+/// the service-credential routes are never answered cross-origin -- and a
+/// path whose tenant cannot be read answers nothing.
+pub struct EnvironmentAllowedOrigins(Arc<DataPlaneGraph>);
+
+impl EnvironmentAllowedOrigins {
+    #[must_use]
+    pub const fn new(graph: Arc<DataPlaneGraph>) -> Self {
+        Self(graph)
+    }
+}
+
+impl fmt::Debug for EnvironmentAllowedOrigins {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("EnvironmentAllowedOrigins")
+            .finish_non_exhaustive()
+    }
+}
+
+impl CrossOriginPolicy for EnvironmentAllowedOrigins {
+    fn allows_origin(&self, request: &HttpRequestHead, origin: &str) -> bool {
+        application_tenant(request.path())
+            .is_some_and(|tenant| self.0.allowed_origins().allows(&tenant, origin))
+    }
+}
+
+/// The environment an application route addresses:
+/// `/v1/projects/{projectId}/environments/{environmentId}/{surface}/...`
+/// where the surface is one a browser application calls with its own
+/// session or public key. Every other path -- the service-credential
+/// routes, the developer workspace's explorer, the private internal
+/// protocol, anything unrecognized -- has no environment for this purpose,
+/// and so is never answered cross-origin.
+fn application_tenant(path: &str) -> Option<TenantScope> {
+    let mut segments = path.strip_prefix("/v1/projects/")?.split('/');
+    let project_id = segments.next()?;
+    if segments.next()? != "environments" {
+        return None;
+    }
+    let environment_id = segments.next()?;
+    if !matches!(segments.next()?, "auth" | "collections" | "storage") {
+        return None;
+    }
+    TenantScope::require(Some(project_id), Some(environment_id)).ok()
 }
 
 /// Complete storage-backed dependency graph for the production data plane.
@@ -475,6 +650,7 @@ impl DataPlaneGraph {
         };
 
         let custom_domains = CustomDomainRegistry::load(Arc::clone(&adapter))?;
+        let allowed_origins = AllowedOriginRegistry::load(Arc::clone(&adapter))?;
         // Built before the adapter is moved into the graph.
         let quota_policies = Arc::new(PersistentQuotaPolicySource::new(
             Arc::clone(&adapter),
@@ -511,6 +687,7 @@ impl DataPlaneGraph {
                 quota_policies,
                 quota_policy,
                 custom_domains,
+                allowed_origins,
                 audit,
                 redactor,
                 password_service,
@@ -594,6 +771,11 @@ impl DataPlaneGraph {
     #[must_use]
     pub fn custom_domains(&self) -> &CustomDomainRegistry {
         &self.components.custom_domains
+    }
+
+    #[must_use]
+    pub fn allowed_origins(&self) -> &AllowedOriginRegistry {
+        &self.components.allowed_origins
     }
 
     #[must_use]
@@ -1411,21 +1593,107 @@ impl From<PolicyContextError> for DataPlaneIdentityError {
     }
 }
 
+/// Fixtures shared by the route modules' tests: a data-plane configuration
+/// over a temporary directory under the crate's ignored `.local`, and the
+/// tenant those tests address.
 #[cfg(test)]
-mod tests {
+pub(crate) mod test_support {
     use std::{fs, path::Path};
 
+    use mako_api::{EnvironmentId, ProjectId, TenantScope};
+    use mako_config::{ConfigLoader, ServiceConfig, ServiceKind};
+    use tempfile::{Builder, TempDir};
+
+    pub(crate) use mako_config::DeploymentEnvironment;
+
+    pub(crate) fn config_for(root: &Path, environment: DeploymentEnvironment) -> ServiceConfig {
+        let rocksdb = root.join("rocksdb");
+        let backup = root.join("backup");
+        fs::create_dir_all(&rocksdb).expect("database directory");
+        fs::create_dir_all(&backup).expect("backup directory");
+        let environment_name = match environment {
+            DeploymentEnvironment::Local => "local",
+            DeploymentEnvironment::Production => "production",
+            _ => unreachable!("test uses local or production"),
+        };
+        ConfigLoader::from_environment([
+            ("MAKO_ENVIRONMENT", environment_name),
+            ("MAKO_REGION", "us-east-1-beta"),
+            ("MAKO_PUBLIC_URL", "https://api.example.test"),
+            ("MAKO_ROCKSDB_PATH", rocksdb.to_str().expect("UTF-8 path")),
+            (
+                "MAKO_ROCKSDB_BACKUP_DESTINATION",
+                backup.to_str().expect("UTF-8 path"),
+            ),
+            ("MAKO_ROCKSDB_DISK_WARNING_FREE_BYTES", "134217728"),
+            ("MAKO_ROCKSDB_DISK_CRITICAL_FREE_BYTES", "67108864"),
+            (
+                "MAKO_INTERNAL_AUTH_SECRET_REF",
+                "env:TEST_DATA_PLANE_ROOT_KEY",
+            ),
+            (
+                "TEST_DATA_PLANE_ROOT_KEY",
+                "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+            ),
+            // Application objects need the object store's credentials, as the
+            // control plane does for bundles; the store itself is only reached
+            // when an object is written or, in production, at readiness.
+            (
+                "MAKO_OBJECT_STORE_ACCESS_KEY_REF",
+                "env:TEST_OBJECT_STORE_ACCESS_KEY",
+            ),
+            (
+                "TEST_OBJECT_STORE_ACCESS_KEY",
+                "test-object-store-access-key",
+            ),
+            (
+                "MAKO_OBJECT_STORE_SECRET_KEY_REF",
+                "env:TEST_OBJECT_STORE_SECRET_KEY",
+            ),
+            (
+                "TEST_OBJECT_STORE_SECRET_KEY",
+                "test-object-store-secret-key",
+            ),
+        ])
+        .load(ServiceKind::DataPlane)
+        .expect("configuration")
+    }
+
+    pub(crate) fn local_tempdir(prefix: &str) -> TempDir {
+        let root = std::env::current_dir()
+            .expect("working directory")
+            .join(".local");
+        fs::create_dir_all(&root).expect("local test root");
+        Builder::new()
+            .prefix(prefix)
+            .tempdir_in(root)
+            .expect("temporary directory")
+    }
+
+    pub(crate) fn tenant() -> TenantScope {
+        TenantScope::new(
+            ProjectId::parse("prj_example00").expect("project"),
+            EnvironmentId::parse("env_example00").expect("environment"),
+        )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
     use mako_api::{EnvironmentId, ProjectId};
-    use mako_config::ConfigLoader;
     use mako_identity::{
         EmailSignupConfig, SignInRequestMetadata, SignInResponse, SignInService, SignupService,
         TransactionalEmailProvider, VerificationEmail,
     };
     use mako_internal_rpc::{GuardDecision, InternalReplayGuard, InternalRoute};
     use mako_storage::{ProductionVolumeIdentity, provision_production_volume};
-    use tempfile::{Builder, TempDir};
 
-    use super::*;
+    use super::{
+        test_support::{config_for, local_tempdir, tenant},
+        *,
+    };
 
     /// A request that arrived on a custom hostname is served only for the
     /// environment that hostname is installed for, and the installed list
@@ -1471,6 +1739,31 @@ mod tests {
             .expect("installed");
             assert!(graph.custom_domains().permits(&own, "api.example.com"));
             assert!(!graph.custom_domains().permits(&other, "api.example.com"));
+            // The cross-origin allowlist is the environment's, installed
+            // and persisted the same way, and answers for no other tenant.
+            block_on(
+                graph
+                    .allowed_origins()
+                    .install(&own, vec!["https://app.example.com".to_owned()]),
+            )
+            .expect("origins installed");
+            assert!(
+                graph
+                    .allowed_origins()
+                    .allows(&own, "https://app.example.com")
+            );
+            assert!(
+                !graph
+                    .allowed_origins()
+                    .allows(&own, "https://other.example.com"),
+                "only a listed origin is allowed"
+            );
+            assert!(
+                !graph
+                    .allowed_origins()
+                    .allows(&other, "https://app.example.com"),
+                "an environment with no list allows nothing"
+            );
             assert!(
                 crate::auth_http::require_custom_domain(
                     &graph,
@@ -1509,6 +1802,18 @@ mod tests {
                 vec!["api.example.com".to_owned()],
                 "the installed list is read back at startup"
             );
+            assert_eq!(
+                graph.allowed_origins().installed(&own),
+                vec!["https://app.example.com".to_owned()],
+                "so is the environment's cross-origin allowlist"
+            );
+            block_on(graph.allowed_origins().install(&own, Vec::new())).expect("withdrawn");
+            assert!(
+                !graph
+                    .allowed_origins()
+                    .allows(&own, "https://app.example.com"),
+                "an emptied list ends cross-origin access at once"
+            );
             // Replacing the list withdraws what is no longer in it.
             block_on(
                 graph
@@ -1522,6 +1827,113 @@ mod tests {
             assert!(graph.custom_domains().hostnames(&own).is_empty());
             block_on(graph.shutdown()).expect("shutdown");
         }
+    }
+
+    /// The router the service serves carries the cross-origin middleware:
+    /// a preflight from an origin the environment lists is answered before
+    /// routing, every answer to that origin is labelled, and nothing else
+    /// is -- not an unlisted origin, and not a route a browser application
+    /// does not call, wherever the request arrived.
+    #[test]
+    fn the_router_answers_preflights_and_labels_responses_only_for_a_listed_origin() {
+        use mako_service_runtime::{HttpMethod, HttpRequest};
+
+        const LISTED: &str = "https://app.example.com";
+
+        let directory = local_tempdir("data-plane-cors");
+        let config = config_for(directory.path(), DeploymentEnvironment::Local);
+        let graph = Arc::new(DataPlaneGraph::open(&config).expect("graph"));
+        let own = tenant();
+        block_on(
+            graph
+                .allowed_origins()
+                .install(&own, vec![LISTED.to_owned()]),
+        )
+        .expect("installed");
+        let router = crate::data_plane_router(Arc::clone(&graph)).expect("router");
+        let scope = "/v1/projects/prj_example00/environments/env_example00";
+        let request = |method, path: String, headers: Vec<(String, String)>| {
+            HttpRequest::for_test(method, path, headers, Vec::new(), None)
+        };
+        let from = |origin: &str| vec![("Origin".to_owned(), origin.to_owned())];
+        let signin = format!("{scope}/auth/signin");
+
+        let preflight =
+            router.respond_for_test(request(HttpMethod::Options, signin.clone(), from(LISTED)));
+        assert_eq!(preflight.status_for_test(), 204);
+        assert_eq!(
+            preflight.header_for_test("access-control-allow-origin"),
+            Some(LISTED)
+        );
+        assert_eq!(
+            preflight.header_for_test("access-control-allow-methods"),
+            Some(mako_service_runtime::CORS_ALLOW_METHODS)
+        );
+        assert_eq!(preflight.header_for_test("vary"), Some("Origin"));
+
+        // An unlisted origin's preflight is not answered here at all: it
+        // routes, and the route has no `OPTIONS`.
+        let refused = router.respond_for_test(request(
+            HttpMethod::Options,
+            signin.clone(),
+            from("https://other.example"),
+        ));
+        assert_eq!(refused.status_for_test(), 405);
+        assert_eq!(refused.header_for_test("access-control-allow-origin"), None);
+
+        // A real request is routed and its answer -- here the refusal of a
+        // body-less sign-in -- comes back labelled.
+        let posted =
+            router.respond_for_test(request(HttpMethod::Post, signin.clone(), from(LISTED)));
+        assert_eq!(
+            posted.header_for_test("access-control-allow-origin"),
+            Some(LISTED)
+        );
+        assert_eq!(
+            posted.header_for_test("access-control-expose-headers"),
+            Some(mako_service_runtime::CORS_EXPOSE_HEADERS)
+        );
+        // The same request on a custom domain of the same environment is
+        // labelled the same way: the list belongs to the environment.
+        let mut on_domain = from(LISTED);
+        on_domain.push((
+            "X-Mako-Custom-Domain".to_owned(),
+            "api.example.com".to_owned(),
+        ));
+        block_on(
+            graph
+                .custom_domains()
+                .install(&own, vec!["api.example.com".to_owned()]),
+        )
+        .expect("domain installed");
+        let on_custom_domain =
+            router.respond_for_test(request(HttpMethod::Post, signin, on_domain));
+        assert_eq!(
+            on_custom_domain.header_for_test("access-control-allow-origin"),
+            Some(LISTED)
+        );
+
+        // The routes a browser application does not call are never
+        // labelled, even for the listed origin: the environment's own
+        // service-credential route, and the private internal protocol.
+        for path in [
+            format!("{scope}/service/collections/notes/documents/query"),
+            format!("{scope}/explorer/collections/notes/browse"),
+            "/_internal/v1/data/identity/verify".to_owned(),
+        ] {
+            let response =
+                router.respond_for_test(request(HttpMethod::Post, path.clone(), from(LISTED)));
+            assert_eq!(
+                response.header_for_test("access-control-allow-origin"),
+                None,
+                "{path} must never be answered cross-origin"
+            );
+            assert_eq!(response.header_for_test("vary"), None, "{path}");
+        }
+
+        drop(router);
+        let graph = Arc::try_unwrap(graph).unwrap_or_else(|_| panic!("route owners dropped"));
+        block_on(graph.shutdown()).expect("shutdown");
     }
 
     #[test]
@@ -1677,77 +2089,6 @@ mod tests {
         assert!(!readiness.is_ready());
         assert_eq!(readiness.to_string(), "dependencies_not_ready:object_store");
         block_on(graph.shutdown()).expect("shutdown");
-    }
-
-    fn config_for(root: &Path, environment: DeploymentEnvironment) -> ServiceConfig {
-        let rocksdb = root.join("rocksdb");
-        let backup = root.join("backup");
-        fs::create_dir_all(&rocksdb).expect("database directory");
-        fs::create_dir_all(&backup).expect("backup directory");
-        let environment_name = match environment {
-            DeploymentEnvironment::Local => "local",
-            DeploymentEnvironment::Production => "production",
-            _ => unreachable!("test uses local or production"),
-        };
-        ConfigLoader::from_environment([
-            ("MAKO_ENVIRONMENT", environment_name),
-            ("MAKO_REGION", "us-east-1-beta"),
-            ("MAKO_PUBLIC_URL", "https://api.example.test"),
-            ("MAKO_ROCKSDB_PATH", rocksdb.to_str().expect("UTF-8 path")),
-            (
-                "MAKO_ROCKSDB_BACKUP_DESTINATION",
-                backup.to_str().expect("UTF-8 path"),
-            ),
-            ("MAKO_ROCKSDB_DISK_WARNING_FREE_BYTES", "134217728"),
-            ("MAKO_ROCKSDB_DISK_CRITICAL_FREE_BYTES", "67108864"),
-            (
-                "MAKO_INTERNAL_AUTH_SECRET_REF",
-                "env:TEST_DATA_PLANE_ROOT_KEY",
-            ),
-            (
-                "TEST_DATA_PLANE_ROOT_KEY",
-                "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-            ),
-            // Application objects need the object store's credentials, as the
-            // control plane does for bundles; the store itself is only reached
-            // when an object is written or, in production, at readiness.
-            (
-                "MAKO_OBJECT_STORE_ACCESS_KEY_REF",
-                "env:TEST_OBJECT_STORE_ACCESS_KEY",
-            ),
-            (
-                "TEST_OBJECT_STORE_ACCESS_KEY",
-                "test-object-store-access-key",
-            ),
-            (
-                "MAKO_OBJECT_STORE_SECRET_KEY_REF",
-                "env:TEST_OBJECT_STORE_SECRET_KEY",
-            ),
-            (
-                "TEST_OBJECT_STORE_SECRET_KEY",
-                "test-object-store-secret-key",
-            ),
-        ])
-        .load(ServiceKind::DataPlane)
-        .expect("configuration")
-    }
-
-    fn local_tempdir(prefix: &str) -> TempDir {
-        let root = std::env::current_dir()
-            .expect("working directory")
-            .join(".local");
-        fs::create_dir_all(&root).expect("local test root");
-        Builder::new()
-            .prefix(prefix)
-            .tempdir_in(root)
-            .expect("temporary directory")
-    }
-
-    fn tenant() -> TenantScope {
-        TenantScope::new(
-            ProjectId::parse("prj_example00").expect("project"),
-            EnvironmentId::parse("env_example00").expect("environment"),
-        )
     }
 
     struct NoEmail;

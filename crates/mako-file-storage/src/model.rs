@@ -285,6 +285,8 @@ pub enum FileStorageError {
     Denied(String),
     /// A concurrent change won; the caller may retry.
     Conflict,
+    /// A write's precondition did not hold against the current object.
+    PreconditionFailed,
     /// The stored object does not match its record.
     Corrupt,
     Storage,
@@ -317,6 +319,7 @@ impl fmt::Display for FileStorageError {
             }
             Self::Denied(code) => write!(formatter, "bucket policy denied the request ({code})"),
             Self::Conflict => formatter.write_str("object changed concurrently"),
+            Self::PreconditionFailed => formatter.write_str("object precondition failed"),
             Self::Corrupt => formatter.write_str("stored object failed verification"),
             Self::Storage => formatter.write_str("object metadata storage is unavailable"),
             Self::ObjectStore => formatter.write_str("object storage is unavailable"),

@@ -2,6 +2,7 @@
 
 #![forbid(unsafe_code)]
 
+mod allowed_origins_http;
 mod audit;
 mod auth_settings_http;
 mod collection_http;
@@ -61,6 +62,7 @@ pub fn control_plane_router(
     identity_admin_http::add_identity_admin_routes(&mut router, Arc::clone(&graph))?;
     credential_http::add_credential_routes(&mut router, Arc::clone(&graph))?;
     email_template_http::add_email_template_routes(&mut router, Arc::clone(&graph))?;
+    allowed_origins_http::add_allowed_origins_routes(&mut router, Arc::clone(&graph))?;
     function_http::add_function_routes(&mut router, Arc::clone(&graph))?;
     function_schedule_http::add_function_schedule_routes(&mut router, Arc::clone(&graph))?;
     custom_domain_http::add_custom_domain_routes(&mut router, Arc::clone(&graph))?;

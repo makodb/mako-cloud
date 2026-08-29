@@ -117,6 +117,7 @@ struct CachedRoute {
     request_limit_bytes: u64,
     response_limit_bytes: u64,
     custom_domains: Vec<String>,
+    allowed_origins: Vec<String>,
 }
 
 /// Resolves a function's routing configuration from the control plane.
@@ -209,6 +210,7 @@ impl PrivateRouteResolver {
             request_limit_bytes: cached.request_limit_bytes,
             response_limit_bytes: cached.response_limit_bytes,
             custom_domains: cached.custom_domains,
+            allowed_origins: cached.allowed_origins,
         }
     }
 }
@@ -274,6 +276,7 @@ impl FunctionRouteResolver for PrivateRouteResolver {
             request_limit_bytes: response.request_limit_bytes,
             response_limit_bytes: response.response_limit_bytes,
             custom_domains: response.custom_domains,
+            allowed_origins: response.allowed_origins,
         };
         self.remember(key, cached.clone());
         Ok(Some(self.route_from(tenant, cached)))
@@ -895,6 +898,7 @@ mod tests {
             request_limit_bytes: 1_024,
             response_limit_bytes: 2_048,
             custom_domains: vec!["api.example.com".to_owned()],
+            allowed_origins: vec!["https://app.example.com".to_owned()],
         };
 
         resolver.remember(key.clone(), entry.clone());

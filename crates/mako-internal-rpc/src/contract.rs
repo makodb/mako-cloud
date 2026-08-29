@@ -286,6 +286,12 @@ pub enum IdentityAdminOperation {
     /// list on every change; the data plane refuses a request that arrives
     /// on any other custom domain for that environment.
     InstallCustomDomains,
+    /// Install the browser origins allowed to call an environment's
+    /// application API cross-origin. The developer sets one list per
+    /// environment; the data plane answers a cross-origin request only for
+    /// an origin on it, on the platform hostname and on every custom domain
+    /// the environment is served on alike.
+    InstallAllowedOrigins,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
@@ -434,6 +440,86 @@ pub struct ApplicationMailAcknowledgeResponse {
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct InstallCustomDomainsInput {
     pub hostnames: Vec<String>,
+}
+
+/// Every browser origin allowed to call one environment's application API
+/// cross-origin; an empty list withdraws cross-origin access from it.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct InstallAllowedOriginsInput {
+    #[serde(default)]
+    pub origins: Vec<String>,
+}
+
+/// The most origins one environment allows; the public contract's bound.
+pub const MAXIMUM_ALLOWED_ORIGINS: usize = 16;
+/// The longest origin the public contract accepts.
+pub const MAXIMUM_ORIGIN_BYTES: usize = 262;
+
+/// Whether `value` is an origin in the exact form the platform matches a
+/// browser's `Origin` header against: `http://` or `https://`, a lowercase
+/// host of letters, digits, dots, and hyphens, an optional port, and
+/// nothing else -- no path, trailing slash, userinfo, query, or fragment.
+/// Which scheme a host may use is [`is_allowed_origin`]'s rule, not this one.
+#[must_use]
+pub fn is_exact_origin(value: &str) -> bool {
+    if value.is_empty() || value.len() > MAXIMUM_ORIGIN_BYTES {
+        return false;
+    }
+    let Some(authority) = value
+        .strip_prefix("https://")
+        .or_else(|| value.strip_prefix("http://"))
+    else {
+        return false;
+    };
+    let (host, port) = match authority.rsplit_once(':') {
+        Some((host, port)) => (host, Some(port)),
+        None => (authority, None),
+    };
+    if let Some(port) = port
+        && (port.is_empty()
+            || port.len() > 5
+            || !port.bytes().all(|byte| byte.is_ascii_digit())
+            || port
+                .parse::<u32>()
+                .is_ok_and(|port| port == 0 || port > 65_535))
+    {
+        return false;
+    }
+    !host.is_empty()
+        && host.len() <= 253
+        && host
+            .split('.')
+            .all(|label| !label.is_empty() && !label.starts_with('-') && !label.ends_with('-'))
+        && host.bytes().all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'-' | b'.')
+        })
+}
+
+/// Whether `value` may be allowed cross-origin at all: an exact origin
+/// ([`is_exact_origin`]) that is `https`, or `http` only for a loopback
+/// host -- `localhost`, a name under it, or an address in `127.0.0.0/8` --
+/// so a development server on the developer's own machine can be listed
+/// while a plaintext origin on the internet cannot. Both planes decide with
+/// this one function: the control plane when the developer sets the list,
+/// the data plane when it is installed.
+#[must_use]
+pub fn is_allowed_origin(value: &str) -> bool {
+    if !is_exact_origin(value) {
+        return false;
+    }
+    let Some(authority) = value.strip_prefix("http://") else {
+        return true;
+    };
+    let host = authority
+        .rsplit_once(':')
+        .map_or(authority, |(host, _)| host);
+    host == "localhost"
+        || host.ends_with(".localhost")
+        || host
+            .strip_prefix("127.")
+            .is_some_and(|rest| matches!(rest.split('.').count(), 3))
+            && host.split('.').all(|label| label.parse::<u8>().is_ok())
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -637,6 +723,13 @@ pub struct FunctionSecretResolutionResponse {
     /// its host is in this list. Absent from older control planes.
     #[serde(default)]
     pub custom_domains: Vec<String>,
+    /// The browser origins the function's environment allows cross-origin,
+    /// the same list the data plane is given. The gateway answers a
+    /// preflight and labels a response only for an origin on it, on the
+    /// platform hostname and on a custom domain alike. Absent from older
+    /// control planes, which means no cross-origin access.
+    #[serde(default)]
+    pub allowed_origins: Vec<String>,
 }
 
 /// One scheduled invocation the control plane asks the edge gateway to
@@ -709,3 +802,93 @@ impl fmt::Display for InternalContractError {
 }
 
 impl Error for InternalContractError {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn exact_origins_are_scheme_host_and_optional_port_only() {
+        for valid in [
+            "https://app.example.com",
+            "https://app.example.com:8443",
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+            "https://a-1.b2.example",
+        ] {
+            assert!(is_exact_origin(valid), "{valid:?} is an exact origin");
+        }
+        for invalid in [
+            "",
+            "app.example.com",
+            "ftp://app.example.com",
+            "https://App.example.com",
+            "https://app.example.com/",
+            "https://app.example.com/path",
+            "https://app.example.com?x=1",
+            "https://app.example.com#top",
+            "https://user@app.example.com",
+            "https://app.example.com:",
+            "https://app.example.com:0",
+            "https://app.example.com:65536",
+            "https://app.example.com:443:1",
+            "https://-app.example.com",
+            "https://app..example.com",
+            "https://app_1.example.com",
+            "https://[::1]:5173",
+            "https:// app.example.com",
+            &format!("https://{}.example", "a".repeat(260)),
+        ] {
+            assert!(!is_exact_origin(invalid), "{invalid:?} must be refused");
+        }
+    }
+
+    /// Which scheme an origin may use is decided once, for both planes: a
+    /// plaintext origin is allowed only on the developer's own machine.
+    #[test]
+    fn only_https_or_a_loopback_http_origin_may_be_allowed() {
+        for allowed in [
+            "https://app.example.com",
+            "https://app.example.com:8443",
+            "http://localhost:5173",
+            "http://app.localhost",
+            "http://127.0.0.1:5173",
+            "http://127.10.0.2",
+        ] {
+            assert!(is_allowed_origin(allowed), "{allowed:?}");
+        }
+        for refused in [
+            "http://app.example.com",
+            "http://localhost.example.com",
+            "http://127.0.0.1.example.com",
+            "http://128.0.0.1",
+            "http://127.0.0",
+            "http://127.0.0.256",
+            "https://app.example.com/",
+        ] {
+            assert!(!is_allowed_origin(refused), "{refused:?}");
+        }
+    }
+
+    #[test]
+    fn installs_carry_exactly_their_list() {
+        let input: InstallCustomDomainsInput =
+            serde_json::from_str(r#"{"hostnames":["api.example.com"]}"#).expect("hostnames");
+        assert_eq!(input.hostnames, ["api.example.com"]);
+        let empty: InstallAllowedOriginsInput = serde_json::from_str("{}").expect("empty");
+        assert!(
+            empty.origins.is_empty(),
+            "an install with no origins withdraws cross-origin access"
+        );
+        let origins: InstallAllowedOriginsInput =
+            serde_json::from_str(r#"{"origins":["https://app.example.com"]}"#).expect("origins");
+        assert_eq!(origins.origins, ["https://app.example.com"]);
+        assert!(
+            serde_json::from_str::<InstallAllowedOriginsInput>(
+                r#"{"allowedOrigins":["https://a.example"]}"#
+            )
+            .is_err(),
+            "an unknown field is never silently an empty install"
+        );
+    }
+}

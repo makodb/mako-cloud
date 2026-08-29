@@ -118,6 +118,18 @@ only and strips it on the platform hostname; the data plane checks it
 against the verified list the control plane installs for each environment;
 the edge gateway checks it against the route's verified list.
 
+## Cross-origin access
+
+A domain carries no origin list of its own. Which browser origins may call
+an environment's application API is a setting of the **environment**, and it
+applies wherever that API is served: on the platform's hostname and on every
+domain the environment is verified for, with the same headers and the same
+answers. See [allowed origins](allowed-origins.md).
+
+The one thing a domain adds is that the API is on *your* hostname; a browser
+application still has to be listed by the environment before its pages can
+read a response from either name.
+
 ## Certificates: on-demand TLS and the ask gate
 
 Certificates are obtained by the reverse proxy **on demand**, at the first

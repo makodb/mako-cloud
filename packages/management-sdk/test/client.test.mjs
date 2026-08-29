@@ -302,6 +302,58 @@ test("storage object paths keep their slashes on the wire and bucket deletion ca
   assert.equal(requests.length, 3, "a refused path never reaches the network");
 });
 
+test("allowed origins are read and replaced whole on the environment, with an idempotency key", async () => {
+  const requests = [];
+  let allowed = { allowedOrigins: ["https://app.example.test"] };
+  const client = createManagementClient({
+    endpoint: "https://api.example.test",
+    credential: { kind: "developer_session", accessToken: "developer-session-token" },
+    fetch: async (request) => {
+      requests.push(request);
+      if (request.method === "PUT") allowed = await request.clone().json();
+      return Response.json(allowed);
+    },
+  });
+  const path =
+    "https://api.example.test/v1/projects/prj_example0001/environments/env_example0001/allowed-origins";
+
+  assert.deepEqual(await client.getAllowedOrigins("prj_example0001", "env_example0001"), {
+    allowedOrigins: ["https://app.example.test"],
+  });
+  assert.equal(requests[0].method, "GET");
+  assert.equal(requests[0].url, path, "the allowlist belongs to the environment, not to a domain");
+
+  const replacement = { allowedOrigins: ["https://app.example.test", "http://127.0.0.1:5173"] };
+  const replaced = await client.updateAllowedOrigins(
+    "prj_example0001",
+    "env_example0001",
+    replacement,
+    "idempotency-key-allowed-origins-0001",
+  );
+  assert.deepEqual(replaced, replacement);
+  assert.equal(requests[1].method, "PUT");
+  assert.equal(requests[1].url, path);
+  assert.equal(
+    requests[1].headers.get("idempotency-key"),
+    "idempotency-key-allowed-origins-0001",
+  );
+  assert.equal(requests[1].headers.get("content-type"), "application/json");
+  assert.deepEqual(
+    await requests[1].json(),
+    replacement,
+    "the whole list is sent; the server replaces, never merges",
+  );
+
+  const cleared = await client.updateAllowedOrigins(
+    "prj_example0001",
+    "env_example0001",
+    { allowedOrigins: [] },
+    "idempotency-key-allowed-origins-0002",
+  );
+  assert.deepEqual(cleared, { allowedOrigins: [] }, "an empty list means no cross-origin access");
+  assert.deepEqual(await requests[2].json(), { allowedOrigins: [] });
+});
+
 test("auth settings are read and replaced whole; the client secret travels once, in the request body", async () => {
   const requests = [];
   const installed = {

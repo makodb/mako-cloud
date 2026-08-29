@@ -587,7 +587,7 @@ pub(crate) async fn identity_permissions(
     Ok(permissions)
 }
 
-fn rpc_error(request: &HttpRequest, error: InternalClientError) -> HttpApiError {
+pub(crate) fn rpc_error(request: &HttpRequest, error: InternalClientError) -> HttpApiError {
     match error {
         InternalClientError::Remote { status: 400, .. } => {
             invalid(request, "identity administration request is invalid")

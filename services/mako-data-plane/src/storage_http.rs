@@ -15,7 +15,7 @@ use mako_api::{
 use mako_audit::{ActorIdentity, AuditCategory, AuditOutcome};
 use mako_file_storage::{
     BucketConfig, FileStorageError, FileStorageService, MAX_APPLICATION_OBJECT_BYTES,
-    ObjectPrincipal, ObjectRequest,
+    ObjectPrecondition, ObjectPrincipal, ObjectRequest,
 };
 use mako_gateway::{
     GatewayQuotaCharge, GatewayQuotaDecision, GatewayQuotaPolicySource, GatewayQuotaResource,
@@ -87,6 +87,10 @@ fn handle_put(
             .header("content-type")
             .ok_or_else(|| invalid(request, "content-type is required"))?
             .to_owned();
+        // Parsed before anything is charged or written: a conditional
+        // header the platform does not implement is a refusal, never a
+        // silent unconditional write.
+        let preconditions = preconditions(request)?;
         let (principal, actor) = principal(
             graph,
             request,
@@ -101,12 +105,13 @@ fn handle_put(
         let ceiling = storage_ceiling(graph, &tenant, request).await?;
         let storage = storage(graph, request, &tenant)?;
         let outcome = storage
-            .put_object(
+            .put_object_if(
                 &bucket_id,
                 &path,
                 &content_type,
                 request.body(),
                 &object_request(principal, request, now, ceiling),
+                &preconditions,
             )
             .await;
         audit(
@@ -535,6 +540,62 @@ fn query(request: &HttpRequest, name: &str) -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
+/// The conditional headers an upload may carry, as the storage service's
+/// preconditions.
+///
+/// `If-None-Match: *` makes the upload create-only; `If-Match: *` makes it
+/// replace-only; `If-Match: "<etag>"` pins it to the exact version the
+/// caller read, where the ETag is the one a download returns. Anything else
+/// -- a list of tags, a weak tag, an `If-None-Match` other than `*` -- is
+/// refused rather than ignored: a caller that asked for a condition the
+/// platform does not implement must not be answered as if it had asked for
+/// nothing.
+fn preconditions(request: &HttpRequest) -> Result<Vec<ObjectPrecondition>, HttpApiError> {
+    let mut preconditions = Vec::new();
+    if !request.header_values("if-none-match").is_empty() {
+        let value = request
+            .header("if-none-match")
+            .map(str::trim)
+            .ok_or_else(|| invalid(request, "if-none-match is repeated"))?;
+        if value != "*" {
+            return Err(invalid(
+                request,
+                "if-none-match supports only * on an upload",
+            ));
+        }
+        preconditions.push(ObjectPrecondition::NotStored);
+    }
+    if !request.header_values("if-match").is_empty() {
+        let value = request
+            .header("if-match")
+            .map(str::trim)
+            .ok_or_else(|| invalid(request, "if-match is repeated"))?;
+        preconditions.push(if value == "*" {
+            ObjectPrecondition::Stored
+        } else {
+            ObjectPrecondition::Digest(entity_tag(request, value)?)
+        });
+    }
+    Ok(preconditions)
+}
+
+/// The digest inside a strong entity tag, exactly as an upload's response
+/// and a download's `ETag` carry it.
+fn entity_tag(request: &HttpRequest, value: &str) -> Result<String, HttpApiError> {
+    let digest = value
+        .strip_prefix('"')
+        .and_then(|tag| tag.strip_suffix('"'))
+        .filter(|digest| {
+            !digest.is_empty()
+                && digest.len() <= 128
+                && digest
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b':' | b'-' | b'_'))
+        })
+        .ok_or_else(|| invalid(request, "if-match must be one strong entity tag or *"))?;
+    Ok(digest.to_owned())
+}
+
 fn object_request(
     principal: ObjectPrincipal,
     request: &HttpRequest,
@@ -754,6 +815,9 @@ fn storage_error(request: &HttpRequest, error: FileStorageError) -> HttpApiError
         FileStorageError::BucketNotEmpty | FileStorageError::Conflict => {
             (409, ErrorCode::Conflict, RetryAdvice::Immediate)
         }
+        FileStorageError::PreconditionFailed => {
+            (412, ErrorCode::PreconditionFailed, RetryAdvice::Never)
+        }
         FileStorageError::StorageCapExceeded { .. } => {
             (429, ErrorCode::QuotaExceeded, RetryAdvice::Never)
         }
@@ -771,7 +835,59 @@ fn storage_error(request: &HttpRequest, error: FileStorageError) -> HttpApiError
 
 #[cfg(test)]
 mod tests {
-    use super::percent_decode;
+    use mako_api::ErrorCode;
+    use mako_file_storage::ObjectPrecondition;
+    use mako_service_runtime::{HttpMethod, HttpRequest};
+
+    use super::{percent_decode, preconditions};
+
+    /// An upload's conditional headers become the storage service's
+    /// preconditions, and a condition the platform does not implement is
+    /// refused rather than dropped -- a caller that asked for create-only
+    /// must never be answered as if it had asked for an overwrite.
+    #[test]
+    fn conditional_upload_headers_become_preconditions_or_a_refusal() {
+        let request = |headers: &[(&str, &str)]| {
+            HttpRequest::for_test(
+                HttpMethod::Put,
+                "/v1/projects/prj_example00/environments/env_example00/storage/receipts/objects/a.txt",
+                headers
+                    .iter()
+                    .map(|(name, value)| ((*name).to_owned(), (*value).to_owned())),
+                Vec::new(),
+                None,
+            )
+        };
+        assert!(preconditions(&request(&[])).expect("none").is_empty());
+        assert_eq!(
+            preconditions(&request(&[("If-None-Match", "*")])).expect("create only"),
+            vec![ObjectPrecondition::NotStored]
+        );
+        assert_eq!(
+            preconditions(&request(&[("If-Match", "*")])).expect("replace only"),
+            vec![ObjectPrecondition::Stored]
+        );
+        assert_eq!(
+            preconditions(&request(&[("If-Match", " \"blake3:abc123\" ")])).expect("pinned"),
+            vec![ObjectPrecondition::Digest("blake3:abc123".to_owned())]
+        );
+        for headers in [
+            vec![("If-None-Match", "\"blake3:abc123\"")],
+            vec![("If-None-Match", "")],
+            vec![("If-Match", "blake3:abc123")],
+            vec![("If-Match", "W/\"blake3:abc123\"")],
+            vec![("If-Match", "\"a\", \"b\"")],
+            vec![("If-Match", "\"\"")],
+            vec![("If-Match", "*"), ("If-Match", "*")],
+        ] {
+            let error = preconditions(&request(&headers)).expect_err("refused");
+            assert_eq!(
+                error.envelope().error.code,
+                ErrorCode::InvalidRequest,
+                "{headers:?}"
+            );
+        }
+    }
 
     #[test]
     fn object_paths_decode_percent_escapes_and_refuse_malformed_ones() {

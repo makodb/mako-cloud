@@ -2,6 +2,13 @@
 
 #![forbid(unsafe_code)]
 
+mod cors;
+
+pub use cors::{
+    CORS_ALLOW_HEADERS, CORS_ALLOW_METHODS, CORS_EXPOSE_HEADERS, CORS_MAX_AGE_SECONDS,
+    CrossOriginDecision, CrossOriginMiddleware, CrossOriginPolicy,
+};
+
 use std::{
     borrow::Cow,
     collections::{BTreeMap, BTreeSet, HashSet},
@@ -269,6 +276,76 @@ impl HttpRequest {
     }
 }
 
+/// What the transport knows about a request before it is routed and after
+/// the handler has consumed it: the method, the path, the headers, and the
+/// request id. Middleware decides from this alone -- never from the body,
+/// which has not been read when a request is intercepted.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HttpRequestHead {
+    method: HttpMethod,
+    path: String,
+    headers: BTreeMap<String, Vec<String>>,
+    request_id: String,
+}
+
+impl HttpRequestHead {
+    /// The head of a fully read request.
+    #[must_use]
+    pub fn of(request: &HttpRequest) -> Self {
+        Self {
+            method: request.method,
+            path: request.path.clone(),
+            headers: request.headers.clone(),
+            request_id: request.request_id.clone(),
+        }
+    }
+
+    #[must_use]
+    pub const fn method(&self) -> HttpMethod {
+        self.method
+    }
+
+    #[must_use]
+    pub fn path(&self) -> &str {
+        &self.path
+    }
+
+    #[must_use]
+    pub fn header_values(&self, name: &str) -> &[String] {
+        self.headers
+            .get(&name.to_ascii_lowercase())
+            .map_or(&[], Vec::as_slice)
+    }
+
+    /// Returns a header only when it appeared exactly once.
+    #[must_use]
+    pub fn header(&self, name: &str) -> Option<&str> {
+        let values = self.header_values(name);
+        (values.len() == 1).then(|| values[0].as_str())
+    }
+
+    #[must_use]
+    pub fn request_id(&self) -> &str {
+        &self.request_id
+    }
+}
+
+/// A router-wide step around dispatch, installed once with
+/// [`HttpRouter::set_middleware`]. It runs for every request that reached
+/// routing with a supported method -- matched or not -- and never for the
+/// private readiness routes, which the transport owns.
+pub trait HttpMiddleware: Send + Sync {
+    /// Runs before routing, on the request head. `Some` answers the request
+    /// without dispatching it (a cross-origin preflight, for instance) and
+    /// without reading its body; `None` lets it route as usual.
+    fn before_dispatch(&self, request: &HttpRequestHead) -> Option<HttpResponse>;
+
+    /// Runs on every response produced for a request that was not answered
+    /// by [`Self::before_dispatch`]: a handler's success or failure, and
+    /// the transport's own `404`, `405`, and body-limit refusals.
+    fn after_dispatch(&self, request: &HttpRequestHead, response: HttpResponse) -> HttpResponse;
+}
+
 type HandlerResult = Result<HttpResponse, HttpApiError>;
 type RouteHandler = Arc<dyn Fn(HttpRequest) -> HandlerResult + Send + Sync>;
 
@@ -286,12 +363,23 @@ struct Route {
 #[derive(Clone, Default)]
 pub struct HttpRouter {
     routes: Vec<Route>,
+    middleware: Option<Arc<dyn HttpMiddleware>>,
 }
 
 impl HttpRouter {
     #[must_use]
     pub const fn new() -> Self {
-        Self { routes: Vec::new() }
+        Self {
+            routes: Vec::new(),
+            middleware: None,
+        }
+    }
+
+    /// Installs the one step that runs around every dispatch; a later call
+    /// replaces it. Middleware is a property of the router so that a test
+    /// driving the router sees exactly what the transport would send.
+    pub fn set_middleware(&mut self, middleware: Arc<dyn HttpMiddleware>) {
+        self.middleware = Some(middleware);
     }
 
     /// Read-only route-contract inspection used by production qualification.
@@ -322,6 +410,39 @@ impl HttpRouter {
         };
         request.path_parameters = parameters;
         Some(handler(request))
+    }
+
+    /// The response the transport would send for `request`: middleware
+    /// before and after, the matched handler or the transport's own `404`
+    /// and `405`, and an error already rendered as its response.
+    #[cfg(feature = "test-support")]
+    #[doc(hidden)]
+    #[must_use]
+    pub fn respond_for_test(&self, mut request: HttpRequest) -> HttpResponse {
+        let head = HttpRequestHead::of(&request);
+        if let Some(middleware) = &self.middleware
+            && let Some(response) = middleware.before_dispatch(&head)
+        {
+            return response;
+        }
+        let response = match self.resolve(Some(request.method), &request.path) {
+            RouteResolution::Matched {
+                handler,
+                parameters,
+                ..
+            } => {
+                request.path_parameters = parameters;
+                handler(request).unwrap_or_else(HttpApiError::into_response)
+            }
+            RouteResolution::MethodNotAllowed(allowed) => {
+                method_not_allowed(&head.request_id, allowed).into_response()
+            }
+            RouteResolution::NotFound => not_found(&head.request_id).into_response(),
+        };
+        match &self.middleware {
+            Some(middleware) => middleware.after_dispatch(&head, response),
+            None => response,
+        }
     }
 
     /// Registers an exact segmented path. A segment written as `{name}` binds a
@@ -1150,6 +1271,46 @@ fn process_request(
         return send_response(request, response, &request_id, stopping);
     }
 
+    // Headers are bounded before anything is decided from them: routing
+    // does not need them, but the middleware does.
+    let headers = match collect_headers(request.headers()) {
+        Ok(headers) => headers,
+        Err(()) => {
+            return send_response(
+                request,
+                request_headers_too_large(&request_id).into_response(),
+                &request_id,
+                stopping,
+            );
+        }
+    };
+    // The middleware sees the head of every request with a supported method
+    // before it is routed, and every response produced for it afterwards.
+    let intercepted = router
+        .middleware
+        .as_ref()
+        .zip(method)
+        .map(|(middleware, method)| {
+            (
+                middleware,
+                HttpRequestHead {
+                    method,
+                    path: path.clone(),
+                    headers: headers.clone(),
+                    request_id: request_id.clone(),
+                },
+            )
+        });
+    if let Some((middleware, head)) = &intercepted
+        && let Some(response) = middleware.before_dispatch(head)
+    {
+        return send_response(request, response, &request_id, stopping);
+    }
+    let finish = |response: HttpResponse| match &intercepted {
+        Some((middleware, head)) => middleware.after_dispatch(head, response),
+        None => response,
+    };
+
     let resolution = router.resolve(method, &path);
     let (handler, path_parameters, method, body_limit_bytes) = match resolution {
         RouteResolution::Matched {
@@ -1165,7 +1326,7 @@ fn process_request(
         RouteResolution::MethodNotAllowed(allowed) => {
             return send_response(
                 request,
-                method_not_allowed(&request_id, allowed).into_response(),
+                finish(method_not_allowed(&request_id, allowed).into_response()),
                 &request_id,
                 stopping,
             );
@@ -1173,18 +1334,7 @@ fn process_request(
         RouteResolution::NotFound => {
             return send_response(
                 request,
-                not_found(&request_id).into_response(),
-                &request_id,
-                stopping,
-            );
-        }
-    };
-    let headers = match collect_headers(request.headers()) {
-        Ok(headers) => headers,
-        Err(()) => {
-            return send_response(
-                request,
-                request_headers_too_large(&request_id).into_response(),
+                finish(not_found(&request_id).into_response()),
                 &request_id,
                 stopping,
             );
@@ -1196,7 +1346,7 @@ fn process_request(
         Err(BodyReadError::TooLarge) => {
             return send_response(
                 request,
-                request_body_too_large(&request_id, body_limit_bytes).into_response(),
+                finish(request_body_too_large(&request_id, body_limit_bytes).into_response()),
                 &request_id,
                 stopping,
             );
@@ -1204,7 +1354,9 @@ fn process_request(
         Err(BodyReadError::ReadFailed) => {
             return send_response(
                 request,
-                invalid_request(&request_id, "request body could not be read").into_response(),
+                finish(
+                    invalid_request(&request_id, "request body could not be read").into_response(),
+                ),
                 &request_id,
                 stopping,
             );
@@ -1232,7 +1384,7 @@ fn process_request(
             internal_error(&request_id).into_response()
         }
     };
-    send_response(request, response, &request_id, stopping)
+    send_response(request, finish(response), &request_id, stopping)
 }
 
 fn respond_overloaded(

@@ -14,6 +14,7 @@ import type {
 } from "@mako-cloud/management-sdk";
 import { createMakoRxdbConnectTemplateV1 } from "@mako-cloud/rxdb";
 
+import { AllowedOriginsSection } from "./allowed-origins.js";
 import { ApiFailureNotice, type ConsoleApiFailure, toConsoleApiFailure } from "./api-error.js";
 import { DataExplorer } from "./data-explorer.js";
 import { useManagementClient } from "./management.js";
@@ -888,6 +889,7 @@ function EnvironmentSettings({
         Credentials, schema, function, and destructive lifecycle controls remain on their existing
         dedicated pages while the workspace rollout is reversible.
       </p>
+      <AllowedOriginsSection projectId={projectId} environmentId={environmentId} />
     </section>
   );
 }

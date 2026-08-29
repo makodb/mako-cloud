@@ -15,6 +15,7 @@ import "./webhooks.css";
 import "./function-schedules.css";
 import "./auth.css";
 import "./api-docs.css";
+import "./allowed-origins.css";
 
 declare global {
   interface Window {

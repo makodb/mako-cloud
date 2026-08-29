@@ -2,6 +2,7 @@
 
 #![forbid(unsafe_code)]
 
+mod allowed_origins;
 mod application_mail;
 mod application_user;
 mod automation;
@@ -36,6 +37,10 @@ mod runtime_backend;
 mod webhook;
 mod workspace;
 
+pub use allowed_origins::{
+    AllowedOriginsError, AllowedOriginsRecord, AllowedOriginsService,
+    MAXIMUM_ORIGINS as MAXIMUM_ALLOWED_ORIGINS, validate_allowed_origins,
+};
 pub use cron::{CronError, CronField, CronSchedule};
 pub use custom_domain::{
     CustomDomainCheckOutcome, CustomDomainError, CustomDomainId, CustomDomainPublishError,

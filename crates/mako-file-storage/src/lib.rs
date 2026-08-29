@@ -19,6 +19,7 @@ pub use model::{
     content_type_allowed, object_schema, validate_object_path,
 };
 pub use service::{
-    FileStorageService, ObjectPage, ObjectPrincipal, ObjectRequest, RemovedBucket, StoredObject,
+    FileStorageService, ObjectPage, ObjectPrecondition, ObjectPrincipal, ObjectRequest,
+    RemovedBucket, StoredObject,
 };
 pub use store::BucketStore;

@@ -10,9 +10,9 @@ use mako_documents::{
     SchemaCompatibility, TrustedQuery,
 };
 use mako_gateway::{
-    GatewayQuotaCharge, GatewayQuotaDecision, GatewayQuotaPolicySource, GatewayQuotaResource,
-    PresentedServiceCredential, ServiceBypassGateway, ServiceBypassGatewayError,
-    ServiceBypassGatewayRequest, VerifiedAccessIdentity,
+    GatewayQuotaCharge, GatewayQuotaDecision, GatewayQuotaError, GatewayQuotaPolicySource,
+    GatewayQuotaResource, PresentedServiceCredential, ServiceBypassGateway,
+    ServiceBypassGatewayError, ServiceBypassGatewayRequest, VerifiedAccessIdentity,
 };
 use mako_policy::{
     AuditRequestId, CompiledPolicySet, DocumentOperation, DocumentPolicyAuthorizer,
@@ -751,8 +751,18 @@ async fn charge_document(
             now.saturating_mul(1_000),
         )
         .await
-        .map_err(|_| unavailable(request, "quota authority is unavailable"))?
-    {
+        // A reservation is keyed by the caller's request id. Reusing one
+        // across two different requests is the caller's mistake, not an
+        // outage: reporting it as `unavailable` sent clients into a retry
+        // loop that could never succeed.
+        .map_err(|error| match error {
+            GatewayQuotaError::ReservationConflict => conflict(
+                request,
+                "X-Mako-Request-Id was already used for a different request; \
+                 send a fresh request id per request",
+            ),
+            _ => unavailable(request, "quota authority is unavailable"),
+        })? {
         GatewayQuotaDecision::Allowed => Ok(()),
         GatewayQuotaDecision::Throttled {
             retry_after_milliseconds,
@@ -827,16 +837,43 @@ fn collection_scope(
     ))
 }
 
+/// The document id the route captured, percent-decoded.
+///
+/// A client escapes the id it puts in the path -- `encodeURIComponent` in the
+/// edge and RxDB SDKs -- so an id holding `:`, `@`, `/`, or a space arrives
+/// encoded and must be decoded before it is compared with the body's primary
+/// key. A malformed escape is refused rather than passed through as literal
+/// text, so `%zz` can never become part of a stored identifier.
 fn document_id(request: &HttpRequest) -> Result<DocumentId, HttpApiError> {
-    DocumentId::parse(
-        request
-            .path_parameter("documentId")
-            .ok_or_else(|| invalid(request, "document path is invalid"))?,
-    )
-    .map_err(|_| invalid(request, "document path is invalid"))
+    let raw = request
+        .path_parameter("documentId")
+        .ok_or_else(|| invalid(request, "document path is invalid"))?;
+    let decoded = percent_decode(raw)
+        .ok_or_else(|| invalid(request, "document path is not valid percent-encoding"))?;
+    DocumentId::parse(decoded).map_err(|_| invalid(request, "document path is invalid"))
 }
 
-fn require_presented_request_id(request: &HttpRequest) -> Result<(), HttpApiError> {
+/// Decodes `%XX` escapes, refusing anything that is not a complete escape or
+/// does not decode to UTF-8.
+fn percent_decode(value: &str) -> Option<String> {
+    let bytes = value.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'%' {
+            let hex = bytes.get(index + 1..index + 3)?;
+            let text = std::str::from_utf8(hex).ok()?;
+            decoded.push(u8::from_str_radix(text, 16).ok()?);
+            index += 3;
+        } else {
+            decoded.push(bytes[index]);
+            index += 1;
+        }
+    }
+    String::from_utf8(decoded).ok()
+}
+
+pub(crate) fn require_presented_request_id(request: &HttpRequest) -> Result<(), HttpApiError> {
     if request.header(REQUEST_ID_HEADER) != Some(request.request_id()) {
         return Err(invalid(
             request,
@@ -961,7 +998,7 @@ fn not_found(request: &HttpRequest, message: &'static str) -> HttpApiError {
     )
 }
 
-fn conflict(request: &HttpRequest, message: &'static str) -> HttpApiError {
+pub(crate) fn conflict(request: &HttpRequest, message: &'static str) -> HttpApiError {
     HttpApiError::new(
         409,
         ErrorCode::Conflict,
@@ -981,7 +1018,7 @@ fn schema_mismatch(request: &HttpRequest, message: &'static str) -> HttpApiError
     )
 }
 
-fn permission_denied(request: &HttpRequest, message: &'static str) -> HttpApiError {
+pub(crate) fn permission_denied(request: &HttpRequest, message: &'static str) -> HttpApiError {
     HttpApiError::new(
         403,
         ErrorCode::PermissionDenied,
@@ -1118,4 +1155,46 @@ struct DocumentMutationResultWire {
 struct DocumentQueryPageWire {
     documents: Vec<DocumentRecordWire>,
     next_cursor: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use mako_documents::DocumentId;
+
+    use super::percent_decode;
+
+    /// A client escapes the id it puts in the path, so the route has to decode
+    /// it before comparing it with the body's primary key. Without this, no
+    /// caller could write a document whose id holds `:`, `@`, `/`, or a space
+    /// -- the write was refused as a path mismatch (`document body primary key
+    /// does not match the path`) even though the two agreed.
+    #[test]
+    fn escaped_document_ids_decode_to_the_identifier_the_body_carries() {
+        for (encoded, expected) in [
+            ("plain-id", "plain-id"),
+            ("hh_01%3Agroceries%3A2026-08", "hh_01:groceries:2026-08"),
+            ("member%40example.com", "member@example.com"),
+            ("a%2Fb", "a/b"),
+            ("two%20words", "two words"),
+            ("caf%C3%A9", "caf\u{e9}"),
+        ] {
+            let decoded = percent_decode(encoded).expect("decodes");
+            assert_eq!(decoded, expected, "{encoded}");
+            assert_eq!(
+                DocumentId::parse(decoded)
+                    .expect("a decoded id is a valid identifier")
+                    .as_str(),
+                expected,
+            );
+        }
+    }
+
+    /// A malformed escape is refused rather than kept as literal text, so a
+    /// stored identifier can never contain a half-written escape.
+    #[test]
+    fn malformed_escapes_are_refused_rather_than_passed_through() {
+        for malformed in ["bad%2", "bad%zz", "%FF%FE", "trailing%"] {
+            assert!(percent_decode(malformed).is_none(), "{malformed}");
+        }
+    }
 }

@@ -91,6 +91,7 @@ export const MANAGEMENT_OPERATIONS = [
   "listJwtSigningKeys",
   "rotateJwtSigningKey",
   "createFunctionSecret",
+  "createFunctionSecretValue",
   "getFunctionSecret",
   "retireFunctionSecret",
   "rotateFunctionSecret",
@@ -99,6 +100,8 @@ export const MANAGEMENT_OPERATIONS = [
   "updateEmailTemplate",
   "resetEmailTemplate",
   "previewEmailTemplate",
+  "getAllowedOrigins",
+  "updateAllowedOrigins",
   "getAuthSettings",
   "updateAuthSettings",
   "listStorageBuckets",
@@ -274,6 +277,8 @@ export type EmailTemplateKind = components["schemas"]["EmailTemplateKind"];
 export type EmailTemplateText = components["schemas"]["EmailTemplateText"];
 export type EmailTemplate = components["schemas"]["EmailTemplate"];
 export type EmailTemplateRender = components["schemas"]["EmailTemplateRender"];
+export type AllowedOrigins = components["schemas"]["AllowedOrigins"];
+export type AllowedOriginList = components["schemas"]["AllowedOriginList"];
 export type AuthSettings = components["schemas"]["AuthSettings"];
 export type AuthProviderView = components["schemas"]["AuthProviderView"];
 export type AuthProviderKind = components["schemas"]["AuthProviderKind"];
@@ -1418,6 +1423,32 @@ export class MakoManagementClient {
     );
   }
 
+  /**
+   * Stores a value the caller supplies under a new secret, rather than one the
+   * platform generates. The response carries the secret's metadata only: a
+   * supplied value is no more readable afterwards than a generated one.
+   */
+  async createFunctionSecretValue(
+    projectId: string,
+    environmentId: string,
+    secretName: string,
+    value: string,
+    idempotencyKey: string,
+  ): Promise<FunctionSecret> {
+    return unwrap(
+      await this.#client.PUT(
+        "/v1/projects/{projectId}/environments/{environmentId}/function-secrets/{secretName}",
+        {
+          params: {
+            path: { projectId, environmentId, secretName },
+            header: { "Idempotency-Key": idempotencyKey },
+          },
+          body: { value },
+        },
+      ),
+    );
+  }
+
   async rotateFunctionSecret(
     projectId: string,
     environmentId: string,
@@ -1432,6 +1463,46 @@ export class MakoManagementClient {
             path: { projectId, environmentId, secretName },
             header: { "Idempotency-Key": idempotencyKey },
           },
+        },
+      ),
+    );
+  }
+
+  /**
+   * The browser origins allowed to call this environment's application API
+   * cross-origin. An empty list means no cross-origin access.
+   */
+  async getAllowedOrigins(projectId: string, environmentId: string): Promise<AllowedOrigins> {
+    return unwrap(
+      await this.#client.GET(
+        "/v1/projects/{projectId}/environments/{environmentId}/allowed-origins",
+        { params: { path: { projectId, environmentId } } },
+      ),
+    );
+  }
+
+  /**
+   * Replaces the allowlist whole — the server replaces, never merges. Origins
+   * are matched exactly (`https://app.example.com`; `http` only to loopback),
+   * at most 16, and hold on the platform's own hostname as well as on any
+   * custom domain serving the environment. The management, operator, and
+   * service APIs never answer cross-origin, whatever is listed here.
+   */
+  async updateAllowedOrigins(
+    projectId: string,
+    environmentId: string,
+    input: AllowedOrigins,
+    idempotencyKey: string,
+  ): Promise<AllowedOrigins> {
+    return unwrap(
+      await this.#client.PUT(
+        "/v1/projects/{projectId}/environments/{environmentId}/allowed-origins",
+        {
+          params: {
+            path: { projectId, environmentId },
+            header: { "Idempotency-Key": idempotencyKey },
+          },
+          body: input,
         },
       ),
     );

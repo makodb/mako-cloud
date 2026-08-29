@@ -15,6 +15,9 @@ pub enum ErrorCode {
     PermissionDenied,
     NotFound,
     Conflict,
+    /// A request precondition (`If-Match`, `If-None-Match`) did not hold
+    /// against the current state; answered `412`.
+    PreconditionFailed,
     SchemaMismatch,
     CheckpointExpired,
     RateLimited,

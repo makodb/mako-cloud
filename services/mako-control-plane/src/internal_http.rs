@@ -536,6 +536,14 @@ fn handle_resolution(
             .map_err(|_| {
                 unavailable(request, "function custom domain resolution is unavailable")
             })?;
+        // The environment's cross-origin allowlist travels with the route:
+        // a function answers a browser exactly where the rest of the
+        // environment's API does.
+        let allowed_origins = graph
+            .allowed_origins_service()
+            .installed(&verified.tenant)
+            .await
+            .map_err(|_| unavailable(request, "allowed origin resolution is unavailable"))?;
         let response = FunctionSecretResolutionResponse {
             organization_id: project.organization_id().as_str().to_owned(),
             function_name: resolved.function_name.as_str().to_owned(),
@@ -557,6 +565,7 @@ fn handle_resolution(
                 })
                 .collect(),
             custom_domains,
+            allowed_origins,
         };
         HttpResponse::json(200, &response)
             .map_err(|_| unavailable(request, "function resolution response is unavailable"))

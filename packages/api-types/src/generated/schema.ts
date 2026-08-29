@@ -808,7 +808,11 @@ export interface paths {
             cookie?: never;
         };
         get: operations["getFunctionSecret"];
-        put?: never;
+        /**
+         * Create a function secret from a value the caller supplies
+         * @description Stores a value the caller already holds -- typically a scoped service credential a function needs -- as a function secret, instead of the generated value `createFunctionSecret` returns. The value is write-once and is never returned by this or any other operation, so the response carries metadata only. A name is written once: creating a secret that already exists is a conflict, and `rotateFunctionSecret` replaces a value only with a generated one.
+         */
+        put: operations["createFunctionSecretValue"];
         post?: never;
         delete: operations["retireFunctionSecret"];
         options?: never;
@@ -1254,6 +1258,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/projects/{projectId}/environments/{environmentId}/allowed-origins": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read the browser origins allowed to call this environment */
+        get: operations["getAllowedOrigins"];
+        /**
+         * Replace the browser origins allowed to call this environment
+         * @description Replaces the allowlist. A browser application served from a listed origin may call this environment's application API — auth, documents, replication, storage, and function invocation — on the platform's hostname and on any custom domain serving the environment. The management, operator, and service APIs never answer cross-origin requests, whatever is listed here.
+         */
+        put: operations["updateAllowedOrigins"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/projects/{projectId}/environments/{environmentId}/auth-settings": {
         parameters: {
             query?: never;
@@ -1547,6 +1572,38 @@ export interface paths {
         put?: never;
         /** Run an indexed query using an explicit scoped service credential */
         post: operations["queryDocumentsAsService"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/projects/{projectId}/environments/{environmentId}/service/users/{userId}/app-metadata": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set a user's administrator-controlled app metadata using an explicit scoped service credential
+         * @description Lets an application's own trusted code -- an edge function holding an
+         *     attached service secret -- write the app metadata that becomes a user's
+         *     verified token claims. The service credential must be scoped to the
+         *     reserved `users` target with the `update` operation. The body carries
+         *     the audited bypass reason and a one-level JSON merge patch: a key set
+         *     to `null` is removed, any other key replaces the stored value whole. A
+         *     privileged-bypass audit record naming the credential, the reason, and
+         *     the user is written before the metadata; if it cannot be written,
+         *     nothing is. A change advances the user's authorization epoch, so the
+         *     access token in hand stops verifying and the next refresh issues the
+         *     new claims. User-editable profile metadata is never touched. Application
+         *     bearer tokens and public project keys are refused on this route, as is
+         *     any request that arrived on a custom domain.
+         */
+        post: operations["setUserAppMetadataAsService"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4838,6 +4895,11 @@ export interface components {
             /** Format: date-time */
             updatedAt: string;
         };
+        AllowedOrigins: {
+            allowedOrigins: components["schemas"]["AllowedOriginList"];
+        };
+        /** @description Browser origins allowed to call this environment's application API cross-origin, matched exactly (`https://app.example.com`; `http` only to loopback). The platform answers preflights and echoes the origin on the environment's application routes for a listed origin, on its own hostname and on any custom domain serving the environment. Management, operator, and service routes never answer cross-origin. Empty means no cross-origin access. */
+        AllowedOriginList: string[];
         CustomDomainCreate: {
             hostname: string;
             environmentId: components["schemas"]["EnvironmentId"];
@@ -4939,6 +5001,22 @@ export interface components {
         DocumentQueryPage: {
             documents: components["schemas"]["DocumentRecord"][];
             nextCursor: string | null;
+        };
+        ServiceAppMetadataUpdate: {
+            /** @description Audited reason for the privileged write, recorded on the bypass audit record. */
+            reason: string;
+            /** @description One-level JSON merge patch over the user's administrator-controlled app metadata. A key set to null is removed; any other key replaces the stored value whole. The patch and the merged result are bounded like trusted metadata (64 KiB, nesting depth 16). */
+            appMetadata: {
+                [key: string]: unknown;
+            };
+        };
+        ServiceAppMetadataResult: {
+            userId: components["schemas"]["ApplicationUserId"];
+            appMetadata: {
+                [key: string]: unknown;
+            };
+            /** Format: int64 */
+            authorizationEpoch: number;
         };
         JsonDocument: {
             [key: string]: unknown;
@@ -5468,7 +5546,7 @@ export interface components {
             reason: string;
         };
         /** @enum {string} */
-        ErrorCode: "invalid_request" | "unauthenticated" | "operator_step_up_required" | "permission_denied" | "not_found" | "conflict" | "schema_mismatch" | "checkpoint_expired" | "rate_limited" | "quota_exceeded" | "unavailable" | "internal";
+        ErrorCode: "invalid_request" | "unauthenticated" | "operator_step_up_required" | "permission_denied" | "not_found" | "conflict" | "precondition_failed" | "schema_mismatch" | "checkpoint_expired" | "rate_limited" | "quota_exceeded" | "unavailable" | "internal";
         RetryAdvice: {
             /** @constant */
             kind: "never";
@@ -7499,6 +7577,40 @@ export interface operations {
             default: components["responses"]["ApiError"];
         };
     };
+    createFunctionSecretValue: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                environmentId: components["parameters"]["EnvironmentId"];
+                secretName: components["parameters"]["FunctionSecretName"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description The secret value to store. Never echoed back, redacted from function logs like a generated value, and injected into a deployment only by the exact version it attached. */
+                    value: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Function-secret metadata; the supplied value is never returned */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FunctionSecret"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
     retireFunctionSecret: {
         parameters: {
             query?: never;
@@ -8466,6 +8578,60 @@ export interface operations {
             default: components["responses"]["ApiError"];
         };
     };
+    getAllowedOrigins: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                environmentId: components["parameters"]["EnvironmentId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The environment's allowed origins */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AllowedOrigins"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    updateAllowedOrigins: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                environmentId: components["parameters"]["EnvironmentId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AllowedOrigins"];
+            };
+        };
+        responses: {
+            /** @description The updated allowed origins */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AllowedOrigins"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
     getAuthSettings: {
         parameters: {
             query?: never;
@@ -8994,6 +9160,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DocumentQueryPage"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    setUserAppMetadataAsService: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Mako-Request-Id": components["parameters"]["ServiceRequestId"];
+            };
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                environmentId: components["parameters"]["EnvironmentId"];
+                userId: components["parameters"]["ApplicationUserId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ServiceAppMetadataUpdate"];
+            };
+        };
+        responses: {
+            /** @description Merged app metadata and the user's current authorization epoch */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServiceAppMetadataResult"];
                 };
             };
             default: components["responses"]["ApiError"];

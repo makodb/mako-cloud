@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{fmt, sync::Arc};
 
 use async_trait::async_trait;
 use futures::{StreamExt, executor::block_on};
@@ -8,8 +8,8 @@ use mako_edge_gateway::{
     FunctionRouteResolver, ResolvedFunctionRoute, RuntimeResponseStream,
 };
 use mako_service_runtime::{
-    HttpApiError, HttpMethod, HttpRequest, HttpResponse, HttpRouter, RouteRegistrationError,
-    spawn_streaming_body,
+    CrossOriginPolicy, HttpApiError, HttpMethod, HttpRequest, HttpRequestHead, HttpResponse,
+    HttpRouter, RouteRegistrationError, spawn_streaming_body,
 };
 
 use crate::{EdgeGatewayGraph, graph::CustomDomainLookupError};
@@ -94,6 +94,93 @@ fn handle_custom_domain_invocation(
         tenant: &tenant,
     };
     invoke(graph, request, &project_ref, function_name, &routes)
+}
+
+/// Which browser origins may call a function: the allowlist the function's
+/// environment set, carried by the route the control plane resolves and
+/// cached with it.
+///
+/// The environment is named the way the invocation itself names it -- by
+/// the project reference in the path on the platform's hostname, and by the
+/// custom hostname the request arrived on otherwise -- so a function
+/// answers a browser exactly where the rest of its environment's API does.
+/// Any other path, a hostname the control plane does not place, and a route
+/// that does not list the origin all allow nothing.
+pub(crate) struct FunctionRouteOrigins {
+    graph: Arc<EdgeGatewayGraph>,
+}
+
+impl FunctionRouteOrigins {
+    pub(crate) const fn new(graph: Arc<EdgeGatewayGraph>) -> Self {
+        Self { graph }
+    }
+
+    /// The project reference and function the request addresses, or `None`
+    /// when it is not a function invocation this gateway serves.
+    fn addressed(&self, request: &HttpRequestHead) -> Option<(String, String)> {
+        match request.header(CUSTOM_DOMAIN_HEADER) {
+            // On a custom domain the hostname names the environment, and
+            // the path carries no project reference.
+            Some(claimed) => {
+                let hostname = normalize_custom_domain(claimed)?;
+                let function_name = custom_domain_function_name(request.path())?;
+                let tenant = self.graph.custom_domains.tenant_for(&hostname).ok()??;
+                Some((
+                    format!("{}--{}", tenant.project_id(), tenant.environment_id()),
+                    function_name.to_owned(),
+                ))
+            }
+            None => {
+                let (project_ref, function_name) = platform_function_path(request.path())?;
+                Some((project_ref.to_owned(), function_name.to_owned()))
+            }
+        }
+    }
+}
+
+impl fmt::Debug for FunctionRouteOrigins {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("FunctionRouteOrigins")
+            .finish_non_exhaustive()
+    }
+}
+
+impl CrossOriginPolicy for FunctionRouteOrigins {
+    fn allows_origin(&self, request: &HttpRequestHead, origin: &str) -> bool {
+        let Some((project_ref, function_name)) = self.addressed(request) else {
+            return false;
+        };
+        // The resolution the invocation itself is about to make, from the
+        // same cache; a preflight therefore costs at most the one lookup
+        // the request that follows it would have made anyway.
+        let Ok(Some(route)) = block_on(self.graph.routes.resolve(&project_ref, &function_name))
+        else {
+            return false;
+        };
+        route.allows_origin(origin)
+    }
+}
+
+/// The function a custom domain's invocation path names.
+fn custom_domain_function_name(path: &str) -> Option<&str> {
+    let name = path.strip_prefix("/functions/v1/")?;
+    (!name.is_empty() && !name.contains('/')).then_some(name)
+}
+
+/// The project reference and function a platform-hostname invocation path
+/// names: `/{projectRef}/functions/v1/{name}`.
+fn platform_function_path(path: &str) -> Option<(&str, &str)> {
+    let mut segments = path.strip_prefix('/')?.split('/');
+    let project_ref = segments.next().filter(|value| !value.is_empty())?;
+    if segments.next()? != "functions" || segments.next()? != "v1" {
+        return None;
+    }
+    let function_name = segments.next().filter(|value| !value.is_empty())?;
+    segments
+        .next()
+        .is_none()
+        .then_some((project_ref, function_name))
 }
 
 /// The `X-Mako-Custom-Domain` value as the control plane stores hostnames:
@@ -377,6 +464,42 @@ mod tests {
                 .iter()
                 .map(|hostname| (*hostname).to_owned())
                 .collect(),
+            allowed_origins: Vec::new(),
+        }
+    }
+
+    /// Cross-origin access is scoped to the function the path names, in
+    /// both shapes: the custom domain's, where the hostname names the
+    /// environment, and the platform's, where the path does.
+    #[test]
+    fn only_a_function_invocation_path_names_a_function() {
+        assert_eq!(
+            custom_domain_function_name("/functions/v1/hello"),
+            Some("hello")
+        );
+        for path in [
+            "/functions/v1/",
+            "/functions/v1",
+            "/functions/v1/hello/world",
+            "/prj_example00--env_example00/functions/v1/hello",
+            "/v1/functions/hello",
+            "/",
+        ] {
+            assert_eq!(custom_domain_function_name(path), None, "{path:?}");
+        }
+        assert_eq!(
+            platform_function_path("/prj_example00--env_example00/functions/v1/hello"),
+            Some(("prj_example00--env_example00", "hello"))
+        );
+        for path in [
+            "/functions/v1/hello",
+            "/prj_example00/functions/v1/hello/world",
+            "/prj_example00/functions/v2/hello",
+            "/prj_example00/functions/v1/",
+            "//functions/v1/hello",
+            "/v1/projects/prj_example00/environments/env_example00/auth/signin",
+        ] {
+            assert_eq!(platform_function_path(path), None, "{path:?}");
         }
     }
 

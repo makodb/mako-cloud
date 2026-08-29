@@ -1616,6 +1616,49 @@ paths:
                 $ref: "#/components/schemas/FunctionSecret"
         default:
           $ref: "#/components/responses/ApiError"
+    put:
+      tags: [Management]
+      operationId: createFunctionSecretValue
+      summary: Create a function secret from a value the caller supplies
+      description: >-
+        Stores a value the caller already holds -- typically a scoped service
+        credential a function needs -- as a function secret, instead of the
+        generated value `createFunctionSecret` returns. The value is write-once
+        and is never returned by this or any other operation, so the response
+        carries metadata only. A name is written once: creating a secret that
+        already exists is a conflict, and `rotateFunctionSecret` replaces a
+        value only with a generated one.
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/EnvironmentId"
+        - $ref: "#/components/parameters/FunctionSecretName"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [value]
+              properties:
+                value:
+                  type: string
+                  minLength: 1
+                  maxLength: 65536
+                  description: >-
+                    The secret value to store. Never echoed back, redacted
+                    from function logs like a generated value, and injected
+                    into a deployment only by the exact version it attached.
+      responses:
+        "201":
+          description: Function-secret metadata; the supplied value is never returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FunctionSecret"
+        default:
+          $ref: "#/components/responses/ApiError"
     delete:
       tags: [Management]
       operationId: retireFunctionSecret
@@ -2509,6 +2552,53 @@ paths:
                 $ref: "#/components/schemas/CustomDomain"
         default:
           $ref: "#/components/responses/ApiError"
+  /v1/projects/{projectId}/environments/{environmentId}/allowed-origins:
+    get:
+      tags: [Management]
+      operationId: getAllowedOrigins
+      summary: Read the browser origins allowed to call this environment
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/EnvironmentId"
+      responses:
+        "200":
+          description: The environment's allowed origins
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AllowedOrigins"
+        default:
+          $ref: "#/components/responses/ApiError"
+    put:
+      tags: [Management]
+      operationId: updateAllowedOrigins
+      summary: Replace the browser origins allowed to call this environment
+      description: >-
+        Replaces the allowlist. A browser application served from a listed
+        origin may call this environment's application API — auth, documents,
+        replication, storage, and function invocation — on the platform's
+        hostname and on any custom domain serving the environment. The
+        management, operator, and service APIs never answer cross-origin
+        requests, whatever is listed here.
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/EnvironmentId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AllowedOrigins"
+      responses:
+        "200":
+          description: The updated allowed origins
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AllowedOrigins"
+        default:
+          $ref: "#/components/responses/ApiError"
   /v1/projects/{projectId}/environments/{environmentId}/auth-settings:
     get:
       tags: [Management]
@@ -2996,6 +3086,47 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DocumentQueryPage"
+        default:
+          $ref: "#/components/responses/ApiError"
+  /v1/projects/{projectId}/environments/{environmentId}/service/users/{userId}/app-metadata:
+    post:
+      tags: [Auth]
+      operationId: setUserAppMetadataAsService
+      summary: Set a user's administrator-controlled app metadata using an explicit scoped service credential
+      description: |
+        Lets an application's own trusted code -- an edge function holding an
+        attached service secret -- write the app metadata that becomes a user's
+        verified token claims. The service credential must be scoped to the
+        reserved `users` target with the `update` operation. The body carries
+        the audited bypass reason and a one-level JSON merge patch: a key set
+        to `null` is removed, any other key replaces the stored value whole. A
+        privileged-bypass audit record naming the credential, the reason, and
+        the user is written before the metadata; if it cannot be written,
+        nothing is. A change advances the user's authorization epoch, so the
+        access token in hand stops verifying and the next refresh issues the
+        new claims. User-editable profile metadata is never touched. Application
+        bearer tokens and public project keys are refused on this route, as is
+        any request that arrived on a custom domain.
+      security:
+        - serviceProjectKey: []
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/EnvironmentId"
+        - $ref: "#/components/parameters/ApplicationUserId"
+        - $ref: "#/components/parameters/ServiceRequestId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ServiceAppMetadataUpdate"
+      responses:
+        "200":
+          description: Merged app metadata and the user's current authorization epoch
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServiceAppMetadataResult"
         default:
           $ref: "#/components/responses/ApiError"
   /v1/projects/{projectId}/environments/{environmentId}/collections/{collectionId}/replication/pull:
@@ -9202,6 +9333,29 @@ components:
         updatedAt:
           type: string
           format: date-time
+    AllowedOrigins:
+      type: object
+      additionalProperties: false
+      required: [allowedOrigins]
+      properties:
+        allowedOrigins:
+          $ref: "#/components/schemas/AllowedOriginList"
+    AllowedOriginList:
+      type: array
+      maxItems: 16
+      uniqueItems: true
+      description: >-
+        Browser origins allowed to call this environment's application API
+        cross-origin, matched exactly (`https://app.example.com`; `http` only
+        to loopback). The platform answers preflights and echoes the origin on
+        the environment's application routes for a listed origin, on its own
+        hostname and on any custom domain serving the environment. Management,
+        operator, and service routes never answer cross-origin. Empty means no
+        cross-origin access.
+      items:
+        type: string
+        maxLength: 262
+        pattern: "^https?://[a-z0-9.-]+(:[0-9]{1,5})?$"
     CustomDomainCreate:
       type: object
       additionalProperties: false
@@ -9461,6 +9615,38 @@ components:
           oneOf:
             - type: string
             - type: "null"
+    ServiceAppMetadataUpdate:
+      type: object
+      additionalProperties: false
+      required: [reason, appMetadata]
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 512
+          description: Audited reason for the privileged write, recorded on the bypass audit record.
+        appMetadata:
+          type: object
+          additionalProperties: true
+          description: >-
+            One-level JSON merge patch over the user's administrator-controlled
+            app metadata. A key set to null is removed; any other key replaces
+            the stored value whole. The patch and the merged result are bounded
+            like trusted metadata (64 KiB, nesting depth 16).
+    ServiceAppMetadataResult:
+      type: object
+      additionalProperties: false
+      required: [userId, appMetadata, authorizationEpoch]
+      properties:
+        userId:
+          $ref: "#/components/schemas/ApplicationUserId"
+        appMetadata:
+          type: object
+          additionalProperties: true
+        authorizationEpoch:
+          type: integer
+          format: int64
+          minimum: 0
     JsonDocument:
       type: object
       additionalProperties: true
@@ -10616,6 +10802,7 @@ components:
         - permission_denied
         - not_found
         - conflict
+        - precondition_failed
         - schema_mismatch
         - checkpoint_expired
         - rate_limited

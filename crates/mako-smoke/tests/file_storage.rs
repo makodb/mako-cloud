@@ -4,8 +4,9 @@
 //! user uploads, downloads, lists, and deletes objects through the data plane
 //! under the bucket's rules; another user is refused without a byte sent; a
 //! path that would escape the bucket is refused; a public bucket serves reads
-//! to anyone; and the developer sees counts, lists objects, and removes the
-//! bucket only after confirming the loss of what it holds.
+//! to anyone; conditional uploads make a write create-only or pin it to the
+//! version the caller read; and the developer sees counts, lists objects, and
+//! removes the bucket only after confirming the loss of what it holds.
 use std::collections::BTreeMap;
 use std::io::{Read, Write};
 use std::net::TcpStream;
@@ -292,6 +293,123 @@ fn applications_store_files_under_policy_and_developers_govern_the_buckets() {
     assert_eq!(status, 401, "a policy bucket needs a credential");
     let (status, _, _) = raw_request(data_port, "DELETE", &object, &app(&bob, None), b"");
     assert_eq!(status, 403);
+
+    // --- Conditional uploads: create-only, and pinned to a version. ----------
+    let conditional = |token: &str, condition: (&str, &str)| -> BTreeMap<String, String> {
+        let mut headers = app(token, Some("text/plain"));
+        headers.insert(condition.0.to_ascii_lowercase(), condition.1.to_owned());
+        headers
+    };
+    // `If-None-Match: *` is an upload that must not overwrite.
+    let (status, body, _) = raw_request(
+        data_port,
+        "PUT",
+        &object,
+        &conditional(&alice, ("If-None-Match", "*")),
+        b"buy bread",
+    );
+    assert_eq!(
+        status,
+        412,
+        "an existing object is not overwritten: {}",
+        String::from_utf8_lossy(&body)
+    );
+    let (status, body, _) = raw_request(data_port, "GET", &object, &app(&alice, None), b"");
+    assert_eq!(status, 200);
+    assert_eq!(body, b"buy milk", "a failed precondition writes nothing");
+    let fresh = format!("{scope}/storage/attachments/objects/notes/alice/new.txt");
+    let (status, body, _) = raw_request(
+        data_port,
+        "PUT",
+        &fresh,
+        &conditional(&alice, ("If-None-Match", "*")),
+        b"first",
+    );
+    assert_eq!(
+        status,
+        200,
+        "create-only succeeds on a free path: {}",
+        String::from_utf8_lossy(&body)
+    );
+    // `If-Match` pins the write to the version the caller read: the ETag a
+    // download returns.
+    let (status, _, headers) = raw_request(data_port, "GET", &fresh, &app(&alice, None), b"");
+    assert_eq!(status, 200);
+    let etag = headers.get("etag").cloned().expect("an ETag is returned");
+    assert!(etag.starts_with('"') && etag.ends_with('"'), "{etag}");
+    let (status, _, _) = raw_request(
+        data_port,
+        "PUT",
+        &fresh,
+        &conditional(&alice, ("If-Match", "\"blake3:0000000000000000\"")),
+        b"stale",
+    );
+    assert_eq!(status, 412, "a stale version does not win");
+    let (status, body, _) = raw_request(
+        data_port,
+        "PUT",
+        &fresh,
+        &conditional(&alice, ("If-Match", &etag)),
+        b"second",
+    );
+    assert_eq!(
+        status,
+        200,
+        "the version the caller read is replaced: {}",
+        String::from_utf8_lossy(&body)
+    );
+    let (_, body, headers) = raw_request(data_port, "GET", &fresh, &app(&alice, None), b"");
+    assert_eq!(body, b"second");
+    assert_ne!(
+        headers.get("etag").map(String::as_str),
+        Some(etag.as_str()),
+        "a new version has a new ETag"
+    );
+    // The same ETag no longer matches, and `If-Match` on nothing fails.
+    let (status, _, _) = raw_request(
+        data_port,
+        "PUT",
+        &fresh,
+        &conditional(&alice, ("If-Match", &etag)),
+        b"third",
+    );
+    assert_eq!(status, 412);
+    let (status, _, _) = raw_request(
+        data_port,
+        "PUT",
+        &format!("{scope}/storage/attachments/objects/notes/alice/absent.txt"),
+        &conditional(&alice, ("If-Match", "*")),
+        b"nothing to replace",
+    );
+    assert_eq!(status, 412, "replace-only needs something to replace");
+    // A condition the platform does not implement is refused, never
+    // silently dropped.
+    for condition in [
+        ("If-Match", "blake3:unquoted"),
+        ("If-Match", "W/\"blake3:weak\""),
+        ("If-None-Match", "\"blake3:0000000000000000\""),
+    ] {
+        let (status, _, _) = raw_request(
+            data_port,
+            "PUT",
+            &fresh,
+            &conditional(&alice, condition),
+            b"refused",
+        );
+        assert_eq!(status, 400, "{condition:?} must be refused");
+    }
+    // A precondition is checked after the rules: another user learns
+    // nothing about what is stored.
+    let (status, _, _) = raw_request(
+        data_port,
+        "PUT",
+        &fresh,
+        &conditional(&bob, ("If-None-Match", "*")),
+        b"bob was here",
+    );
+    assert_eq!(status, 403, "the rules decide before the precondition does");
+    let (status, _, _) = raw_request(data_port, "DELETE", &fresh, &app(&alice, None), b"");
+    assert_eq!(status, 200, "the conditional fixture is cleaned up");
 
     // --- Limits and paths fail closed. -----------------------------------------
     let (status, _, _) = raw_request(

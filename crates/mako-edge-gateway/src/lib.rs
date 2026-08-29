@@ -166,9 +166,21 @@ pub struct ResolvedFunctionRoute {
     /// a request arriving on a custom domain is served only when its host
     /// is one of them. Empty for an environment with none.
     pub custom_domains: Vec<String>,
+    /// The browser origins the function's environment answers cross-origin,
+    /// exactly as the data plane holds them: the gateway answers a preflight
+    /// and labels a response only for an origin on this list, wherever the
+    /// request arrived. Empty for an environment that allows none.
+    pub allowed_origins: Vec<String>,
 }
 
 impl ResolvedFunctionRoute {
+    /// Whether `origin` may be answered cross-origin for this route: an
+    /// exact match against the environment's installed list.
+    #[must_use]
+    pub fn allows_origin(&self, origin: &str) -> bool {
+        self.allowed_origins.iter().any(|listed| listed == origin)
+    }
+
     fn validate_for(
         &self,
         requested_name: &str,
@@ -188,6 +200,14 @@ impl ResolvedFunctionRoute {
                 .custom_domains
                 .iter()
                 .any(|hostname| !valid_custom_domain(hostname))
+            || self.allowed_origins.len() > MAX_ALLOWED_ORIGINS
+            || self
+                .allowed_origins
+                .iter()
+                .enumerate()
+                .any(|(index, origin)| {
+                    !valid_origin(origin) || self.allowed_origins[..index].contains(origin)
+                })
             || self.regional_deployments.len() > 64
             || self
                 .regional_deployments
@@ -1125,6 +1145,44 @@ fn valid_custom_domain(value: &str) -> bool {
         })
 }
 
+/// The most origins one environment allows; the public contract's bound.
+const MAX_ALLOWED_ORIGINS: usize = 16;
+const MAX_ORIGIN_BYTES: usize = 262;
+
+/// An origin in the exact form a browser sends: `http://` or `https://`, a
+/// lowercase host of letters, digits, dots, and hyphens, an optional port,
+/// and nothing else. Trusted metadata is still checked: an origin the
+/// gateway could not match byte for byte must never become an echoed header.
+fn valid_origin(value: &str) -> bool {
+    if value.is_empty() || value.len() > MAX_ORIGIN_BYTES {
+        return false;
+    }
+    let Some(authority) = value
+        .strip_prefix("https://")
+        .or_else(|| value.strip_prefix("http://"))
+    else {
+        return false;
+    };
+    let (host, port) = authority
+        .rsplit_once(':')
+        .map_or((authority, None), |(host, port)| (host, Some(port)));
+    port.is_none_or(|port| {
+        !port.is_empty()
+            && port.len() <= 5
+            && port.bytes().all(|byte| byte.is_ascii_digit())
+            && port
+                .parse::<u32>()
+                .is_ok_and(|port| (1..=65_535).contains(&port))
+    }) && !host.is_empty()
+        && host.len() <= 253
+        && host
+            .split('.')
+            .all(|label| !label.is_empty() && !label.starts_with('-') && !label.ends_with('-'))
+        && host.bytes().all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'-' | b'.')
+        })
+}
+
 fn valid_project_ref(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= MAX_PROJECT_REF_BYTES
@@ -1936,6 +1994,49 @@ mod tests {
         );
     }
 
+    /// The environment's allowlist is trusted metadata too: it carries only
+    /// exact, unique, bounded origins, and matches byte for byte.
+    #[test]
+    fn route_metadata_refuses_malformed_allowed_origins() {
+        let mut route = routes(tenant("prj_example00"), 1_024).route;
+        route.allowed_origins = vec![
+            "https://app.example.com".to_owned(),
+            "http://127.0.0.1:5173".to_owned(),
+        ];
+        route
+            .validate_for("hello-world", "req_1")
+            .expect("exact origins");
+        assert!(route.allows_origin("https://app.example.com"));
+        assert!(route.allows_origin("http://127.0.0.1:5173"));
+        assert!(!route.allows_origin("https://other.example.com"));
+        assert!(!route.allows_origin("https://APP.example.com"));
+        for malformed in [
+            vec!["app.example.com".to_owned()],
+            vec!["https://App.example.com".to_owned()],
+            vec!["https://app.example.com/".to_owned()],
+            vec!["https://app.example.com:0".to_owned()],
+            vec!["https://*.example.com".to_owned()],
+            vec![
+                "https://app.example.com".to_owned(),
+                "https://app.example.com".to_owned(),
+            ],
+            (0..=MAX_ALLOWED_ORIGINS)
+                .map(|index| format!("https://app{index}.example.com"))
+                .collect(),
+        ] {
+            route.allowed_origins = malformed.clone();
+            assert!(
+                route.validate_for("hello-world", "req_1").is_err(),
+                "{malformed:?} must be refused"
+            );
+        }
+        route.allowed_origins = Vec::new();
+        route
+            .validate_for("hello-world", "req_1")
+            .expect("an environment may allow none");
+        assert!(!route.allows_origin("https://app.example.com"));
+    }
+
     fn request(token: &str, body: Vec<u8>) -> FunctionGatewayRequest {
         FunctionGatewayRequest {
             request_id: "req_testgateway0001".to_owned(),
@@ -1983,6 +2084,7 @@ mod tests {
                 request_limit_bytes,
                 response_limit_bytes: 4096,
                 custom_domains: Vec::new(),
+                allowed_origins: Vec::new(),
             },
         }
     }

@@ -9,6 +9,17 @@ pub const MAX_FUNCTION_BUNDLE_BYTES: usize = 10 * 1024 * 1024;
 const MAX_SOURCE_FILES: usize = 512;
 const MAX_SOURCE_PATH_BYTES: usize = 512;
 const MAX_DEPENDENCIES: usize = 256;
+/// The one bare specifier a function may import without declaring it. The edge
+/// runtime supplies the built SDK to every worker as a first-party module and
+/// maps this specifier onto it, so accepting it here is a deliberate contract
+/// with the runtime rather than a hole: every other bare specifier must resolve
+/// to an uploaded module through a dependency mapping, or the upload is
+/// refused with `unresolved_import` instead of failing when the worker boots.
+pub const RUNTIME_SDK_SPECIFIER: &str = "@mako-cloud/edge-sdk";
+/// Module paths the platform reserves inside a worker directory: the console
+/// shim and the injected SDK live there, and a bundle must not be able to
+/// shadow either.
+const RESERVED_MODULE_PREFIX: &str = "__mako";
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -204,6 +215,15 @@ fn build_source_bundle(
             ));
             continue;
         }
+        if reserved_source_path(&file.path) {
+            diagnostics.push(error(
+                "reserved_module_path",
+                "Module paths beginning with `__mako` are reserved by the runtime.",
+                Some(file.path),
+                None,
+            ));
+            continue;
+        }
         let contents = if file.path.ends_with(".wasm") {
             file.contents
         } else {
@@ -255,6 +275,15 @@ fn build_source_bundle(
     }
 
     for (specifier, target) in &dependencies {
+        if specifier == RUNTIME_SDK_SPECIFIER {
+            diagnostics.push(error(
+                "reserved_dependency_specifier",
+                "The runtime supplies `@mako-cloud/edge-sdk`; a bundle may not remap it.",
+                None,
+                None,
+            ));
+            continue;
+        }
         if !valid_dependency_specifier(specifier)
             || !valid_source_path(target)
             || !modules.contains_key(target)
@@ -333,7 +362,7 @@ fn resolve_specifier(
         let candidate = relative_path(importer, specifier)?;
         return module_candidate(&candidate, modules);
     }
-    if specifier == "@mako-cloud/edge-sdk" || specifier.starts_with("mako:") {
+    if specifier == RUNTIME_SDK_SPECIFIER {
         return Some(specifier.to_owned());
     }
     dependencies.get(specifier).cloned()
@@ -437,6 +466,14 @@ fn valid_source_path(path: &str) -> bool {
         && path
             .split('/')
             .all(|part| !part.is_empty() && part != "." && part != "..")
+}
+
+/// A path the runtime owns inside a worker directory. Matched on the first
+/// segment so a nested `a/__mako_x.ts` stays a normal module.
+fn reserved_source_path(path: &str) -> bool {
+    path.split('/')
+        .next()
+        .is_some_and(|first| first.starts_with(RESERVED_MODULE_PREFIX))
 }
 
 fn valid_dependency_specifier(specifier: &str) -> bool {
@@ -544,6 +581,116 @@ mod tests {
         let second = build(second);
         assert_eq!(first.record.digest, second.record.digest);
         assert_eq!(first.bytes, second.bytes);
+    }
+
+    #[test]
+    fn the_runtime_sdk_is_the_only_bare_specifier_a_bundle_may_import() {
+        // The runtime supplies this module to every worker and maps the
+        // specifier onto it, so the bundle validator resolves it deliberately.
+        let built = build_function_bundle(
+            tenant(),
+            FunctionBundleUpload::Source {
+                entrypoint: "index.ts".to_owned(),
+                files: vec![FunctionSourceFile {
+                    path: "index.ts".to_owned(),
+                    contents:
+                        b"import { createServiceClient } from '@mako-cloud/edge-sdk';\nexport default { fetch: () => new Response(createServiceClient) };\n"
+                            .to_vec(),
+                }],
+                dependencies: BTreeMap::new(),
+            },
+            1,
+        )
+        .expect("the runtime SDK resolves");
+        let archive: serde_json::Value =
+            serde_json::from_slice(&built.bytes).expect("archive is json");
+        assert_eq!(
+            archive["resolvedImports"]["index.ts"][RUNTIME_SDK_SPECIFIER],
+            serde_json::Value::String(RUNTIME_SDK_SPECIFIER.to_owned()),
+        );
+
+        // Anything else the platform does not supply is refused here rather
+        // than at boot, including specifiers that merely look first-party.
+        for specifier in ["mako:kv", "npm:left-pad", "@mako-cloud/rxdb"] {
+            let refused = build_function_bundle(
+                tenant(),
+                FunctionBundleUpload::Source {
+                    entrypoint: "index.ts".to_owned(),
+                    files: vec![FunctionSourceFile {
+                        path: "index.ts".to_owned(),
+                        contents: format!("import x from '{specifier}';\n").into_bytes(),
+                    }],
+                    dependencies: BTreeMap::new(),
+                },
+                1,
+            )
+            .expect_err("an unsupplied module is refused");
+            assert_eq!(refused[0].code, "unresolved_import", "{specifier}");
+        }
+    }
+
+    #[test]
+    fn a_bundle_cannot_shadow_or_remap_what_the_runtime_injects() {
+        let shadowed = build_function_bundle(
+            tenant(),
+            FunctionBundleUpload::Source {
+                entrypoint: "index.ts".to_owned(),
+                files: vec![
+                    FunctionSourceFile {
+                        path: "index.ts".to_owned(),
+                        contents: b"export default {};\n".to_vec(),
+                    },
+                    FunctionSourceFile {
+                        path: "__mako_edge_sdk.mjs".to_owned(),
+                        contents: b"export const createServiceClient = null;\n".to_vec(),
+                    },
+                ],
+                dependencies: BTreeMap::new(),
+            },
+            1,
+        )
+        .expect_err("reserved module path");
+        assert_eq!(shadowed[0].code, "reserved_module_path");
+
+        let remapped = build_function_bundle(
+            tenant(),
+            FunctionBundleUpload::Source {
+                entrypoint: "index.ts".to_owned(),
+                files: vec![
+                    FunctionSourceFile {
+                        path: "index.ts".to_owned(),
+                        contents: b"import x from '@mako-cloud/edge-sdk';\nexport default x;\n"
+                            .to_vec(),
+                    },
+                    FunctionSourceFile {
+                        path: "fake.ts".to_owned(),
+                        contents: b"export default 1;\n".to_vec(),
+                    },
+                ],
+                dependencies: BTreeMap::from([(
+                    RUNTIME_SDK_SPECIFIER.to_owned(),
+                    "fake.ts".to_owned(),
+                )]),
+            },
+            1,
+        )
+        .expect_err("reserved dependency specifier");
+        assert_eq!(remapped[0].code, "reserved_dependency_specifier");
+
+        // A nested path that merely starts with the prefix is an ordinary module.
+        build_function_bundle(
+            tenant(),
+            FunctionBundleUpload::Source {
+                entrypoint: "index.ts".to_owned(),
+                files: vec![FunctionSourceFile {
+                    path: "index.ts".to_owned(),
+                    contents: b"export default {};\n".to_vec(),
+                }],
+                dependencies: BTreeMap::new(),
+            },
+            1,
+        )
+        .expect("an ordinary bundle still builds");
     }
 
     #[test]

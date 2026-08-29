@@ -76,6 +76,22 @@ reset to the built-in default), Logs (retained, scrubbed function output),
 Usage (this month's meters against the plan), and Activity (the audit trail as
 the developer may read it).
 
+Settings carries the environment's Allowed origins: the browser origins that
+may call this environment's application API — authentication, documents,
+replication, storage, and function invocation — from a page served somewhere
+else. A browser application must list its own origin there whatever host it
+is served from; the project's ordinary API URL is on the platform hostname,
+so a custom domain is a convenience, never a prerequisite. The section shows
+what is allowed now ("None" when the list is empty) and edits the whole list
+one origin per line, matched exactly as the browser sends it
+(`https://app.example.com`, or `http://127.0.0.1:5173` for a local
+development server — plain http only to loopback), at most 16. The list is
+checked in the browser before anything is sent — a path, a query, a trailing
+slash, a default port, or plain http off loopback is refused with its reason,
+as is whatever the API refuses — and Save replaces the whole list with an
+idempotency key. The management and operator APIs never answer cross-origin
+calls, whatever an environment lists.
+
 A function's own page carries its Schedules: every cron schedule attached to
 the function with its expression (five fields, evaluated in UTC), state, next
 run, and last run's outcome, response status, and duration; a form that

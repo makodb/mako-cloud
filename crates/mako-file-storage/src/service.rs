@@ -46,6 +46,20 @@ pub struct ObjectRequest {
     pub storage_ceiling_bytes: Option<u64>,
 }
 
+/// A condition a write holds against the object currently at the path,
+/// decided atomically with the write: the record it is checked against is
+/// the one the commit is conditioned on.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ObjectPrecondition {
+    /// `If-None-Match: *` -- only when nothing is stored at the path.
+    NotStored,
+    /// `If-Match: *` -- only when something is stored at the path.
+    Stored,
+    /// `If-Match: "<digest>"` -- only when the stored object's plaintext
+    /// digest (the `ETag` a read returns) is exactly this.
+    Digest(String),
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct StoredObject {
     pub record: ObjectRecord,
@@ -213,6 +227,26 @@ impl FileStorageService {
         bytes: &[u8],
         request: &ObjectRequest,
     ) -> Result<ObjectRecord, FileStorageError> {
+        self.put_object_if(bucket_id, path, content_type, bytes, request, &[])
+            .await
+    }
+
+    /// [`Self::put_object`] that writes only if every precondition holds
+    /// against the object currently at the path. Preconditions are checked
+    /// after the bucket's rules, so a caller the rules refuse learns nothing
+    /// about what is stored, and atomically with the commit: the record they
+    /// were checked against is the one the write is conditioned on, so a
+    /// concurrent change is a [`FileStorageError::Conflict`], never a write
+    /// past a failed check.
+    pub async fn put_object_if(
+        &self,
+        bucket_id: &str,
+        path: &str,
+        content_type: &str,
+        bytes: &[u8],
+        request: &ObjectRequest,
+        preconditions: &[ObjectPrecondition],
+    ) -> Result<ObjectRecord, FileStorageError> {
         validate_object_path(path)?;
         let bucket = self.get_bucket(bucket_id).await?;
         let size = u64::try_from(bytes.len()).map_err(|_| FileStorageError::ObjectTooLarge {
@@ -276,6 +310,18 @@ impl FileStorageService {
             previous.as_ref().map(ObjectRecord::policy_document),
             Some(next.policy_document()),
         )?;
+        for precondition in preconditions {
+            let holds = match precondition {
+                ObjectPrecondition::NotStored => previous.is_none(),
+                ObjectPrecondition::Stored => previous.is_some(),
+                ObjectPrecondition::Digest(digest) => previous
+                    .as_ref()
+                    .is_some_and(|record| &record.digest == digest),
+            };
+            if !holds {
+                return Err(FileStorageError::PreconditionFailed);
+            }
+        }
         // Bytes first, then the record: an orphaned blob is a leak, a record
         // pointing at nothing is a lie.
         let address =
@@ -1069,6 +1115,139 @@ mod tests {
                 "buckets are per tenant too"
             );
             assert_eq!(record.size_bytes, 14);
+        });
+    }
+
+    /// `If-None-Match: *` makes an upload create-only; `If-Match` pins it
+    /// to the version the caller read. Both are decided after the rules and
+    /// with the record the commit is conditioned on.
+    #[test]
+    fn put_preconditions_hold_against_the_stored_object_after_the_rules() {
+        futures::executor::block_on(async {
+            let adapter: Arc<dyn KvAdapter> = Arc::new(MemoryAdapter::new());
+            let objects = Arc::new(MemoryObjectStore::default());
+            let service = service_on(adapter, objects, tenant());
+            service
+                .install_bucket(owner_bucket("receipts", BucketAccess::Policy), 500)
+                .await
+                .expect("bucket");
+            let alice = user("user_alice");
+            let path = "households/h1/receipt.txt";
+            assert_eq!(
+                service
+                    .put_object_if(
+                        "receipts",
+                        path,
+                        "text/plain",
+                        b"first",
+                        &alice,
+                        &[ObjectPrecondition::Digest("sha256:nothing".to_owned())],
+                    )
+                    .await
+                    .expect_err("nothing to match yet"),
+                FileStorageError::PreconditionFailed
+            );
+            assert_eq!(
+                service
+                    .put_object_if(
+                        "receipts",
+                        path,
+                        "text/plain",
+                        b"first",
+                        &alice,
+                        &[ObjectPrecondition::Stored],
+                    )
+                    .await
+                    .expect_err("nothing stored yet"),
+                FileStorageError::PreconditionFailed
+            );
+            let first = service
+                .put_object_if(
+                    "receipts",
+                    path,
+                    "text/plain",
+                    b"first",
+                    &alice,
+                    &[ObjectPrecondition::NotStored],
+                )
+                .await
+                .expect("create-only upload of a new path");
+            // A second create-only upload loses, and leaves the object alone.
+            assert_eq!(
+                service
+                    .put_object_if(
+                        "receipts",
+                        path,
+                        "text/plain",
+                        b"second",
+                        &alice,
+                        &[ObjectPrecondition::NotStored],
+                    )
+                    .await
+                    .expect_err("the path is taken"),
+                FileStorageError::PreconditionFailed
+            );
+            assert_eq!(
+                service
+                    .get_object("receipts", path, &alice)
+                    .await
+                    .expect("read")
+                    .bytes,
+                b"first"
+            );
+            // The wrong digest loses; the digest a read returned wins.
+            assert_eq!(
+                service
+                    .put_object_if(
+                        "receipts",
+                        path,
+                        "text/plain",
+                        b"second",
+                        &alice,
+                        &[ObjectPrecondition::Digest("sha256:stale".to_owned())],
+                    )
+                    .await
+                    .expect_err("stale digest"),
+                FileStorageError::PreconditionFailed
+            );
+            let second = service
+                .put_object_if(
+                    "receipts",
+                    path,
+                    "text/plain",
+                    b"second",
+                    &alice,
+                    &[
+                        ObjectPrecondition::Stored,
+                        ObjectPrecondition::Digest(first.digest.clone()),
+                    ],
+                )
+                .await
+                .expect("matching digest");
+            assert_ne!(second.digest, first.digest);
+            assert_eq!(
+                service
+                    .get_object("receipts", path, &alice)
+                    .await
+                    .expect("read")
+                    .bytes,
+                b"second"
+            );
+            // The rules answer first: a stranger's create-only probe of a
+            // taken path is refused as a policy denial, not a precondition.
+            assert!(matches!(
+                service
+                    .put_object_if(
+                        "receipts",
+                        path,
+                        "text/plain",
+                        b"probe",
+                        &user("user_mallory"),
+                        &[ObjectPrecondition::NotStored],
+                    )
+                    .await,
+                Err(FileStorageError::Denied(_))
+            ));
         });
     }
 }

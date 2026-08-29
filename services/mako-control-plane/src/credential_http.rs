@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
-use mako_control_plane::{CredentialAdminError, FunctionSecretIssue, FunctionSecretName};
+use mako_control_plane::{
+    CredentialAdminError, FunctionSecretIssue, FunctionSecretName, FunctionSecretValue,
+};
 use mako_service_runtime::{
     HttpApiError, HttpMethod, HttpRequest, HttpResponse, HttpRouter, RouteRegistrationError,
 };
@@ -30,6 +32,11 @@ pub(crate) fn add_credential_routes(
             HttpMethod::Get,
             "/v1/projects/{projectId}/environments/{environmentId}/function-secrets/{secretName}",
             handle_get_secret,
+        ),
+        (
+            HttpMethod::Put,
+            "/v1/projects/{projectId}/environments/{environmentId}/function-secrets/{secretName}",
+            handle_create_secret_value,
         ),
         (
             HttpMethod::Delete,
@@ -68,6 +75,34 @@ fn handle_create_secret(
             .await
             .map_err(|error| credential_error(request, error))?;
         secret_issue(request, 201, issue)
+    })
+}
+
+/// Creates a secret from a value the caller already holds -- a scoped service
+/// credential a function needs, most often -- rather than one the platform
+/// generates. It is stored, attached by version, injected, and redacted
+/// exactly like a generated value; the only difference is where the bytes came
+/// from, and that they are never echoed back, so the response is metadata
+/// only.
+fn handle_create_secret_value(
+    graph: &Arc<ControlPlaneGraph>,
+    request: &HttpRequest,
+) -> Result<HttpResponse, HttpApiError> {
+    no_query(request)?;
+    require_json(request)?;
+    require_idempotency(request)?;
+    let body: SecretValueWire = parse_json(request)?;
+    let value = FunctionSecretValue::parse(body.value)
+        .map_err(|_| invalid(request, "function secret value is invalid"))?;
+    let tenant = tenant(request)?;
+    let name = secret_name(request)?;
+    with_developer(graph, request, |actor, now| async move {
+        let metadata = graph
+            .credential_service()
+            .create_function_secret_with_value(&actor, &tenant, name, value, now)
+            .await
+            .map_err(|error| credential_error(request, error))?;
+        public_json(request, 201, &metadata)
     })
 }
 
@@ -170,4 +205,12 @@ fn credential_error(request: &HttpRequest, error: CredentialAdminError) -> HttpA
 #[serde(deny_unknown_fields)]
 struct SecretNameWire {
     name: String,
+}
+
+/// The supplied value never reaches a log or an error: it is parsed into
+/// `FunctionSecretValue`, whose `Debug` is redacted, and dropped from there.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SecretValueWire {
+    value: String,
 }

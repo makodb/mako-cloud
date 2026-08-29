@@ -49,6 +49,32 @@ Requests carry an application session (`Authorization: Bearer`) or, on the
 loopback-only `/service/storage/…` routes, a service credential with the same
 privileged-bypass audit as documents. Public buckets serve `GET` to anyone.
 
+### Conditional uploads
+
+An upload may carry a condition on what is stored at the path, so two
+clients racing on one object cannot silently overwrite each other:
+
+| Header | Meaning | If it does not hold |
+| --- | --- | --- |
+| `If-None-Match: *` | store only if the path is free (create-only) | `412 precondition_failed` |
+| `If-Match: *` | store only if something is there (replace-only) | `412 precondition_failed` |
+| `If-Match: "<etag>"` | store only if the stored object is exactly that version | `412 precondition_failed` |
+
+The entity tag is the one a download returns: the plaintext digest in
+quotes. Only a single strong tag is accepted — a list, a weak `W/"…"` tag,
+or an `If-None-Match` other than `*` is refused with `400 invalid_request`
+rather than ignored, so a caller that asked for a condition the platform
+does not implement is never answered as if it had asked for none. Both
+headers together are both checked.
+
+Conditions are evaluated **after** the bucket's rules, so a caller the rules
+refuse learns nothing about what is stored, and **atomically with the
+commit**: the record they are checked against is the one the write is
+conditioned on, so a concurrent change answers `409 conflict`, never a write
+past a failed check. A refused upload writes nothing and leaves the stored
+object and its `ETag` untouched. Nothing about a `DELETE` is conditional
+today.
+
 ## At rest
 
 Object metadata and per-bucket totals live in the environment's RocksDB
@@ -91,4 +117,6 @@ uncompilable rules, and per-tenant keys. `crates/mako-smoke/tests/file_storage.r
 runs the whole flow against the real data and control planes with an
 in-memory stand-in for the S3 store (`ObjectStoreStub`): bucket creation,
 upload/download/list/delete under policy, refusals without bytes, path
-escapes, a public bucket, developer listing and totals, and confirmed removal.
+escapes, conditional uploads (`If-None-Match: *` and `If-Match` against a
+read `ETag`, including a stale one and a refused malformed condition), a
+public bucket, developer listing and totals, and confirmed removal.
