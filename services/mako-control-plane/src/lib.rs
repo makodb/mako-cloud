@@ -16,6 +16,7 @@ mod explorer_invalidation;
 mod function_http;
 mod function_logs;
 mod function_resolution;
+mod function_schedule_http;
 mod graph;
 mod http_support;
 mod identity;
@@ -60,6 +61,7 @@ pub fn control_plane_router(
     credential_http::add_credential_routes(&mut router, Arc::clone(&graph))?;
     email_template_http::add_email_template_routes(&mut router, Arc::clone(&graph))?;
     function_http::add_function_routes(&mut router, Arc::clone(&graph))?;
+    function_schedule_http::add_function_schedule_routes(&mut router, Arc::clone(&graph))?;
     observability_http::add_observability_routes(&mut router, Arc::clone(&graph))?;
     operator_http::add_operator_routes(&mut router, Arc::clone(&graph))?;
     collection_http::add_collection_routes(&mut router, Arc::clone(&graph))?;

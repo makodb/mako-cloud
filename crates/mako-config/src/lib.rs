@@ -161,6 +161,9 @@ pub struct ServiceConfig {
     pub operator_authentication: OperatorAuthenticationSettings,
     pub object_store_endpoint: Url,
     pub data_plane_address: SocketAddr,
+    /// Where the control plane's scheduler invokes functions: the edge
+    /// gateway's loopback listener.
+    pub edge_gateway_address: SocketAddr,
     pub runtime_supervisor_address: SocketAddr,
     pub telemetry_query_address: SocketAddr,
     pub otlp_address: SocketAddr,
@@ -505,6 +508,7 @@ struct RawConfig {
     operator_break_glass_bearer_enabled: String,
     object_store_endpoint: String,
     data_plane_address: String,
+    edge_gateway_address: String,
     runtime_supervisor_address: String,
     telemetry_query_address: String,
     otlp_address: String,
@@ -612,6 +616,7 @@ impl RawConfig {
             operator_break_glass_bearer_enabled: "false".into(),
             object_store_endpoint: "http://127.0.0.1:8333".into(),
             data_plane_address: "127.0.0.1:8080".into(),
+            edge_gateway_address: "127.0.0.1:8082".into(),
             runtime_supervisor_address: "127.0.0.1:9001".into(),
             telemetry_query_address: "127.0.0.1:9465".into(),
             otlp_address: "127.0.0.1:4317".into(),
@@ -833,6 +838,9 @@ impl RawConfig {
         }
         if let Some(value) = overlay.dependencies.data_plane_address {
             self.data_plane_address = value;
+        }
+        if let Some(value) = overlay.dependencies.edge_gateway_address {
+            self.edge_gateway_address = value;
         }
         if let Some(value) = overlay.dependencies.runtime_supervisor_address {
             self.runtime_supervisor_address = value;
@@ -1156,6 +1164,11 @@ impl RawConfig {
             loader,
             "MAKO_DATA_PLANE_ENDPOINT",
             &mut self.data_plane_address,
+        )?;
+        apply_string(
+            loader,
+            "MAKO_EDGE_GATEWAY_ENDPOINT",
+            &mut self.edge_gateway_address,
         )?;
         apply_string(
             loader,
@@ -1863,6 +1876,18 @@ impl RawConfig {
                 "control-plane data plane must use a loopback address",
             ));
         }
+        // The scheduler invokes functions through the edge gateway over the
+        // same loopback-only internal RPC.
+        let edge_gateway_address = parse_socket(
+            &self.edge_gateway_address,
+            "dependencies.edge_gateway_address",
+        )?;
+        if service == ServiceKind::ControlPlane && !edge_gateway_address.ip().is_loopback() {
+            return Err(invalid(
+                "dependencies.edge_gateway_address",
+                "control-plane edge gateway must use a loopback address",
+            ));
+        }
         let runtime_supervisor_address = parse_socket(
             &self.runtime_supervisor_address,
             "dependencies.runtime_supervisor_address",
@@ -1956,6 +1981,7 @@ impl RawConfig {
             operator_authentication,
             object_store_endpoint,
             data_plane_address,
+            edge_gateway_address,
             runtime_supervisor_address,
             telemetry_query_address,
             otlp_address,
@@ -2042,6 +2068,7 @@ struct DependenciesOverlay {
     smtp_address: Option<String>,
     object_store_endpoint: Option<String>,
     data_plane_address: Option<String>,
+    edge_gateway_address: Option<String>,
     runtime_supervisor_address: Option<String>,
     telemetry_query_address: Option<String>,
     otlp_address: Option<String>,
@@ -2493,6 +2520,26 @@ mod tests {
     static NEXT_FILE: AtomicU64 = AtomicU64::new(0);
 
     #[test]
+    fn the_edge_gateway_endpoint_is_overridable_and_loopback_only_for_the_control_plane() {
+        let control =
+            ConfigLoader::from_environment([("MAKO_EDGE_GATEWAY_ENDPOINT", "127.0.0.1:18082")])
+                .load(ServiceKind::ControlPlane)
+                .expect("loopback override");
+        assert_eq!(control.edge_gateway_address.port(), 18082);
+        let error =
+            ConfigLoader::from_environment([("MAKO_EDGE_GATEWAY_ENDPOINT", "10.0.0.5:8082")])
+                .load(ServiceKind::ControlPlane)
+                .expect_err("the scheduler hop is loopback only");
+        assert_eq!(error.code, ConfigErrorCode::InvalidValue);
+        assert_eq!(error.field, "dependencies.edge_gateway_address");
+        let error =
+            ConfigLoader::from_environment([("MAKO_EDGE_GATEWAY_ENDPOINT", "not-a-socket")])
+                .load(ServiceKind::ControlPlane)
+                .expect_err("malformed");
+        assert_eq!(error.field, "dependencies.edge_gateway_address");
+    }
+
+    #[test]
     fn defaults_are_typed_and_service_specific() {
         let data = ConfigLoader::default()
             .load(ServiceKind::DataPlane)
@@ -2502,6 +2549,11 @@ mod tests {
             .expect("valid defaults");
         assert_eq!(data.bind_address.port(), 8080);
         assert_eq!(control.bind_address.port(), 8081);
+        assert_eq!(
+            control.edge_gateway_address,
+            "127.0.0.1:8082".parse().expect("socket"),
+            "the scheduler reaches the gateway on its default listener"
+        );
         assert_eq!(data.environment, DeploymentEnvironment::Local);
         assert!(data.control_sqlite.is_none());
         assert!(control.control_sqlite.is_some());

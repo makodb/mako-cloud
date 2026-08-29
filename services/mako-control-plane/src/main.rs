@@ -211,6 +211,39 @@ fn start(service: ServiceKind) -> ExitCode {
             }
         })
     };
+    // Scheduled functions: every five seconds, fire what has fallen due
+    // through the edge gateway and record the run. A pass runs its
+    // invocations one after another, so the cadence is the floor on how
+    // promptly a due time is noticed, not a bound on how long a pass takes.
+    let function_schedule_worker = {
+        let stopping = Arc::clone(&mail_stopping);
+        let graph = Arc::clone(&graph);
+        thread::spawn(move || {
+            let mut failures: u64 = 0;
+            while !stopping.load(Ordering::Acquire) {
+                match SystemTime::now()
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .map(|duration| duration.as_secs())
+                {
+                    Ok(now) => match block_on(graph.function_schedule_worker().run_once(now)) {
+                        Ok(report) => {
+                            failures = 0;
+                            graph.observe_function_schedules(&report);
+                        }
+                        Err(_) => {
+                            graph.observe_function_schedule_worker_failure();
+                            if failures.is_multiple_of(12) {
+                                eprintln!("function schedule worker pass failed: class=storage");
+                            }
+                            failures = failures.saturating_add(1);
+                        }
+                    },
+                    Err(_) => eprintln!("function schedule worker pass failed: class=clock"),
+                }
+                thread::park_timeout(Duration::from_secs(5));
+            }
+        })
+    };
     // Project and environment creation enqueue provisioning and report an
     // asynchronous state. Without this pass those resources stay in
     // `provisioning` and never expose a usable data plane.
@@ -266,6 +299,7 @@ fn start(service: ServiceKind) -> ExitCode {
     operator_maintenance.thread().unpark();
     data_job_worker.thread().unpark();
     webhook_worker.thread().unpark();
+    function_schedule_worker.thread().unpark();
     provisioning_worker.thread().unpark();
     function_log_worker.thread().unpark();
     if let Some(worker) = &mail_worker {
@@ -288,6 +322,11 @@ fn start(service: ServiceKind) -> ExitCode {
             webhook_worker
                 .join()
                 .map_err(|_| "webhook worker did not stop")
+        })
+        .and_then(|()| {
+            function_schedule_worker
+                .join()
+                .map_err(|_| "function schedule worker did not stop")
         });
     let provisioning_worker_shutdown = provisioning_worker
         .join()

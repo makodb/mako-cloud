@@ -333,6 +333,132 @@ fn deployed_function_is_served_through_the_edge_gateway() {
         !stored.contains("caller@example.com") && !stored.contains("hunter2"),
         "the raw address or password reached the retained store: {stored}"
     );
+
+    // --- A schedule invokes the deployed function through the gateway. -----
+    // The scheduler is a control-plane worker calling the gateway's internal
+    // route, so the run is admitted, metered, and recorded like any other
+    // invocation. Run-now proves the path without waiting for a cron minute.
+    let schedules_path = format!(
+        "/v1/projects/{PROJECT_ID}/environments/{ENVIRONMENT_ID}/functions/{FUNCTION_NAME}/schedules"
+    );
+    let manage = |key: &str| {
+        let mut headers = reading.clone();
+        headers.insert(
+            "idempotency-key".to_owned(),
+            format!("edge-schedule-smoke-{key}"),
+        );
+        headers
+    };
+    let (status, body) = request(
+        CONTROL_PLANE_PORT,
+        "POST",
+        &schedules_path,
+        &manage("invalid"),
+        Some(&serde_json::json!({ "cron": "every minute" })),
+    );
+    assert_eq!(
+        status, 400,
+        "an invalid expression is refused at save: {body}"
+    );
+    let (status, body) = request(
+        CONTROL_PLANE_PORT,
+        "POST",
+        &schedules_path,
+        &manage("create"),
+        Some(&serde_json::json!({
+            "name": "heartbeat",
+            "cron": "*/5 * * * *",
+            "request": { "method": "GET", "path": "/?source=schedule" },
+        })),
+    );
+    assert_eq!(status, 201, "creating the schedule failed: {body}");
+    let schedule: serde_json::Value = serde_json::from_str(&body).expect("schedule json");
+    let schedule_id = schedule["id"].as_str().expect("schedule id").to_owned();
+    assert_eq!(schedule["state"], "active");
+    assert_eq!(schedule["timezone"], "UTC");
+    assert!(
+        schedule["nextRunAt"].as_str().is_some(),
+        "an active schedule shows its next run: {body}"
+    );
+    let (status, body) = request(
+        CONTROL_PLANE_PORT,
+        "POST",
+        &format!("{schedules_path}/{schedule_id}/actions/run-now"),
+        &manage("run-now"),
+        None,
+    );
+    assert_eq!(status, 202, "run-now failed: {body}");
+    let queued: serde_json::Value = serde_json::from_str(&body).expect("run json");
+    assert_eq!(queued["manual"], true);
+    let run_id = queued["id"].as_str().expect("run id").to_owned();
+    let runs_path = format!("{schedules_path}/{schedule_id}/runs?limit=20");
+    let deadline = Instant::now() + Duration::from_secs(90);
+    let finished = loop {
+        let (status, body) = request(CONTROL_PLANE_PORT, "GET", &runs_path, &reading, None);
+        assert_eq!(status, 200, "reading the run history failed: {body}");
+        let page: serde_json::Value = serde_json::from_str(&body).expect("runs json");
+        let run = page["items"]
+            .as_array()
+            .and_then(|items| items.iter().find(|item| item["id"] == run_id))
+            .cloned();
+        if let Some(run) = run
+            && run["outcome"].as_str().is_some()
+        {
+            break run;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the manual run never completed (last: {body})"
+        );
+        sleep(Duration::from_secs(2));
+    };
+    assert_eq!(
+        finished["outcome"], "succeeded",
+        "the scheduled invocation reached the function: {finished}"
+    );
+    assert_eq!(finished["responseStatus"], 200);
+    assert!(finished["durationMilliseconds"].as_u64().is_some());
+    assert!(finished["functionVersion"].as_u64().is_some());
+    let (status, body) = request(
+        CONTROL_PLANE_PORT,
+        "GET",
+        &format!("{schedules_path}/{schedule_id}"),
+        &reading,
+        None,
+    );
+    assert_eq!(status, 200, "reading the schedule failed: {body}");
+    let read: serde_json::Value = serde_json::from_str(&body).expect("schedule json");
+    assert_eq!(
+        read["lastRun"]["id"], run_id,
+        "the schedule shows its last run: {body}"
+    );
+    // Pausing keeps the schedule but drops its next run.
+    let (status, body) = request(
+        CONTROL_PLANE_PORT,
+        "PATCH",
+        &format!("{schedules_path}/{schedule_id}"),
+        &manage("pause"),
+        Some(&serde_json::json!({ "enabled": false })),
+    );
+    assert_eq!(status, 200, "pausing failed: {body}");
+    let paused: serde_json::Value = serde_json::from_str(&body).expect("schedule json");
+    assert_eq!(paused["state"], "paused");
+    assert!(
+        paused["nextRunAt"].is_null(),
+        "a paused schedule has no next run: {body}"
+    );
+    let (status, body) = request(
+        CONTROL_PLANE_PORT,
+        "DELETE",
+        &format!("{schedules_path}/{schedule_id}"),
+        &manage("delete"),
+        None,
+    );
+    assert_eq!(status, 204, "deleting the schedule failed: {body}");
+    let (status, body) = request(CONTROL_PLANE_PORT, "GET", &schedules_path, &reading, None);
+    assert_eq!(status, 200);
+    let listed: serde_json::Value = serde_json::from_str(&body).expect("list json");
+    assert_eq!(listed["items"].as_array().map(Vec::len), Some(0));
 }
 
 /// The engine to drive, or `None` when this suite is not enabled. Mirrors the

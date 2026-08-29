@@ -4,6 +4,7 @@
 
 mod graph;
 mod http;
+mod internal_http;
 mod runtime;
 
 pub use graph::{EdgeGatewayGraph, EdgeGatewayGraphError};
@@ -16,6 +17,7 @@ pub fn edge_gateway_router(
     graph: Arc<EdgeGatewayGraph>,
 ) -> Result<HttpRouter, RouteRegistrationError> {
     let mut router = HttpRouter::new();
-    http::add_routes(&mut router, graph)?;
+    http::add_routes(&mut router, Arc::clone(&graph))?;
+    internal_http::add_internal_routes(&mut router, graph)?;
     Ok(router)
 }

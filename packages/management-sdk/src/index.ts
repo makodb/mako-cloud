@@ -132,6 +132,13 @@ export const MANAGEMENT_OPERATIONS = [
   "rollbackFunctionDeployment",
   "testFunctionInvocation",
   "queryFunctionLogs",
+  "listFunctionSchedules",
+  "createFunctionSchedule",
+  "getFunctionSchedule",
+  "updateFunctionSchedule",
+  "deleteFunctionSchedule",
+  "runFunctionScheduleNow",
+  "listFunctionScheduleRuns",
   "queryProjectUsage",
   "queryProjectQuotas",
   "queryProjectHealth",
@@ -297,6 +304,15 @@ export type FunctionDeployment = components["schemas"]["FunctionDeployment"];
 export type FunctionTestRequest = components["schemas"]["FunctionTestRequest"];
 export type FunctionTestResponse = components["schemas"]["FunctionTestResponse"];
 export type FunctionLogPage = components["schemas"]["FunctionLogPage"];
+export type FunctionSchedule = components["schemas"]["FunctionSchedule"];
+export type FunctionScheduleState = components["schemas"]["FunctionScheduleState"];
+export type FunctionScheduleRequest = components["schemas"]["FunctionScheduleRequest"];
+export type FunctionScheduleCreate = components["schemas"]["FunctionScheduleCreate"];
+export type FunctionScheduleUpdate = components["schemas"]["FunctionScheduleUpdate"];
+export type FunctionScheduleRun = components["schemas"]["FunctionScheduleRun"];
+export type FunctionScheduleRunSummary = components["schemas"]["FunctionScheduleRunSummary"];
+export type FunctionScheduleRunOutcome = components["schemas"]["FunctionScheduleRunOutcome"];
+export type FunctionScheduleRunPage = components["schemas"]["FunctionScheduleRunPage"];
 export type ObservabilityPage = components["schemas"]["ObservabilityPage"];
 export type ObservabilityRecord = components["schemas"]["ObservabilityRecord"];
 export type ObservabilityPayload = components["schemas"]["ObservabilityPayload"];
@@ -2027,6 +2043,142 @@ export class MakoManagementClient {
       await this.#client.GET(
         "/v1/projects/{projectId}/environments/{environmentId}/functions/{functionName}/logs",
         { params: { path: { projectId, environmentId, functionName }, query } },
+      ),
+    );
+  }
+
+  async listFunctionSchedules(
+    projectId: string,
+    environmentId: string,
+    functionName: string,
+  ): Promise<FunctionSchedule[]> {
+    const result = await this.#client.GET(
+      "/v1/projects/{projectId}/environments/{environmentId}/functions/{functionName}/schedules",
+      { params: { path: { projectId, environmentId, functionName } } },
+    );
+    return unwrap(result).items;
+  }
+
+  /**
+   * Attaches a cron schedule, evaluated in UTC, to the function's active
+   * deployment. An invalid expression is refused here, at save time.
+   */
+  async createFunctionSchedule(
+    projectId: string,
+    environmentId: string,
+    functionName: string,
+    input: FunctionScheduleCreate,
+    idempotencyKey: string,
+  ): Promise<FunctionSchedule> {
+    return unwrap(
+      await this.#client.POST(
+        "/v1/projects/{projectId}/environments/{environmentId}/functions/{functionName}/schedules",
+        {
+          params: {
+            path: { projectId, environmentId, functionName },
+            header: { "Idempotency-Key": idempotencyKey },
+          },
+          body: input,
+        },
+      ),
+    );
+  }
+
+  async getFunctionSchedule(
+    projectId: string,
+    environmentId: string,
+    functionName: string,
+    scheduleId: string,
+  ): Promise<FunctionSchedule> {
+    return unwrap(
+      await this.#client.GET(
+        "/v1/projects/{projectId}/environments/{environmentId}/functions/{functionName}/schedules/{scheduleId}",
+        { params: { path: { projectId, environmentId, functionName, scheduleId } } },
+      ),
+    );
+  }
+
+  /** Fields omitted keep their values; `enabled: false` pauses without losing the schedule. */
+  async updateFunctionSchedule(
+    projectId: string,
+    environmentId: string,
+    functionName: string,
+    scheduleId: string,
+    input: FunctionScheduleUpdate,
+    idempotencyKey: string,
+  ): Promise<FunctionSchedule> {
+    return unwrap(
+      await this.#client.PATCH(
+        "/v1/projects/{projectId}/environments/{environmentId}/functions/{functionName}/schedules/{scheduleId}",
+        {
+          params: {
+            path: { projectId, environmentId, functionName, scheduleId },
+            header: { "Idempotency-Key": idempotencyKey },
+          },
+          body: input,
+        },
+      ),
+    );
+  }
+
+  async deleteFunctionSchedule(
+    projectId: string,
+    environmentId: string,
+    functionName: string,
+    scheduleId: string,
+    idempotencyKey: string,
+  ): Promise<void> {
+    expectNoContent(
+      await this.#client.DELETE(
+        "/v1/projects/{projectId}/environments/{environmentId}/functions/{functionName}/schedules/{scheduleId}",
+        {
+          params: {
+            path: { projectId, environmentId, functionName, scheduleId },
+            header: { "Idempotency-Key": idempotencyKey },
+          },
+        },
+      ),
+    );
+  }
+
+  /** Queues one run outside the cron times, recorded as manual; refused while a run is executing. */
+  async runFunctionScheduleNow(
+    projectId: string,
+    environmentId: string,
+    functionName: string,
+    scheduleId: string,
+    idempotencyKey: string,
+  ): Promise<FunctionScheduleRun> {
+    return unwrap(
+      await this.#client.POST(
+        "/v1/projects/{projectId}/environments/{environmentId}/functions/{functionName}/schedules/{scheduleId}/actions/run-now",
+        {
+          params: {
+            path: { projectId, environmentId, functionName, scheduleId },
+            header: { "Idempotency-Key": idempotencyKey },
+          },
+        },
+      ),
+    );
+  }
+
+  async listFunctionScheduleRuns(
+    projectId: string,
+    environmentId: string,
+    functionName: string,
+    scheduleId: string,
+    options: {
+      readonly outcome?: FunctionScheduleRunOutcome;
+      readonly cursor?: string;
+      readonly limit?: number;
+    } = {},
+  ): Promise<FunctionScheduleRunPage> {
+    return unwrap(
+      await this.#client.GET(
+        "/v1/projects/{projectId}/environments/{environmentId}/functions/{functionName}/schedules/{scheduleId}/runs",
+        {
+          params: { path: { projectId, environmentId, functionName, scheduleId }, query: options },
+        },
       ),
     );
   }

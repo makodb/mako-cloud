@@ -141,13 +141,8 @@ function consoleDestinations(projectId: string, environmentId: string): Workspac
 
 /// Product areas the platform does not provide yet. Shown, never hidden: a
 /// developer should see the shape of the product, and nothing here pretends
-/// to work.
+/// to work. Schedules are not listed: they live on each function's page.
 const UNAVAILABLE_DESTINATIONS: readonly { id: string; label: string; reason: string }[] = [
-  {
-    id: "schedules",
-    label: "Schedules",
-    reason: "Scheduled functions are not available on this deployment yet.",
-  },
   {
     id: "domains",
     label: "Domains",

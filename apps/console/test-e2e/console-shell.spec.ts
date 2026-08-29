@@ -78,13 +78,16 @@ test("a deep link opens inside the shell with its context and every destination"
   ).toHaveAttribute("aria-current", "page");
 
   // Areas the deployment lacks are shown, disabled, with a reason -- never hidden.
-  for (const label of ["Schedules", "Domains"]) {
+  for (const label of ["Domains"]) {
     const item = destinations.locator(".destination-unavailable", { hasText: label });
     await expect(item).toBeVisible();
     await expect(item).toHaveAttribute("aria-disabled", "true");
     await expect(item).toContainText("Not available on this deployment");
   }
-  await expect(destinations.locator(".destination-unavailable")).toHaveCount(2);
+  await expect(destinations.locator(".destination-unavailable")).toHaveCount(1);
+  // Schedules are neither a destination nor unavailable: they live on each
+  // function's page, so the sidebar says nothing about them.
+  await expect(destinations.getByText("Schedules")).toHaveCount(0);
   await expect(
     destinations.getByRole("link", { name: "Auth providers", exact: true }),
   ).toHaveAttribute(

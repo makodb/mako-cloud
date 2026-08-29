@@ -15,10 +15,11 @@ use serde::{Serialize, de::DeserializeOwned};
 use crate::{
     ApplicationMailAcknowledgeRequest, ApplicationMailAcknowledgeResponse,
     ApplicationMailDrainRequest, ApplicationMailDrainResponse, DeploymentKey,
-    FunctionSecretResolutionRequest, IdentityAdminCommand, IdentityAdminOperation,
-    IdentityAdminPermission, IdentityVerificationRequest, InternalAuthError, InternalCaller,
-    InternalRequestAuthenticator, InternalRoute, MAX_INTERNAL_BODY_BYTES, ReadChangeFeedInput,
-    ReadChangeFeedOutput, SignedInternalRequest,
+    FunctionScheduleInvokeRequest, FunctionScheduleInvokeResponse, FunctionSecretResolutionRequest,
+    IdentityAdminCommand, IdentityAdminOperation, IdentityAdminPermission,
+    IdentityVerificationRequest, InternalAuthError, InternalCaller, InternalRequestAuthenticator,
+    InternalRoute, MAX_INTERNAL_BODY_BYTES, ReadChangeFeedInput, ReadChangeFeedOutput,
+    SignedInternalRequest,
 };
 
 const MAX_RESPONSE_HEADER_BYTES: usize = 32 * 1024;
@@ -248,6 +249,45 @@ pub fn application_mail_scope() -> TenantScope {
         mako_api::ProjectId::parse("prj_applicationmail0").expect("fixed project id"),
         mako_api::EnvironmentId::parse("env_applicationmail0").expect("fixed environment id"),
     )
+}
+
+/// The control plane's scheduler calling the edge gateway. Its client is
+/// configured with an I/O timeout long enough for a function to run to its
+/// own wall-clock limit, unlike the short loopback default.
+#[derive(Clone)]
+pub struct ControlToEdgeClient(InternalHttpClient);
+
+impl ControlToEdgeClient {
+    pub fn new(client: InternalHttpClient) -> Result<Self, InternalClientError> {
+        if client.authenticator.caller() != InternalCaller::ControlPlane {
+            return Err(InternalClientError::InvalidConfiguration);
+        }
+        Ok(Self(client))
+    }
+
+    /// Runs one scheduled invocation through the gateway. A refusal by the
+    /// gateway (no active deployment, throttled, unavailable) surfaces as
+    /// `Remote` with the gateway's status; a function that answered, with
+    /// whatever status, is `Ok`.
+    pub fn invoke_function_schedule(
+        &self,
+        tenant: &TenantScope,
+        request_id: &str,
+        idempotency_key: &str,
+        request: &FunctionScheduleInvokeRequest,
+    ) -> Result<FunctionScheduleInvokeResponse, InternalClientError> {
+        deserialize_response(self.0.call(
+            InternalRoute::FunctionScheduleInvoke,
+            tenant,
+            request_id,
+            idempotency_key,
+            request,
+        )?)
+    }
+
+    pub fn dependency_ready(&self) -> Result<bool, InternalClientError> {
+        self.0.probe_ready()
+    }
 }
 
 #[derive(Clone)]

@@ -284,8 +284,18 @@ pub struct RuntimeFunctionInvocation {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum FunctionInvocationActor {
-    ApplicationUser { user_id: String, session_id: String },
+    ApplicationUser {
+        user_id: String,
+        session_id: String,
+    },
     PublicWebhook,
+    /// The control plane's scheduler, authenticated on the internal hop.
+    /// The schedule and run are named so the audit trail and the function
+    /// can tell a scheduled invocation from any other.
+    Schedule {
+        schedule_id: String,
+        run_id: String,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -493,6 +503,8 @@ pub struct FunctionGatewayResponse {
     pub headers: Vec<(String, String)>,
     pub body: RuntimeResponseStream,
     pub request_id: String,
+    /// The deployment version that served.
+    pub version: u64,
 }
 
 impl fmt::Debug for FunctionGatewayResponse {
@@ -503,6 +515,7 @@ impl fmt::Debug for FunctionGatewayResponse {
             .field("headers", &self.headers)
             .field("body", &"<stream>")
             .field("request_id", &self.request_id)
+            .field("version", &self.version)
             .finish()
     }
 }
@@ -510,7 +523,27 @@ impl fmt::Debug for FunctionGatewayResponse {
 #[derive(Clone, Copy, Debug, Default)]
 pub struct FunctionGateway;
 
+/// A request that has been validated and routed but not yet admitted.
+struct PreparedInvocation {
+    request_id: String,
+    trace_id: String,
+    stable_path: StableFunctionPath,
+    route: ResolvedFunctionRoute,
+    selected_region: SelectedFunctionRegion,
+}
+
+/// Who is invoking, as the transport established it.
+struct InvocationCaller {
+    identity: Option<VerifiedAccessIdentity>,
+    token: Option<String>,
+    actor: FunctionInvocationActor,
+    /// Charged against the public-invocation quota as well.
+    public: bool,
+}
+
 impl FunctionGateway {
+    /// The public path: the caller is whoever the bearer token proves, or
+    /// nobody on a route that admits anonymous callers.
     #[allow(clippy::too_many_arguments)]
     pub async fn invoke(
         &self,
@@ -522,6 +555,85 @@ impl FunctionGateway {
         metrics: &dyn FunctionMetricsSink,
         runtime: &dyn FunctionRuntimeInvoker,
     ) -> Result<FunctionGatewayResponse, FunctionGatewayError> {
+        let prepared = Self::prepare(&request, routes).await?;
+        let request_id = &prepared.request_id;
+        let supplied_token = optional_bearer_token(&request.headers)
+            .map_err(|_| FunctionGatewayError::unauthenticated(request_id))?;
+        if prepared.route.verify_jwt && supplied_token.is_none() {
+            return Err(FunctionGatewayError::unauthenticated(request_id));
+        }
+        let token = supplied_token.map(str::to_owned);
+        let identity = token
+            .as_deref()
+            .map(|token| {
+                tokens
+                    .verify(token, &prepared.route.tenant, request.now_unix_seconds)
+                    .map_err(|_| FunctionGatewayError::unauthenticated(request_id))
+            })
+            .transpose()?;
+        let actor = identity
+            .as_ref()
+            .map_or(FunctionInvocationActor::PublicWebhook, |identity| {
+                FunctionInvocationActor::ApplicationUser {
+                    user_id: identity.user_id().as_str().to_owned(),
+                    session_id: identity.session_id().as_str().to_owned(),
+                }
+            });
+        let caller = InvocationCaller {
+            public: identity.is_none(),
+            identity,
+            token,
+            actor,
+        };
+        Self::execute(
+            request, prepared, caller, admission, audit, metrics, runtime,
+        )
+        .await
+    }
+
+    /// Invokes on behalf of a caller the transport has already
+    /// authenticated -- the control plane's scheduler on the internal hop --
+    /// so no bearer token is required, and none may be supplied. Admission,
+    /// audit, and metrics apply exactly as on the public path; the
+    /// invocation is charged as a function invocation but not as a public
+    /// one, since it did not come from the public listener.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn invoke_as(
+        &self,
+        request: FunctionGatewayRequest,
+        actor: FunctionInvocationActor,
+        routes: &dyn FunctionRouteResolver,
+        admission: &dyn FunctionInvocationAdmission,
+        audit: &dyn FunctionInvocationAuditSink,
+        metrics: &dyn FunctionMetricsSink,
+        runtime: &dyn FunctionRuntimeInvoker,
+    ) -> Result<FunctionGatewayResponse, FunctionGatewayError> {
+        let prepared = Self::prepare(&request, routes).await?;
+        if request
+            .headers
+            .iter()
+            .any(|(name, _)| name.eq_ignore_ascii_case("authorization"))
+        {
+            return Err(FunctionGatewayError::invalid_request(&prepared.request_id));
+        }
+        let caller = InvocationCaller {
+            identity: None,
+            token: None,
+            actor,
+            public: false,
+        };
+        Self::execute(
+            request, prepared, caller, admission, audit, metrics, runtime,
+        )
+        .await
+    }
+
+    /// Everything that happens before anyone is admitted: request shape,
+    /// the stable path, the route, the region, the size limit.
+    async fn prepare(
+        request: &FunctionGatewayRequest,
+        routes: &dyn FunctionRouteResolver,
+    ) -> Result<PreparedInvocation, FunctionGatewayError> {
         let request_id = request.request_id.clone();
         if request_id.is_empty()
             || request_id.len() > 128
@@ -532,7 +644,7 @@ impl FunctionGateway {
         let trace_id = trace_id(&request.headers);
         let stable_path = parse_stable_function_path(&request.path)
             .map_err(|_| FunctionGatewayError::invalid_request(&request_id))?;
-        validate_request_shape(&request)
+        validate_request_shape(request)
             .map_err(|_| FunctionGatewayError::invalid_request(&request_id))?;
         let route = routes
             .resolve(stable_path.project_ref(), stable_path.function_name())
@@ -553,20 +665,33 @@ impl FunctionGateway {
                 route.request_limit_bytes,
             ));
         }
-        let supplied_token = optional_bearer_token(&request.headers)
-            .map_err(|_| FunctionGatewayError::unauthenticated(&request_id))?;
-        if route.verify_jwt && supplied_token.is_none() {
-            return Err(FunctionGatewayError::unauthenticated(&request_id));
-        }
-        let caller_token = supplied_token.map(str::to_owned);
-        let caller = caller_token
-            .as_deref()
-            .map(|token| {
-                tokens
-                    .verify(token, &route.tenant, request.now_unix_seconds)
-                    .map_err(|_| FunctionGatewayError::unauthenticated(&request_id))
-            })
-            .transpose()?;
+        Ok(PreparedInvocation {
+            request_id,
+            trace_id,
+            stable_path,
+            route,
+            selected_region,
+        })
+    }
+
+    /// Admission, audit, the runtime call, and the metric, for a caller the
+    /// transport has established.
+    async fn execute(
+        request: FunctionGatewayRequest,
+        prepared: PreparedInvocation,
+        caller: InvocationCaller,
+        admission: &dyn FunctionInvocationAdmission,
+        audit: &dyn FunctionInvocationAuditSink,
+        metrics: &dyn FunctionMetricsSink,
+        runtime: &dyn FunctionRuntimeInvoker,
+    ) -> Result<FunctionGatewayResponse, FunctionGatewayError> {
+        let PreparedInvocation {
+            request_id,
+            trace_id,
+            stable_path,
+            route,
+            selected_region,
+        } = prepared;
         let audit_context = FunctionInvocationAuditContext {
             tenant: route.tenant.clone(),
             organization_id: route.organization_id.clone(),
@@ -576,18 +701,11 @@ impl FunctionGateway {
             regional_failover: selected_region.failed_over,
             request_id: request_id.clone(),
             trace_id: trace_id.clone(),
-            actor: caller
-                .as_ref()
-                .map_or(FunctionInvocationActor::PublicWebhook, |identity| {
-                    FunctionInvocationActor::ApplicationUser {
-                        user_id: identity.user_id().as_str().to_owned(),
-                        session_id: identity.session_id().as_str().to_owned(),
-                    }
-                }),
+            actor: caller.actor,
         };
         let usage = FunctionInvocationUsage {
             request_bytes: u64::try_from(request.body.len()).unwrap_or(u64::MAX),
-            public: caller.is_none(),
+            public: caller.public,
             reservation_id: request_id.clone(),
             now_unix_milliseconds: request
                 .now_unix_seconds
@@ -654,8 +772,8 @@ impl FunctionGateway {
                 response_limit_bytes: route.response_limit_bytes,
                 request_id: request_id.clone(),
                 trace_id,
-                caller,
-                caller_token: caller_token.map(SensitiveCallerToken),
+                caller: caller.identity,
+                caller_token: caller.token.map(SensitiveCallerToken),
                 audit_context: audit_context.clone(),
             })
             .await
@@ -688,6 +806,7 @@ impl FunctionGateway {
             headers: forwarded_headers(runtime_response.headers),
             body: runtime_response.body,
             request_id,
+            version: metric_version,
         })
     }
 }
@@ -1540,6 +1659,137 @@ mod tests {
                     .expect("invocations")
                     .is_empty()
             );
+        });
+    }
+
+    /// The scheduler's hop is authenticated by the transport, not by a
+    /// bearer token, so a scheduled invocation reaches a JWT-protected
+    /// function without one -- but admission, audit, and metrics apply to it
+    /// exactly as to any other invocation.
+    #[test]
+    fn a_scheduled_invocation_carries_its_actor_and_is_still_admitted() {
+        futures::executor::block_on(async {
+            let tenant_scope = tenant("prj_abcdefgh");
+            let protected = routes(tenant_scope.clone(), 1024);
+            assert!(protected.route.verify_jwt);
+            let actor = FunctionInvocationActor::Schedule {
+                schedule_id: "sch_abcdefghijklmnop".to_owned(),
+                run_id: "run_abcdefghijklmnop".to_owned(),
+            };
+            let audit = Audit::default();
+            let metrics = Metrics::default();
+            let runtime = Runtime::default();
+            let mut scheduled = request("", b"{\"day\":\"today\"}".to_vec());
+            scheduled.headers.push((
+                "x-mako-schedule-id".to_owned(),
+                "sch_abcdefghijklmnop".to_owned(),
+            ));
+            let response = FunctionGateway
+                .invoke_as(
+                    scheduled.clone(),
+                    actor.clone(),
+                    &protected,
+                    &Admission(FunctionAdmissionDecision::Allowed),
+                    &audit,
+                    &metrics,
+                    &runtime,
+                )
+                .await
+                .expect("scheduled invocation");
+            assert_eq!(response.status, 201);
+            assert_eq!(
+                response.version, 7,
+                "the response names the version that served"
+            );
+            {
+                let invocations = runtime.invocations.lock().expect("invocations");
+                let invocation = invocations.first().expect("invocation");
+                assert!(invocation.caller.is_none());
+                assert!(invocation.caller_token.is_none());
+                assert_eq!(invocation.audit_context.actor, actor);
+                assert_eq!(invocation.path_and_query, "/orders/42?expand=true");
+                assert!(
+                    invocation
+                        .headers
+                        .iter()
+                        .any(|(name, value)| name == "x-mako-schedule-id"
+                            && value == "sch_abcdefghijklmnop"),
+                    "the schedule headers reach the function"
+                );
+            }
+            {
+                let events = audit.events.lock().expect("events");
+                assert_eq!(events.len(), 1);
+                assert_eq!(events[0].outcome, FunctionInvocationAuditOutcome::Admitted);
+                assert_eq!(events[0].context.actor, actor);
+            }
+            assert_eq!(metrics.0.lock().expect("metrics").len(), 1);
+
+            // A bearer token has no place on this hop.
+            let (token, _) = access_token(&tenant_scope);
+            let with_token = FunctionGateway
+                .invoke_as(
+                    request(&token, vec![]),
+                    actor.clone(),
+                    &protected,
+                    &Admission(FunctionAdmissionDecision::Allowed),
+                    &audit,
+                    &metrics,
+                    &runtime,
+                )
+                .await
+                .expect_err("no bearer token on the scheduler hop");
+            assert_eq!(with_token.status(), 400);
+
+            // Admission still refuses: a throttled tenant's schedule does not run.
+            let throttled_runtime = Runtime::default();
+            let throttled = FunctionGateway
+                .invoke_as(
+                    scheduled.clone(),
+                    actor.clone(),
+                    &protected,
+                    &Admission(FunctionAdmissionDecision::Throttled {
+                        resource: "function_invocations".to_owned(),
+                        retry_after_milliseconds: 2_000,
+                    }),
+                    &audit,
+                    &metrics,
+                    &throttled_runtime,
+                )
+                .await
+                .expect_err("throttled");
+            assert_eq!(throttled.status(), 429);
+            assert!(
+                throttled_runtime
+                    .invocations
+                    .lock()
+                    .expect("invocations")
+                    .is_empty()
+            );
+            assert_eq!(
+                audit
+                    .events
+                    .lock()
+                    .expect("events")
+                    .last()
+                    .map(|event| event.outcome),
+                Some(FunctionInvocationAuditOutcome::Throttled)
+            );
+
+            // The request limit is enforced before anything runs.
+            let oversized = FunctionGateway
+                .invoke_as(
+                    scheduled,
+                    actor,
+                    &routes(tenant_scope, 4),
+                    &Admission(FunctionAdmissionDecision::Allowed),
+                    &audit,
+                    &metrics,
+                    &Runtime::default(),
+                )
+                .await
+                .expect_err("request limit");
+            assert_eq!(oversized.status(), 413);
         });
     }
 

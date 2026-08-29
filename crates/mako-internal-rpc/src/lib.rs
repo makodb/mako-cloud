@@ -15,24 +15,25 @@ pub use auth::{
     VerifiedInternalRequest,
 };
 pub use client::{
-    ControlToDataClient, EdgeToControlClient, EdgeToDataClient, InternalClientError,
-    InternalHttpClient, InternalHttpClientConfig, InternalResponse, application_mail_scope,
+    ControlToDataClient, ControlToEdgeClient, EdgeToControlClient, EdgeToDataClient,
+    InternalClientError, InternalHttpClient, InternalHttpClientConfig, InternalResponse,
+    application_mail_scope,
 };
 pub use contract::{
     ApplicationMailAcknowledgeRequest, ApplicationMailAcknowledgeResponse,
     ApplicationMailDrainRequest, ApplicationMailDrainResponse, ApplicationMailIntent,
     ChangeFeedEntry, ChangeFeedEvent, DataJobExportPageInput, DataJobExportPageOutput,
     DataJobImportBatchInput, DataJobImportBatchOutput, DataJobRowError, DeleteBucketObjectInput,
-    FunctionSecretResolutionRequest, FunctionSecretResolutionResponse, INTERNAL_PROTOCOL_VERSION,
-    IdentityAdminCommand, IdentityAdminOperation, IdentityAdminPermission,
-    IdentityVerificationOperation, IdentityVerificationRequest, IdentityVerificationResponse,
-    IndexFieldInput, InspectBucketInput, InspectIndexInput, InstallAuthProvidersInput,
-    InstallBucketInput, InstallCollectionInput, InstallIndexInput, InstallPolicyInput,
-    InstallQuotaPolicyInput, InternalCaller, InternalRoute, ListBucketObjectsInput,
-    MAX_INTERNAL_BODY_BYTES, OPERATOR_ADMIN_ENVIRONMENT_ID, OPERATOR_ADMIN_PROJECT_ID,
-    OperatorEntitlementApplyResponse, OperatorEntitlementCommand, OperatorEntitlementOperation,
-    OperatorEntitlementPlanResponse, ReadChangeFeedInput, ReadChangeFeedOutput, RemoveBucketInput,
-    ResolvedFunctionSecret,
+    FunctionScheduleInvokeRequest, FunctionScheduleInvokeResponse, FunctionSecretResolutionRequest,
+    FunctionSecretResolutionResponse, INTERNAL_PROTOCOL_VERSION, IdentityAdminCommand,
+    IdentityAdminOperation, IdentityAdminPermission, IdentityVerificationOperation,
+    IdentityVerificationRequest, IdentityVerificationResponse, IndexFieldInput, InspectBucketInput,
+    InspectIndexInput, InstallAuthProvidersInput, InstallBucketInput, InstallCollectionInput,
+    InstallIndexInput, InstallPolicyInput, InstallQuotaPolicyInput, InternalCaller, InternalRoute,
+    ListBucketObjectsInput, MAX_INTERNAL_BODY_BYTES, OPERATOR_ADMIN_ENVIRONMENT_ID,
+    OPERATOR_ADMIN_PROJECT_ID, OperatorEntitlementApplyResponse, OperatorEntitlementCommand,
+    OperatorEntitlementOperation, OperatorEntitlementPlanResponse, ReadChangeFeedInput,
+    ReadChangeFeedOutput, RemoveBucketInput, ResolvedFunctionSecret,
 };
 pub use guard::{
     GuardDecision, InternalReplayGuard, NoopReplayGuard, RocksInternalReplayGuard,

@@ -86,6 +86,7 @@ const samplePath = (path) =>
     .replaceAll("{objectPath}", "users/42/me.png")
     .replaceAll("{webhookId}", "whk_abcdefghijklmnop")
     .replaceAll("{deliveryId}", "whd_abcdefghijklmnop")
+    .replaceAll("{scheduleId}", "sch_abcdefghijklmnop")
     .replaceAll("{functionName}", "health")
     .replaceAll("{functionVersion}", "1")
     .replaceAll("{projectRef}", "prj_example0001")

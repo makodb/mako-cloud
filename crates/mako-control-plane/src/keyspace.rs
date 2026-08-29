@@ -42,6 +42,11 @@ const WEBHOOK_DELIVERIES: &str = "control/webhooks/v1/deliveries";
 const WEBHOOK_PENDING: &str = "control/webhooks/v1/pending";
 const WEBHOOK_DELIVERY_INDEX: &str = "control/webhooks/v1/delivery-index";
 const WEBHOOK_DUE: &[u8] = b"control/webhooks/v1/due";
+const FUNCTION_SCHEDULES: &str = "control/function-schedules/v1/schedules";
+const FUNCTION_SCHEDULE_INDEX: &[u8] = b"control/function-schedules/v1/schedule-index";
+const FUNCTION_SCHEDULE_RUNS: &str = "control/function-schedules/v1/runs";
+const FUNCTION_SCHEDULE_LEASES: &str = "control/function-schedules/v1/leases";
+const FUNCTION_SCHEDULE_DUE: &[u8] = b"control/function-schedules/v1/due";
 
 /// Encodes every management record below the storage adapter's reserved system namespace.
 #[derive(Clone, Copy, Debug, Default)]
@@ -859,6 +864,104 @@ impl ControlKeyspace {
 
     pub fn webhook_due_range() -> Result<KeyRange, ControlKeyspaceError> {
         TenantKeyspace::system_domain_range(WEBHOOK_DUE).map_err(ControlKeyspaceError)
+    }
+
+    /// A cron schedule attached to one function of an environment.
+    pub fn function_schedule_key(
+        project_id: &ProjectId,
+        environment_id: &EnvironmentId,
+        function_name: &str,
+        schedule_id: &str,
+    ) -> Result<Vec<u8>, ControlKeyspaceError> {
+        system_key(
+            &webhook_endpoint_domain(
+                FUNCTION_SCHEDULES,
+                project_id,
+                environment_id,
+                function_name,
+            ),
+            schedule_id,
+        )
+    }
+
+    pub fn function_schedules_range(
+        project_id: &ProjectId,
+        environment_id: &EnvironmentId,
+        function_name: &str,
+    ) -> Result<KeyRange, ControlKeyspaceError> {
+        TenantKeyspace::system_domain_range(webhook_endpoint_domain(
+            FUNCTION_SCHEDULES,
+            project_id,
+            environment_id,
+            function_name,
+        ))
+        .map_err(ControlKeyspaceError)
+    }
+
+    /// The node-wide registry of schedules the worker's retention sweep
+    /// walks; the value names the tenant and function the record lives under.
+    pub fn function_schedule_index_key(schedule_id: &str) -> Result<Vec<u8>, ControlKeyspaceError> {
+        system_key(FUNCTION_SCHEDULE_INDEX, schedule_id)
+    }
+
+    pub fn function_schedule_index_range() -> Result<KeyRange, ControlKeyspaceError> {
+        TenantKeyspace::system_domain_range(FUNCTION_SCHEDULE_INDEX).map_err(ControlKeyspaceError)
+    }
+
+    /// One run in a schedule's history. `item` is the reverse-timestamped
+    /// name the schedule module assigns, so a forward scan reads newest first.
+    pub fn function_schedule_run_key(
+        project_id: &ProjectId,
+        environment_id: &EnvironmentId,
+        schedule_id: &str,
+        item: &str,
+    ) -> Result<Vec<u8>, ControlKeyspaceError> {
+        system_key(
+            &webhook_endpoint_domain(
+                FUNCTION_SCHEDULE_RUNS,
+                project_id,
+                environment_id,
+                schedule_id,
+            ),
+            item,
+        )
+    }
+
+    pub fn function_schedule_runs_range(
+        project_id: &ProjectId,
+        environment_id: &EnvironmentId,
+        schedule_id: &str,
+    ) -> Result<KeyRange, ControlKeyspaceError> {
+        TenantKeyspace::system_domain_range(webhook_endpoint_domain(
+            FUNCTION_SCHEDULE_RUNS,
+            project_id,
+            environment_id,
+            schedule_id,
+        ))
+        .map_err(ControlKeyspaceError)
+    }
+
+    /// The lease a running invocation of a schedule holds; its presence is
+    /// what makes the next due time skip for overlap.
+    pub fn function_schedule_lease_key(
+        project_id: &ProjectId,
+        environment_id: &EnvironmentId,
+        schedule_id: &str,
+    ) -> Result<Vec<u8>, ControlKeyspaceError> {
+        system_key(
+            &webhook_tenant_domain(FUNCTION_SCHEDULE_LEASES, project_id, environment_id),
+            schedule_id,
+        )
+    }
+
+    /// The node-wide index of due times: cron due times of enabled schedules
+    /// and queued manual runs, ordered by when they fall due.
+    pub fn function_schedule_due_key(item: &str) -> Result<Vec<u8>, ControlKeyspaceError> {
+        system_key(FUNCTION_SCHEDULE_DUE, item)
+    }
+
+    pub fn function_schedule_due_range() -> Result<KeyRange, ControlKeyspaceError> {
+        TenantKeyspace::system_domain_range(FUNCTION_SCHEDULE_DUE).map_err(ControlKeyspaceError)
     }
 }
 

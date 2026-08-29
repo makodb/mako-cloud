@@ -11,6 +11,7 @@ import "./surfaced.css";
 import "./usage-activity.css";
 import "./storage.css";
 import "./webhooks.css";
+import "./function-schedules.css";
 import "./auth.css";
 
 declare global {

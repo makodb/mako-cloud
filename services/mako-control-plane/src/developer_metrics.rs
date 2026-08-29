@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use mako_api::ErrorCode;
 use mako_control_plane::{
     ApplicationMailWorkerReport, DeveloperOutboxWorkerReport, DeveloperRegistrationHealthSnapshot,
-    OperatorAuthenticationHealthSnapshot, WebhookWorkerReport,
+    FunctionScheduleWorkerReport, OperatorAuthenticationHealthSnapshot, WebhookWorkerReport,
 };
 use mako_service_runtime::{HttpApiError, HttpResponse};
 use mako_storage::SqliteHealthSignals;
@@ -70,6 +70,11 @@ pub(crate) struct DeveloperMetrics {
     webhook_deliveries_failed: AtomicU64,
     webhook_endpoint_pauses: AtomicU64,
     webhook_worker_failures: AtomicU64,
+    function_schedule_runs_succeeded: AtomicU64,
+    function_schedule_runs_failed: AtomicU64,
+    function_schedule_runs_errored: AtomicU64,
+    function_schedule_runs_skipped_overlap: AtomicU64,
+    function_schedule_worker_failures: AtomicU64,
     operator_sign_in_successes: AtomicU64,
     operator_sign_in_failures: AtomicU64,
     operator_throttles: AtomicU64,
@@ -174,6 +179,22 @@ impl DeveloperMetrics {
 
     pub(crate) fn observe_webhook_worker_failure(&self) {
         self.webhook_worker_failures.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub(crate) fn observe_function_schedules(&self, report: &FunctionScheduleWorkerReport) {
+        self.function_schedule_runs_succeeded
+            .fetch_add(report.succeeded as u64, Ordering::Relaxed);
+        self.function_schedule_runs_failed
+            .fetch_add(report.failed as u64, Ordering::Relaxed);
+        self.function_schedule_runs_errored
+            .fetch_add(report.errored as u64, Ordering::Relaxed);
+        self.function_schedule_runs_skipped_overlap
+            .fetch_add(report.skipped_overlap as u64, Ordering::Relaxed);
+    }
+
+    pub(crate) fn observe_function_schedule_worker_failure(&self) {
+        self.function_schedule_worker_failures
+            .fetch_add(1, Ordering::Relaxed);
     }
 
     pub(crate) fn observe_operator_auth(
@@ -381,6 +402,26 @@ impl DeveloperMetrics {
             &mut output,
             "mako_webhook_worker_failures_total",
             self.webhook_worker_failures.load(Ordering::Relaxed),
+        );
+        for (outcome, counter) in [
+            ("succeeded", &self.function_schedule_runs_succeeded),
+            ("failed", &self.function_schedule_runs_failed),
+            ("error", &self.function_schedule_runs_errored),
+            (
+                "skipped_overlap",
+                &self.function_schedule_runs_skipped_overlap,
+            ),
+        ] {
+            output.push_str(&format!(
+                "mako_function_schedule_runs_total{{outcome=\"{outcome}\"}} {}\n",
+                counter.load(Ordering::Relaxed)
+            ));
+        }
+        metric(
+            &mut output,
+            "mako_function_schedule_worker_failures_total",
+            self.function_schedule_worker_failures
+                .load(Ordering::Relaxed),
         );
         metric(
             &mut output,

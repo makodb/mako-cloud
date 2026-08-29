@@ -64,9 +64,22 @@ reset to the built-in default), Logs (retained, scrubbed function output),
 Usage (this month's meters against the plan), and Activity (the audit trail as
 the developer may read it).
 
-Product areas the deployment does not provide yet — Schedules, Domains — are
-listed and disabled with a reason, never hidden: the shape of the product is
-visible before every area is enabled.
+A function's own page carries its Schedules: every cron schedule attached to
+the function with its expression (five fields, evaluated in UTC), state, next
+run, and last run's outcome, response status, and duration; a form that
+attaches one — name, expression with the syntax and examples beside it,
+method, path, content type, body, headers, and whether it starts enabled —
+where an invalid expression is refused by the API at save time and shown with
+its message; per schedule, pause and resume (a paused schedule keeps its
+history and shows no next run), run now (queued outside the cron times and
+recorded as manual), and a confirmed delete; and, opened beneath a schedule,
+its run history newest first, filtered by outcome and paged, with due time,
+start, duration, outcome — including runs skipped because the previous one
+was still executing — response status, error, and whether the run was manual.
+
+Product areas the deployment does not provide yet — Domains — are listed and
+disabled with a reason, never hidden: the shape of the product is visible
+before every area is enabled.
 
 Routes: `/projects/{projectId}/environments/{environmentId}/{storage|webhooks|auth-providers|email-templates|logs|usage|activity}`,
 `…/storage/{bucketId}`, and `…/webhooks/{webhookId}` join the existing environment routes; every pre-existing deep link keeps working and

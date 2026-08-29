@@ -1109,6 +1109,89 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/projects/{projectId}/environments/{environmentId}/functions/{functionName}/schedules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List a function's schedules */
+        get: operations["listFunctionSchedules"];
+        put?: never;
+        /**
+         * Attach a cron schedule to a deployed function
+         * @description The expression is five-field cron evaluated in UTC and refused at save time when invalid. Each due time invokes the function's active deployment through the gateway with the configured request, so quotas, metrics, and logs apply as for any invocation. A function without an active deployment is refused with `conflict`.
+         */
+        post: operations["createFunctionSchedule"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/projects/{projectId}/environments/{environmentId}/functions/{functionName}/schedules/{scheduleId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read a schedule */
+        get: operations["getFunctionSchedule"];
+        put?: never;
+        post?: never;
+        /** Remove a schedule and its run history */
+        delete: operations["deleteFunctionSchedule"];
+        options?: never;
+        head?: never;
+        /**
+         * Update a schedule
+         * @description Fields omitted keep their values. A changed expression recomputes the next run; `enabled: false` pauses the schedule without losing it.
+         */
+        patch: operations["updateFunctionSchedule"];
+        trace?: never;
+    };
+    "/v1/projects/{projectId}/environments/{environmentId}/functions/{functionName}/schedules/{scheduleId}/actions/run-now": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run a schedule immediately
+         * @description Queues one invocation with the schedule's request outside its cron times, recorded as a manual run. Refused with `conflict` while a run of the schedule is still executing.
+         */
+        post: operations["runFunctionScheduleNow"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/projects/{projectId}/environments/{environmentId}/functions/{functionName}/schedules/{scheduleId}/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List a schedule's runs, newest first
+         * @description Every due time is recorded, including runs skipped because the previous one was still executing. The history is retained for a bounded period like function metrics.
+         */
+        get: operations["listFunctionScheduleRuns"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/projects/{projectId}/environments/{environmentId}/auth-settings": {
         parameters: {
             query?: never;
@@ -4558,6 +4641,108 @@ export interface components {
             items: components["schemas"]["WebhookDelivery"][];
             nextCursor: string | null;
         };
+        FunctionScheduleId: string;
+        FunctionScheduleRunId: string;
+        /** @description The request each due time sends to the function's active deployment. */
+        FunctionScheduleRequest: {
+            /**
+             * @default POST
+             * @enum {string}
+             */
+            method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+            /**
+             * @description Path under the function, beginning with `/`; a query string is allowed.
+             * @default /
+             */
+            path: string;
+            /** @description Extra request headers; `authorization`, `host`, and `content-length` are refused. */
+            headers?: {
+                [key: string]: string;
+            };
+            /** @default application/json */
+            contentType: string;
+            /** @description The request body as text; omitted for GET. */
+            body?: string;
+        };
+        /** @enum {string} */
+        FunctionScheduleState: "active" | "paused";
+        /**
+         * @description `succeeded` received a 2xx; `failed` any other status; `error` could not complete the invocation (unavailable, timeout, no active deployment); `skipped_overlap` was due while the previous run was still executing and was not started.
+         * @enum {string}
+         */
+        FunctionScheduleRunOutcome: "succeeded" | "failed" | "error" | "skipped_overlap";
+        FunctionScheduleRunSummary: {
+            id: components["schemas"]["FunctionScheduleRunId"];
+            /** Format: date-time */
+            dueAt: string;
+            outcome: components["schemas"]["FunctionScheduleRunOutcome"];
+            /** Format: int64 */
+            durationMilliseconds: number | null;
+            responseStatus: number | null;
+        };
+        FunctionSchedule: {
+            id: components["schemas"]["FunctionScheduleId"];
+            functionName: components["schemas"]["FunctionName"];
+            name: string;
+            /** @description Five fields — minute, hour, day of month, month, day of week — in UTC. */
+            cron: string;
+            /** @constant */
+            timezone: "UTC";
+            request: components["schemas"]["FunctionScheduleRequest"];
+            enabled: boolean;
+            state: components["schemas"]["FunctionScheduleState"];
+            /**
+             * Format: date-time
+             * @description Null while paused.
+             */
+            nextRunAt: string | null;
+            lastRun: components["schemas"]["FunctionScheduleRunSummary"] | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        FunctionScheduleCreate: {
+            name?: string;
+            cron: string;
+            request?: components["schemas"]["FunctionScheduleRequest"];
+            /** @default true */
+            enabled: boolean;
+        };
+        FunctionScheduleUpdate: {
+            name?: string;
+            cron?: string;
+            request?: components["schemas"]["FunctionScheduleRequest"];
+            enabled?: boolean;
+        };
+        FunctionScheduleRun: {
+            id: components["schemas"]["FunctionScheduleRunId"];
+            scheduleId: components["schemas"]["FunctionScheduleId"];
+            functionName: components["schemas"]["FunctionName"];
+            /** Format: int64 */
+            functionVersion: number | null;
+            /** Format: date-time */
+            dueAt: string;
+            /** Format: date-time */
+            startedAt: string | null;
+            /** Format: date-time */
+            completedAt: string | null;
+            /** Format: int64 */
+            durationMilliseconds: number | null;
+            /** @description Null while the run is queued or executing. */
+            outcome: components["schemas"]["FunctionScheduleRunOutcome"] | null;
+            responseStatus: number | null;
+            /** @description A stable, non-sensitive reason such as `timeout`, `no_active_deployment`, or `gateway_unavailable`. */
+            error: string | null;
+            /** @description True for a run started with run-now rather than by the cron. */
+            manual: boolean;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        FunctionScheduleRunPage: {
+            items: components["schemas"]["FunctionScheduleRun"][];
+            nextCursor: string | null;
+        };
         MagicLinkRedeemRequest: {
             token: string;
         };
@@ -5283,6 +5468,7 @@ export interface components {
         FunctionSecretName: components["schemas"]["FunctionSecretName"];
         WebhookId: components["schemas"]["WebhookId"];
         DeliveryId: components["schemas"]["WebhookDeliveryId"];
+        ScheduleId: components["schemas"]["FunctionScheduleId"];
         ProviderName: components["schemas"]["ProviderName"];
         TemplateKind: components["schemas"]["EmailTemplateKind"];
         FunctionName: components["schemas"]["FunctionName"];
@@ -7847,6 +8033,206 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WebhookDelivery"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    listFunctionSchedules: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                environmentId: components["parameters"]["EnvironmentId"];
+                functionName: components["parameters"]["FunctionName"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Schedules attached to the function */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["FunctionSchedule"][];
+                    };
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    createFunctionSchedule: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                environmentId: components["parameters"]["EnvironmentId"];
+                functionName: components["parameters"]["FunctionName"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FunctionScheduleCreate"];
+            };
+        };
+        responses: {
+            /** @description Schedule created with its next run */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FunctionSchedule"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    getFunctionSchedule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                environmentId: components["parameters"]["EnvironmentId"];
+                functionName: components["parameters"]["FunctionName"];
+                scheduleId: components["parameters"]["ScheduleId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Schedule */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FunctionSchedule"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    deleteFunctionSchedule: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                environmentId: components["parameters"]["EnvironmentId"];
+                functionName: components["parameters"]["FunctionName"];
+                scheduleId: components["parameters"]["ScheduleId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Schedule removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    updateFunctionSchedule: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                environmentId: components["parameters"]["EnvironmentId"];
+                functionName: components["parameters"]["FunctionName"];
+                scheduleId: components["parameters"]["ScheduleId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FunctionScheduleUpdate"];
+            };
+        };
+        responses: {
+            /** @description Updated schedule */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FunctionSchedule"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    runFunctionScheduleNow: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                environmentId: components["parameters"]["EnvironmentId"];
+                functionName: components["parameters"]["FunctionName"];
+                scheduleId: components["parameters"]["ScheduleId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The queued run */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FunctionScheduleRun"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    listFunctionScheduleRuns: {
+        parameters: {
+            query?: {
+                outcome?: components["schemas"]["FunctionScheduleRunOutcome"];
+                cursor?: string;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                environmentId: components["parameters"]["EnvironmentId"];
+                functionName: components["parameters"]["FunctionName"];
+                scheduleId: components["parameters"]["ScheduleId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Run history page */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FunctionScheduleRunPage"];
                 };
             };
             default: components["responses"]["ApiError"];

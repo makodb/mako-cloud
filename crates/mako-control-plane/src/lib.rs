@@ -7,6 +7,7 @@ mod application_user;
 mod automation;
 mod collection;
 mod credentials;
+mod cron;
 mod data_job;
 mod deletion;
 mod developer_identity;
@@ -16,6 +17,7 @@ mod email_template;
 mod explorer;
 mod function;
 mod function_bundle;
+mod function_schedule;
 mod keyspace;
 mod management_access;
 mod model;
@@ -32,6 +34,7 @@ mod runtime_backend;
 mod webhook;
 mod workspace;
 
+pub use cron::{CronError, CronField, CronSchedule};
 pub use developer_identity::{
     ControlPlaneAuthenticator, DeveloperAuthenticationError, DeveloperIdentityProvider,
     DeveloperPrincipal, DeveloperSessionClaims, DeveloperSessionToken, IdentityProviderError,
@@ -55,6 +58,17 @@ pub use developer_workflow::{
     DeveloperWaitlistStatus, DeveloperWorkflowError,
 };
 pub use explorer::{ExplorerGrantError, ExplorerGrantService};
+pub use function_schedule::{
+    FunctionScheduleError, FunctionScheduleId, FunctionScheduleInvokeError,
+    FunctionScheduleInvoker, FunctionScheduleMethod, FunctionScheduleRecord,
+    FunctionScheduleRequest, FunctionScheduleRunId, FunctionScheduleRunOutcome,
+    FunctionScheduleRunPage, FunctionScheduleRunQuery, FunctionScheduleRunRecord,
+    FunctionScheduleRunSummary, FunctionScheduleService, FunctionScheduleState,
+    FunctionScheduleStore, FunctionScheduleUpdate, FunctionScheduleWorker,
+    FunctionScheduleWorkerConfig, FunctionScheduleWorkerReport,
+    INVOCATION_TIMEOUT_SECONDS as FUNCTION_SCHEDULE_INVOCATION_TIMEOUT_SECONDS,
+    NewFunctionSchedule,
+};
 pub use keyspace::{ControlKeyspace, ControlKeyspaceError};
 pub use mako_api::QuotaResource;
 pub use management_access::{

@@ -66,6 +66,10 @@ pub enum InternalRoute {
     ApplicationMailDrain,
     ApplicationMailAcknowledge,
     FunctionSecretsResolve,
+    /// The control plane's scheduler invokes a function through the edge
+    /// gateway, so admission, metering, metrics, logs, and audit apply to a
+    /// scheduled run exactly as to any other invocation.
+    FunctionScheduleInvoke,
     OperatorEntitlementPlan,
     OperatorEntitlementApply,
 }
@@ -79,6 +83,7 @@ impl InternalRoute {
             Self::ApplicationMailDrain => "/_internal/v1/data/application-mail/drain",
             Self::ApplicationMailAcknowledge => "/_internal/v1/data/application-mail/acknowledge",
             Self::FunctionSecretsResolve => "/_internal/v1/control/functions/resolve",
+            Self::FunctionScheduleInvoke => "/_internal/v1/edge/function-schedule-invoke",
             Self::OperatorEntitlementPlan => "/_internal/v1/control/operator-entitlements/plan",
             Self::OperatorEntitlementApply => "/_internal/v1/control/operator-entitlements/apply",
         }
@@ -92,9 +97,10 @@ impl InternalRoute {
     #[must_use]
     pub const fn caller(self) -> InternalCaller {
         match self {
-            Self::IdentityAdmin | Self::ApplicationMailDrain | Self::ApplicationMailAcknowledge => {
-                InternalCaller::ControlPlane
-            }
+            Self::IdentityAdmin
+            | Self::ApplicationMailDrain
+            | Self::ApplicationMailAcknowledge
+            | Self::FunctionScheduleInvoke => InternalCaller::ControlPlane,
             Self::IdentityVerify | Self::FunctionSecretsResolve => InternalCaller::EdgeGateway,
             Self::OperatorEntitlementPlan | Self::OperatorEntitlementApply => {
                 InternalCaller::OperatorAdmin
@@ -108,6 +114,7 @@ impl InternalRoute {
             Self::IdentityAdmin,
             Self::IdentityVerify,
             Self::FunctionSecretsResolve,
+            Self::FunctionScheduleInvoke,
             Self::OperatorEntitlementPlan,
             Self::OperatorEntitlementApply,
         ]
@@ -612,6 +619,45 @@ pub struct FunctionSecretResolutionResponse {
     pub request_limit_bytes: u64,
     pub response_limit_bytes: u64,
     pub secrets: Vec<ResolvedFunctionSecret>,
+}
+
+/// One scheduled invocation the control plane asks the edge gateway to
+/// perform on its behalf. The tenant travels in the signed envelope and is
+/// repeated here so the gateway can refuse a body that names another.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct FunctionScheduleInvokeRequest {
+    pub project_id: String,
+    pub environment_id: String,
+    pub function_name: String,
+    pub schedule_id: String,
+    pub run_id: String,
+    /// `GET`, `POST`, `PUT`, `PATCH`, or `DELETE`.
+    pub method: String,
+    /// Path under the function, beginning with `/`, without a query string.
+    pub path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub query: Option<String>,
+    /// Request headers, names lowercased; never `authorization`.
+    #[serde(default)]
+    pub headers: BTreeMap<String, String>,
+    /// The request body, standard base64; empty for a body-less request.
+    pub body_base64: String,
+}
+
+/// What the function answered: the status, the deployment version that
+/// served, the content type, and the first bytes of the body.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct FunctionScheduleInvokeResponse {
+    pub status: u16,
+    pub version: u64,
+    /// Only `content-type` crosses; nothing else the function set does.
+    #[serde(default)]
+    pub headers: BTreeMap<String, String>,
+    /// At most the first 4 KiB of the response body, standard base64.
+    pub body_base64: String,
+    pub duration_milliseconds: u64,
 }
 
 /// Exact immutable secret version delivered only on the authenticated private

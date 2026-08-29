@@ -551,6 +551,11 @@ pub enum ControlAuditAction {
     WebhookEndpointRotateSecret,
     WebhookEndpointResume,
     WebhookEndpointRedeliver,
+    FunctionScheduleRead,
+    FunctionScheduleCreate,
+    FunctionScheduleUpdate,
+    FunctionScheduleDelete,
+    FunctionScheduleRunNow,
 }
 
 impl ControlAuditAction {
@@ -631,6 +636,11 @@ impl ControlAuditAction {
             Self::WebhookEndpointRotateSecret => "webhook_endpoint_rotate_secret",
             Self::WebhookEndpointResume => "webhook_endpoint_resume",
             Self::WebhookEndpointRedeliver => "webhook_endpoint_redeliver",
+            Self::FunctionScheduleRead => "function_schedule_read",
+            Self::FunctionScheduleCreate => "function_schedule_create",
+            Self::FunctionScheduleUpdate => "function_schedule_update",
+            Self::FunctionScheduleDelete => "function_schedule_delete",
+            Self::FunctionScheduleRunNow => "function_schedule_run_now",
         }
     }
 }

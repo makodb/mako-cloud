@@ -26,7 +26,7 @@ are printed by the test so a new one is a visible decision: `/v1/operator*`
 (a separate identity), `/{projectRef}/functions` (invocation, an application
 concern), and the application-runtime routes under an environment (`auth/*`,
 `documents`, `service/*`, `replication/*`), which SDKs and RxDB clients call
-with project credentials. Every other operation — 152 at the time of writing —
+with project credentials. Every other operation — 159 at the time of writing —
 maps to a command.
 
 ## Signing in
@@ -175,6 +175,21 @@ Identifiers that name the resource acted on are positional.
   pages the delivery log newest first (`--all` follows the cursor) and
   `redeliver <id> <delivery-id>` queues a new signed delivery of one event
   (see [webhooks.md](webhooks.md) for the delivery body and signature).
+- Schedules: `mako schedules create --function <name> --cron "<expr>"
+  [--name <text>] [--method <m>] [--path </p>] [--header k=v ...]
+  [--content-type <t>] [--body <@file|-|text>] [--disabled]` attaches a
+  five-field UTC cron schedule to a deployed function; an invalid expression
+  is refused by the API at once with its message. `update --function <name>
+  <id>` sends only the options given (`--enable`/`--disable` pause and
+  resume; a request option is laid over the stored request, which is read
+  first); `run-now --function <name> <id>` queues one manual run and is
+  refused while a run is still executing; `runs --function <name> <id>
+  [--outcome succeeded|failed|error|skipped_overlap]` pages the run history
+  newest first, including runs skipped for overlap (`--all` follows the
+  cursor); `delete --function <name> <id>` removes the schedule and its
+  history after confirmation (see
+  [scheduled-functions.md](scheduled-functions.md) for the cron syntax and
+  overlap rules).
 
 ## Hosted deployment
 
@@ -386,6 +401,18 @@ Generated from the command registry; every command also answers `--help` with it
 | `mako projects restore <project-id>` | Restore a suspended project or one in its deletion grace period |
 | `mako projects suspend <project-id>` | Suspend a project; its environments stop serving *(confirmed)* |
 | `mako projects transfer <project-id>` | Move a project to a team you administer, or to your personal space *(confirmed)* |
+
+### `mako schedules`
+
+| command | does |
+| ------- | ---- |
+| `mako schedules create --function <name>` | Attach a UTC cron schedule to a deployed function; an invalid expression is refused at once |
+| `mako schedules delete <schedule-id> --function <name>` | Remove a schedule and its run history *(confirmed)* |
+| `mako schedules get <schedule-id> --function <name>` | Show a schedule, the request it sends, its next run, and its last run |
+| `mako schedules list --function <name>` | List a function's cron schedules with their state, next run, and last run |
+| `mako schedules run-now <schedule-id> --function <name>` | Queue one run of a schedule outside its cron times, recorded as manual; refused while a run is executing |
+| `mako schedules runs <schedule-id> --function <name>` | List a schedule's runs, newest first, including ones skipped for overlap; --all follows the cursor to the end |
+| `mako schedules update <schedule-id> --function <name>` | Change a schedule's expression, name, request, or enabled flag; only given options are sent |
 
 ### `mako storage`
 

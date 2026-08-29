@@ -502,6 +502,8 @@ class ManagementApiHarness {
         body: "b2s=",
         correlationId: "corr_test01",
       });
+    } else if (path.endsWith("/functions/hello-world/schedules") && method === "GET") {
+      await json(route, { items: [] });
     } else if (path.endsWith("/functions/hello-world/logs") && method === "GET") {
       await json(route, {
         items: [

@@ -44,8 +44,8 @@
 
 ## 6. Phase 3 — scheduled functions
 
-- [ ] 6.1 Control plane: schedule records with validated cron expressions in UTC targeting a function's active deployment.
-- [ ] 6.2 Worker: due-time evaluation, invocation through the gateway with a scheduler credential, per-schedule lease for overlap skipping, run history.
+- [x] 6.1 Control plane: schedule records with validated cron expressions in UTC targeting a function's active deployment.
+- [x] 6.2 Worker: due-time evaluation, invocation through the gateway with a scheduler credential, per-schedule lease for overlap skipping, run history.
 - [ ] 6.3 Console: schedules on the function page with next run and history; OpenAPI, SDK, allowlist; tests for overlap skipping; deploy and requalify.
 
 ## 7. Phase 3 — custom domains

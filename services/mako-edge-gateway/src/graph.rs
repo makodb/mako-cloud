@@ -35,6 +35,7 @@ use mako_internal_rpc::{
     DeploymentKey, EdgeToControlClient, EdgeToDataClient, FunctionSecretResolutionRequest,
     FunctionSecretResolutionResponse, IdentityVerificationOperation, IdentityVerificationRequest,
     IdentityVerificationResponse, InternalCaller, InternalHttpClient, InternalHttpClientConfig,
+    InternalRequestAuthenticator, RocksInternalReplayGuard,
 };
 use mako_service_runtime::{ReadinessProbe, ReadinessSnapshot};
 use mako_storage::{
@@ -386,6 +387,12 @@ impl FunctionInvocationAuditSink for PersistentFunctionAudit {
                 session_id: session_id.clone(),
             },
             FunctionInvocationActor::PublicWebhook => ActorIdentity::Anonymous,
+            FunctionInvocationActor::Schedule {
+                schedule_id,
+                run_id,
+            } => ActorIdentity::System {
+                component: format!("function-scheduler/{schedule_id}/{run_id}"),
+            },
         };
         // Only an admitted invocation ran, so only that is charged as usage.
         // A throttled or rejected one is still audited below.
@@ -481,6 +488,8 @@ pub struct EdgeGatewayGraph {
     control_client: EdgeToControlClient,
     region: String,
     telemetry: Arc<TelemetryEmitter>,
+    /// Verifies the control plane's scheduler on the internal hop.
+    internal_deployment_key: DeploymentKey,
 }
 
 impl EdgeGatewayGraph {
@@ -510,7 +519,7 @@ impl EdgeGatewayGraph {
         )?)?;
         let control_client = EdgeToControlClient::new(InternalHttpClient::new(
             InternalHttpClientConfig::loopback(CONTROL_PLANE_ENDPOINT),
-            deployment_key,
+            deployment_key.clone(),
             InternalCaller::EdgeGateway,
         )?)?;
         let engine = Arc::new(GatewayQuotaEngine::new(
@@ -577,11 +586,29 @@ impl EdgeGatewayGraph {
             data_client,
             control_client,
             region: config.region.clone(),
+            internal_deployment_key: deployment_key,
         })
     }
 
     pub(crate) fn region(&self) -> &str {
         &self.region
+    }
+
+    /// Verifies a request the control plane signed for this gateway.
+    #[must_use]
+    pub fn internal_authenticator(&self) -> InternalRequestAuthenticator {
+        InternalRequestAuthenticator::new(
+            self.internal_deployment_key.clone(),
+            InternalCaller::ControlPlane,
+        )
+    }
+
+    pub fn internal_replay_guard(
+        &self,
+        tenant: &TenantScope,
+    ) -> Result<RocksInternalReplayGuard, EdgeGatewayGraphError> {
+        RocksInternalReplayGuard::new(Arc::clone(&self.adapter), tenant, tenant)
+            .map_err(|_| EdgeGatewayGraphError::ReplayGuard)
     }
 }
 
@@ -648,6 +675,7 @@ pub enum EdgeGatewayGraphError {
     WrongService,
     MissingKeyMaterial,
     StorageNotReady,
+    ReplayGuard,
     Storage(StorageError),
     Internal(mako_internal_rpc::InternalClientError),
     InternalAuth(mako_internal_rpc::InternalAuthError),
@@ -766,7 +794,7 @@ mod tests {
         let config = config_for(directory.path(), DeploymentEnvironment::Local);
         let graph = Arc::new(EdgeGatewayGraph::open(&config).expect("edge graph"));
         let router = crate::edge_gateway_router(graph).expect("edge routes");
-        assert_eq!(router.route_count(), 7);
+        assert_eq!(router.route_count(), 8);
         for method in [
             mako_service_runtime::HttpMethod::Get,
             mako_service_runtime::HttpMethod::Head,
@@ -784,6 +812,15 @@ mod tests {
         assert!(!router.permits(
             mako_service_runtime::HttpMethod::Get,
             "/_internal/v1/control/functions/resolve"
+        ));
+        // The scheduler's hop is served, on its one method only.
+        assert!(router.permits(
+            mako_service_runtime::HttpMethod::Post,
+            "/_internal/v1/edge/function-schedule-invoke"
+        ));
+        assert!(!router.permits(
+            mako_service_runtime::HttpMethod::Get,
+            "/_internal/v1/edge/function-schedule-invoke"
         ));
         assert!(!router.permits(
             mako_service_runtime::HttpMethod::Get,

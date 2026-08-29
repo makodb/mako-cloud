@@ -5,6 +5,7 @@ use std::{
     net::SocketAddr,
     num::NonZeroUsize,
     sync::Arc,
+    time::Duration,
 };
 
 use futures::executor::block_on;
@@ -30,9 +31,13 @@ use mako_control_plane::{
     TelemetryQueryCredential, WebhookService, WebhookStore, WebhookTransport, WebhookWorker,
     WebhookWorkerConfig,
 };
+use mako_control_plane::{
+    FunctionScheduleInvoker, FunctionScheduleService, FunctionScheduleStore,
+    FunctionScheduleWorker, FunctionScheduleWorkerConfig,
+};
 use mako_identity::KeyEncryptionKey;
 use mako_internal_rpc::{
-    ControlToDataClient, DeploymentKey, InternalCaller, InternalHttpClient,
+    ControlToDataClient, ControlToEdgeClient, DeploymentKey, InternalCaller, InternalHttpClient,
     InternalHttpClientConfig, InternalRequestAuthenticator, RocksInternalReplayGuard,
 };
 use mako_object_store::{ObjectStore, S3Credentials, S3ObjectStore, S3ObjectStoreConfig};
@@ -138,6 +143,8 @@ struct ControlPlaneComponents {
     email_templates: EmailTemplateService,
     webhooks: WebhookService,
     webhook_worker: WebhookWorker,
+    function_schedules: FunctionScheduleService,
+    function_schedule_worker: FunctionScheduleWorker,
     developer_metrics: Arc<DeveloperMetrics>,
     operator_authenticator: OperatorAuthenticator,
     operator_password_authentication: OperatorAuthenticationService,
@@ -192,7 +199,7 @@ impl ControlPlaneGraph {
         config: &ServiceConfig,
         data_plane_endpoint: SocketAddr,
     ) -> Result<Self, ControlPlaneGraphError> {
-        Self::open_with_dependencies(config, data_plane_endpoint, None, None)
+        Self::open_with_dependencies(config, data_plane_endpoint, None, None, None)
     }
 
     fn production_smtp_transport(
@@ -229,12 +236,15 @@ impl ControlPlaneGraph {
     /// `mail_transport` replaces the configured SMTP relay. Hosted registration
     /// only opens when mail is genuinely reachable, so a test that drives it
     /// has to supply a transport rather than name a relay it cannot contact.
+    /// `schedule_invoker` likewise replaces the edge gateway for the
+    /// scheduler.
     #[allow(clippy::field_reassign_with_default)]
     fn open_with_dependencies(
         config: &ServiceConfig,
         data_plane_endpoint: SocketAddr,
         mail_transport: Option<Arc<dyn DeveloperMailTransport>>,
         webhook_transport: Option<Arc<dyn WebhookTransport>>,
+        schedule_invoker: Option<Arc<dyn FunctionScheduleInvoker>>,
     ) -> Result<Self, ControlPlaneGraphError> {
         if config.service != ServiceKind::ControlPlane {
             return Err(ControlPlaneGraphError::WrongService);
@@ -566,6 +576,45 @@ impl ControlPlaneGraph {
             WebhookWorkerConfig::default(),
         )
         .map_err(|_| ControlPlaneGraphError::Composition("webhook worker"))?;
+        // Scheduled functions: invocations go through the edge gateway on
+        // the internal hop, with an I/O timeout that outlasts a function's
+        // wall-clock limit rather than the short loopback default.
+        let schedule_invoker: Arc<dyn FunctionScheduleInvoker> = match schedule_invoker {
+            Some(invoker) => invoker,
+            None => {
+                let edge_client = InternalHttpClient::new(
+                    InternalHttpClientConfig {
+                        endpoint: config.edge_gateway_address,
+                        connect_timeout: Duration::from_secs(2),
+                        io_timeout: Duration::from_secs(
+                            mako_control_plane::FUNCTION_SCHEDULE_INVOCATION_TIMEOUT_SECONDS + 5,
+                        ),
+                        maximum_response_bytes: 64 * 1024,
+                    },
+                    deployment_key.clone(),
+                    InternalCaller::ControlPlane,
+                )
+                .map_err(|_| ControlPlaneGraphError::Composition("edge-gateway client"))?;
+                Arc::new(
+                    ControlToEdgeClient::new(edge_client)
+                        .map_err(|_| ControlPlaneGraphError::Composition("edge-gateway client"))?,
+                )
+            }
+        };
+        let schedule_store = FunctionScheduleStore::new(Arc::clone(&adapter), Durability::Sync)
+            .map_err(|_| ControlPlaneGraphError::Composition("function schedule store"))?;
+        let function_schedules = FunctionScheduleService::new(
+            schedule_store.clone(),
+            projects.clone(),
+            organizations.clone(),
+            Arc::clone(&control_audit),
+        );
+        let function_schedule_worker = FunctionScheduleWorker::new(
+            schedule_store,
+            schedule_invoker,
+            FunctionScheduleWorkerConfig::default(),
+        )
+        .map_err(|_| ControlPlaneGraphError::Composition("function schedule worker"))?;
         let object_access = config
             .object_store_access_key
             .as_ref()
@@ -729,6 +778,8 @@ impl ControlPlaneGraph {
                 email_templates,
                 webhooks,
                 webhook_worker,
+                function_schedules,
+                function_schedule_worker,
                 developer_metrics,
                 operator_authenticator,
                 operator_password_authentication,
@@ -819,6 +870,31 @@ impl ControlPlaneGraph {
         self.components
             .developer_metrics
             .observe_webhook_worker_failure();
+    }
+
+    #[must_use]
+    pub fn function_schedule_service(&self) -> &FunctionScheduleService {
+        &self.components.function_schedules
+    }
+
+    #[must_use]
+    pub fn function_schedule_worker(&self) -> &FunctionScheduleWorker {
+        &self.components.function_schedule_worker
+    }
+
+    pub fn observe_function_schedules(
+        &self,
+        report: &mako_control_plane::FunctionScheduleWorkerReport,
+    ) {
+        self.components
+            .developer_metrics
+            .observe_function_schedules(report);
+    }
+
+    pub fn observe_function_schedule_worker_failure(&self) {
+        self.components
+            .developer_metrics
+            .observe_function_schedule_worker_failure();
     }
 
     pub(crate) fn developer_metrics(&self) -> &Arc<DeveloperMetrics> {
@@ -1760,6 +1836,7 @@ mod tests {
                 &config,
                 endpoint,
                 Some(Arc::new(ReadyMailTransport)),
+                None,
                 None,
             )
             .expect("control-plane graph"),

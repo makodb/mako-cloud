@@ -2222,6 +2222,189 @@ paths:
                 $ref: "#/components/schemas/WebhookDelivery"
         default:
           $ref: "#/components/responses/ApiError"
+  /v1/projects/{projectId}/environments/{environmentId}/functions/{functionName}/schedules:
+    get:
+      tags: [Management]
+      operationId: listFunctionSchedules
+      summary: List a function's schedules
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/EnvironmentId"
+        - $ref: "#/components/parameters/FunctionName"
+      responses:
+        "200":
+          description: Schedules attached to the function
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/FunctionSchedule"
+        default:
+          $ref: "#/components/responses/ApiError"
+    post:
+      tags: [Management]
+      operationId: createFunctionSchedule
+      summary: Attach a cron schedule to a deployed function
+      description: >-
+        The expression is five-field cron evaluated in UTC and refused at save
+        time when invalid. Each due time invokes the function's active
+        deployment through the gateway with the configured request, so quotas,
+        metrics, and logs apply as for any invocation. A function without an
+        active deployment is refused with `conflict`.
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/EnvironmentId"
+        - $ref: "#/components/parameters/FunctionName"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FunctionScheduleCreate"
+      responses:
+        "201":
+          description: Schedule created with its next run
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FunctionSchedule"
+        default:
+          $ref: "#/components/responses/ApiError"
+  /v1/projects/{projectId}/environments/{environmentId}/functions/{functionName}/schedules/{scheduleId}:
+    get:
+      tags: [Management]
+      operationId: getFunctionSchedule
+      summary: Read a schedule
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/EnvironmentId"
+        - $ref: "#/components/parameters/FunctionName"
+        - $ref: "#/components/parameters/ScheduleId"
+      responses:
+        "200":
+          description: Schedule
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FunctionSchedule"
+        default:
+          $ref: "#/components/responses/ApiError"
+    patch:
+      tags: [Management]
+      operationId: updateFunctionSchedule
+      summary: Update a schedule
+      description: >-
+        Fields omitted keep their values. A changed expression recomputes the
+        next run; `enabled: false` pauses the schedule without losing it.
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/EnvironmentId"
+        - $ref: "#/components/parameters/FunctionName"
+        - $ref: "#/components/parameters/ScheduleId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FunctionScheduleUpdate"
+      responses:
+        "200":
+          description: Updated schedule
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FunctionSchedule"
+        default:
+          $ref: "#/components/responses/ApiError"
+    delete:
+      tags: [Management]
+      operationId: deleteFunctionSchedule
+      summary: Remove a schedule and its run history
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/EnvironmentId"
+        - $ref: "#/components/parameters/FunctionName"
+        - $ref: "#/components/parameters/ScheduleId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "204":
+          description: Schedule removed
+        default:
+          $ref: "#/components/responses/ApiError"
+  /v1/projects/{projectId}/environments/{environmentId}/functions/{functionName}/schedules/{scheduleId}/actions/run-now:
+    post:
+      tags: [Management]
+      operationId: runFunctionScheduleNow
+      summary: Run a schedule immediately
+      description: >-
+        Queues one invocation with the schedule's request outside its cron
+        times, recorded as a manual run. Refused with `conflict` while a run
+        of the schedule is still executing.
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/EnvironmentId"
+        - $ref: "#/components/parameters/FunctionName"
+        - $ref: "#/components/parameters/ScheduleId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "202":
+          description: The queued run
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FunctionScheduleRun"
+        default:
+          $ref: "#/components/responses/ApiError"
+  /v1/projects/{projectId}/environments/{environmentId}/functions/{functionName}/schedules/{scheduleId}/runs:
+    get:
+      tags: [Management]
+      operationId: listFunctionScheduleRuns
+      summary: List a schedule's runs, newest first
+      description: >-
+        Every due time is recorded, including runs skipped because the
+        previous one was still executing. The history is retained for a
+        bounded period like function metrics.
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/EnvironmentId"
+        - $ref: "#/components/parameters/FunctionName"
+        - $ref: "#/components/parameters/ScheduleId"
+        - name: outcome
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/FunctionScheduleRunOutcome"
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 256
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        "200":
+          description: Run history page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FunctionScheduleRunPage"
+        default:
+          $ref: "#/components/responses/ApiError"
   /v1/projects/{projectId}/environments/{environmentId}/auth-settings:
     get:
       tags: [Management]
@@ -5696,6 +5879,12 @@ components:
       required: true
       schema:
         $ref: "#/components/schemas/WebhookDeliveryId"
+    ScheduleId:
+      name: scheduleId
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/FunctionScheduleId"
     ProviderName:
       name: provider
       in: path
@@ -8609,6 +8798,225 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/WebhookDelivery"
+        nextCursor:
+          type: [string, "null"]
+          maxLength: 256
+    FunctionScheduleId:
+      type: string
+      pattern: "^sch_[a-z0-9]{12,32}$"
+    FunctionScheduleRunId:
+      type: string
+      pattern: "^run_[a-z0-9]{12,32}$"
+    FunctionScheduleRequest:
+      type: object
+      description: The request each due time sends to the function's active deployment.
+      additionalProperties: false
+      properties:
+        method:
+          type: string
+          enum: [GET, POST, PUT, PATCH, DELETE]
+          default: POST
+        path:
+          type: string
+          maxLength: 1024
+          default: "/"
+          description: Path under the function, beginning with `/`; a query string is allowed.
+        headers:
+          type: object
+          maxProperties: 16
+          additionalProperties:
+            type: string
+            maxLength: 1024
+          description: Extra request headers; `authorization`, `host`, and `content-length` are refused.
+        contentType:
+          type: string
+          maxLength: 128
+          default: application/json
+        body:
+          type: string
+          maxLength: 65536
+          description: The request body as text; omitted for GET.
+    FunctionScheduleState:
+      type: string
+      enum: [active, paused]
+    FunctionScheduleRunOutcome:
+      type: string
+      description: >-
+        `succeeded` received a 2xx; `failed` any other status; `error` could
+        not complete the invocation (unavailable, timeout, no active
+        deployment); `skipped_overlap` was due while the previous run was still
+        executing and was not started.
+      enum: [succeeded, failed, error, skipped_overlap]
+    FunctionScheduleRunSummary:
+      type: object
+      additionalProperties: false
+      required: [id, dueAt, outcome, durationMilliseconds, responseStatus]
+      properties:
+        id:
+          $ref: "#/components/schemas/FunctionScheduleRunId"
+        dueAt:
+          type: string
+          format: date-time
+        outcome:
+          $ref: "#/components/schemas/FunctionScheduleRunOutcome"
+        durationMilliseconds:
+          type: [integer, "null"]
+          format: int64
+          minimum: 0
+        responseStatus:
+          type: [integer, "null"]
+          minimum: 100
+          maximum: 599
+    FunctionSchedule:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - functionName
+        - name
+        - cron
+        - timezone
+        - request
+        - enabled
+        - state
+        - nextRunAt
+        - lastRun
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          $ref: "#/components/schemas/FunctionScheduleId"
+        functionName:
+          $ref: "#/components/schemas/FunctionName"
+        name:
+          type: string
+          maxLength: 128
+        cron:
+          type: string
+          maxLength: 128
+          description: Five fields — minute, hour, day of month, month, day of week — in UTC.
+        timezone:
+          type: string
+          const: UTC
+        request:
+          $ref: "#/components/schemas/FunctionScheduleRequest"
+        enabled:
+          type: boolean
+        state:
+          $ref: "#/components/schemas/FunctionScheduleState"
+        nextRunAt:
+          type: [string, "null"]
+          format: date-time
+          description: Null while paused.
+        lastRun:
+          oneOf:
+            - $ref: "#/components/schemas/FunctionScheduleRunSummary"
+            - type: "null"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    FunctionScheduleCreate:
+      type: object
+      additionalProperties: false
+      required: [cron]
+      properties:
+        name:
+          type: string
+          maxLength: 128
+        cron:
+          type: string
+          maxLength: 128
+        request:
+          $ref: "#/components/schemas/FunctionScheduleRequest"
+        enabled:
+          type: boolean
+          default: true
+    FunctionScheduleUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          maxLength: 128
+        cron:
+          type: string
+          maxLength: 128
+        request:
+          $ref: "#/components/schemas/FunctionScheduleRequest"
+        enabled:
+          type: boolean
+    FunctionScheduleRun:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - scheduleId
+        - functionName
+        - functionVersion
+        - dueAt
+        - startedAt
+        - completedAt
+        - durationMilliseconds
+        - outcome
+        - responseStatus
+        - error
+        - manual
+        - createdAt
+      properties:
+        id:
+          $ref: "#/components/schemas/FunctionScheduleRunId"
+        scheduleId:
+          $ref: "#/components/schemas/FunctionScheduleId"
+        functionName:
+          $ref: "#/components/schemas/FunctionName"
+        functionVersion:
+          type: [integer, "null"]
+          format: int64
+          minimum: 1
+        dueAt:
+          type: string
+          format: date-time
+        startedAt:
+          type: [string, "null"]
+          format: date-time
+        completedAt:
+          type: [string, "null"]
+          format: date-time
+        durationMilliseconds:
+          type: [integer, "null"]
+          format: int64
+          minimum: 0
+        outcome:
+          oneOf:
+            - $ref: "#/components/schemas/FunctionScheduleRunOutcome"
+            - type: "null"
+          description: Null while the run is queued or executing.
+        responseStatus:
+          type: [integer, "null"]
+          minimum: 100
+          maximum: 599
+        error:
+          type: [string, "null"]
+          maxLength: 256
+          description: A stable, non-sensitive reason such as `timeout`, `no_active_deployment`, or `gateway_unavailable`.
+        manual:
+          type: boolean
+          description: True for a run started with run-now rather than by the cron.
+        createdAt:
+          type: string
+          format: date-time
+    FunctionScheduleRunPage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/FunctionScheduleRun"
         nextCursor:
           type: [string, "null"]
           maxLength: 256

@@ -13,6 +13,7 @@ import type {
 } from "@mako-cloud/management-sdk";
 
 import { ApiFailureNotice, type ConsoleApiFailure, toConsoleApiFailure } from "./api-error.js";
+import { FunctionSchedulesPanel } from "./function-schedules.js";
 import { useManagementClient } from "./management.js";
 import { LifecycleBadge } from "./projects.js";
 import { confirmDestructiveAction } from "./safety.js";
@@ -408,6 +409,12 @@ export function FunctionScreen({
             onRollback={(version) => void switchVersion(version, "rollback")}
             onCheckHealth={(version) => void checkHealth(version)}
             onDelete={(version) => void removeVersion(version)}
+          />
+          <FunctionSchedulesPanel
+            projectId={projectId}
+            environmentId={environmentId}
+            functionName={functionName}
+            activeVersion={item.activeVersion}
           />
           <div className="split-grid stacked-section">
             <TestInvocationPanel response={testResponse} onSubmit={test} />

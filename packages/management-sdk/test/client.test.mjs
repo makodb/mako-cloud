@@ -583,3 +583,151 @@ test("webhook endpoints give the signing secret once on create and rotate, page 
   assert.equal(requests[9].url, `${base}/${endpoint.id}`);
   assert.equal(requests[9].headers.get("idempotency-key"), "idempotency-key-webhook-delete");
 });
+
+test("function schedules are created, read, patched, run now, paged by run outcome, and deleted under the function", async () => {
+  const requests = [];
+  const schedule = {
+    id: "sch_nightly000001",
+    functionName: "nightly-report",
+    name: "nightly",
+    cron: "0 2 * * *",
+    timezone: "UTC",
+    request: { method: "POST", path: "/", headers: {}, contentType: "application/json", body: "{}" },
+    enabled: true,
+    state: "active",
+    nextRunAt: "2026-08-30T02:00:00Z",
+    lastRun: null,
+    createdAt: "2026-08-29T10:00:00Z",
+    updatedAt: "2026-08-29T10:00:00Z",
+  };
+  const run = {
+    id: "run_nightly000001",
+    scheduleId: schedule.id,
+    functionName: schedule.functionName,
+    functionVersion: 3,
+    dueAt: "2026-08-29T02:00:00Z",
+    startedAt: "2026-08-29T02:00:00Z",
+    completedAt: "2026-08-29T02:00:01Z",
+    durationMilliseconds: 812,
+    outcome: "succeeded",
+    responseStatus: 200,
+    error: null,
+    manual: false,
+    createdAt: "2026-08-29T02:00:00Z",
+  };
+  const client = createManagementClient({
+    endpoint: "https://api.example.test",
+    credential: { kind: "developer_session", accessToken: "developer-session-token" },
+    fetch: async (request) => {
+      requests.push(request);
+      const path = new URL(request.url).pathname;
+      if (request.method === "DELETE") return new Response(null, { status: 204 });
+      if (path.endsWith("/schedules") && request.method === "GET") {
+        return Response.json({ items: [schedule] });
+      }
+      if (path.endsWith("/schedules") && request.method === "POST") {
+        return Response.json(schedule, { status: 201 });
+      }
+      if (path.endsWith("/actions/run-now")) {
+        return Response.json({ ...run, id: "run_manual0000001", outcome: null, completedAt: null, manual: true }, { status: 202 });
+      }
+      if (path.endsWith("/runs")) return Response.json({ items: [run], nextCursor: "c2" });
+      if (request.method === "PATCH") {
+        return Response.json({ ...schedule, enabled: false, state: "paused", nextRunAt: null });
+      }
+      return Response.json(schedule);
+    },
+  });
+  const base =
+    "https://api.example.test/v1/projects/prj_example0001/environments/env_example0001/functions/nightly-report/schedules";
+
+  const created = await client.createFunctionSchedule(
+    "prj_example0001",
+    "env_example0001",
+    "nightly-report",
+    {
+      name: "nightly",
+      cron: "0 2 * * *",
+      request: { method: "POST", path: "/", contentType: "application/json", body: "{}" },
+    },
+    "idempotency-key-schedule-create",
+  );
+  assert.deepEqual(created, schedule);
+  assert.equal(requests[0].method, "POST");
+  assert.equal(requests[0].url, base);
+  assert.equal(requests[0].headers.get("idempotency-key"), "idempotency-key-schedule-create");
+  assert.deepEqual(await requests[0].json(), {
+    name: "nightly",
+    cron: "0 2 * * *",
+    request: { method: "POST", path: "/", contentType: "application/json", body: "{}" },
+  });
+
+  assert.deepEqual(
+    await client.listFunctionSchedules("prj_example0001", "env_example0001", "nightly-report"),
+    [schedule],
+  );
+  assert.equal(requests[1].method, "GET");
+  assert.equal(requests[1].url, base);
+
+  assert.deepEqual(
+    await client.getFunctionSchedule("prj_example0001", "env_example0001", "nightly-report", schedule.id),
+    schedule,
+  );
+  assert.equal(requests[2].url, `${base}/${schedule.id}`);
+
+  const paused = await client.updateFunctionSchedule(
+    "prj_example0001",
+    "env_example0001",
+    "nightly-report",
+    schedule.id,
+    { enabled: false },
+    "idempotency-key-schedule-update",
+  );
+  assert.equal(paused.state, "paused");
+  assert.equal(paused.nextRunAt, null, "a paused schedule has no next run");
+  assert.equal(requests[3].method, "PATCH");
+  assert.equal(requests[3].url, `${base}/${schedule.id}`);
+  assert.equal(requests[3].headers.get("idempotency-key"), "idempotency-key-schedule-update");
+  assert.deepEqual(await requests[3].json(), { enabled: false });
+
+  const queued = await client.runFunctionScheduleNow(
+    "prj_example0001",
+    "env_example0001",
+    "nightly-report",
+    schedule.id,
+    "idempotency-key-schedule-run",
+  );
+  assert.equal(queued.manual, true);
+  assert.equal(queued.outcome, null, "a queued run has no outcome yet");
+  assert.equal(requests[4].method, "POST");
+  assert.equal(requests[4].url, `${base}/${schedule.id}/actions/run-now`);
+  assert.equal(requests[4].headers.get("idempotency-key"), "idempotency-key-schedule-run");
+  assert.equal(await requests[4].text(), "", "an action carries no body");
+
+  const page = await client.listFunctionScheduleRuns(
+    "prj_example0001",
+    "env_example0001",
+    "nightly-report",
+    schedule.id,
+    { outcome: "failed", cursor: "c1", limit: 25 },
+  );
+  assert.deepEqual(page, { items: [run], nextCursor: "c2" });
+  assert.equal(requests[5].method, "GET");
+  assert.equal(requests[5].url, `${base}/${schedule.id}/runs?outcome=failed&cursor=c1&limit=25`);
+  await client.listFunctionScheduleRuns("prj_example0001", "env_example0001", "nightly-report", schedule.id);
+  assert.equal(requests[6].url, `${base}/${schedule.id}/runs`, "no query parameter is invented");
+
+  assert.equal(
+    await client.deleteFunctionSchedule(
+      "prj_example0001",
+      "env_example0001",
+      "nightly-report",
+      schedule.id,
+      "idempotency-key-schedule-delete",
+    ),
+    undefined,
+  );
+  assert.equal(requests[7].method, "DELETE");
+  assert.equal(requests[7].url, `${base}/${schedule.id}`);
+  assert.equal(requests[7].headers.get("idempotency-key"), "idempotency-key-schedule-delete");
+});
