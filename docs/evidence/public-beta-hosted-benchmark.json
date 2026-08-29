@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "recordedAt": "2026-08-29T03:18:07.240Z",
+  "recordedAt": "2026-08-29T07:25:29.383Z",
   "environment": "public-beta",
   "vmId": 124,
   "publicOrigin": "https://cloud-test.makodb.com",
   "planHash": "d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073",
-  "releaseDigest": "3bf03437c613834119c46d62e78f75cca0164917e79d2d335183d7b85acd8c73",
+  "releaseDigest": "0bd09d7f4f7ae6f4f30357cb36e9e61a63096a4f5279f328dc7e53128cfc0f80",
   "publicAdmissionMode": "restricted-pre-gate",
   "qualificationMode": "existing-isolated-fixture",
   "managementControlCoveredBy": "docs/evidence/public-beta-hosted-qualification.json",
@@ -18,23 +18,23 @@
   "latencyMilliseconds": {
     "authSignIn": {
       "samples": 10,
-      "p50": 276.2775809999998,
-      "p95": 651.1893419999999,
-      "maximum": 651.1893419999999
+      "p50": 541.8616259999994,
+      "p95": 584.9074800000003,
+      "maximum": 584.9074800000003
     },
     "rxdbPushBatch": {
       "samples": 4,
-      "p50": 416.8631750000004,
-      "p95": 1028.056901,
-      "maximum": 1028.056901
+      "p50": 1033.3337039999997,
+      "p95": 1105.7795589999987,
+      "maximum": 1105.7795589999987
     },
-    "rxdbPullBeforeRecovery": 2269.5307540000003,
-    "rxdbLiveFirstEvent": 87.79442399999971,
+    "rxdbPullBeforeRecovery": 3887.7852220000004,
+    "rxdbLiveFirstEvent": 151.64896399999998,
     "controlRead": null,
-    "coldFunction": 1140.1576879999993,
-    "warmFunction": 277.8983939999998,
-    "recoveryToReady": 1823.0052880000003,
-    "rxdbPullAfterRecovery": 2236.264215999996
+    "coldFunction": 753.1414699999987,
+    "warmFunction": 564.7623359999998,
+    "recoveryToReady": 1811.7651750000077,
+    "rxdbPullAfterRecovery": 4392.322113999995
   },
   "workload": {
     "acknowledgedDocuments": 32,
@@ -48,8 +48,8 @@
     "target": {
       "concurrency": 16,
       "requests": 64,
-      "elapsedMilliseconds": 4413.5851090000015,
-      "requestsPerSecond": 14.500647777808837,
+      "elapsedMilliseconds": 7291.207506999999,
+      "requestsPerSecond": 8.777684639914765,
       "failedRequests": 0,
       "serverErrors": 0,
       "rateLimitedRequests": 0,
@@ -68,30 +68,30 @@
       "latencyMilliseconds": {
         "authUser": {
           "samples": 32,
-          "p50": 507.8274139999994,
-          "p95": 3781.895285999999,
-          "maximum": 4071.1605880000006
+          "p50": 1022.027102,
+          "p95": 6774.761600999998,
+          "maximum": 7200.819135000002
         },
         "control": null,
         "function": {
           "samples": 16,
-          "p50": 522.1729889999988,
-          "p95": 1199.476952000001,
-          "maximum": 1199.476952000001
+          "p50": 859.3782800000008,
+          "p95": 2004.7644099999998,
+          "maximum": 2004.7644099999998
         },
         "pull": {
           "samples": 16,
-          "p50": 370.8325789999981,
-          "p95": 1000.0533219999998,
-          "maximum": 1000.0533219999998
+          "p50": 574.3560179999986,
+          "p95": 1172.000516,
+          "maximum": 1172.000516
         }
       }
     },
     "requiredHeadroom": {
       "concurrency": 24,
       "requests": 96,
-      "elapsedMilliseconds": 7769.535320999999,
-      "requestsPerSecond": 12.35594965237947,
+      "elapsedMilliseconds": 14561.616896999996,
+      "requestsPerSecond": 6.592673892414385,
       "failedRequests": 0,
       "serverErrors": 0,
       "rateLimitedRequests": 0,
@@ -110,33 +110,33 @@
       "latencyMilliseconds": {
         "authUser": {
           "samples": 48,
-          "p50": 929.509055999999,
-          "p95": 7278.713253000002,
-          "maximum": 7631.801146000002
+          "p50": 1515.211180000002,
+          "p95": 12957.383073999998,
+          "maximum": 14237.820716000002
         },
         "control": null,
         "function": {
           "samples": 24,
-          "p50": 752.5295470000019,
-          "p95": 1394.4707740000013,
-          "maximum": 2706.179380999998
+          "p50": 1137.8409440000032,
+          "p95": 3645.756846,
+          "maximum": 3805.539536000004
         },
         "pull": {
           "samples": 24,
-          "p50": 590.7309789999999,
-          "p95": 2131.1705729999994,
-          "maximum": 3032.3110930000003
+          "p50": 844.9783070000012,
+          "p95": 3513.5289300000004,
+          "maximum": 4693.637385000002
         }
       }
     },
     "saturationProbe": {
       "concurrency": 64,
       "requests": 256,
-      "elapsedMilliseconds": 17612.566161,
-      "requestsPerSecond": 14.535075829890605,
-      "failedRequests": 9,
+      "elapsedMilliseconds": 23692.997591,
+      "requestsPerSecond": 10.804879642326261,
+      "failedRequests": 0,
       "serverErrors": 0,
-      "rateLimitedRequests": 9,
+      "rateLimitedRequests": 0,
       "statusCounts": {
         "authUser": {
           "200": 128
@@ -146,33 +146,32 @@
           "200": 64
         },
         "pull": {
-          "200": 55,
-          "429": 9
+          "200": 64
         }
       },
       "latencyMilliseconds": {
         "authUser": {
           "samples": 128,
-          "p50": 1725.9251980000045,
-          "p95": 16188.244592000003,
-          "maximum": 17593.164143
+          "p50": 3759.048060999994,
+          "p95": 17326.988940999996,
+          "maximum": 19740.496763999996
         },
         "control": null,
         "function": {
           "samples": 64,
-          "p50": 706.1746440000024,
-          "p95": 8279.814446000004,
-          "maximum": 10220.800054000003
+          "p50": 1253.7865470000033,
+          "p95": 6387.846188999996,
+          "maximum": 7032.741618
         },
         "pull": {
           "samples": 64,
-          "p50": 513.9821290000036,
-          "p95": 8273.831375999998,
-          "maximum": 10806.457303000003
+          "p50": 989.5222500000018,
+          "p95": 17429.626373,
+          "maximum": 17903.759973
         }
       }
     },
-    "saturationConcurrencyLowerBound": 24
+    "saturationConcurrencyLowerBound": 64
   },
   "passed": true
 }

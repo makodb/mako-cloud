@@ -232,7 +232,8 @@ assert(
 );
 for (const template of openapiPaths) {
   const path = samplePath(template);
-  const served = customDomainFunction.test(path) || (data.test(path) && !serviceCredential.test(path));
+  const served =
+    customDomainFunction.test(path) || (data.test(path) && !serviceCredential.test(path));
   assert(
     served === (data.test(path) && !template.includes("/service/")),
     `${template} custom-domain exposure differs from the data-plane inventory`,
@@ -269,7 +270,7 @@ for (const forbidden of [
   "file_server",
   "/opt/mako/current/console",
   "@edge_function",
-  "Strict-Transport-Security \"max-age",
+  'Strict-Transport-Security "max-age',
 ]) {
   assert(!customDomainSite.includes(forbidden), `custom-domain site contains ${forbidden}`);
 }
