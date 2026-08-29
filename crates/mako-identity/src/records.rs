@@ -184,6 +184,22 @@ impl TrustedAppMetadata {
     pub fn values(&self) -> &Map<String, Value> {
         &self.0
     }
+
+    /// Applies a one-level JSON merge patch: a key set to `null` is removed,
+    /// any other key replaces the stored value whole. The result is validated
+    /// exactly like metadata written in full, so a patch can never push the
+    /// record past the trusted-metadata bounds.
+    pub fn merge_patch(&self, patch: &Map<String, Value>) -> Result<Self, IdentityRecordError> {
+        let mut merged = self.0.clone();
+        for (key, value) in patch {
+            if value.is_null() {
+                merged.remove(key);
+            } else {
+                merged.insert(key.clone(), value.clone());
+            }
+        }
+        Self::new(Value::Object(merged))
+    }
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
@@ -723,6 +739,62 @@ mod tests {
         assert_eq!(decoded.scope(), &tenant());
         assert_eq!(decoded.trusted_metadata().values()["role"], "admin");
         assert_eq!(decoded.profile_metadata().values()["displayName"], "Admin");
+    }
+
+    #[test]
+    fn trusted_metadata_merge_patch_replaces_removes_and_stays_bounded() {
+        let current = TrustedAppMetadata::new(json!({
+            "role": "authenticated",
+            "households": {"hh_one": "owner"},
+            "legacy": true
+        }))
+        .expect("trusted");
+        let patch = json!({
+            "households": {"hh_one": "owner", "hh_two": "viewer"},
+            "legacy": null,
+            "plan": "family"
+        });
+        let Value::Object(patch) = patch else {
+            unreachable!("patch is an object");
+        };
+        let merged = current.merge_patch(&patch).expect("merged");
+        assert_eq!(
+            merged.values(),
+            json!({
+                "role": "authenticated",
+                "households": {"hh_one": "owner", "hh_two": "viewer"},
+                "plan": "family"
+            })
+            .as_object()
+            .expect("object")
+        );
+        // Removing a key that is absent is not an error, and the original is
+        // untouched by the patch.
+        let Value::Object(absent) = json!({"missing": null}) else {
+            unreachable!("patch is an object");
+        };
+        assert_eq!(&current.merge_patch(&absent).expect("unchanged"), &current);
+        assert!(current.values().contains_key("legacy"));
+        // A patch that pushes the record past the metadata bounds is refused
+        // as a whole, and the nesting limit applies to the patched value.
+        let Value::Object(oversized) = json!({"blob": "x".repeat(MAX_METADATA_BYTES)}) else {
+            unreachable!("patch is an object");
+        };
+        assert!(matches!(
+            current.merge_patch(&oversized),
+            Err(IdentityRecordError::InvalidField {
+                field: "trusted app metadata",
+                ..
+            })
+        ));
+        let mut deep = json!("leaf");
+        for _ in 0..=MAX_METADATA_DEPTH {
+            deep = json!({ "nested": deep });
+        }
+        let Value::Object(too_deep) = json!({"deep": deep}) else {
+            unreachable!("patch is an object");
+        };
+        assert!(current.merge_patch(&too_deep).is_err());
     }
 
     #[test]

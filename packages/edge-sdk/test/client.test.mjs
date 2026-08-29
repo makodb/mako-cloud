@@ -217,6 +217,105 @@ test("service access is explicit, uses a separate route, and carries mandatory a
   );
 });
 
+test("service clients set app metadata on the users route under the configured or a per-call reason", async () => {
+  const requests = [];
+  const service = createServiceClient({
+    endpoint: "https://api.example.test",
+    projectId: "prj_abcdefgh",
+    environmentId: "env_abcdefgh",
+    serviceCredential: SERVICE_CREDENTIAL,
+    reason: "household membership changed",
+    requestId: "req_service02",
+    fetch: async (request) => {
+      requests.push(request);
+      return Response.json({
+        userId: "usr_abcdefgh",
+        appMetadata: { households: { hh_one: "owner" } },
+        authorizationEpoch: 3,
+      });
+    },
+  });
+
+  const result = await service.users.setAppMetadata("usr_abcdefgh", {
+    households: { hh_one: "owner" },
+    legacy: null,
+  });
+  assert.deepEqual(result, {
+    userId: "usr_abcdefgh",
+    appMetadata: { households: { hh_one: "owner" } },
+    authorizationEpoch: 3,
+  });
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].method, "POST");
+  assert.equal(
+    requests[0].url,
+    "https://api.example.test/v1/projects/prj_abcdefgh/environments/env_abcdefgh/service/users/usr_abcdefgh/app-metadata",
+  );
+  assert.equal(requests[0].headers.get("x-mako-service-key"), SERVICE_CREDENTIAL);
+  assert.equal(requests[0].headers.get("x-mako-bypass-reason"), "household membership changed");
+  assert.equal(requests[0].headers.get("x-mako-request-id"), "req_service02");
+  assert.equal(requests[0].headers.get("content-type"), "application/json");
+  assert.equal(requests[0].headers.has("authorization"), false);
+  assert.equal(requests[0].headers.has("x-mako-key"), false);
+  assert.deepEqual(JSON.parse(await requests[0].text()), {
+    reason: "household membership changed",
+    appMetadata: { households: { hh_one: "owner" }, legacy: null },
+  });
+
+  await service.users.setAppMetadata("usr_abcdefgh", { households: null }, "member removed");
+  assert.equal(requests[1].headers.get("x-mako-bypass-reason"), "member removed");
+  assert.deepEqual(JSON.parse(await requests[1].text()), {
+    reason: "member removed",
+    appMetadata: { households: null },
+  });
+
+  // Nothing malformed reaches the wire: the identifier, the patch shape, and
+  // the per-call reason are checked first.
+  await assert.rejects(() => service.users.setAppMetadata("not-a-user", {}), MakoEdgeSdkError);
+  await assert.rejects(
+    () => service.users.setAppMetadata("usr_abcdefgh", ["households"]),
+    MakoEdgeSdkError,
+  );
+  await assert.rejects(
+    () => service.users.setAppMetadata("usr_abcdefgh", {}, " padded "),
+    MakoEdgeSdkError,
+  );
+  assert.equal(requests.length, 2);
+});
+
+test("app metadata refusals surface the stable error envelope", async () => {
+  const service = createServiceClient({
+    endpoint: "https://api.example.test",
+    projectId: "prj_abcdefgh",
+    environmentId: "env_abcdefgh",
+    serviceCredential: SERVICE_CREDENTIAL,
+    reason: "household membership changed",
+    requestId: "req_service03",
+    fetch: async () =>
+      Response.json(
+        {
+          apiVersion: "v1",
+          error: {
+            code: "permission_denied",
+            message: "service credential does not permit app metadata writes",
+            requestId: "req_service03",
+            retry: { kind: "never" },
+          },
+        },
+        { status: 403 },
+      ),
+  });
+  await assert.rejects(
+    () => service.users.setAppMetadata("usr_abcdefgh", { households: {} }),
+    (error) =>
+      error instanceof MakoEdgeSdkError &&
+      error.code === "permission_denied" &&
+      error.status === 403 &&
+      error.requestId === "req_service03" &&
+      !error.message.includes(SERVICE_CREDENTIAL),
+  );
+});
+
 function user() {
   return {
     id: "usr_abcdefgh",

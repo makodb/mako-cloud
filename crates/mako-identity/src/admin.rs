@@ -2,9 +2,7 @@ use std::{collections::BTreeSet, error::Error, fmt, num::NonZeroUsize};
 
 use async_trait::async_trait;
 use mako_api::TenantScope;
-use mako_storage::{
-    AtomicWrite, CompareAndWriteResult, KeyCondition, ScanDirection, ScanRequest, WriteBatch,
-};
+use mako_storage::{ScanDirection, ScanRequest};
 use rand_core::{OsRng, RngCore};
 use serde::{Deserialize, Serialize};
 
@@ -585,45 +583,19 @@ impl<'a> AdminUserService<'a> {
         request: AdminUpdateUserMetadataRequest,
         now_unix_seconds: u64,
     ) -> Result<(), AdminUserApiError> {
-        let user_key = self.store.keyspace.application_user_key(user_id.as_str())?;
-        let user_bytes = self
-            .store
-            .adapter
-            .get(&user_key)
-            .await?
-            .ok_or(IdentityStoreError::UserNotFound)?;
-        let user: AppUserRecord = serde_json::from_slice(&user_bytes)?;
-        if user.scope() != self.store.tenant() || user.id() != user_id {
-            return Err(IdentityStoreError::CorruptCredentialOwner.into());
-        }
-        if user.trusted_metadata() != &request.trusted_metadata {
+        let update = self.store.begin_user_metadata_update(user_id).await?;
+        if update.user().trusted_metadata() != &request.trusted_metadata {
             self.invalidations
                 .trusted_metadata_changed(self.store.tenant(), user_id)
                 .await?;
         }
-        let updated = user.with_metadata(
-            request.trusted_metadata,
-            request.profile_metadata,
-            now_unix_seconds,
-        );
-        let mut batch = WriteBatch::new();
-        batch.put(&user_key, serde_json::to_vec(&updated)?);
-        if self
-            .store
-            .adapter
-            .compare_and_write(AtomicWrite {
-                conditions: vec![KeyCondition::ValueEquals {
-                    key: user_key,
-                    value: user_bytes,
-                }],
-                batch,
-                durability: self.store.durability,
-            })
-            .await?
-            != CompareAndWriteResult::Applied
-        {
-            return Err(IdentityStoreError::ConcurrentIdentityChange.into());
-        }
+        update
+            .commit(
+                request.trusted_metadata,
+                request.profile_metadata,
+                now_unix_seconds,
+            )
+            .await?;
         Ok(())
     }
 

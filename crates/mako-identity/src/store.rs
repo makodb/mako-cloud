@@ -8,8 +8,8 @@ use mako_storage::{
 
 use crate::{
     AppUserId, AppUserRecord, AppUserStatus, CredentialDigest, IdentityProvider,
-    IdentityRecordError, IdentityRevocationKind, NormalizedEmail, ProviderName, UserCredentialKind,
-    UserCredentialRecord, UserIdentityRecord,
+    IdentityRecordError, IdentityRevocationKind, NormalizedEmail, ProviderName, TrustedAppMetadata,
+    UserCredentialKind, UserCredentialRecord, UserIdentityRecord, UserProfileMetadata,
 };
 
 #[derive(Clone)]
@@ -565,6 +565,33 @@ impl IdentityStore {
         })
     }
 
+    /// Loads a user for a metadata replacement. The returned update remembers
+    /// exactly what it read, so [`AppUserMetadataUpdate::commit`] applies only
+    /// if no other writer changed the user in between. Every writer of
+    /// administrator-controlled metadata -- the management admin operation and
+    /// the service-credential route alike -- goes through this one path.
+    pub async fn begin_user_metadata_update(
+        &self,
+        user_id: &AppUserId,
+    ) -> Result<AppUserMetadataUpdate<'_>, IdentityStoreError> {
+        let key = self.keyspace.application_user_key(user_id.as_str())?;
+        let current = self
+            .adapter
+            .get(&key)
+            .await?
+            .ok_or(IdentityStoreError::UserNotFound)?;
+        let user: AppUserRecord = serde_json::from_slice(&current)?;
+        if user.scope() != &self.tenant || user.id() != user_id {
+            return Err(IdentityStoreError::CorruptCredentialOwner);
+        }
+        Ok(AppUserMetadataUpdate {
+            store: self,
+            key,
+            current,
+            user,
+        })
+    }
+
     pub async fn user_by_email(
         &self,
         email: &NormalizedEmail,
@@ -937,6 +964,67 @@ pub enum MagicLinkOutcome {
     Unknown,
     Expired,
     AlreadyUsed,
+}
+
+/// A user read for a metadata replacement, carrying the bytes that were read
+/// so the write is a compare-and-swap against them. Only the metadata and the
+/// change timestamp move; status, epochs, and identity links are untouched.
+pub struct AppUserMetadataUpdate<'a> {
+    store: &'a IdentityStore,
+    key: Vec<u8>,
+    current: Vec<u8>,
+    user: AppUserRecord,
+}
+
+impl fmt::Debug for AppUserMetadataUpdate<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("AppUserMetadataUpdate")
+            .field("user", self.user.id())
+            .finish_non_exhaustive()
+    }
+}
+
+impl AppUserMetadataUpdate<'_> {
+    /// The user as it was read.
+    #[must_use]
+    pub fn user(&self) -> &AppUserRecord {
+        &self.user
+    }
+
+    /// Replaces both metadata maps, applying only if the user is still exactly
+    /// what was read; a concurrent change surfaces as
+    /// [`IdentityStoreError::ConcurrentIdentityChange`] so the caller can
+    /// re-read and decide again.
+    pub async fn commit(
+        self,
+        trusted_metadata: TrustedAppMetadata,
+        profile_metadata: UserProfileMetadata,
+        changed_at_unix_seconds: u64,
+    ) -> Result<AppUserRecord, IdentityStoreError> {
+        let updated =
+            self.user
+                .with_metadata(trusted_metadata, profile_metadata, changed_at_unix_seconds);
+        let mut batch = WriteBatch::new();
+        batch.put(&self.key, serde_json::to_vec(&updated)?);
+        if self
+            .store
+            .adapter
+            .compare_and_write(AtomicWrite {
+                conditions: vec![KeyCondition::ValueEquals {
+                    key: self.key,
+                    value: self.current,
+                }],
+                batch,
+                durability: self.store.durability,
+            })
+            .await?
+            != CompareAndWriteResult::Applied
+        {
+            return Err(IdentityStoreError::ConcurrentIdentityChange);
+        }
+        Ok(updated)
+    }
 }
 
 #[derive(Debug)]
@@ -1873,6 +1961,66 @@ mod tests {
             )
             .expect("identity"),
         )
+    }
+
+    #[test]
+    fn metadata_updates_are_compare_and_swap_over_what_was_read() {
+        futures::executor::block_on(async {
+            let adapter = Arc::new(MemoryAdapter::new());
+            let tenant = tenant("prj_abcdefgh");
+            let store = store(adapter, &tenant);
+            let email = NormalizedEmail::parse("person@example.com").expect("email");
+            let (user, identity) = records(&tenant, "usr_metadata", "idn_metadata", &email);
+            store
+                .create_email_user(&user, &identity, &email)
+                .await
+                .expect("create");
+
+            let missing = AppUserId::parse("usr_missing0").expect("user");
+            assert!(matches!(
+                store.begin_user_metadata_update(&missing).await,
+                Err(IdentityStoreError::UserNotFound)
+            ));
+
+            let first = store
+                .begin_user_metadata_update(user.id())
+                .await
+                .expect("first read");
+            let second = store
+                .begin_user_metadata_update(user.id())
+                .await
+                .expect("second read");
+            assert_eq!(first.user(), &user);
+            let written = first
+                .commit(
+                    TrustedAppMetadata::new(json!({"role": "editor"})).expect("trusted"),
+                    user.profile_metadata().clone(),
+                    50,
+                )
+                .await
+                .expect("first commit");
+            assert_eq!(written.trusted_metadata().values()["role"], "editor");
+            assert_eq!(written.updated_at_unix_seconds(), 50);
+            assert_eq!(written.status(), user.status());
+            assert_eq!(written.session_epoch(), user.session_epoch());
+            // The stale read cannot overwrite what the first writer committed.
+            assert!(matches!(
+                second
+                    .commit(
+                        TrustedAppMetadata::new(json!({"role": "admin"})).expect("trusted"),
+                        user.profile_metadata().clone(),
+                        51,
+                    )
+                    .await,
+                Err(IdentityStoreError::ConcurrentIdentityChange)
+            ));
+            let stored = store
+                .user_by_id(user.id())
+                .await
+                .expect("lookup")
+                .expect("user");
+            assert_eq!(stored, written);
+        });
     }
 
     fn tenant(project: &str) -> TenantScope {

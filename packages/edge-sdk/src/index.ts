@@ -6,6 +6,9 @@ export {
   createFunctionClient,
   createFunctionClientFromRequest,
   createServiceClient,
+  PACKAGE_NAME,
+  type FunctionAppMetadataPatch,
+  type FunctionAppMetadataResult,
   type FunctionAuthClient,
   type FunctionClient,
   type FunctionClientOptions,
@@ -19,6 +22,5 @@ export {
   type RuntimeFunctionClientOptions,
   type ServiceFunctionClient,
   type ServiceFunctionClientOptions,
+  type ServiceUserClient,
 } from "./client.js";
-
-export const PACKAGE_NAME = "@mako-cloud/edge-sdk" as const;

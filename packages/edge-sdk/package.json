@@ -14,6 +14,7 @@
   },
   "scripts": {
     "build": "tsc -b",
+    "build:runtime-module": "npm run build && node scripts/build-runtime-module.mjs",
     "typecheck": "tsc -b --pretty false",
     "test:unit": "npm run build && node --test test/*.test.mjs"
   },

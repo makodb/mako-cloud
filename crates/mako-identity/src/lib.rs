@@ -81,8 +81,8 @@ pub use signup::{
     VerificationEmail, VerificationToken,
 };
 pub use store::{
-    EmailVerificationOutcome, IdentityStore, IdentityStoreError, MagicLinkOutcome,
-    PasswordResetOutcome,
+    AppUserMetadataUpdate, EmailVerificationOutcome, IdentityStore, IdentityStoreError,
+    MagicLinkOutcome, PasswordResetOutcome,
 };
 
 /// Identifies this workspace component in diagnostics.
