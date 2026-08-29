@@ -6,9 +6,9 @@
   "address": "130.245.173.11",
   "publicOrigin": "https://cloud-test.makodb.com",
   "planHash": "d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073",
-  "releaseDigest": "955a04eec905ffd375271e7d66cab081a281bccc449d10563e6cc2b93548268d",
-  "startedAt": "2026-08-28T22:26:52Z",
-  "expectedCompleteAt": "2026-09-27T22:26:52Z",
+  "releaseDigest": "3bf03437c613834119c46d62e78f75cca0164917e79d2d335183d7b85acd8c73",
+  "startedAt": "2026-08-29T03:16:54Z",
+  "expectedCompleteAt": "2026-09-28T03:16:54Z",
   "completedAt": null,
   "completeDays": 0,
   "initialSnapshot": {

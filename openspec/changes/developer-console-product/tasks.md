@@ -25,7 +25,7 @@
 - [x] 3.3 Application API: upload, download, list, delete under a bucket; service-credential path with privileged audit; path validation.
 - [x] 3.4 Metering: object storage bytes (sampled) and object egress (flow) on the ledger and rate card; plan allowances and caps.
 - [x] 3.5 Console: buckets, objects, limits; management OpenAPI and SDK; Caddy allowlist; backup inventory gains objects.
-- [ ] 3.6 Tests: policy denial, path escape refusal, metering on the bill; smoke through the real stack; deploy and requalify.
+- [x] 3.6 Tests: policy denial, path escape refusal, metering on the bill; smoke through the real stack; deploy and requalify.
 
 ## 4. Phase 3 — auth providers and email templates
 

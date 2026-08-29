@@ -176,8 +176,9 @@ before admission resumes.
 
 Apply the emergency admission stop, preserve logs and immutable evidence, stop
 affected services, and revoke or rotate application credentials, internal
-authentication, object-store credentials, backup keys, runtime-state keys, and
-certificates according to scope. Signing-key recovery is a safe roll-forward;
+authentication, object-store credentials (loaded by both the control plane and
+the data plane, which stores application objects with them), backup keys,
+runtime-state keys, and certificates according to scope. Signing-key recovery is a safe roll-forward;
 never reactivate suspected or retired private material. Do not destroy the VM or
 backups until evidence retention and disclosure decisions are recorded.
 
