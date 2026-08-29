@@ -11,10 +11,12 @@ base64.workspace = true
 blake3.workspace = true
 chacha20poly1305.workspace = true
 futures.workspace = true
+hmac.workspace = true
 mako-api = { path = "../mako-api" }
 mako-audit = { path = "../mako-audit" }
 mako-documents = { path = "../mako-documents" }
 mako-edge-runtime-protocol = { path = "../mako-edge-runtime-protocol" }
+mako-http-client = { path = "../mako-http-client" }
 mako-identity = { path = "../mako-identity" }
 mako-billing = { path = "../mako-billing" }
 mako-internal-rpc = { path = "../mako-internal-rpc" }
@@ -26,6 +28,8 @@ rand_core.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
+time.workspace = true
+url.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true

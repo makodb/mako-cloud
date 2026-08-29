@@ -35,6 +35,13 @@ const OPERATOR_PROJECTIONS: &[u8] = b"control/operator-control-center/v1/project
 const OPERATOR_TENANT_SEARCH: &[u8] = b"control/operator-control-center/v1/tenant-search";
 const DATA_JOBS: &[u8] = b"control/developer-workspace/v1/data-jobs";
 const DEVELOPER_RESTORES: &[u8] = b"control/developer-workspace/v1/restore-requests";
+const WEBHOOK_ENDPOINTS: &str = "control/webhooks/v1/endpoints";
+const WEBHOOK_ENDPOINT_INDEX: &[u8] = b"control/webhooks/v1/endpoint-index";
+const WEBHOOK_CURSORS: &str = "control/webhooks/v1/cursors";
+const WEBHOOK_DELIVERIES: &str = "control/webhooks/v1/deliveries";
+const WEBHOOK_PENDING: &str = "control/webhooks/v1/pending";
+const WEBHOOK_DELIVERY_INDEX: &str = "control/webhooks/v1/delivery-index";
+const WEBHOOK_DUE: &[u8] = b"control/webhooks/v1/due";
 
 /// Encodes every management record below the storage adapter's reserved system namespace.
 #[derive(Clone, Copy, Debug, Default)]
@@ -694,6 +701,165 @@ impl ControlKeyspace {
     pub fn organizations_range() -> Result<KeyRange, ControlKeyspaceError> {
         TenantKeyspace::system_domain_range(ORGANIZATIONS).map_err(ControlKeyspaceError)
     }
+
+    /// A webhook endpoint registered for an environment.
+    pub fn webhook_endpoint_key(
+        project_id: &ProjectId,
+        environment_id: &EnvironmentId,
+        endpoint_id: &str,
+    ) -> Result<Vec<u8>, ControlKeyspaceError> {
+        system_key(
+            &webhook_tenant_domain(WEBHOOK_ENDPOINTS, project_id, environment_id),
+            endpoint_id,
+        )
+    }
+
+    pub fn webhook_endpoints_range(
+        project_id: &ProjectId,
+        environment_id: &EnvironmentId,
+    ) -> Result<KeyRange, ControlKeyspaceError> {
+        TenantKeyspace::system_domain_range(webhook_tenant_domain(
+            WEBHOOK_ENDPOINTS,
+            project_id,
+            environment_id,
+        ))
+        .map_err(ControlKeyspaceError)
+    }
+
+    /// The node-wide registry of webhook endpoints the worker walks; the
+    /// value names the tenant the endpoint record lives under.
+    pub fn webhook_endpoint_index_key(endpoint_id: &str) -> Result<Vec<u8>, ControlKeyspaceError> {
+        system_key(WEBHOOK_ENDPOINT_INDEX, endpoint_id)
+    }
+
+    pub fn webhook_endpoint_index_range() -> Result<KeyRange, ControlKeyspaceError> {
+        TenantKeyspace::system_domain_range(WEBHOOK_ENDPOINT_INDEX).map_err(ControlKeyspaceError)
+    }
+
+    /// The change-log position one endpoint has consumed for one collection.
+    pub fn webhook_cursor_key(
+        project_id: &ProjectId,
+        environment_id: &EnvironmentId,
+        endpoint_id: &str,
+        collection_id: &str,
+    ) -> Result<Vec<u8>, ControlKeyspaceError> {
+        system_key(
+            &webhook_endpoint_domain(WEBHOOK_CURSORS, project_id, environment_id, endpoint_id),
+            collection_id,
+        )
+    }
+
+    pub fn webhook_cursors_range(
+        project_id: &ProjectId,
+        environment_id: &EnvironmentId,
+        endpoint_id: &str,
+    ) -> Result<KeyRange, ControlKeyspaceError> {
+        TenantKeyspace::system_domain_range(webhook_endpoint_domain(
+            WEBHOOK_CURSORS,
+            project_id,
+            environment_id,
+            endpoint_id,
+        ))
+        .map_err(ControlKeyspaceError)
+    }
+
+    /// One delivery in an endpoint's log. `item` is the reverse-timestamped
+    /// name the webhook module assigns, so a forward scan reads newest first.
+    pub fn webhook_delivery_key(
+        project_id: &ProjectId,
+        environment_id: &EnvironmentId,
+        endpoint_id: &str,
+        item: &str,
+    ) -> Result<Vec<u8>, ControlKeyspaceError> {
+        system_key(
+            &webhook_endpoint_domain(WEBHOOK_DELIVERIES, project_id, environment_id, endpoint_id),
+            item,
+        )
+    }
+
+    pub fn webhook_deliveries_range(
+        project_id: &ProjectId,
+        environment_id: &EnvironmentId,
+        endpoint_id: &str,
+    ) -> Result<KeyRange, ControlKeyspaceError> {
+        TenantKeyspace::system_domain_range(webhook_endpoint_domain(
+            WEBHOOK_DELIVERIES,
+            project_id,
+            environment_id,
+            endpoint_id,
+        ))
+        .map_err(ControlKeyspaceError)
+    }
+
+    /// Delivery id to log entry name, so a redelivery can find its original
+    /// without walking the log.
+    pub fn webhook_delivery_index_key(
+        project_id: &ProjectId,
+        environment_id: &EnvironmentId,
+        endpoint_id: &str,
+        delivery_id: &str,
+    ) -> Result<Vec<u8>, ControlKeyspaceError> {
+        system_key(
+            &webhook_endpoint_domain(
+                WEBHOOK_DELIVERY_INDEX,
+                project_id,
+                environment_id,
+                endpoint_id,
+            ),
+            delivery_id,
+        )
+    }
+
+    pub fn webhook_delivery_index_range(
+        project_id: &ProjectId,
+        environment_id: &EnvironmentId,
+        endpoint_id: &str,
+    ) -> Result<KeyRange, ControlKeyspaceError> {
+        TenantKeyspace::system_domain_range(webhook_endpoint_domain(
+            WEBHOOK_DELIVERY_INDEX,
+            project_id,
+            environment_id,
+            endpoint_id,
+        ))
+        .map_err(ControlKeyspaceError)
+    }
+
+    /// An endpoint's pending deliveries in creation order, so the delivery
+    /// loop can keep one document's deliveries in sequence.
+    pub fn webhook_pending_key(
+        project_id: &ProjectId,
+        environment_id: &EnvironmentId,
+        endpoint_id: &str,
+        item: &str,
+    ) -> Result<Vec<u8>, ControlKeyspaceError> {
+        system_key(
+            &webhook_endpoint_domain(WEBHOOK_PENDING, project_id, environment_id, endpoint_id),
+            item,
+        )
+    }
+
+    pub fn webhook_pending_range(
+        project_id: &ProjectId,
+        environment_id: &EnvironmentId,
+        endpoint_id: &str,
+    ) -> Result<KeyRange, ControlKeyspaceError> {
+        TenantKeyspace::system_domain_range(webhook_endpoint_domain(
+            WEBHOOK_PENDING,
+            project_id,
+            environment_id,
+            endpoint_id,
+        ))
+        .map_err(ControlKeyspaceError)
+    }
+
+    /// The node-wide index of pending deliveries by their next attempt time.
+    pub fn webhook_due_key(item: &str) -> Result<Vec<u8>, ControlKeyspaceError> {
+        system_key(WEBHOOK_DUE, item)
+    }
+
+    pub fn webhook_due_range() -> Result<KeyRange, ControlKeyspaceError> {
+        TenantKeyspace::system_domain_range(WEBHOOK_DUE).map_err(ControlKeyspaceError)
+    }
 }
 
 #[derive(Debug)]
@@ -804,6 +970,28 @@ fn function_version_domain(
 fn function_bundle_domain(project_id: &ProjectId, environment_id: &EnvironmentId) -> Vec<u8> {
     format!(
         "control/function-bundles/{}/{}",
+        project_id.as_str(),
+        environment_id.as_str()
+    )
+    .into_bytes()
+}
+
+fn webhook_tenant_domain(
+    root: &str,
+    project_id: &ProjectId,
+    environment_id: &EnvironmentId,
+) -> Vec<u8> {
+    format!("{root}/{}/{}", project_id.as_str(), environment_id.as_str()).into_bytes()
+}
+
+fn webhook_endpoint_domain(
+    root: &str,
+    project_id: &ProjectId,
+    environment_id: &EnvironmentId,
+    endpoint_id: &str,
+) -> Vec<u8> {
+    format!(
+        "{root}/{}/{}/{endpoint_id}",
         project_id.as_str(),
         environment_id.as_str()
     )

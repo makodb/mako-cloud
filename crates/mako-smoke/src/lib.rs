@@ -22,7 +22,9 @@ use std::{
 use serde_json::Value;
 
 mod sign_in;
+mod webhook_sink;
 pub use sign_in::{CapturedMail, OidcProviderStub, SmtpCaptureStub};
+pub use webhook_sink::{CapturedDelivery, WebhookSinkStub};
 
 pub const READINESS_TIMEOUT: Duration = Duration::from_secs(30);
 

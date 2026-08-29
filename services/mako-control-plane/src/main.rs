@@ -164,6 +164,53 @@ fn start(service: ServiceKind) -> ExitCode {
             }
         })
     };
+    // Webhooks: consume each environment's change feed into the outbox and
+    // deliver what is due. Every two seconds, like the data-job worker, so a
+    // change reaches its endpoint promptly without contending for the
+    // single-writer control store.
+    let webhook_worker = {
+        let stopping = Arc::clone(&mail_stopping);
+        let graph = Arc::clone(&graph);
+        thread::spawn(move || {
+            let mut failures: u64 = 0;
+            let mut intake_failures: u64 = 0;
+            while !stopping.load(Ordering::Acquire) {
+                match SystemTime::now()
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .map(|duration| duration.as_secs())
+                {
+                    Ok(now) => match block_on(graph.webhook_worker().run_once(now)) {
+                        Ok(report) => {
+                            failures = 0;
+                            graph.observe_webhooks(&report);
+                            if report.intake_failures == 0 {
+                                intake_failures = 0;
+                            } else {
+                                // The data plane may be down or a subscribed
+                                // collection gone; say so once, then once a minute.
+                                if intake_failures.is_multiple_of(30) {
+                                    eprintln!(
+                                        "webhook intake could not read every change feed: class=data_plane count={}",
+                                        report.intake_failures
+                                    );
+                                }
+                                intake_failures = intake_failures.saturating_add(1);
+                            }
+                        }
+                        Err(_) => {
+                            graph.observe_webhook_worker_failure();
+                            if failures.is_multiple_of(30) {
+                                eprintln!("webhook worker pass failed: class=storage");
+                            }
+                            failures = failures.saturating_add(1);
+                        }
+                    },
+                    Err(_) => eprintln!("webhook worker pass failed: class=clock"),
+                }
+                thread::park_timeout(Duration::from_secs(2));
+            }
+        })
+    };
     // Project and environment creation enqueue provisioning and report an
     // asynchronous state. Without this pass those resources stay in
     // `provisioning` and never expose a usable data plane.
@@ -218,6 +265,7 @@ fn start(service: ServiceKind) -> ExitCode {
     mail_stopping.store(true, Ordering::Release);
     operator_maintenance.thread().unpark();
     data_job_worker.thread().unpark();
+    webhook_worker.thread().unpark();
     provisioning_worker.thread().unpark();
     function_log_worker.thread().unpark();
     if let Some(worker) = &mail_worker {
@@ -235,7 +283,12 @@ fn start(service: ServiceKind) -> ExitCode {
         .map_err(|_| "operator authentication maintenance worker did not stop");
     let data_job_worker_shutdown = data_job_worker
         .join()
-        .map_err(|_| "data-job worker did not stop");
+        .map_err(|_| "data-job worker did not stop")
+        .and_then(|()| {
+            webhook_worker
+                .join()
+                .map_err(|_| "webhook worker did not stop")
+        });
     let provisioning_worker_shutdown = provisioning_worker
         .join()
         .map_err(|_| "provisioning worker did not stop");

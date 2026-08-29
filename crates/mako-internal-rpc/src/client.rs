@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     error::Error,
     fmt,
     io::{Read, Write},
@@ -15,9 +15,10 @@ use serde::{Serialize, de::DeserializeOwned};
 use crate::{
     ApplicationMailAcknowledgeRequest, ApplicationMailAcknowledgeResponse,
     ApplicationMailDrainRequest, ApplicationMailDrainResponse, DeploymentKey,
-    FunctionSecretResolutionRequest, IdentityAdminCommand, IdentityVerificationRequest,
-    InternalAuthError, InternalCaller, InternalRequestAuthenticator, InternalRoute,
-    MAX_INTERNAL_BODY_BYTES, SignedInternalRequest,
+    FunctionSecretResolutionRequest, IdentityAdminCommand, IdentityAdminOperation,
+    IdentityAdminPermission, IdentityVerificationRequest, InternalAuthError, InternalCaller,
+    InternalRequestAuthenticator, InternalRoute, MAX_INTERNAL_BODY_BYTES, ReadChangeFeedInput,
+    ReadChangeFeedOutput, SignedInternalRequest,
 };
 
 const MAX_RESPONSE_HEADER_BYTES: usize = 32 * 1024;
@@ -183,6 +184,27 @@ impl ControlToDataClient {
 
     pub fn dependency_ready(&self) -> Result<bool, InternalClientError> {
         self.0.probe_ready()
+    }
+
+    /// Reads one page of a collection's change log for `tenant` as the
+    /// webhook worker: positions, revisions, and event kinds, never document
+    /// fields. Every call is its own request on the private hop, so the
+    /// caller supplies a fresh request id and idempotency key.
+    pub fn read_change_feed(
+        &self,
+        tenant: &TenantScope,
+        request_id: &str,
+        idempotency_key: &str,
+        actor_id: &str,
+        input: &ReadChangeFeedInput,
+    ) -> Result<ReadChangeFeedOutput, InternalClientError> {
+        let command = IdentityAdminCommand {
+            operation: IdentityAdminOperation::ReadChangeFeed,
+            actor_id: actor_id.to_owned(),
+            permissions: BTreeSet::from([IdentityAdminPermission::ReadChangeFeed]),
+            input: serde_json::to_value(input).map_err(|_| InternalClientError::InvalidResponse)?,
+        };
+        self.administer(tenant, request_id, idempotency_key, &command)
     }
 
     /// Takes a lease on application mail the data plane wants sent. The

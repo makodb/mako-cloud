@@ -21,8 +21,8 @@ pub use client::{
 pub use contract::{
     ApplicationMailAcknowledgeRequest, ApplicationMailAcknowledgeResponse,
     ApplicationMailDrainRequest, ApplicationMailDrainResponse, ApplicationMailIntent,
-    DataJobExportPageInput, DataJobExportPageOutput, DataJobImportBatchInput,
-    DataJobImportBatchOutput, DataJobRowError, DeleteBucketObjectInput,
+    ChangeFeedEntry, ChangeFeedEvent, DataJobExportPageInput, DataJobExportPageOutput,
+    DataJobImportBatchInput, DataJobImportBatchOutput, DataJobRowError, DeleteBucketObjectInput,
     FunctionSecretResolutionRequest, FunctionSecretResolutionResponse, INTERNAL_PROTOCOL_VERSION,
     IdentityAdminCommand, IdentityAdminOperation, IdentityAdminPermission,
     IdentityVerificationOperation, IdentityVerificationRequest, IdentityVerificationResponse,
@@ -31,7 +31,8 @@ pub use contract::{
     InstallQuotaPolicyInput, InternalCaller, InternalRoute, ListBucketObjectsInput,
     MAX_INTERNAL_BODY_BYTES, OPERATOR_ADMIN_ENVIRONMENT_ID, OPERATOR_ADMIN_PROJECT_ID,
     OperatorEntitlementApplyResponse, OperatorEntitlementCommand, OperatorEntitlementOperation,
-    OperatorEntitlementPlanResponse, RemoveBucketInput, ResolvedFunctionSecret,
+    OperatorEntitlementPlanResponse, ReadChangeFeedInput, ReadChangeFeedOutput, RemoveBucketInput,
+    ResolvedFunctionSecret,
 };
 pub use guard::{
     GuardDecision, InternalReplayGuard, NoopReplayGuard, RocksInternalReplayGuard,

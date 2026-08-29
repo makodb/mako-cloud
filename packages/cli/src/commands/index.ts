@@ -18,6 +18,7 @@ import { projectsCommands } from "./projects.js";
 import { storageCommands } from "./storage.js";
 import { teamsCommands } from "./teams.js";
 import { usersCommands } from "./users.js";
+import { webhooksCommands } from "./webhooks.js";
 import { workspaceCommands } from "./workspace.js";
 
 /** `mako functions serve` is dispatched before the registry; it is listed for help and parity. */
@@ -50,4 +51,5 @@ export const commands: readonly Command[] = [
   ...dataCommands,
   ...storageCommands,
   ...emailTemplatesCommands,
+  ...webhooksCommands,
 ];

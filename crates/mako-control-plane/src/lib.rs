@@ -29,6 +29,7 @@ mod production_observability;
 mod project;
 mod retention_job;
 mod runtime_backend;
+mod webhook;
 mod workspace;
 
 pub use developer_identity::{
@@ -135,6 +136,14 @@ pub use retention_job::{
 pub use runtime_backend::{
     RuntimeClientError, RuntimeDeploymentClient, RuntimeDeploymentClientConfig,
     RuntimeSupervisorCredential,
+};
+pub use webhook::{
+    HttpWebhookTransport, NewWebhookEndpoint, WebhookChangeSource, WebhookDeliveryId,
+    WebhookDeliveryPage, WebhookDeliveryQuery, WebhookDeliveryRecord, WebhookDeliveryState,
+    WebhookEndpointCreated, WebhookEndpointId, WebhookEndpointRecord, WebhookEndpointState,
+    WebhookEndpointUpdate, WebhookError, WebhookEvent, WebhookService, WebhookSigningSecret,
+    WebhookSourceError, WebhookStore, WebhookSubscription, WebhookTransport, WebhookTransportError,
+    WebhookWorker, WebhookWorkerConfig, WebhookWorkerReport, webhook_signature,
 };
 pub use workspace::{
     DeveloperRestoreService, DeveloperStepUpGrant, DeveloperWorkspaceError,

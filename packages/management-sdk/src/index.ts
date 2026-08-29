@@ -108,6 +108,15 @@ export const MANAGEMENT_OPERATIONS = [
   "deleteStorageBucket",
   "listStorageObjects",
   "deleteStorageObject",
+  "listWebhookEndpoints",
+  "createWebhookEndpoint",
+  "getWebhookEndpoint",
+  "updateWebhookEndpoint",
+  "deleteWebhookEndpoint",
+  "rotateWebhookSecret",
+  "resumeWebhookEndpoint",
+  "listWebhookDeliveries",
+  "redeliverWebhookDelivery",
   "uploadFunctionBundle",
   "listFunctions",
   "createFunction",
@@ -267,6 +276,16 @@ export type UpdateStorageBucketRequest = components["schemas"]["UpdateStorageBuc
 export type StorageBucketRemoval = components["schemas"]["StorageBucketRemoval"];
 export type StorageObject = components["schemas"]["StorageObject"];
 export type StorageObjectPage = components["schemas"]["StorageObjectPage"];
+export type WebhookEndpoint = components["schemas"]["WebhookEndpoint"];
+export type WebhookEndpointState = components["schemas"]["WebhookEndpointState"];
+export type WebhookEndpointCreate = components["schemas"]["WebhookEndpointCreate"];
+export type WebhookEndpointUpdate = components["schemas"]["WebhookEndpointUpdate"];
+export type WebhookEndpointCreated = components["schemas"]["WebhookEndpointCreated"];
+export type WebhookSubscription = components["schemas"]["WebhookSubscription"];
+export type WebhookEvent = components["schemas"]["WebhookEvent"];
+export type WebhookDelivery = components["schemas"]["WebhookDelivery"];
+export type WebhookDeliveryState = components["schemas"]["WebhookDeliveryState"];
+export type WebhookDeliveryPage = components["schemas"]["WebhookDeliveryPage"];
 export type FunctionBundleUploadRequest = components["schemas"]["FunctionBundleUploadRequest"];
 export type FunctionBundleArtifact = components["schemas"]["FunctionBundleArtifact"];
 export type FunctionBundleUploadResult = components["schemas"]["FunctionBundleUploadResult"];
@@ -1620,6 +1639,165 @@ export class MakoManagementClient {
             },
           },
           pathSerializer: storageObjectPathSerializer,
+        },
+      ),
+    );
+  }
+
+  async listWebhookEndpoints(projectId: string, environmentId: string): Promise<WebhookEndpoint[]> {
+    const result = await this.#client.GET(
+      "/v1/projects/{projectId}/environments/{environmentId}/webhooks",
+      { params: { path: { projectId, environmentId } } },
+    );
+    return unwrap(result).items;
+  }
+
+  /**
+   * Registers an endpoint. The signing secret is in this answer and nowhere
+   * else: it is stored sealed and can only be rotated, never read back.
+   */
+  async createWebhookEndpoint(
+    projectId: string,
+    environmentId: string,
+    input: WebhookEndpointCreate,
+    idempotencyKey: string,
+  ): Promise<WebhookEndpointCreated> {
+    return unwrap(
+      await this.#client.POST("/v1/projects/{projectId}/environments/{environmentId}/webhooks", {
+        params: {
+          path: { projectId, environmentId },
+          header: { "Idempotency-Key": idempotencyKey },
+        },
+        body: input,
+      }),
+    );
+  }
+
+  async getWebhookEndpoint(
+    projectId: string,
+    environmentId: string,
+    webhookId: string,
+  ): Promise<WebhookEndpoint> {
+    return unwrap(
+      await this.#client.GET(
+        "/v1/projects/{projectId}/environments/{environmentId}/webhooks/{webhookId}",
+        { params: { path: { projectId, environmentId, webhookId } } },
+      ),
+    );
+  }
+
+  async updateWebhookEndpoint(
+    projectId: string,
+    environmentId: string,
+    webhookId: string,
+    input: WebhookEndpointUpdate,
+    idempotencyKey: string,
+  ): Promise<WebhookEndpoint> {
+    return unwrap(
+      await this.#client.PATCH(
+        "/v1/projects/{projectId}/environments/{environmentId}/webhooks/{webhookId}",
+        {
+          params: {
+            path: { projectId, environmentId, webhookId },
+            header: { "Idempotency-Key": idempotencyKey },
+          },
+          body: input,
+        },
+      ),
+    );
+  }
+
+  async deleteWebhookEndpoint(
+    projectId: string,
+    environmentId: string,
+    webhookId: string,
+    idempotencyKey: string,
+  ): Promise<void> {
+    expectNoContent(
+      await this.#client.DELETE(
+        "/v1/projects/{projectId}/environments/{environmentId}/webhooks/{webhookId}",
+        {
+          params: {
+            path: { projectId, environmentId, webhookId },
+            header: { "Idempotency-Key": idempotencyKey },
+          },
+        },
+      ),
+    );
+  }
+
+  /** Replaces the signing secret; the new one is in this answer and nowhere else. */
+  async rotateWebhookSecret(
+    projectId: string,
+    environmentId: string,
+    webhookId: string,
+    idempotencyKey: string,
+  ): Promise<WebhookEndpointCreated> {
+    return unwrap(
+      await this.#client.POST(
+        "/v1/projects/{projectId}/environments/{environmentId}/webhooks/{webhookId}/actions/rotate-secret",
+        {
+          params: {
+            path: { projectId, environmentId, webhookId },
+            header: { "Idempotency-Key": idempotencyKey },
+          },
+        },
+      ),
+    );
+  }
+
+  async resumeWebhookEndpoint(
+    projectId: string,
+    environmentId: string,
+    webhookId: string,
+    idempotencyKey: string,
+  ): Promise<WebhookEndpoint> {
+    return unwrap(
+      await this.#client.POST(
+        "/v1/projects/{projectId}/environments/{environmentId}/webhooks/{webhookId}/actions/resume",
+        {
+          params: {
+            path: { projectId, environmentId, webhookId },
+            header: { "Idempotency-Key": idempotencyKey },
+          },
+        },
+      ),
+    );
+  }
+
+  async listWebhookDeliveries(
+    projectId: string,
+    environmentId: string,
+    webhookId: string,
+    options: {
+      readonly state?: WebhookDeliveryState;
+      readonly cursor?: string;
+      readonly limit?: number;
+    } = {},
+  ): Promise<WebhookDeliveryPage> {
+    return unwrap(
+      await this.#client.GET(
+        "/v1/projects/{projectId}/environments/{environmentId}/webhooks/{webhookId}/deliveries",
+        { params: { path: { projectId, environmentId, webhookId }, query: options } },
+      ),
+    );
+  }
+
+  async redeliverWebhookDelivery(
+    projectId: string,
+    environmentId: string,
+    webhookId: string,
+    deliveryId: string,
+    idempotencyKey: string,
+  ): Promise<WebhookDelivery> {
+    return unwrap(
+      await this.#client.POST(
+        "/v1/projects/{projectId}/environments/{environmentId}/webhooks/{webhookId}/deliveries/{deliveryId}/actions/redeliver",
+        {
+          params: {
+            path: { projectId, environmentId, webhookId, deliveryId },
+            header: { "Idempotency-Key": idempotencyKey },
+          },
         },
       ),
     );

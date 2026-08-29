@@ -117,10 +117,37 @@ test("route matching fails closed for unknown and malformed locations", () => {
       invalidBucket,
     );
   }
-  assert.equal(
-    matchConsoleRoute("/projects/prj_abcdefgh/environments/env_abcdefgh/webhooks").name,
-    "not_found",
+  assert.deepEqual(
+    matchConsoleRoute("/projects/prj_abcdefgh/environments/env_abcdefgh/webhooks"),
+    { name: "webhooks", projectId: "prj_abcdefgh", environmentId: "env_abcdefgh" },
   );
+  assert.deepEqual(
+    matchConsoleRoute(
+      "/projects/prj_abcdefgh/environments/env_abcdefgh/webhooks/whk_abcdef123456",
+    ),
+    {
+      name: "webhooks",
+      projectId: "prj_abcdefgh",
+      environmentId: "env_abcdefgh",
+      webhookId: "whk_abcdef123456",
+    },
+  );
+  for (const invalidWebhook of [
+    "whk_short",
+    "WHK_ABCDEF123456",
+    "whd_abcdef123456",
+    "abcdef123456",
+    "whk_abcdef123456/deliveries",
+    `whk_${"a".repeat(33)}`,
+  ]) {
+    assert.equal(
+      matchConsoleRoute(
+        `/projects/prj_abcdefgh/environments/env_abcdefgh/webhooks/${invalidWebhook}`,
+      ).name,
+      "not_found",
+      invalidWebhook,
+    );
+  }
   assert.deepEqual(
     matchConsoleRoute("/projects/prj_abcdefgh/environments/env_abcdefgh/collections"),
     {

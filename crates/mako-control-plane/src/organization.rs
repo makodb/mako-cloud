@@ -544,6 +544,13 @@ pub enum ControlAuditAction {
     FunctionLogsRead,
     FunctionDelete,
     ObservabilityRead,
+    WebhookEndpointRead,
+    WebhookEndpointCreate,
+    WebhookEndpointUpdate,
+    WebhookEndpointDelete,
+    WebhookEndpointRotateSecret,
+    WebhookEndpointResume,
+    WebhookEndpointRedeliver,
 }
 
 impl ControlAuditAction {
@@ -617,6 +624,13 @@ impl ControlAuditAction {
             Self::FunctionLogsRead => "function_logs_read",
             Self::FunctionDelete => "function_delete",
             Self::ObservabilityRead => "observability_read",
+            Self::WebhookEndpointRead => "webhook_endpoint_read",
+            Self::WebhookEndpointCreate => "webhook_endpoint_create",
+            Self::WebhookEndpointUpdate => "webhook_endpoint_update",
+            Self::WebhookEndpointDelete => "webhook_endpoint_delete",
+            Self::WebhookEndpointRotateSecret => "webhook_endpoint_rotate_secret",
+            Self::WebhookEndpointResume => "webhook_endpoint_resume",
+            Self::WebhookEndpointRedeliver => "webhook_endpoint_redeliver",
         }
     }
 }

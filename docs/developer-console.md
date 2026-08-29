@@ -41,7 +41,17 @@ Policies, Functions, Observability, Backups, API & Connect, Settings — plus
 the destinations the console serves from signals the API already exposes:
 Storage (the environment's buckets with their object counts and stored bytes,
 each bucket's access, size and content-type limits, and rules, and its
-objects — listed by prefix, paged, and deletable), Auth providers (the
+objects — listed by prefix, paged, and deletable), Webhooks (the
+environment's webhook endpoints with their subscriptions, state, and failure
+count; registration with a URL, description, per-collection event
+subscriptions, and enabled flag, after which the platform-generated signing
+secret is shown once in a dismissable panel with copy guidance and never
+again; each endpoint's details, settings, enable/disable, a confirmed secret
+rotation that shows the new secret once, resume when the platform paused it
+after sustained failure — with the reason shown — a confirmed delete, and its
+delivery log newest first, filtered by state, paged, with time, event,
+collection, document, attempts, status, and error per delivery and
+redelivery of a failed one), Auth providers (the
 environment's sign-in settings edited as one unit: OpenID Connect and GitHub
 providers with their client identifiers, scopes, and enabled state, the
 redirect allowlist, and magic links; a client secret is typed once, sent once,
@@ -54,12 +64,12 @@ reset to the built-in default), Logs (retained, scrubbed function output),
 Usage (this month's meters against the plan), and Activity (the audit trail as
 the developer may read it).
 
-Product areas the deployment does not provide yet — Webhooks, Schedules,
-Domains — are listed and disabled with a reason, never hidden: the shape of
-the product is visible before every area is enabled.
+Product areas the deployment does not provide yet — Schedules, Domains — are
+listed and disabled with a reason, never hidden: the shape of the product is
+visible before every area is enabled.
 
-Routes: `/projects/{projectId}/environments/{environmentId}/{storage|auth-providers|email-templates|logs|usage|activity}`
-and `…/storage/{bucketId}` join the existing environment routes; every pre-existing deep link keeps working and
+Routes: `/projects/{projectId}/environments/{environmentId}/{storage|webhooks|auth-providers|email-templates|logs|usage|activity}`,
+`…/storage/{bucketId}`, and `…/webhooks/{webhookId}` join the existing environment routes; every pre-existing deep link keeps working and
 opens inside the shell with its context shown.
 
 ## Context and accessibility

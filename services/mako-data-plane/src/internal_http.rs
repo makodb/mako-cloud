@@ -23,13 +23,13 @@ use mako_identity::{
     TrustedMetadataInvalidationSink, UserProfileMetadata, VerifiedProjectCredential,
 };
 use mako_internal_rpc::{
-    DataJobExportPageInput, DataJobExportPageOutput, DataJobImportBatchInput,
-    DataJobImportBatchOutput, DataJobRowError, GuardDecision, IdentityAdminCommand,
-    IdentityAdminOperation, IdentityAdminPermission, IdentityVerificationOperation,
-    IdentityVerificationRequest, IdentityVerificationResponse, InstallCollectionInput,
-    InstallPolicyInput, InternalCaller, InternalReplayGuard, InternalRoute,
-    PreparedResponseJournal, ResponseJournalLookup, ResponseJournalStoreOutcome,
-    RocksInternalReplayGuardError,
+    ChangeFeedEntry, ChangeFeedEvent, DataJobExportPageInput, DataJobExportPageOutput,
+    DataJobImportBatchInput, DataJobImportBatchOutput, DataJobRowError, GuardDecision,
+    IdentityAdminCommand, IdentityAdminOperation, IdentityAdminPermission,
+    IdentityVerificationOperation, IdentityVerificationRequest, IdentityVerificationResponse,
+    InstallCollectionInput, InstallPolicyInput, InternalCaller, InternalReplayGuard, InternalRoute,
+    PreparedResponseJournal, ReadChangeFeedInput, ReadChangeFeedOutput, ResponseJournalLookup,
+    ResponseJournalStoreOutcome, RocksInternalReplayGuardError,
 };
 use mako_policy::{ExplorerGrantAuthorityRecord, SubjectId};
 use mako_service_runtime::{
@@ -506,12 +506,130 @@ async fn execute_operation(
             crate::storage_http::execute_bucket_operation(graph, request, tenant, command, now)
                 .await
         }
+        IdentityAdminOperation::ReadChangeFeed => {
+            execute_change_feed(graph, request, tenant, command, now).await
+        }
         IdentityAdminOperation::CreateProjectCredential
         | IdentityAdminOperation::RotateProjectCredential => Err(auth_http::invalid(
             request,
             "identity operation dispatch is invalid",
         )),
     }
+}
+
+/// The most change-feed entries one call hands out. The webhook worker pages
+/// through a busy collection in slices of this size or smaller.
+const CHANGE_FEED_MAXIMUM_LIMIT: u32 = 500;
+
+/// Serve one page of a collection's committed change log to the control
+/// plane's webhook worker. Only positions, revisions, and the kind of change
+/// cross this boundary; document fields stay in the data plane, so a webhook
+/// delivery can never carry data the endpoint was not entitled to.
+async fn execute_change_feed(
+    graph: &Arc<DataPlaneGraph>,
+    request: &HttpRequest,
+    tenant: &mako_api::TenantScope,
+    command: &IdentityAdminCommand,
+    now: u64,
+) -> Result<Vec<u8>, HttpApiError> {
+    require_permission(
+        graph,
+        request,
+        tenant,
+        command,
+        IdentityAdminPermission::ReadChangeFeed,
+        "change_feed_read",
+        "change-feed",
+        now,
+    )
+    .await?;
+    let input: ReadChangeFeedInput = parse_input(request, &command.input)?;
+    if !(1..=CHANGE_FEED_MAXIMUM_LIMIT).contains(&input.limit) {
+        return Err(auth_http::invalid(request, "change feed limit is invalid"));
+    }
+    let collection_id = mako_api::CollectionId::parse(input.collection_id.clone())
+        .map_err(|_| auth_http::invalid(request, "collection id is invalid"))?;
+    let scoped = graph
+        .document_engine()
+        .scope_collection(
+            tenant,
+            mako_api::CollectionScope::new(tenant.clone(), collection_id),
+        )
+        .map_err(|_| auth_http::invalid(request, "collection scope is invalid"))?;
+    let output = read_change_feed(&scoped, input.after_position, input.limit)
+        .await
+        .map_err(|failure| match failure {
+            ChangeFeedFailure::CollectionNotFound => not_found(request, "collection was not found"),
+            ChangeFeedFailure::Unavailable => {
+                auth_http::unavailable(request, "collection change log is unavailable")
+            }
+        })?;
+    serde_json::to_vec(&output).map_err(|_| {
+        auth_http::internal_from_id(
+            request.request_id(),
+            "change feed response serialization failed",
+        )
+    })
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ChangeFeedFailure {
+    CollectionNotFound,
+    Unavailable,
+}
+
+/// Read the change log after `after_position` against the high water
+/// committed when the call started. A page is never wider than the committed
+/// high water, so a caller that advances to `scanned_through` sees every
+/// change exactly once and in commit order.
+async fn read_change_feed(
+    scoped: &mako_documents::ScopedCollectionEngine,
+    after_position: u64,
+    limit: u32,
+) -> Result<ReadChangeFeedOutput, ChangeFeedFailure> {
+    if scoped
+        .collection_metadata()
+        .await
+        .map_err(|_| ChangeFeedFailure::Unavailable)?
+        .is_none()
+    {
+        return Err(ChangeFeedFailure::CollectionNotFound);
+    }
+    let high_water = scoped
+        .capture_committed_high_water()
+        .await
+        .map_err(|_| ChangeFeedFailure::Unavailable)?;
+    let limit = NonZeroUsize::new(limit as usize).ok_or(ChangeFeedFailure::Unavailable)?;
+    let page = scoped
+        .read_change_page(after_position, high_water, limit)
+        .await
+        .map_err(|_| ChangeFeedFailure::Unavailable)?;
+    let changes = page
+        .changes()
+        .iter()
+        .map(|change| {
+            let change = change.change();
+            ChangeFeedEntry {
+                document_id: change.document_id().to_owned(),
+                revision: change.revision().to_owned(),
+                previous_revision: change.previous_revision().map(str::to_owned),
+                commit_position: change.commit_position(),
+                event: if change.is_deleted() {
+                    ChangeFeedEvent::Delete
+                } else if change.previous_revision().is_none() {
+                    ChangeFeedEvent::Insert
+                } else {
+                    ChangeFeedEvent::Update
+                },
+            }
+        })
+        .collect();
+    Ok(ReadChangeFeedOutput {
+        changes,
+        scanned_through: page.scanned_through(),
+        high_water,
+        exhausted: page.is_exhausted(),
+    })
 }
 
 /// Install collection metadata so this data plane can serve the collection.
@@ -2164,6 +2282,7 @@ const fn operation_name(operation: IdentityAdminOperation) -> &'static str {
         IdentityAdminOperation::AdvanceExplorerEpoch => "advance_explorer_epoch",
         IdentityAdminOperation::ImportDataJobBatch => "import_data_job_batch",
         IdentityAdminOperation::ExportDataJobPage => "export_data_job_page",
+        IdentityAdminOperation::ReadChangeFeed => "read_change_feed",
     }
 }
 
@@ -2343,4 +2462,200 @@ impl From<&ProjectSigningKeyRecord> for SigningKeyViewWire {
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct SigningKeysWire {
     keys: Vec<SigningKeyViewWire>,
+}
+
+#[cfg(test)]
+mod change_feed_tests {
+    use std::{num::NonZeroU64, sync::Arc};
+
+    use futures::executor::block_on;
+    use mako_api::{CollectionId, CollectionScope, EnvironmentId, ProjectId, TenantScope};
+    use mako_documents::{
+        CollectionLifecycle, CollectionMetadata, CollectionMetadataVersion, CommitPosition,
+        DocumentEngine, DocumentValidator, MutationCommitOutcome, MutationId, MutationInput,
+        PrimaryKeyDefinition, SchemaCompatibility, SchemaVersion, ScopedCollectionEngine,
+    };
+    use mako_internal_rpc::ChangeFeedEvent;
+    use mako_storage::{Durability, MemoryAdapter};
+    use serde_json::json;
+
+    use super::{ChangeFeedFailure, read_change_feed};
+
+    fn tenant() -> TenantScope {
+        TenantScope::new(
+            ProjectId::parse("prj_feedtest0001").expect("project"),
+            EnvironmentId::parse("env_feedtest0001").expect("environment"),
+        )
+    }
+
+    fn metadata() -> CollectionMetadata {
+        CollectionMetadata::new(
+            CollectionId::parse("todos").expect("collection"),
+            CollectionMetadataVersion::new(1).expect("metadata version"),
+            SchemaVersion::new(1).expect("schema version"),
+            json!({
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string"},
+                    "title": {"type": "string"},
+                    "secret": {"type": "string"}
+                },
+                "required": ["id", "title"],
+                "additionalProperties": false
+            }),
+            PrimaryKeyDefinition::field("id").expect("primary key"),
+            SchemaCompatibility::Compatible,
+            CollectionLifecycle::Active,
+        )
+        .expect("metadata")
+    }
+
+    /// Three commits on one document -- create, update, delete -- plus one
+    /// create on another, each finalized the way the data plane's write path
+    /// finalizes them, so the high water reflects all four.
+    async fn seed(engine: &DocumentEngine, scoped: &ScopedCollectionEngine) {
+        let tenant = tenant();
+        scoped
+            .install_collection_metadata(&metadata(), Durability::Memory)
+            .await
+            .expect("metadata installed");
+        let validator = DocumentValidator::compile(&metadata()).expect("validator");
+        let sequencer = engine
+            .scope_sequencer(&tenant, &tenant, Durability::Memory)
+            .expect("sequencer");
+        let mut lease = sequencer
+            .lease(NonZeroU64::new(4).expect("non-zero"))
+            .await
+            .expect("lease");
+        let input = |position: u64, id: &str, title: &str| MutationInput {
+            mutation_id: MutationId::parse(format!("feed-{position}")).expect("mutation id"),
+            commit_position: CommitPosition::new(position).expect("position"),
+            document: validator
+                .validate_create(json!({"id": id, "title": title, "secret": "hunter2"}))
+                .expect("validated document"),
+            durability: Durability::Memory,
+        };
+        let first = lease.issue().expect("position 1");
+        let MutationCommitOutcome::Applied(created) = scoped
+            .create_document(input(first, "todo-1", "created"))
+            .await
+            .expect("create")
+        else {
+            panic!("create must apply");
+        };
+        sequencer.mark_committed(first).await.expect("committed");
+        let second = lease.issue().expect("position 2");
+        let MutationCommitOutcome::Applied(updated) = scoped
+            .update_document(created.revision, input(second, "todo-1", "updated"))
+            .await
+            .expect("update")
+        else {
+            panic!("update must apply");
+        };
+        sequencer.mark_committed(second).await.expect("committed");
+        let third = lease.issue().expect("position 3");
+        let MutationCommitOutcome::Applied(_) = scoped
+            .delete_document(updated.revision, input(third, "todo-1", "deleted"))
+            .await
+            .expect("delete")
+        else {
+            panic!("delete must apply");
+        };
+        sequencer.mark_committed(third).await.expect("committed");
+        let fourth = lease.issue().expect("position 4");
+        let MutationCommitOutcome::Applied(_) = scoped
+            .create_document(input(fourth, "todo-2", "other"))
+            .await
+            .expect("create")
+        else {
+            panic!("create must apply");
+        };
+        sequencer.mark_committed(fourth).await.expect("committed");
+        assert_eq!(sequencer.recover_high_water().await.expect("high water"), 4);
+    }
+
+    #[test]
+    fn the_change_feed_pages_events_in_commit_order_without_document_fields() {
+        block_on(async {
+            let adapter = Arc::new(MemoryAdapter::new());
+            let engine = DocumentEngine::new(adapter);
+            let tenant = tenant();
+            let scoped = engine
+                .scope_collection(
+                    &tenant,
+                    CollectionScope::new(
+                        tenant.clone(),
+                        CollectionId::parse("todos").expect("collection"),
+                    ),
+                )
+                .expect("scoped");
+            seed(&engine, &scoped).await;
+
+            // Before anything is read: the high water is the cursor a new
+            // endpoint starts from, so nothing older is ever delivered.
+            let probe = read_change_feed(&scoped, 0, 1).await.expect("probe");
+            assert_eq!(probe.high_water, 4);
+            assert_eq!(probe.changes.len(), 1);
+            assert!(!probe.exhausted);
+
+            let first = read_change_feed(&scoped, 0, 2).await.expect("first page");
+            assert_eq!(first.scanned_through, 2);
+            assert_eq!(first.high_water, 4);
+            assert!(!first.exhausted);
+            assert_eq!(first.changes[0].document_id, "todo-1");
+            assert_eq!(first.changes[0].event, ChangeFeedEvent::Insert);
+            assert_eq!(first.changes[0].commit_position, 1);
+            assert!(first.changes[0].previous_revision.is_none());
+            assert_eq!(first.changes[1].event, ChangeFeedEvent::Update);
+            assert_eq!(
+                first.changes[1].previous_revision.as_deref(),
+                Some(first.changes[0].revision.as_str())
+            );
+
+            let second = read_change_feed(&scoped, first.scanned_through, 500)
+                .await
+                .expect("second page");
+            assert_eq!(second.scanned_through, 4);
+            assert!(second.exhausted);
+            assert_eq!(second.changes.len(), 2);
+            assert_eq!(second.changes[0].event, ChangeFeedEvent::Delete);
+            assert_eq!(second.changes[0].document_id, "todo-1");
+            assert_eq!(second.changes[1].event, ChangeFeedEvent::Insert);
+            assert_eq!(second.changes[1].document_id, "todo-2");
+
+            // The wire carries identifiers and revisions only.
+            let encoded = serde_json::to_string(&second).expect("json");
+            assert!(!encoded.contains("hunter2"));
+            assert!(!encoded.contains("title"));
+            assert!(encoded.contains("\"documentId\""));
+
+            // Reading past the high water is exhausted, not an error.
+            let beyond = read_change_feed(&scoped, 4, 10).await.expect("beyond");
+            assert!(beyond.exhausted);
+            assert!(beyond.changes.is_empty());
+            assert_eq!(beyond.scanned_through, 4);
+        });
+    }
+
+    #[test]
+    fn a_collection_without_metadata_is_not_found() {
+        block_on(async {
+            let adapter = Arc::new(MemoryAdapter::new());
+            let engine = DocumentEngine::new(adapter);
+            let tenant = tenant();
+            let scoped = engine
+                .scope_collection(
+                    &tenant,
+                    CollectionScope::new(
+                        tenant.clone(),
+                        CollectionId::parse("missing").expect("collection"),
+                    ),
+                )
+                .expect("scoped");
+            assert_eq!(
+                read_change_feed(&scoped, 0, 10).await.expect_err("missing"),
+                ChangeFeedFailure::CollectionNotFound
+            );
+        });
+    }
 }

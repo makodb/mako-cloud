@@ -3,7 +3,8 @@
 `mako` is the terminal counterpart of the developer console. Everything a
 developer can do in a browser — sign in, own teams and projects, shape
 collections and policies, issue keys, deploy functions, read logs, move data,
-manage file storage — can be done from a shell, a script, or CI with the same
+manage file storage, register webhooks — can be done from a shell, a script,
+or CI with the same
 authorization and the same audit trail. It lives in `packages/cli`
 (`@mako-cloud/cli`) and drives the management API through
 `@mako-cloud/management-sdk`.
@@ -25,7 +26,7 @@ are printed by the test so a new one is a visible decision: `/v1/operator*`
 (a separate identity), `/{projectRef}/functions` (invocation, an application
 concern), and the application-runtime routes under an environment (`auth/*`,
 `documents`, `service/*`, `replication/*`), which SDKs and RxDB clients call
-with project credentials. Every other operation — 143 at the time of writing —
+with project credentials. Every other operation — 152 at the time of writing —
 maps to a command.
 
 ## Signing in
@@ -162,6 +163,18 @@ Identifiers that name the resource acted on are positional.
   [auth-providers.md](auth-providers.md)). A provider given without
   `clientSecret` keeps the installed one. The secret is sent once, in the
   request, and appears in no output.
+- Webhooks: `mako webhooks create --url <https-url> --subscribe
+  <collection>[:<insert,update,delete>] ...` registers an endpoint for
+  collection events; the signing secret is
+  printed exactly once, after a warning on stderr, or written to
+  `--secret-file`, and no later command can read it back — `rotate-secret
+  <id>` replaces it and prints the new one the same way, after confirmation.
+  `update <id>` sends only the options given (`--enable`/`--disable` toggle
+  delivery); `resume <id>` clears the pause the platform applies after
+  sustained failure; `deliveries <id> [--state pending|delivered|failed]`
+  pages the delivery log newest first (`--all` follows the cursor) and
+  `redeliver <id> <delivery-id>` queues a new signed delivery of one event
+  (see [webhooks.md](webhooks.md) for the delivery body and signature).
 
 ## Hosted deployment
 
@@ -429,6 +442,20 @@ Generated from the command registry; every command also answers `--help` with it
 | `mako users revoke-sessions <user-id>` | Revoke every session of a user *(confirmed)* |
 | `mako users search` | Search application users by id or email (bounded; no credential material) |
 | `mako users update-metadata <user-id> --input <@file\|-\|json>` | Replace a user's trusted and profile metadata |
+
+### `mako webhooks`
+
+| command | does |
+| ------- | ---- |
+| `mako webhooks create` | Register a webhook endpoint for collection events; the signing secret is shown once *(prints a secret once)* |
+| `mako webhooks delete <webhook-id>` | Remove a webhook endpoint with its subscriptions and delivery log *(confirmed)* |
+| `mako webhooks deliveries <webhook-id>` | List a webhook endpoint's recent deliveries, newest first; --all follows the cursor to the end |
+| `mako webhooks get <webhook-id>` | Show a webhook endpoint, its subscriptions, and why it is paused if it is |
+| `mako webhooks list` | List the environment's webhook endpoints with their state and failure counts |
+| `mako webhooks redeliver <webhook-id> <delivery-id>` | Queue a new signed delivery of one event, logged as a redelivery of the original |
+| `mako webhooks resume <webhook-id>` | Resume a webhook endpoint the platform paused after sustained failure |
+| `mako webhooks rotate-secret <webhook-id>` | Replace a webhook endpoint's signing secret; the new one is shown once and the old one stops signing at once *(confirmed, prints a secret once)* |
+| `mako webhooks update <webhook-id>` | Change a webhook endpoint's URL, subscriptions, description, or enabled flag; only given options are sent |
 
 ### `mako workspace`
 

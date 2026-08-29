@@ -1,0 +1,137 @@
+/* Webhooks screen: endpoint list with states, registration, one endpoint's settings and deliveries. */
+
+.webhooks-screen .panel {
+  width: 100%;
+}
+
+.webhooks-screen .section-heading p:last-child {
+  margin-bottom: 0;
+}
+
+.webhook-table th.numeric,
+.webhook-table td.numeric,
+.delivery-table th.numeric,
+.delivery-table td.numeric {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.webhook-table tbody th,
+.delivery-table tbody th {
+  font-weight: 600;
+}
+
+.webhook-table td,
+.delivery-table td {
+  vertical-align: top;
+}
+
+.webhook-table time,
+.delivery-table time {
+  white-space: nowrap;
+}
+
+.webhook-url {
+  overflow-wrap: anywhere;
+}
+
+.webhook-description,
+.delivery-id,
+.paused-reason {
+  display: block;
+  margin-top: 0.25rem;
+  font-weight: 400;
+  color: #57736b;
+}
+
+.paused-reason {
+  color: #8a2522;
+}
+
+.subscription-summary {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.subscription-summary li {
+  white-space: nowrap;
+}
+
+.webhook-state,
+.delivery-state {
+  display: inline-flex;
+  width: fit-content;
+  border-radius: 999px;
+  padding: 0.25rem 0.55rem;
+  color: #334740;
+  background: #e3e8e6;
+  font-size: 0.72rem;
+  font-weight: 750;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+
+.webhook-state.active,
+.delivery-state.delivered {
+  color: #075c49;
+  background: #d5f1e8;
+}
+
+.webhook-state.paused,
+.delivery-state.failed {
+  color: #8a2522;
+  background: #f9d9d7;
+}
+
+.webhook-state.disabled,
+.delivery-state.pending {
+  color: #704f08;
+  background: #faeabf;
+}
+
+.webhook-details dd {
+  overflow-wrap: anywhere;
+}
+
+.subscription-editor {
+  margin: 0 0 1rem;
+  padding: 0.75rem;
+  border: 1px solid #d5ddd9;
+  border-radius: 0.5rem;
+}
+
+.subscription-editor legend {
+  padding: 0 0.25rem;
+  font-weight: 600;
+}
+
+.subscription-row {
+  display: grid;
+  grid-template-columns: minmax(10rem, 1fr) repeat(3, auto) auto;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.6rem;
+}
+
+.subscription-row input[type="text"] {
+  margin: 0;
+}
+
+.subscription-row .checkbox-label {
+  white-space: nowrap;
+}
+
+.delivery-filter {
+  display: grid;
+  grid-template-columns: minmax(10rem, 16rem) auto;
+  align-items: end;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.delivery-document,
+.delivery-error {
+  overflow-wrap: anywhere;
+}

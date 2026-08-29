@@ -7,8 +7,10 @@ publish.workspace = true
 
 [dependencies]
 base64.workspace = true
+hmac.workspace = true
 ring.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true

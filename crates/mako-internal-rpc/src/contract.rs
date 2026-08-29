@@ -269,6 +269,11 @@ pub enum IdentityAdminOperation {
     InspectBucket,
     ListBucketObjects,
     DeleteBucketObject,
+    /// Read a page of a collection's committed change log as positions and
+    /// revisions only -- never document fields. The control plane's webhook
+    /// worker consumes it; a slow webhook endpoint must never touch the
+    /// data plane's write path.
+    ReadChangeFeed,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
@@ -286,6 +291,63 @@ pub enum IdentityAdminPermission {
     ManagePolicies,
     ReadBuckets,
     ManageBuckets,
+    ReadChangeFeed,
+}
+
+/// The kind of change one change-feed entry describes. Mirrors the public
+/// `WebhookEvent` vocabulary so the control plane needs no translation.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ChangeFeedEvent {
+    Insert,
+    Update,
+    Delete,
+}
+
+impl ChangeFeedEvent {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Insert => "insert",
+            Self::Update => "update",
+            Self::Delete => "delete",
+        }
+    }
+}
+
+/// A page of a collection's change log after `after_position`, at most
+/// `limit` entries (1..=500).
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct ReadChangeFeedInput {
+    pub collection_id: String,
+    pub after_position: u64,
+    pub limit: u32,
+}
+
+/// One committed change: identifiers and revisions only. Document fields are
+/// never on this wire.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct ChangeFeedEntry {
+    pub document_id: String,
+    pub revision: String,
+    pub previous_revision: Option<String>,
+    pub commit_position: u64,
+    pub event: ChangeFeedEvent,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct ReadChangeFeedOutput {
+    pub changes: Vec<ChangeFeedEntry>,
+    /// The position the page covered through; the caller's next
+    /// `after_position`.
+    pub scanned_through: u64,
+    /// The committed high water the page was read against.
+    pub high_water: u64,
+    /// Nothing more was committed at or below `high_water` when the page was read.
+    pub exhausted: bool,
 }
 
 /// Collection metadata propagated to the data plane. `metadata` is the

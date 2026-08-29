@@ -438,3 +438,148 @@ function team() {
     updatedAt: "2026-08-06T00:00:00Z",
   };
 }
+
+test("webhook endpoints give the signing secret once on create and rotate, page deliveries by query, and redeliver by id", async () => {
+  const requests = [];
+  const endpoint = {
+    id: "whk_abcdef123456",
+    url: "https://hooks.example.test/mako",
+    description: "orders",
+    subscriptions: [{ collectionId: "orders", events: ["insert", "update"] }],
+    state: "active",
+    enabled: true,
+    pausedReason: null,
+    pausedAt: null,
+    consecutiveFailures: 0,
+    secretVersion: 1,
+    createdAt: "2026-08-29T10:00:00Z",
+    updatedAt: "2026-08-29T10:00:00Z",
+  };
+  const delivery = {
+    id: "whd_abcdef123456",
+    endpointId: endpoint.id,
+    event: "insert",
+    collectionId: "orders",
+    documentId: "ord_1",
+    revision: "1-a",
+    commitPosition: 7,
+    state: "failed",
+    attempts: 5,
+    nextAttemptAt: null,
+    lastResponseStatus: 503,
+    lastError: "status_503",
+    redeliveryOf: null,
+    createdAt: "2026-08-29T10:01:00Z",
+    deliveredAt: null,
+  };
+  const client = createManagementClient({
+    endpoint: "https://api.example.test",
+    credential: { kind: "developer_session", accessToken: "developer-session-token" },
+    fetch: async (request) => {
+      requests.push(request);
+      const path = new URL(request.url).pathname;
+      if (request.method === "DELETE") return new Response(null, { status: 204 });
+      if (path.endsWith("/webhooks") && request.method === "GET") {
+        return Response.json({ items: [endpoint] });
+      }
+      if (path.endsWith("/webhooks") && request.method === "POST") {
+        return Response.json({ endpoint, signingSecret: "whs_created_once" }, { status: 201 });
+      }
+      if (path.endsWith("/actions/rotate-secret")) {
+        return Response.json({ endpoint: { ...endpoint, secretVersion: 2 }, signingSecret: "whs_rotated_once" });
+      }
+      if (path.endsWith("/actions/resume")) return Response.json(endpoint);
+      if (path.endsWith("/deliveries")) return Response.json({ items: [delivery], nextCursor: "c2" });
+      if (path.endsWith("/actions/redeliver")) {
+        return Response.json({ ...delivery, id: "whd_redeliver0001", state: "pending", redeliveryOf: delivery.id }, { status: 202 });
+      }
+      return Response.json(endpoint);
+    },
+  });
+  const base = "https://api.example.test/v1/projects/prj_example0001/environments/env_example0001/webhooks";
+
+  const created = await client.createWebhookEndpoint(
+    "prj_example0001",
+    "env_example0001",
+    { url: endpoint.url, description: "orders", subscriptions: endpoint.subscriptions },
+    "idempotency-key-webhook-create",
+  );
+  assert.equal(created.signingSecret, "whs_created_once", "the secret is in the create answer");
+  assert.deepEqual(created.endpoint, endpoint);
+  assert.equal(requests[0].method, "POST");
+  assert.equal(requests[0].url, base);
+  assert.equal(requests[0].headers.get("idempotency-key"), "idempotency-key-webhook-create");
+  assert.deepEqual(await requests[0].json(), {
+    url: endpoint.url,
+    description: "orders",
+    subscriptions: endpoint.subscriptions,
+  });
+
+  const listed = await client.listWebhookEndpoints("prj_example0001", "env_example0001");
+  assert.deepEqual(listed, [endpoint]);
+  assert.doesNotMatch(JSON.stringify(listed), /whs_/u, "listing never carries a secret");
+  assert.equal(requests[1].url, base);
+
+  assert.deepEqual(await client.getWebhookEndpoint("prj_example0001", "env_example0001", endpoint.id), endpoint);
+  assert.equal(requests[2].url, `${base}/${endpoint.id}`);
+
+  await client.updateWebhookEndpoint(
+    "prj_example0001",
+    "env_example0001",
+    endpoint.id,
+    { enabled: false },
+    "idempotency-key-webhook-update",
+  );
+  assert.equal(requests[3].method, "PATCH");
+  assert.equal(requests[3].url, `${base}/${endpoint.id}`);
+  assert.equal(requests[3].headers.get("idempotency-key"), "idempotency-key-webhook-update");
+  assert.deepEqual(await requests[3].json(), { enabled: false });
+
+  const rotated = await client.rotateWebhookSecret(
+    "prj_example0001",
+    "env_example0001",
+    endpoint.id,
+    "idempotency-key-webhook-rotate",
+  );
+  assert.equal(rotated.signingSecret, "whs_rotated_once");
+  assert.equal(rotated.endpoint.secretVersion, 2);
+  assert.equal(requests[4].method, "POST");
+  assert.equal(requests[4].url, `${base}/${endpoint.id}/actions/rotate-secret`);
+  assert.equal(requests[4].headers.get("idempotency-key"), "idempotency-key-webhook-rotate");
+  assert.equal(await requests[4].text(), "", "an action carries no body");
+
+  await client.resumeWebhookEndpoint("prj_example0001", "env_example0001", endpoint.id, "idempotency-key-webhook-resume");
+  assert.equal(requests[5].url, `${base}/${endpoint.id}/actions/resume`);
+  assert.equal(requests[5].headers.get("idempotency-key"), "idempotency-key-webhook-resume");
+
+  const page = await client.listWebhookDeliveries("prj_example0001", "env_example0001", endpoint.id, {
+    state: "failed",
+    cursor: "c1",
+    limit: 25,
+  });
+  assert.deepEqual(page, { items: [delivery], nextCursor: "c2" });
+  assert.equal(requests[6].method, "GET");
+  assert.equal(requests[6].url, `${base}/${endpoint.id}/deliveries?state=failed&cursor=c1&limit=25`);
+  await client.listWebhookDeliveries("prj_example0001", "env_example0001", endpoint.id);
+  assert.equal(requests[7].url, `${base}/${endpoint.id}/deliveries`, "no query parameter is invented");
+
+  const redelivered = await client.redeliverWebhookDelivery(
+    "prj_example0001",
+    "env_example0001",
+    endpoint.id,
+    delivery.id,
+    "idempotency-key-webhook-redeliver",
+  );
+  assert.equal(redelivered.redeliveryOf, delivery.id);
+  assert.equal(requests[8].method, "POST");
+  assert.equal(requests[8].url, `${base}/${endpoint.id}/deliveries/${delivery.id}/actions/redeliver`);
+  assert.equal(requests[8].headers.get("idempotency-key"), "idempotency-key-webhook-redeliver");
+
+  assert.equal(
+    await client.deleteWebhookEndpoint("prj_example0001", "env_example0001", endpoint.id, "idempotency-key-webhook-delete"),
+    undefined,
+  );
+  assert.equal(requests[9].method, "DELETE");
+  assert.equal(requests[9].url, `${base}/${endpoint.id}`);
+  assert.equal(requests[9].headers.get("idempotency-key"), "idempotency-key-webhook-delete");
+});

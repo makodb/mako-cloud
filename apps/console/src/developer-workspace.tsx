@@ -120,6 +120,7 @@ function consoleDestinations(projectId: string, environmentId: string): Workspac
   const base = `/projects/${projectId}/environments/${environmentId}`;
   return [
     { id: "storage", label: "Storage", path: `${base}/storage`, permitted: true },
+    { id: "webhooks", label: "Webhooks", path: `${base}/webhooks`, permitted: true },
     {
       id: "auth-providers",
       label: "Auth providers",
@@ -142,11 +143,6 @@ function consoleDestinations(projectId: string, environmentId: string): Workspac
 /// developer should see the shape of the product, and nothing here pretends
 /// to work.
 const UNAVAILABLE_DESTINATIONS: readonly { id: string; label: string; reason: string }[] = [
-  {
-    id: "webhooks",
-    label: "Webhooks",
-    reason: "Database webhooks are not available on this deployment yet.",
-  },
   {
     id: "schedules",
     label: "Schedules",

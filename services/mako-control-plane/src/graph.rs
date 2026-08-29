@@ -27,7 +27,8 @@ use mako_control_plane::{
     OrganizationStore, PolicyAdminService, ProductionObservabilityBackend,
     ProductionObservabilityConfig, ProjectEnvironmentService, ProjectStore,
     RuntimeDeploymentClient, RuntimeDeploymentClientConfig, RuntimeSupervisorCredential,
-    TelemetryQueryCredential,
+    TelemetryQueryCredential, WebhookService, WebhookStore, WebhookTransport, WebhookWorker,
+    WebhookWorkerConfig,
 };
 use mako_identity::KeyEncryptionKey;
 use mako_internal_rpc::{
@@ -135,6 +136,8 @@ struct ControlPlaneComponents {
     developer_mail_worker: Option<DeveloperMailOutboxWorker>,
     application_mail_worker: Option<ApplicationMailWorker>,
     email_templates: EmailTemplateService,
+    webhooks: WebhookService,
+    webhook_worker: WebhookWorker,
     developer_metrics: Arc<DeveloperMetrics>,
     operator_authenticator: OperatorAuthenticator,
     operator_password_authentication: OperatorAuthenticationService,
@@ -189,7 +192,7 @@ impl ControlPlaneGraph {
         config: &ServiceConfig,
         data_plane_endpoint: SocketAddr,
     ) -> Result<Self, ControlPlaneGraphError> {
-        Self::open_with_dependencies(config, data_plane_endpoint, None)
+        Self::open_with_dependencies(config, data_plane_endpoint, None, None)
     }
 
     fn production_smtp_transport(
@@ -231,6 +234,7 @@ impl ControlPlaneGraph {
         config: &ServiceConfig,
         data_plane_endpoint: SocketAddr,
         mail_transport: Option<Arc<dyn DeveloperMailTransport>>,
+        webhook_transport: Option<Arc<dyn WebhookTransport>>,
     ) -> Result<Self, ControlPlaneGraphError> {
         if config.service != ServiceKind::ControlPlane {
             return Err(ControlPlaneGraphError::WrongService);
@@ -520,7 +524,7 @@ impl ControlPlaneGraph {
             .map(|transport| {
                 ApplicationMailWorker::new(
                     ApplicationMailStore::new(Arc::clone(&adapter), Durability::Sync)?,
-                    DeveloperMailCipher::new(mail_key),
+                    DeveloperMailCipher::new(mail_key.clone()),
                     transport,
                     Arc::new(data_plane_identity_admin.clone()),
                     email_templates.clone(),
@@ -529,6 +533,39 @@ impl ControlPlaneGraph {
             })
             .transpose()
             .map_err(|_| ControlPlaneGraphError::Composition("application mail worker"))?;
+        // Webhooks: signing secrets rest under the developer-mail key; the
+        // change feed is the data plane; deliveries go out over the bounded
+        // HTTPS client, which speaks plain HTTP to loopback only outside
+        // staging and production so local stubs can receive them.
+        let allow_plain_http_loopback = !matches!(
+            config.environment,
+            DeploymentEnvironment::Staging | DeploymentEnvironment::Production
+        );
+        let webhook_store = WebhookStore::new(Arc::clone(&adapter), Durability::Sync)
+            .map_err(|_| ControlPlaneGraphError::Composition("webhook store"))?;
+        let webhooks = WebhookService::new(
+            webhook_store.clone(),
+            projects.clone(),
+            organizations.clone(),
+            Arc::clone(&control_audit),
+            DeveloperMailCipher::new(mail_key.clone()),
+            Arc::new(data_plane_identity_admin.clone()),
+            allow_plain_http_loopback,
+        );
+        let webhook_transport: Arc<dyn WebhookTransport> = match webhook_transport {
+            Some(transport) => transport,
+            None => Arc::new(mako_control_plane::HttpWebhookTransport::new(
+                allow_plain_http_loopback,
+            )),
+        };
+        let webhook_worker = WebhookWorker::new(
+            webhook_store,
+            DeveloperMailCipher::new(mail_key),
+            webhook_transport,
+            Arc::new(data_plane_identity_admin.clone()),
+            WebhookWorkerConfig::default(),
+        )
+        .map_err(|_| ControlPlaneGraphError::Composition("webhook worker"))?;
         let object_access = config
             .object_store_access_key
             .as_ref()
@@ -690,6 +727,8 @@ impl ControlPlaneGraph {
                 developer_mail_worker,
                 application_mail_worker,
                 email_templates,
+                webhooks,
+                webhook_worker,
                 developer_metrics,
                 operator_authenticator,
                 operator_password_authentication,
@@ -760,6 +799,26 @@ impl ControlPlaneGraph {
     #[must_use]
     pub fn email_template_service(&self) -> &EmailTemplateService {
         &self.components.email_templates
+    }
+
+    #[must_use]
+    pub fn webhook_service(&self) -> &WebhookService {
+        &self.components.webhooks
+    }
+
+    #[must_use]
+    pub fn webhook_worker(&self) -> &WebhookWorker {
+        &self.components.webhook_worker
+    }
+
+    pub fn observe_webhooks(&self, report: &mako_control_plane::WebhookWorkerReport) {
+        self.components.developer_metrics.observe_webhooks(report);
+    }
+
+    pub fn observe_webhook_worker_failure(&self) {
+        self.components
+            .developer_metrics
+            .observe_webhook_worker_failure();
     }
 
     pub(crate) fn developer_metrics(&self) -> &Arc<DeveloperMetrics> {
@@ -1701,6 +1760,7 @@ mod tests {
                 &config,
                 endpoint,
                 Some(Arc::new(ReadyMailTransport)),
+                None,
             )
             .expect("control-plane graph"),
         );

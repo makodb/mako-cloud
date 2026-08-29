@@ -29,6 +29,7 @@ mod operator_provider;
 mod policy_http;
 mod smtp;
 mod storage_bucket_http;
+mod webhook_http;
 mod workspace_http;
 
 use std::sync::Arc;
@@ -64,6 +65,7 @@ pub fn control_plane_router(
     collection_http::add_collection_routes(&mut router, Arc::clone(&graph))?;
     storage_bucket_http::add_storage_bucket_routes(&mut router, Arc::clone(&graph))?;
     auth_settings_http::add_auth_settings_routes(&mut router, Arc::clone(&graph))?;
+    webhook_http::add_webhook_routes(&mut router, Arc::clone(&graph))?;
     policy_http::add_policy_routes(&mut router, graph)?;
     Ok(router)
 }

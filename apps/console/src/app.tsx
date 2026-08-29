@@ -29,6 +29,7 @@ import { EmailTemplatesScreen } from "./email-templates.js";
 import { StorageScreen } from "./storage.js";
 import { InvitationAcceptScreen, TeamScreen } from "./teams.js";
 import { UsageScreen } from "./usage.js";
+import { WebhooksScreen } from "./webhooks.js";
 import { RequireDeveloperSession, SignInView, useConsoleRoute } from "./router.js";
 
 export function ConsoleApp({
@@ -383,6 +384,21 @@ export function ConsoleApp({
                   projectId={route.projectId}
                   environmentId={route.environmentId}
                   bucketId={route.bucketId}
+                  navigate={navigate}
+                />
+              </StagedEnvironmentLayout>
+            ) : route.name === "webhooks" ? (
+              <StagedEnvironmentLayout
+                enabled={developerWorkspaceEnabled}
+                projectId={route.projectId}
+                environmentId={route.environmentId}
+                section="webhooks"
+                navigate={navigate}
+              >
+                <WebhooksScreen
+                  projectId={route.projectId}
+                  environmentId={route.environmentId}
+                  webhookId={route.webhookId}
                   navigate={navigate}
                 />
               </StagedEnvironmentLayout>

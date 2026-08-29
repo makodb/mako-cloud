@@ -26,6 +26,7 @@ changing this index or a published guide.
 | Developer CLI | [Developer CLI](cli.md) | Sign in from a terminal, reach every console operation, script-stable output and exit codes, composed deploy and data flows |
 | Application file storage | [Application file storage](file-storage.md) | Buckets, policy-governed objects, encryption at rest, metering, limits |
 | Application mail | [Application mail](application-mail.md) | Mail intents drained from the data plane, per-environment plain-text templates with allowlisted variables, the encrypted outbox, and plaintext SMTP for local relays |
+| Database webhooks | [Database webhooks](webhooks.md) | Registering endpoints, the secret shown once, the signed delivery body and its verification, retries, the retry window, pause and resume, redelivery, and retention |
 | Application sign-in providers | [Sign-in providers and magic links](auth-providers.md) | Google, GitHub, and OpenID Connect providers, the redirect allowlist, the start, callback, and exchange flow, magic links, and sealed secrets never returned |
 
 ## Storage and reliability

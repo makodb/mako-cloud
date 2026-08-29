@@ -59,6 +59,12 @@ export type ConsoleRoute =
       readonly bucketId?: string;
     }
   | {
+      readonly name: "webhooks";
+      readonly projectId: string;
+      readonly environmentId: string;
+      readonly webhookId?: string;
+    }
+  | {
       readonly name: "auth_providers";
       readonly projectId: string;
       readonly environmentId: string;
@@ -226,6 +232,17 @@ export function matchConsoleRoute(pathname: string): ConsoleRoute {
       projectId: storage[1],
       environmentId: storage[2],
       ...(storage[3] === undefined ? {} : { bucketId: storage[3] }),
+    };
+  }
+  const webhooks = normalized.match(
+    /^\/projects\/(prj_[A-Za-z0-9_-]{8,64})\/environments\/(env_[A-Za-z0-9_-]{8,64})\/webhooks(?:\/(whk_[a-z0-9]{12,32}))?$/u,
+  );
+  if (webhooks?.[1] !== undefined && webhooks[2] !== undefined) {
+    return {
+      name: "webhooks",
+      projectId: webhooks[1],
+      environmentId: webhooks[2],
+      ...(webhooks[3] === undefined ? {} : { webhookId: webhooks[3] }),
     };
   }
   const environmentWorkspace = normalized.match(

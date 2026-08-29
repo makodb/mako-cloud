@@ -1141,11 +1141,13 @@ dependencies = [
  "blake3",
  "chacha20poly1305",
  "futures",
+ "hmac",
  "mako-api",
  "mako-audit",
  "mako-billing",
  "mako-documents",
  "mako-edge-runtime-protocol",
+ "mako-http-client",
  "mako-identity",
  "mako-internal-rpc",
  "mako-object-store",
@@ -1158,6 +1160,8 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "tempfile",
+ "time",
+ "url",
 ]
 
 [[package]]
@@ -1472,8 +1476,10 @@ name = "mako-smoke"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
+ "hmac",
  "ring",
  "serde_json",
+ "sha2 0.10.9",
  "tempfile",
 ]
 

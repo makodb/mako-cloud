@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use mako_api::ErrorCode;
 use mako_control_plane::{
     ApplicationMailWorkerReport, DeveloperOutboxWorkerReport, DeveloperRegistrationHealthSnapshot,
-    OperatorAuthenticationHealthSnapshot,
+    OperatorAuthenticationHealthSnapshot, WebhookWorkerReport,
 };
 use mako_service_runtime::{HttpApiError, HttpResponse};
 use mako_storage::SqliteHealthSignals;
@@ -65,6 +65,11 @@ pub(crate) struct DeveloperMetrics {
     application_mail_retried: AtomicU64,
     application_mail_dead_lettered: AtomicU64,
     application_mail_worker_failures: AtomicU64,
+    webhook_deliveries_delivered: AtomicU64,
+    webhook_deliveries_retried: AtomicU64,
+    webhook_deliveries_failed: AtomicU64,
+    webhook_endpoint_pauses: AtomicU64,
+    webhook_worker_failures: AtomicU64,
     operator_sign_in_successes: AtomicU64,
     operator_sign_in_failures: AtomicU64,
     operator_throttles: AtomicU64,
@@ -154,6 +159,21 @@ impl DeveloperMetrics {
     pub(crate) fn observe_application_mail_worker_failure(&self) {
         self.application_mail_worker_failures
             .fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub(crate) fn observe_webhooks(&self, report: &WebhookWorkerReport) {
+        self.webhook_deliveries_delivered
+            .fetch_add(report.delivered as u64, Ordering::Relaxed);
+        self.webhook_deliveries_retried
+            .fetch_add(report.retried as u64, Ordering::Relaxed);
+        self.webhook_deliveries_failed
+            .fetch_add(report.failed as u64, Ordering::Relaxed);
+        self.webhook_endpoint_pauses
+            .fetch_add(report.paused as u64, Ordering::Relaxed);
+    }
+
+    pub(crate) fn observe_webhook_worker_failure(&self) {
+        self.webhook_worker_failures.fetch_add(1, Ordering::Relaxed);
     }
 
     pub(crate) fn observe_operator_auth(
@@ -341,6 +361,26 @@ impl DeveloperMetrics {
             "mako_application_mail_worker_failures_total",
             self.application_mail_worker_failures
                 .load(Ordering::Relaxed),
+        );
+        for (outcome, counter) in [
+            ("delivered", &self.webhook_deliveries_delivered),
+            ("retried", &self.webhook_deliveries_retried),
+            ("failed", &self.webhook_deliveries_failed),
+        ] {
+            output.push_str(&format!(
+                "mako_webhook_deliveries_total{{outcome=\"{outcome}\"}} {}\n",
+                counter.load(Ordering::Relaxed)
+            ));
+        }
+        metric(
+            &mut output,
+            "mako_webhook_endpoint_pauses_total",
+            self.webhook_endpoint_pauses.load(Ordering::Relaxed),
+        );
+        metric(
+            &mut output,
+            "mako_webhook_worker_failures_total",
+            self.webhook_worker_failures.load(Ordering::Relaxed),
         );
         metric(
             &mut output,

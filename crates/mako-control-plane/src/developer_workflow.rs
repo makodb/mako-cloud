@@ -202,13 +202,36 @@ impl DeveloperMailCipher {
     ) -> Result<EncryptedDeveloperMail, DeveloperWorkflowError> {
         envelope.validate()?;
         let plaintext = serde_json::to_vec(envelope)?;
+        self.seal_bytes(aad, &plaintext)
+    }
+
+    pub(crate) fn open(
+        &self,
+        aad: &[u8],
+        encrypted: &EncryptedDeveloperMail,
+    ) -> Result<DeveloperMailEnvelope, DeveloperWorkflowError> {
+        let plaintext = self.open_bytes(aad, encrypted)?;
+        let envelope: DeveloperMailEnvelope = serde_json::from_slice(&plaintext)?;
+        envelope.validate()?;
+        Ok(envelope)
+    }
+
+    /// Seals arbitrary bytes under caller-supplied associated data with the
+    /// same key and construction the mail outboxes use. Webhook signing
+    /// secrets rest under this: they are bytes, not mail, but the key,
+    /// the cipher, and the redacted ciphertext type are already right.
+    pub(crate) fn seal_bytes(
+        &self,
+        aad: &[u8],
+        plaintext: &[u8],
+    ) -> Result<EncryptedDeveloperMail, DeveloperWorkflowError> {
         let mut nonce = [0_u8; 24];
         OsRng.fill_bytes(&mut nonce);
         let ciphertext = XChaCha20Poly1305::new((&self.key.0).into())
             .encrypt(
                 XNonce::from_slice(&nonce),
                 Payload {
-                    msg: &plaintext,
+                    msg: plaintext,
                     aad,
                 },
             )
@@ -220,18 +243,18 @@ impl DeveloperMailCipher {
         .map_err(DeveloperWorkflowError::Registration)
     }
 
-    pub(crate) fn open(
+    pub(crate) fn open_bytes(
         &self,
         aad: &[u8],
         encrypted: &EncryptedDeveloperMail,
-    ) -> Result<DeveloperMailEnvelope, DeveloperWorkflowError> {
+    ) -> Result<Vec<u8>, DeveloperWorkflowError> {
         let nonce = URL_SAFE_NO_PAD
             .decode(encrypted.nonce())
             .map_err(|_| DeveloperWorkflowError::MailEncryption)?;
         let ciphertext = URL_SAFE_NO_PAD
             .decode(encrypted.ciphertext())
             .map_err(|_| DeveloperWorkflowError::MailEncryption)?;
-        let plaintext = XChaCha20Poly1305::new((&self.key.0).into())
+        XChaCha20Poly1305::new((&self.key.0).into())
             .decrypt(
                 XNonce::from_slice(&nonce),
                 Payload {
@@ -239,10 +262,7 @@ impl DeveloperMailCipher {
                     aad,
                 },
             )
-            .map_err(|_| DeveloperWorkflowError::MailEncryption)?;
-        let envelope: DeveloperMailEnvelope = serde_json::from_slice(&plaintext)?;
-        envelope.validate()?;
-        Ok(envelope)
+            .map_err(|_| DeveloperWorkflowError::MailEncryption)
     }
 }
 
