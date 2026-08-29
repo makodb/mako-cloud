@@ -1,6 +1,6 @@
 # Requirements-to-test traceability
 
-This matrix is the release-facing index from every scenario in the twelve capability specs named in `scripts/validate-requirements-traceability.js` to its primary evidence. The remaining capability specs under `openspec/specs/` are not indexed here. `Automated` means the cited test executes in the repository test suites. Supporting tests may exercise more behavior than the scenario named here.
+This matrix is the release-facing index from every scenario in the nineteen capability specs named in `scripts/validate-requirements-traceability.js` to its primary evidence. The remaining capability specs under `openspec/specs/` are not indexed here. `Automated` means the cited test executes in the repository test suites. Supporting tests may exercise more behavior than the scenario named here.
 
 Evidence marked `(mocked backend)` runs against intercepted HTTP responses rather than a running service, so it proves client behavior and not that the server implements the scenario. Evidence marked `(end-to-end)` drives the real service binaries. A scenario whose only evidence is mocked has no automated proof that the server side works.
 
@@ -17,30 +17,32 @@ Run `npm run validate:traceability` whenever a scenario or row changes. The vali
 | CP-05 | Project provisioning succeeds | `crates/mako-provisioning/src/bootstrap.rs::activates_only_after_every_resource_is_ready_and_hides_suspended_endpoints` | Automated |
 | CP-06 | Provisioning fails | `crates/mako-provisioning/src/workflow.rs::retryable_failure_is_compensated_and_can_resume_idempotently` | Automated |
 | CP-07 | Created project converges without caller action | `crates/mako-smoke/tests/sample_app.rs::a_developer_builds_a_sample_app_and_an_application_user_replicates_through_it` (end-to-end) | Automated |
-| CP-08 | Developer signs in during a tenant database outage | `crates/mako-smoke/tests/control_outage.rs::control_operations_continue_while_the_data_plane_is_unavailable` (end-to-end) | Automated |
-| CP-09 | Operator diagnoses a data-plane outage | `services/mako-control-plane/src/graph.rs::operator_authenticates_and_inspects_control_state_while_the_data_plane_is_unavailable` | Automated |
-| CP-10 | Control authority is unavailable | `crates/mako-smoke/tests/control_outage.rs::control_plane_refuses_to_serve_when_its_control_authority_is_unavailable` (end-to-end) and `scripts/validate-public-beta-caddy.js` | Automated |
-| CP-11 | Resource is changed through API | `crates/mako-control-plane/src/management_access.rs::console_and_automation_paths_share_validation_and_rbac_outcomes` | Automated |
-| CP-12 | Compatible schema version is published | `crates/mako-control-plane/src/collection.rs::compatible_publication_succeeds_and_incompatible_change_requires_migration` | Automated |
-| CP-13 | Incompatible schema is submitted directly | `crates/mako-control-plane/src/collection.rs::compatible_publication_succeeds_and_incompatible_change_requires_migration` | Automated |
-| CP-14 | Created collection accepts document traffic | `crates/mako-documents/src/collection.rs::installed_metadata_becomes_resolvable_and_replays_as_unchanged` and `crates/mako-smoke/tests/happy_path.rs::application_happy_path_succeeds_against_the_real_services` (end-to-end) | Automated |
-| CP-15 | Data plane cannot record the collection | `crates/mako-control-plane/src/collection.rs::created_collection_stays_pending_until_activated_and_activation_is_idempotent` | Automated |
-| CP-16 | Created index answers document queries | `crates/mako-smoke/tests/database_service.rs::an_application_user_authenticates_reads_writes_and_queries_their_own_data` (end-to-end) | Automated |
-| CP-17 | Administrator tests a policy | `crates/mako-control-plane/src/policy.rs::draft_validation_testing_activation_and_rollback_report_epochs` | Automated |
-| CP-18 | Activated policy governs document traffic | `crates/mako-smoke/tests/sample_app.rs::a_developer_builds_a_sample_app_and_an_application_user_replicates_through_it` (end-to-end) | Automated |
-| CP-19 | Data plane cannot record the policy | `crates/mako-smoke/tests/sample_app.rs::policy_activation_fails_when_the_data_plane_cannot_record_it` (end-to-end) | Automated |
-| CP-20 | Service credential is created | `crates/mako-control-plane/src/credentials.rs::credentials_keys_and_function_secrets_rotate_without_persistent_plaintext` | Automated |
-| CP-21 | New environment obtains its first signing key | `crates/mako-smoke/tests/sample_app.rs::a_developer_builds_a_sample_app_and_an_application_user_replicates_through_it` (end-to-end) | Automated |
-| CP-22 | Support operator inspects a user | `crates/mako-control-plane/src/application_user.rs::organization_roles_become_identity_permissions_and_core_service_audits_denials` | Automated |
-| CP-23 | Developer promotes a function version | `crates/mako-control-plane/src/function.rs::deploy_promote_rollback_test_logs_and_delete_follow_safe_lifecycle` | Automated |
-| CP-24 | Project reaches a hard quota | `crates/mako-gateway/src/quota.rs::hard_limits_rate_limits_and_retry_advice_are_stable` | Automated |
-| CP-25 | A member inspects usage for a period | `crates/mako-smoke/tests/telemetry_pipeline.rs::observed_events_and_usage_reach_the_management_api` (end-to-end) | Automated |
-| CP-26 | A function's printed line is retained | `crates/mako-smoke/tests/edge_function.rs::deployed_function_is_served_through_the_edge_gateway` (end-to-end) | Automated |
-| CP-27 | A sensitive-looking value is masked before storage | `services/mako-telemetry-query/src/main.rs::a_project_log_is_scrubbed_before_it_is_stored` and `crates/mako-audit/src/redaction.rs::log_scrubbing_masks_emails_and_credentials_but_not_ordinary_text` | Automated |
-| CP-28 | Policy version is activated | `crates/mako-control-plane/src/policy.rs::draft_validation_testing_activation_and_rollback_report_epochs` | Automated |
-| CP-29 | Operator opens support access | `crates/mako-control-plane/src/operator.rs::operator_permissions_scope_repairs_abuse_and_expiring_support` | Automated |
-| CP-30 | Project deletion is requested | `crates/mako-control-plane/src/deletion.rs::deletion_revokes_restores_and_destroys_in_durable_order` | Automated |
-| CP-31 | Grace period expires | `crates/mako-control-plane/src/deletion.rs::deletion_revokes_restores_and_destroys_in_durable_order` | Automated |
+| CP-08 | A project is renamed | `crates/mako-control-plane/src/project.rs::a_project_is_renamed_and_transferred_between_owners_it_administers` and `apps/console/test-e2e/project-home.spec.ts::renaming a project confirms, patches the name, and shows it everywhere` (mocked backend) | Automated |
+| CP-09 | A project is transferred between owners | `crates/mako-smoke/tests/project_transfer.rs::a_project_is_transferred_between_a_personal_space_and_a_team` (end-to-end) | Automated |
+| CP-10 | Developer signs in during a tenant database outage | `crates/mako-smoke/tests/control_outage.rs::control_operations_continue_while_the_data_plane_is_unavailable` (end-to-end) | Automated |
+| CP-11 | Operator diagnoses a data-plane outage | `services/mako-control-plane/src/graph.rs::operator_authenticates_and_inspects_control_state_while_the_data_plane_is_unavailable` | Automated |
+| CP-12 | Control authority is unavailable | `crates/mako-smoke/tests/control_outage.rs::control_plane_refuses_to_serve_when_its_control_authority_is_unavailable` (end-to-end) and `scripts/validate-public-beta-caddy.js` | Automated |
+| CP-13 | Resource is changed through API | `crates/mako-control-plane/src/management_access.rs::console_and_automation_paths_share_validation_and_rbac_outcomes` | Automated |
+| CP-14 | Compatible schema version is published | `crates/mako-control-plane/src/collection.rs::compatible_publication_succeeds_and_incompatible_change_requires_migration` | Automated |
+| CP-15 | Incompatible schema is submitted directly | `crates/mako-control-plane/src/collection.rs::compatible_publication_succeeds_and_incompatible_change_requires_migration` | Automated |
+| CP-16 | Created collection accepts document traffic | `crates/mako-documents/src/collection.rs::installed_metadata_becomes_resolvable_and_replays_as_unchanged` and `crates/mako-smoke/tests/happy_path.rs::application_happy_path_succeeds_against_the_real_services` (end-to-end) | Automated |
+| CP-17 | Data plane cannot record the collection | `crates/mako-control-plane/src/collection.rs::created_collection_stays_pending_until_activated_and_activation_is_idempotent` | Automated |
+| CP-18 | Created index answers document queries | `crates/mako-smoke/tests/database_service.rs::an_application_user_authenticates_reads_writes_and_queries_their_own_data` (end-to-end) | Automated |
+| CP-19 | Administrator tests a policy | `crates/mako-control-plane/src/policy.rs::draft_validation_testing_activation_and_rollback_report_epochs` | Automated |
+| CP-20 | Activated policy governs document traffic | `crates/mako-smoke/tests/sample_app.rs::a_developer_builds_a_sample_app_and_an_application_user_replicates_through_it` (end-to-end) | Automated |
+| CP-21 | Data plane cannot record the policy | `crates/mako-smoke/tests/sample_app.rs::policy_activation_fails_when_the_data_plane_cannot_record_it` (end-to-end) | Automated |
+| CP-22 | Service credential is created | `crates/mako-control-plane/src/credentials.rs::credentials_keys_and_function_secrets_rotate_without_persistent_plaintext` | Automated |
+| CP-23 | New environment obtains its first signing key | `crates/mako-smoke/tests/sample_app.rs::a_developer_builds_a_sample_app_and_an_application_user_replicates_through_it` (end-to-end) | Automated |
+| CP-24 | Support operator inspects a user | `crates/mako-control-plane/src/application_user.rs::organization_roles_become_identity_permissions_and_core_service_audits_denials` | Automated |
+| CP-25 | Developer promotes a function version | `crates/mako-control-plane/src/function.rs::deploy_promote_rollback_test_logs_and_delete_follow_safe_lifecycle` | Automated |
+| CP-26 | Project reaches a hard quota | `crates/mako-gateway/src/quota.rs::hard_limits_rate_limits_and_retry_advice_are_stable` | Automated |
+| CP-27 | A member inspects usage for a period | `crates/mako-smoke/tests/telemetry_pipeline.rs::observed_events_and_usage_reach_the_management_api` (end-to-end) | Automated |
+| CP-28 | A function's printed line is retained | `crates/mako-smoke/tests/edge_function.rs::deployed_function_is_served_through_the_edge_gateway` (end-to-end) | Automated |
+| CP-29 | A sensitive-looking value is masked before storage | `services/mako-telemetry-query/src/main.rs::a_project_log_is_scrubbed_before_it_is_stored` and `crates/mako-audit/src/redaction.rs::log_scrubbing_masks_emails_and_credentials_but_not_ordinary_text` | Automated |
+| CP-30 | Policy version is activated | `crates/mako-control-plane/src/policy.rs::draft_validation_testing_activation_and_rollback_report_epochs` | Automated |
+| CP-31 | Operator opens support access | `crates/mako-control-plane/src/operator.rs::operator_permissions_scope_repairs_abuse_and_expiring_support` | Automated |
+| CP-32 | Project deletion is requested | `crates/mako-control-plane/src/deletion.rs::deletion_revokes_restores_and_destroys_in_durable_order` | Automated |
+| CP-33 | Grace period expires | `crates/mako-control-plane/src/deletion.rs::deletion_revokes_restores_and_destroys_in_durable_order` | Automated |
 
 ## Billing / metering
 
@@ -253,3 +255,68 @@ Run `npm run validate:traceability` whenever a scenario or row changes. The vali
 | CL-09 | Deletion without confirmation | `packages/cli/test/foundation.test.mjs` "destructive commands need --yes or the typed resource name" and `packages/cli/test/ownership.test.mjs` "teams delete needs confirmation and sends the confirmation header" (mocked backend) | Automated |
 | CL-10 | A function is deployed in one command | `packages/cli/test/functions.test.mjs` "functions deploy uploads, creates the version, checks health, and promotes in order" (mocked backend) | Automated |
 | CL-11 | A lifecycle wait times out | `packages/cli/test/ownership.test.mjs` "projects create sends an idempotency key, waits for provisioning, and exits 6 on the deadline" and `packages/cli/test/foundation.test.mjs` "--wait polls to a terminal state and exits 6 on the deadline" (mocked backend) | Automated |
+
+## Storage / application file storage
+
+| ID | Scenario | Primary automated evidence | Status |
+| --- | --- | --- | --- |
+| AF-01 | A developer creates a bucket | `crates/mako-smoke/tests/file_storage.rs::applications_store_files_under_policy_and_developers_govern_the_buckets` (end-to-end) | Automated |
+| AF-02 | An application user uploads under policy | `crates/mako-file-storage/src/service.rs::objects_are_stored_encrypted_served_to_their_owner_and_refused_to_others` and `crates/mako-smoke/tests/file_storage.rs::applications_store_files_under_policy_and_developers_govern_the_buckets` (end-to-end) | Automated |
+| AF-03 | A read the policy denies | `crates/mako-file-storage/src/service.rs::listings_show_only_what_a_read_would_allow_and_page_by_path` and `crates/mako-smoke/tests/file_storage.rs::applications_store_files_under_policy_and_developers_govern_the_buckets` (end-to-end) | Automated |
+| AF-04 | Stored files appear on the bill | `crates/mako-billing/src/rating.rs::a_pro_plan_bills_object_storage_per_gib_month_and_egress_per_gib` and `crates/mako-billing/src/lib.rs::object_storage_and_egress_caps_reach_the_gateway_as_hard_limits` | Automated |
+
+## Identity / auth providers
+
+| ID | Scenario | Primary automated evidence | Status |
+| --- | --- | --- | --- |
+| AP-01 | An application user signs in with a provider | `crates/mako-smoke/tests/auth_providers.rs::applications_sign_users_in_through_providers_and_magic_links` (end-to-end) | Automated |
+| AP-02 | A disabled provider is used | `crates/mako-smoke/tests/auth_providers.rs::applications_sign_users_in_through_providers_and_magic_links` (end-to-end) | Automated |
+| AP-03 | A user signs in by magic link | `crates/mako-smoke/tests/auth_providers.rs::applications_sign_users_in_through_providers_and_magic_links` (end-to-end) | Automated |
+| AP-04 | A developer customizes the verification email | `crates/mako-control-plane/src/email_template.rs::rendering_substitutes_only_allowlisted_values_and_sanitizes_them` and `crates/mako-control-plane/src/email_template.rs::preview_renders_placeholder_data_with_the_real_names` | Automated |
+
+## Sync / database webhooks
+
+| ID | Scenario | Primary automated evidence | Status |
+| --- | --- | --- | --- |
+| DW-01 | A document change is delivered | `crates/mako-smoke/tests/webhooks.rs::document_changes_reach_a_registered_endpoint_signed_and_durably` (end-to-end) | Automated |
+| DW-02 | An endpoint is temporarily down | `crates/mako-control-plane/src/webhook.rs::an_endpoint_down_for_a_while_receives_every_change_after_recovery_in_order` and `crates/mako-smoke/tests/webhooks.rs::document_changes_reach_a_registered_endpoint_signed_and_durably` (end-to-end) | Automated |
+| DW-03 | A developer redelivers a failed event | `crates/mako-control-plane/src/webhook.rs::redelivery_logs_a_new_delivery_and_lists_newest_first` and `crates/mako-smoke/tests/webhooks.rs::document_changes_reach_a_registered_endpoint_signed_and_durably` (end-to-end) | Automated |
+
+## Functions / scheduled functions
+
+| ID | Scenario | Primary automated evidence | Status |
+| --- | --- | --- | --- |
+| SF-01 | A developer schedules a nightly function | `crates/mako-control-plane/src/function_schedule.rs::a_due_schedule_is_invoked_with_its_request_and_the_run_recorded` and `crates/mako-smoke/tests/edge_function.rs::deployed_function_is_served_through_the_edge_gateway` (end-to-end) | Automated |
+| SF-02 | A run overlaps the next due time | `crates/mako-control-plane/src/function_schedule.rs::a_held_lease_skips_the_next_due_time_and_the_schedule_continues` | Automated |
+
+## Operations / custom domains
+
+| ID | Scenario | Primary automated evidence | Status |
+| --- | --- | --- | --- |
+| CD-01 | A developer adds and verifies a domain | `crates/mako-control-plane/src/custom_domain.rs::the_verifier_moves_a_domain_through_its_states_and_publishes_each_change` and `crates/mako-smoke/tests/custom_domains.rs::a_domain_is_served_only_while_its_dns_proof_stands` (end-to-end) | Automated |
+| CD-02 | A domain fails re-verification | `crates/mako-smoke/tests/custom_domains.rs::a_domain_is_served_only_while_its_dns_proof_stands` (end-to-end) | Automated |
+
+## Cloud / API documentation
+
+| ID | Scenario | Primary automated evidence | Status |
+| --- | --- | --- | --- |
+| AD-01 | A developer reads the docs for a collection | `apps/console/test-e2e/api-docs.spec.ts::the reference is generated from the environment's schema, policy, functions, buckets, and key` (mocked backend) | Automated |
+| AD-02 | A developer copies a quickstart | `apps/console/test-e2e/api-docs.spec.ts::the reference is generated from the environment's schema, policy, functions, buckets, and key` (mocked backend) | Automated |
+
+## Cloud / developer console
+
+| ID | Scenario | Primary automated evidence | Status |
+| --- | --- | --- | --- |
+| DC-01 | A developer with projects signs in | `apps/console/test-e2e/home-dashboard.spec.ts::projects across the personal space and a team appear as cards with recent activity` (mocked backend) | Automated |
+| DC-02 | A summary source is unavailable | `apps/console/test-e2e/home-dashboard.spec.ts::a usage source that fails marks only its own card` (mocked backend) | Automated |
+| DC-03 | A new developer completes onboarding | `apps/console/test-e2e/home-dashboard.spec.ts::a developer with no projects is guided from creation to a passing connection check` (mocked backend) | Automated |
+| DC-04 | Onboarding is dismissed | `apps/console/test-e2e/home-dashboard.spec.ts::dismissing the guide leaves the ordinary empty state that can reopen it` (mocked backend) | Automated |
+| DC-05 | A developer opens a project | `apps/console/test-e2e/project-home.spec.ts::a project with two environments shows both with readiness and the selected environment's keys and quickstart` (mocked backend) | Automated |
+| DC-06 | Every destination is one click away | `apps/console/test-e2e/console-shell.spec.ts::a deep link opens inside the shell with its context and every destination` (mocked backend) | Automated |
+| DC-07 | A deep link opens inside the shell | `apps/console/test-e2e/console-shell.spec.ts::a deep link opens inside the shell with its context and every destination` (mocked backend) | Automated |
+| DC-08 | A developer reads retained logs | `apps/console/test-e2e/surfaced-capabilities.spec.ts::retained logs list newest first, filter by level and source, and page through the window` (mocked backend) | Automated |
+| DC-09 | A developer renames a team | `apps/console/test-e2e/surfaced-capabilities.spec.ts::a team administrator renames the team and the name follows everywhere` (mocked backend) | Automated |
+| DC-10 | A developer checks a project's usage | `apps/console/test-e2e/usage-activity.spec.ts::project usage lists every environment and the team's bill with a negative balance marked` (mocked backend) | Automated |
+| DC-11 | A developer reviews recent activity | `apps/console/test-e2e/usage-activity.spec.ts::the activity feed lists newest first, filters by outcome and action, and loads more` (mocked backend) | Automated |
+| DC-12 | A developer transfers a project to a team | `apps/console/test-e2e/project-home.spec.ts::transferring a personal project to a team confirms, posts the team, and shows the new owner` (mocked backend) and `crates/mako-smoke/tests/project_transfer.rs::a_project_is_transferred_between_a_personal_space_and_a_team` (end-to-end) | Automated |
+| DC-13 | A developer deletes a project | `apps/console/test-e2e/project-home.spec.ts::settings shows identifiers and owner and offers deletion with grace` (mocked backend) | Automated |

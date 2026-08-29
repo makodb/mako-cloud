@@ -58,4 +58,4 @@
 
 - [x] 8.1 Console: reference pages generated from live collections, schemas, indexes, policies, and function routes with observation time.
 - [x] 8.2 Quickstarts per supported client with the environment's API URL and public key; never a service credential.
-- [ ] 8.3 Console e2e over a schema-bearing collection; docs and traceability rows.
+- [x] 8.3 Console e2e over a schema-bearing collection; docs and traceability rows.

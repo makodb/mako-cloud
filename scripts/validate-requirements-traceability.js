@@ -16,6 +16,13 @@ const capabilities = [
   ["DR", "openspec/specs/identity/developer-registration/spec.md"],
   ["LS", "openspec/specs/operations/local-bootstrap-and-smoke/spec.md"],
   ["CL", "openspec/specs/cloud/developer-cli/spec.md"],
+  ["DC", "openspec/specs/cloud/developer-console/spec.md"],
+  ["AF", "openspec/specs/storage/application-file-storage/spec.md"],
+  ["AP", "openspec/specs/identity/auth-providers/spec.md"],
+  ["DW", "openspec/specs/sync/database-webhooks/spec.md"],
+  ["SF", "openspec/specs/functions/scheduled-functions/spec.md"],
+  ["CD", "openspec/specs/operations/custom-domains/spec.md"],
+  ["AD", "openspec/specs/cloud/api-documentation/spec.md"],
 ];
 
 const mockedEvidence = ["apps/console/test-e2e/", "examples/local-first/test/"];
