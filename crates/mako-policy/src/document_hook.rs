@@ -371,6 +371,188 @@ mod tests {
         });
     }
 
+    #[test]
+    fn hooks_index_the_verified_identity_trusted_claims_by_the_document_household() {
+        block_on(async {
+            let adapter = Arc::new(MemoryAdapter::new());
+            let engine = DocumentEngine::new(adapter.clone());
+            let scope = scope();
+            let scoped = engine
+                .scope_collection(scope.tenant(), scope.clone())
+                .expect("scope");
+            let sequencer = engine
+                .scope_sequencer(scope.tenant(), scope.tenant(), Durability::Memory)
+                .expect("sequencer");
+            let metadata = household_metadata();
+            let validator = DocumentValidator::compile(&metadata).expect("validator");
+            let policy = household_policy(&metadata);
+            let request = SafeRequestMetadata::empty();
+            let editor = member("user-1", json!({"households": {"hh_1": "editor"}}));
+            let viewer = member("user-2", json!({"households": {"hh_1": "viewer"}}));
+            let stranger = member("user-3", json!({}));
+            let mut lease = sequencer
+                .lease(NonZeroU64::new(8).expect("non-zero"))
+                .await
+                .expect("lease");
+
+            let editor_authorizer = DocumentPolicyAuthorizer::new(Some(&policy), &editor, &request);
+            let before = adapter.dump().expect("before");
+            assert!(matches!(
+                scoped
+                    .create_document_authorized(
+                        household_input(
+                            &validator,
+                            lease.issue().expect("position"),
+                            "editor-other-household",
+                            "doc-2",
+                            "hh_2",
+                        ),
+                        &editor_authorizer,
+                    )
+                    .await,
+                Err(MutationError::AuthorizationDenied { .. })
+            ));
+            for (name, identity) in [("viewer", &viewer), ("stranger", &stranger)] {
+                let authorizer = DocumentPolicyAuthorizer::new(Some(&policy), identity, &request);
+                assert!(
+                    matches!(
+                        scoped
+                            .create_document_authorized(
+                                household_input(
+                                    &validator,
+                                    lease.issue().expect("position"),
+                                    &format!("{name}-create"),
+                                    "doc-1",
+                                    "hh_1",
+                                ),
+                                &authorizer,
+                            )
+                            .await,
+                        Err(MutationError::AuthorizationDenied { .. })
+                    ),
+                    "{name}"
+                );
+            }
+            assert_eq!(adapter.dump().expect("after denied creates"), before);
+
+            let MutationCommitOutcome::Applied(_) = scoped
+                .create_document_authorized(
+                    household_input(
+                        &validator,
+                        lease.issue().expect("position"),
+                        "editor-create",
+                        "doc-1",
+                        "hh_1",
+                    ),
+                    &editor_authorizer,
+                )
+                .await
+                .expect("editor create")
+            else {
+                panic!("create must apply");
+            };
+            let stored = scoped
+                .get_document(&mako_documents::DocumentId::parse("doc-1").expect("document id"))
+                .await
+                .expect("read")
+                .expect("document");
+            for (name, identity, expected) in [
+                ("editor", &editor, "policy_allowed"),
+                ("viewer", &viewer, "policy_allowed"),
+                ("stranger", &stranger, "policy_default_deny"),
+            ] {
+                let read_authorizer =
+                    DocumentPolicyReadAuthorizer::new(Some(&policy), identity, &request);
+                assert_eq!(
+                    read_authorizer
+                        .decision_for_document(&scope, ReadAuthorizationPath::Point, &stored)
+                        .stable_code(),
+                    expected,
+                    "{name}"
+                );
+            }
+        });
+    }
+
+    fn household_policy(metadata: &CollectionMetadata) -> CompiledPolicySet {
+        let rules = [
+            PolicyRule::new(
+                PolicyRuleId::parse("member-write").expect("id"),
+                PolicyEffect::Allow,
+                [DocumentOperation::Create],
+                "(claims.households[new.household_id] == \"owner\" || claims.households[new.household_id] == \"editor\")",
+            )
+            .expect("rule"),
+            PolicyRule::new(
+                PolicyRuleId::parse("member-read").expect("id"),
+                PolicyEffect::Allow,
+                [DocumentOperation::Read],
+                "claims.households[old.household_id] != null",
+            )
+            .expect("rule"),
+        ];
+        let policy = PolicySet::new(
+            scope(),
+            PolicyVersion::new(1).expect("version"),
+            PolicyState::Validated,
+            rules,
+            [],
+        )
+        .expect("policy");
+        PolicyCompiler::default()
+            .compile(&policy, &Value::Object(metadata.json_schema().clone()))
+            .expect("compile")
+            .into_compiled()
+            .expect("compiled")
+    }
+
+    fn member(user_id: &str, trusted_claims: Value) -> VerifiedIdentity {
+        VerifiedIdentity::user(
+            SubjectId::parse(user_id).expect("subject"),
+            VerifiedRole::parse("member").expect("role"),
+            trusted_claims,
+        )
+        .expect("identity")
+    }
+
+    fn household_input(
+        validator: &DocumentValidator,
+        position: u64,
+        mutation: &str,
+        id: &str,
+        household_id: &str,
+    ) -> MutationInput {
+        MutationInput {
+            mutation_id: MutationId::parse(mutation).expect("mutation"),
+            commit_position: CommitPosition::new(position).expect("position"),
+            document: validator
+                .validate_create(json!({"id": id, "household_id": household_id}))
+                .expect("document"),
+            durability: Durability::Memory,
+        }
+    }
+
+    fn household_metadata() -> CollectionMetadata {
+        CollectionMetadata::new(
+            CollectionId::parse("todos").expect("collection"),
+            CollectionMetadataVersion::new(1).expect("metadata version"),
+            SchemaVersion::new(1).expect("schema version"),
+            json!({
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string"},
+                    "household_id": {"type": "string"}
+                },
+                "required": ["id", "household_id"],
+                "additionalProperties": false
+            }),
+            PrimaryKeyDefinition::field("id").expect("primary key"),
+            SchemaCompatibility::Compatible,
+            CollectionLifecycle::Active,
+        )
+        .expect("metadata")
+    }
+
     fn compiled_policy() -> CompiledPolicySet {
         let rules = [
             PolicyRule::new(

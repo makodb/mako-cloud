@@ -224,6 +224,8 @@ pub(crate) enum Expression {
     And(Box<Self>, Box<Self>, ByteSpan),
     Or(Box<Self>, Box<Self>, ByteSpan),
     Compare(Comparison, Box<Self>, Box<Self>, ByteSpan),
+    /// `base[index]`: a trusted-claim value looked up by an evaluated key.
+    Index(Box<Self>, Box<Self>, ByteSpan),
 }
 
 impl Expression {
@@ -234,7 +236,8 @@ impl Expression {
             | Self::Not(_, span)
             | Self::And(_, _, span)
             | Self::Or(_, _, span)
-            | Self::Compare(_, _, _, span) => *span,
+            | Self::Compare(_, _, _, span)
+            | Self::Index(_, _, span) => *span,
         }
     }
 
@@ -244,7 +247,8 @@ impl Expression {
             Self::Not(expression, _) => 1 + expression.node_count(),
             Self::And(left, right, _)
             | Self::Or(left, right, _)
-            | Self::Compare(_, left, right, _) => 1 + left.node_count() + right.node_count(),
+            | Self::Compare(_, left, right, _)
+            | Self::Index(left, right, _) => 1 + left.node_count() + right.node_count(),
         }
     }
 }
@@ -381,6 +385,44 @@ fn infer_type(
             }
             Ok(ValueType::Bool)
         }
+        Expression::Index(base, index, _) => {
+            infer_type(base, schema, operations, source, diagnostics)?;
+            // Only trusted claims are indexable by a value: they are the one
+            // environment root whose shape the schema does not describe, so a
+            // missing member is an ordinary `null` rather than a policy bug.
+            // A chained index (`claims.a[x][y]`) was checked at its innermost
+            // base already.
+            let indexable = match base.as_ref() {
+                Expression::Path(path, _) => {
+                    path.len() >= 2 && path.first().is_some_and(|root| root == "claims")
+                }
+                Expression::Index(..) => true,
+                _ => false,
+            };
+            if !indexable {
+                diagnostics.push(diagnostic(
+                    "index_not_allowed",
+                    "only trusted claims may be indexed by a value",
+                    source,
+                    base.span().start,
+                    base.span().length,
+                )?);
+            }
+            let index_type = infer_type(index, schema, operations, source, diagnostics)?;
+            if !matches!(
+                index_type,
+                ValueType::String | ValueType::Number | ValueType::Dynamic
+            ) {
+                diagnostics.push(diagnostic(
+                    "index_type_invalid",
+                    "index expression must be a string or a number",
+                    source,
+                    index.span().start,
+                    index.span().length,
+                )?);
+            }
+            Ok(ValueType::Dynamic)
+        }
     }
 }
 
@@ -472,6 +514,8 @@ enum TokenKind {
     Dot,
     LeftParen,
     RightParen,
+    LeftBracket,
+    RightBracket,
     Not,
     And,
     Or,
@@ -507,6 +551,14 @@ fn lex(source: &str) -> Result<Vec<Token>, ParseError> {
             b')' => {
                 offset += 1;
                 TokenKind::RightParen
+            }
+            b'[' => {
+                offset += 1;
+                TokenKind::LeftBracket
+            }
+            b']' => {
+                offset += 1;
+                TokenKind::RightBracket
             }
             b'&' if bytes.get(offset + 1) == Some(&b'&') => {
                 offset += 2;
@@ -707,7 +759,18 @@ impl Parser {
                     path.push(identifier);
                     span = joined_span(span, segment.span);
                 }
-                Ok(Expression::Path(path, span))
+                let mut expression = Expression::Path(path, span);
+                while matches!(self.peek().kind, TokenKind::LeftBracket) {
+                    self.advance();
+                    let index = self.parse_or()?;
+                    if !matches!(self.peek().kind, TokenKind::RightBracket) {
+                        return Err(ParseError::at("expected closing bracket", self.peek()));
+                    }
+                    let closing = self.advance().span;
+                    let span = joined_span(expression.span(), closing);
+                    expression = Expression::Index(Box::new(expression), Box::new(index), span);
+                }
+                Ok(expression)
             }
             TokenKind::LeftParen => {
                 let expression = self.parse_or()?;
@@ -881,6 +944,258 @@ mod tests {
         assert_eq!(limited.diagnostics()[0].code(), "cost_limit_exceeded");
     }
 
+    #[test]
+    fn index_expressions_parse_as_postfix_lookups_with_precise_spans() {
+        let source = "claims.a[new.slot][new.household_id]";
+        let expression = Parser::new(lex(source).expect("lex"))
+            .parse()
+            .expect("parse");
+        let path = |segments: &[&str], start, length| {
+            Box::new(Expression::Path(
+                segments
+                    .iter()
+                    .map(|segment| (*segment).to_owned())
+                    .collect(),
+                ByteSpan { start, length },
+            ))
+        };
+        assert_eq!(
+            expression,
+            Expression::Index(
+                Box::new(Expression::Index(
+                    path(&["claims", "a"], 0, 8),
+                    path(&["new", "slot"], 9, 8),
+                    ByteSpan {
+                        start: 0,
+                        length: 18
+                    },
+                )),
+                path(&["new", "household_id"], 19, 16),
+                ByteSpan {
+                    start: 0,
+                    length: 36
+                },
+            )
+        );
+    }
+
+    #[test]
+    fn indexed_claims_compile_for_every_operation_form_and_count_toward_the_cost_limit() {
+        let compiler = PolicyCompiler::default();
+        for (expression, operations) in [
+            (
+                "claims.households[new.household_id] == \"editor\"",
+                vec![DocumentOperation::Create, DocumentOperation::Update],
+            ),
+            (
+                "claims.households[old.household_id] != null",
+                vec![DocumentOperation::Read, DocumentOperation::Delete],
+            ),
+            (
+                "(claims.households[new.household_id] == \"owner\" || claims.households[new.household_id] == \"editor\")",
+                vec![DocumentOperation::Create],
+            ),
+            (
+                "claims.a[new.household_id][new.slot] == 1",
+                vec![DocumentOperation::Create],
+            ),
+            (
+                "claims.team_ids[0] == \"blue\"",
+                vec![DocumentOperation::Read],
+            ),
+            ("claims.team_ids[-1] == null", vec![DocumentOperation::Read]),
+            (
+                "claims.a[request.method] == true",
+                vec![DocumentOperation::Read],
+            ),
+            (
+                "claims.a[identity.user_id] == true",
+                vec![DocumentOperation::Read],
+            ),
+            ("claims.a[claims.b] == true", vec![DocumentOperation::Read]),
+            (
+                "!(claims.a[new.slot] == null) && claims.a[new.slot] < 3",
+                vec![DocumentOperation::Create],
+            ),
+        ] {
+            let compilation = compiler
+                .compile(&policy(expression, operations), &schema())
+                .expect("compile");
+            assert!(
+                compilation.diagnostics().is_empty(),
+                "{expression}: {:?}",
+                compilation.diagnostics()
+            );
+            assert_eq!(compilation.compiled().expect("compiled").rule_count(), 1);
+        }
+
+        // Compare + Index + two paths + literal: the index node itself counts.
+        let with_limit = |maximum_ast_nodes| {
+            PolicyCompiler::new(PolicyCompilerLimits {
+                maximum_source_bytes: 1_024,
+                maximum_ast_nodes,
+            })
+            .compile(
+                &policy(
+                    "claims.households[new.household_id] == \"editor\"",
+                    [DocumentOperation::Create],
+                ),
+                &schema(),
+            )
+            .expect("compile")
+        };
+        assert_eq!(with_limit(4).diagnostics()[0].code(), "cost_limit_exceeded");
+        assert!(with_limit(4).compiled().is_none());
+        assert!(with_limit(5).compiled().is_some());
+    }
+
+    #[test]
+    fn index_diagnostics_are_addressed_to_the_base_the_index_or_the_missing_bracket() {
+        let compiler = PolicyCompiler::default();
+        let not_allowed = "only trusted claims may be indexed by a value";
+        let invalid_index = "index expression must be a string or a number";
+        let cases = [
+            (
+                "new.owner_id[new.household_id] == \"x\"",
+                DocumentOperation::Create,
+                "index_not_allowed",
+                not_allowed,
+                (1, 1, 12),
+            ),
+            (
+                "identity.role[new.household_id] == \"x\"",
+                DocumentOperation::Create,
+                "index_not_allowed",
+                not_allowed,
+                (1, 1, 13),
+            ),
+            (
+                "request.method[new.household_id] == \"x\"",
+                DocumentOperation::Create,
+                "index_not_allowed",
+                not_allowed,
+                (1, 1, 14),
+            ),
+            (
+                "old.owner_id[\"k\"] == \"x\"",
+                DocumentOperation::Read,
+                "index_not_allowed",
+                not_allowed,
+                (1, 1, 12),
+            ),
+            (
+                "new.owner_id[\"a\"][\"b\"] == \"x\"",
+                DocumentOperation::Create,
+                "index_not_allowed",
+                not_allowed,
+                (1, 1, 12),
+            ),
+            (
+                "claims.households[true] == \"x\"",
+                DocumentOperation::Create,
+                "index_type_invalid",
+                invalid_index,
+                (1, 19, 4),
+            ),
+            (
+                "claims.households[null] == \"x\"",
+                DocumentOperation::Create,
+                "index_type_invalid",
+                invalid_index,
+                (1, 19, 4),
+            ),
+            (
+                "claims.households[new.blocked] == \"x\"",
+                DocumentOperation::Create,
+                "index_type_invalid",
+                invalid_index,
+                (1, 19, 11),
+            ),
+            (
+                "claims.households[new.household_id == \"x\"] == \"x\"",
+                DocumentOperation::Create,
+                "index_type_invalid",
+                invalid_index,
+                (1, 19, 23),
+            ),
+            (
+                "claims.households[new.household_id",
+                DocumentOperation::Create,
+                "syntax_error",
+                "expected closing bracket",
+                (1, 35, 1),
+            ),
+            (
+                "claims.households[new.household_id == \"editor\"",
+                DocumentOperation::Create,
+                "syntax_error",
+                "expected closing bracket",
+                (1, 47, 1),
+            ),
+            (
+                "claims.households[]",
+                DocumentOperation::Create,
+                "syntax_error",
+                "expected policy expression",
+                (1, 19, 1),
+            ),
+            (
+                "true[0] == true",
+                DocumentOperation::Create,
+                "syntax_error",
+                "unexpected token after expression",
+                (1, 5, 1),
+            ),
+            (
+                "(claims.a)[0] == true",
+                DocumentOperation::Create,
+                "syntax_error",
+                "unexpected token after expression",
+                (1, 11, 1),
+            ),
+            (
+                "claims.a[0].b == true",
+                DocumentOperation::Create,
+                "syntax_error",
+                "unexpected token after expression",
+                (1, 12, 1),
+            ),
+        ];
+        for (expression, operation, code, message, (line, column, length)) in cases {
+            let compilation = compiler
+                .compile(&policy(expression, [operation]), &schema())
+                .expect("compile");
+            assert!(compilation.compiled().is_none(), "{expression}");
+            assert_eq!(compilation.diagnostics().len(), 1, "{expression}");
+            let diagnostic = &compilation.diagnostics()[0];
+            assert_eq!(diagnostic.code(), code, "{expression}");
+            assert_eq!(diagnostic.message(), message, "{expression}");
+            let span = diagnostic.span().expect("span");
+            assert_eq!(
+                (span.line(), span.column(), span.length()),
+                (line, column, length),
+                "{expression}"
+            );
+        }
+
+        // A bare `claims` root is not a claim, so it is unknown and unindexable.
+        let bare = compiler
+            .compile(
+                &policy(
+                    "claims[new.household_id] == \"x\"",
+                    [DocumentOperation::Create],
+                ),
+                &schema(),
+            )
+            .expect("compile");
+        let codes: Vec<_> = bare
+            .diagnostics()
+            .iter()
+            .map(PolicyDiagnostic::code)
+            .collect();
+        assert_eq!(codes, ["unknown_identifier", "index_not_allowed"]);
+    }
+
     fn policy(
         expression: &str,
         operations: impl IntoIterator<Item = DocumentOperation>,
@@ -907,7 +1222,9 @@ mod tests {
             "properties": {
                 "id": {"type": "string"},
                 "owner_id": {"type": "string"},
-                "blocked": {"type": "boolean"}
+                "blocked": {"type": "boolean"},
+                "household_id": {"type": "string"},
+                "slot": {"type": "integer"}
             }
         })
     }

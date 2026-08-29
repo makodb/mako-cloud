@@ -22,6 +22,56 @@ must not treat user-editable profile metadata as trusted authorization input.
 Protected document bodies must not appear in denial details, unreadable
 conflicts, logs, counts, or index diagnostics.
 
+## Expression language
+
+A rule is one boolean expression over the evaluation context. Paths name
+context values: `identity.user_id`, `identity.role`, `claims.<name>`,
+`request.<name>`, `operation`, `project_id`, `environment_id`,
+`collection_id`, `old.<field>`, and `new.<field>`. Literals are JSON strings,
+numbers, `true`, `false`, and `null`. Operators are `==`, `!=`, `<`, `<=`,
+`>`, `>=`, `&&`, `||`, `!`, and parentheses. Document fields take their type
+from the collection schema and an unknown field is a compile error; trusted
+claims are dynamic because the schema does not describe them, so a claim
+compares with any operand and resolves to `null` when absent.
+
+### Indexing trusted claims
+
+`claims.<name>[<expression>]` looks a trusted claim up by a value computed at
+evaluation time, so a rule can select the claim entry that belongs to the
+document it is deciding on. Indexes chain: `claims.a[new.x][new.y]`.
+
+- Only `claims.*` paths may be indexed. Indexing `identity`, `request`, `old`,
+  or `new` is the compile error `index_not_allowed` ("only trusted claims may
+  be indexed by a value"), addressed to the indexed path.
+- The index expression must be a string, a number, or another trusted claim.
+  A boolean, `null`, array, or object index is the compile error
+  `index_type_invalid`, addressed to the index expression. A missing `]` is a
+  `syntax_error` ("expected closing bracket").
+- An object indexed by a string yields the member and an array indexed by a
+  non-negative integer yields the element. Everything else yields `null`: an
+  absent member, an out-of-range, negative, or fractional position, and a
+  claim that is a string, number, boolean, or `null`. Indexing never fails
+  evaluation, so a missing membership simply fails the comparison it feeds and
+  the rule does not match.
+- The result is dynamic and compares like any other claim, including
+  `!= null` to test that an entry exists.
+- Each index costs one node of the bounded evaluation budget, like a path, and
+  its index expression is evaluated once.
+
+An application that keeps each member's role per household in the trusted
+claims as `households: { "<household_id>": "owner" | "editor" | "viewer" }`
+can allow a create when the caller holds a writing role for the household the
+document belongs to:
+
+```text
+(claims.households[new.household_id] == "owner" || claims.households[new.household_id] == "editor")
+```
+
+and allow a read or delete to any member with
+`claims.households[old.household_id] != null`. Membership lives in the claims
+the token carries, so a change takes effect on the next token and advances the
+authorization epoch like any other trusted-claim change.
+
 ## Visibility and local data
 
 A visible-to-hidden document change sends a synthetic tombstone containing only

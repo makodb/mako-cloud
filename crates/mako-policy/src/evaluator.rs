@@ -269,6 +269,29 @@ fn evaluate_expression(
             let right = evaluate_expression(right, context, budget)?;
             compare_values(*comparison, &left, &right).map(Value::Bool)
         }
+        Expression::Index(base, index, _) => {
+            let base = evaluate_expression(base, context, budget)?;
+            let index = evaluate_expression(index, context, budget)?;
+            Ok(index_value(base, &index))
+        }
+    }
+}
+
+/// Looks `index` up in `base`. An object indexed by a string yields the member
+/// and an array indexed by a non-negative integer yields the element; every
+/// other combination, including an absent member, is `null` so that a missing
+/// membership fails an equality instead of failing the evaluation.
+fn index_value(base: Value, index: &Value) -> Value {
+    match (base, index) {
+        (Value::Object(mut members), Value::String(key)) => {
+            members.remove(key).unwrap_or(Value::Null)
+        }
+        (Value::Array(mut items), Value::Number(position)) => position
+            .as_u64()
+            .and_then(|position| usize::try_from(position).ok())
+            .filter(|position| *position < items.len())
+            .map_or(Value::Null, |position| items.swap_remove(position)),
+        _ => Value::Null,
     }
 }
 
@@ -474,6 +497,328 @@ mod tests {
             PolicyDecision::invalid_context().code(),
             PolicyDecisionCode::ContextInvalid
         );
+    }
+
+    #[test]
+    fn indexed_claims_select_the_membership_named_by_the_document() {
+        let policy = household_policy([
+            household_rule(
+                "member-create",
+                [DocumentOperation::Create],
+                "claims.households[new.household_id] == \"editor\"",
+            ),
+            household_rule(
+                "member-read",
+                [DocumentOperation::Read, DocumentOperation::Delete],
+                "claims.households[old.household_id] != null",
+            ),
+        ]);
+        let evaluator = PolicyEvaluator;
+        let editor = json!({"households": {"hh_1": "editor"}});
+
+        let create = |household: &str, claims: &Value| {
+            evaluator.evaluate(
+                &policy,
+                &household_context(
+                    DocumentOperation::Create,
+                    claims.clone(),
+                    None,
+                    Some(json!({"id": "doc-1", "household_id": household})),
+                ),
+            )
+        };
+        assert!(create("hh_1", &editor).is_allowed());
+        for (household, claims) in [
+            ("hh_2", editor.clone()),
+            ("hh_1", json!({})),
+            ("hh_1", json!({"households": {"hh_1": "viewer"}})),
+            ("hh_1", json!({"households": "hh_1"})),
+            ("hh_1", json!({"households": ["hh_1"]})),
+            ("hh_1", json!({"households": null})),
+        ] {
+            let decision = create(household, &claims);
+            assert_eq!(
+                decision.code(),
+                PolicyDecisionCode::NoMatchingAllow,
+                "{household} with {claims}"
+            );
+        }
+
+        for operation in [DocumentOperation::Read, DocumentOperation::Delete] {
+            let read = |household: &str, claims: Value| {
+                evaluator.evaluate(
+                    &policy,
+                    &household_context(
+                        operation,
+                        claims,
+                        Some(json!({"id": "doc-1", "household_id": household})),
+                        None,
+                    ),
+                )
+            };
+            assert!(read("hh_1", editor.clone()).is_allowed(), "{operation:?}");
+            assert!(
+                read("hh_1", json!({"households": {"hh_1": "viewer"}})).is_allowed(),
+                "{operation:?}"
+            );
+            assert_eq!(
+                read("hh_2", editor.clone()).code(),
+                PolicyDecisionCode::NoMatchingAllow,
+                "{operation:?}"
+            );
+            assert_eq!(
+                read("hh_1", json!({})).code(),
+                PolicyDecisionCode::NoMatchingAllow,
+                "{operation:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn indexing_arrays_by_position_and_anything_else_yields_null_without_failing() {
+        let claims = json!({
+            "team_ids": ["blue", "green"],
+            "label": "solo",
+            "flag": true,
+            "households": {"hh_1": "owner"}
+        });
+        let document = json!({"id": "doc-1", "household_id": "hh_1", "slot": 1});
+        let cases = [
+            ("claims.team_ids[0] == \"blue\"", true),
+            ("claims.team_ids[1] == \"green\"", true),
+            ("claims.team_ids[new.slot] == \"green\"", true),
+            ("claims.team_ids[0] != null", true),
+            ("claims.team_ids[2] == null", true),
+            ("claims.team_ids[-1] == null", true),
+            ("claims.team_ids[1.5] == null", true),
+            ("claims.team_ids[\"0\"] == null", true),
+            ("claims.households[0] == null", true),
+            ("claims.households[new.slot] == null", true),
+            ("claims.label[0] == null", true),
+            ("claims.label[\"x\"] == null", true),
+            ("claims.flag[\"x\"] == null", true),
+            ("claims.missing[\"x\"] == null", true),
+            ("claims.missing[new.household_id] != null", false),
+            (
+                "claims.households[new.household_id][new.household_id] == null",
+                true,
+            ),
+            ("claims.team_ids[5] != null", false),
+            ("claims.team_ids[new.slot] < \"h\"", true),
+        ];
+        let evaluator = PolicyEvaluator;
+        for (expression, expected) in cases {
+            let policy = household_policy([household_rule(
+                "rule",
+                [DocumentOperation::Create],
+                expression,
+            )]);
+            let context = household_context(
+                DocumentOperation::Create,
+                claims.clone(),
+                None,
+                Some(document.clone()),
+            );
+            let decision = evaluator.evaluate(&policy, &context);
+            assert_ne!(
+                decision.code(),
+                PolicyDecisionCode::EvaluationFailed,
+                "{expression}"
+            );
+            assert_eq!(decision.is_allowed(), expected, "{expression}");
+        }
+    }
+
+    #[test]
+    fn index_nodes_consume_the_evaluation_budget_and_evaluate_their_index_once() {
+        let policy = household_policy([household_rule(
+            "rule",
+            [DocumentOperation::Create],
+            "claims.households[new.household_id] == \"editor\"",
+        )]);
+        let context = household_context(
+            DocumentOperation::Create,
+            json!({"households": {"hh_1": "editor"}}),
+            None,
+            Some(json!({"id": "doc-1", "household_id": "hh_1"})),
+        );
+        let expression = policy.rules()[0].expression();
+        // Compare, Index, the claims path, the document path, the literal.
+        let mut short = EvaluationBudget::new(4);
+        assert_eq!(
+            evaluate_expression(expression, &context, &mut short),
+            Err(PolicyEvaluationError::CostLimitExceeded)
+        );
+        let mut exact = EvaluationBudget::new(5);
+        assert_eq!(
+            evaluate_expression(expression, &context, &mut exact),
+            Ok(Value::Bool(true))
+        );
+        assert_eq!(exact.remaining, 0);
+    }
+
+    #[test]
+    fn indexing_by_a_literal_key_matches_the_dotted_path_for_identifier_keys() {
+        let head = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_";
+        let tail = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_0123456789";
+        let mut state = 0x9E37_79B9_7F4A_7C15_u64;
+        let mut next = move || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        let mut keys: Vec<String> = [
+            "_",
+            "a",
+            "Z",
+            "x_",
+            "__init__",
+            "snake_case",
+            "CamelCase",
+            "a1b2",
+            "households",
+            "hh_1",
+            "nullable",
+            "true_",
+        ]
+        .into_iter()
+        .map(str::to_owned)
+        .collect();
+        while keys.len() < 200 {
+            let length = usize::try_from(next() % 12).expect("length");
+            let mut key = String::new();
+            key.push(char::from(
+                head[usize::try_from(next() % head.len() as u64).expect("index")],
+            ));
+            for _ in 0..length {
+                key.push(char::from(
+                    tail[usize::try_from(next() % tail.len() as u64).expect("index")],
+                ));
+            }
+            if !matches!(key.as_str(), "true" | "false" | "null") {
+                keys.push(key);
+            }
+        }
+        let values = [
+            json!("editor"),
+            json!(7),
+            json!(-2.5),
+            json!(true),
+            json!(null),
+            json!({"nested": 1}),
+            json!(["x", "y"]),
+        ];
+        let document = json!({"id": "doc-1", "household_id": "hh_1"});
+        for (position, key) in keys.iter().enumerate() {
+            let value = &values[position % values.len()];
+            let policy = household_policy([
+                household_rule(
+                    "dotted",
+                    [DocumentOperation::Create],
+                    &format!("claims.a.{key}"),
+                ),
+                household_rule(
+                    "indexed",
+                    [DocumentOperation::Create],
+                    &format!("claims.a[\"{key}\"]"),
+                ),
+            ]);
+            let mut members = serde_json::Map::new();
+            members.insert(key.clone(), value.clone());
+            members.insert("decoy".to_owned(), json!("decoy"));
+            let present = household_context(
+                DocumentOperation::Create,
+                json!({"a": members}),
+                None,
+                Some(document.clone()),
+            );
+            let absent = household_context(
+                DocumentOperation::Create,
+                json!({"a": {"decoy": "decoy"}}),
+                None,
+                Some(document.clone()),
+            );
+            assert_eq!(policy.rules().len(), 2);
+            for rule in policy.rules() {
+                let mut budget = EvaluationBudget::new(8);
+                assert_eq!(
+                    evaluate_expression(rule.expression(), &present, &mut budget),
+                    Ok(value.clone()),
+                    "{key} via {}",
+                    rule.id().as_str()
+                );
+                let mut budget = EvaluationBudget::new(8);
+                assert_eq!(
+                    evaluate_expression(rule.expression(), &absent, &mut budget),
+                    Ok(Value::Null),
+                    "{key} via {}",
+                    rule.id().as_str()
+                );
+            }
+        }
+    }
+
+    fn household_policy(rules: impl IntoIterator<Item = PolicyRule>) -> CompiledPolicySet {
+        let policy = PolicySet::new(
+            scope(),
+            PolicyVersion::new(1).expect("version"),
+            PolicyState::Validated,
+            rules,
+            [],
+        )
+        .expect("policy");
+        PolicyCompiler::default()
+            .compile(
+                &policy,
+                &json!({
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "string"},
+                        "household_id": {"type": "string"},
+                        "slot": {"type": "integer"}
+                    }
+                }),
+            )
+            .expect("compile")
+            .into_compiled()
+            .expect("compiled")
+    }
+
+    fn household_rule(
+        id: &str,
+        operations: impl IntoIterator<Item = DocumentOperation>,
+        expression: &str,
+    ) -> PolicyRule {
+        PolicyRule::new(
+            PolicyRuleId::parse(id).expect("id"),
+            PolicyEffect::Allow,
+            operations,
+            expression,
+        )
+        .expect("rule")
+    }
+
+    fn household_context(
+        operation: DocumentOperation,
+        claims: Value,
+        old_document: Option<Value>,
+        new_document: Option<Value>,
+    ) -> PolicyEvaluationContext {
+        PolicyEvaluationContext::new(
+            scope(),
+            operation,
+            VerifiedIdentity::user(
+                SubjectId::parse("user-1").expect("subject"),
+                VerifiedRole::parse("member").expect("role"),
+                claims,
+            )
+            .expect("identity"),
+            old_document,
+            new_document,
+            SafeRequestMetadata::empty(),
+        )
+        .expect("context")
     }
 
     fn compile(rules: impl IntoIterator<Item = PolicyRule>) -> CompiledPolicySet {
