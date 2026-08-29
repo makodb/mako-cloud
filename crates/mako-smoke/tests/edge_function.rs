@@ -8,6 +8,21 @@
 //!
 //! It needs a container engine and is opt-in through `MAKO_RUN_EDGE_RUNTIME_TESTS=1`,
 //! matching the other edge suites in this repository.
+//!
+//! ## What the suite deploys, and what it needs
+//!
+//! `mako-local-bootstrap` deploys both sample functions **in process**: it
+//! constructs `FunctionAdminService` itself with an in-memory object store, so
+//! this suite needs no S3 service at all. That is not how a developer deploys.
+//! `mako functions deploy` and the management API upload the bundle through
+//! the running control plane, which stores artifacts in the S3 object store
+//! `MAKO_OBJECT_STORE_*` names -- without a reachable one, bundle upload and
+//! `functions deployments create` answer `503 function administration is
+//! unavailable`. See `docs/local-functions.md`.
+//!
+//! The second sample calls back into the data plane from inside the container,
+//! so the runtime needs a route to the host's loopback: see
+//! [`runtime_network`].
 
 use std::{
     collections::BTreeMap,
@@ -27,6 +42,16 @@ use mako_smoke::{
 const PROJECT_ID: &str = "prj_localboot";
 const ENVIRONMENT_ID: &str = "env_localboot";
 const FUNCTION_NAME: &str = "hello";
+/// The bootstrap's second sample: it imports `@mako-cloud/edge-sdk`, runs with
+/// a scoped service credential handed to it as a supplied function secret, and
+/// reads and writes a document whose id contains `:`.
+const SERVICE_FUNCTION_NAME: &str = "budget";
+/// The bootstrap's third sample: it attempts every escape out of the worker
+/// sandbox and reports the outcome of each. Deployed with no secret and no
+/// credential, so it is always present.
+const SANDBOX_FUNCTION_NAME: &str = "sandbox";
+const SERVICE_FUNCTION_DOCUMENT_ID: &str = "hh_local:groceries:2026-08";
+const COLLECTION_ID: &str = "todos";
 const CONTAINER_NAME: &str = "mako-smoke-edge-runtime";
 
 /// The edge gateway resolves its dependencies from compiled-in constants rather
@@ -221,6 +246,23 @@ fn deployed_function_is_served_through_the_edge_gateway() {
         bootstrap["functionName"], FUNCTION_NAME,
         "bootstrap did not report a deployed function: {bootstrap}"
     );
+    assert_eq!(
+        bootstrap["serviceFunctionName"], SERVICE_FUNCTION_NAME,
+        "bootstrap did not report the service-credential function: {bootstrap}"
+    );
+    assert_eq!(
+        bootstrap["sandboxFunctionName"], SANDBOX_FUNCTION_NAME,
+        "bootstrap did not report the sandbox probe function: {bootstrap}"
+    );
+    // The credential the bootstrap issued and handed to the function as a
+    // supplied secret value. This test presents the same one directly, which
+    // is how it checks the document without trusting the function's answer.
+    let service_key = bootstrap["serviceCredential"]
+        .as_str()
+        .unwrap_or_else(|| {
+            panic!("bootstrap did not report the issued service credential: {bootstrap}")
+        })
+        .to_owned();
 
     let mut data_environment = environment.clone();
     data_environment.insert(
@@ -294,6 +336,205 @@ fn deployed_function_is_served_through_the_edge_gateway() {
         "a project reference without an environment must not resolve"
     );
 
+    // --- A function that imports the SDK, holds a supplied service secret,
+    // --- and writes a document whose id has to be escaped in the path. ------
+    //
+    // One invocation covers all three: the bundle validator accepted the bare
+    // `@mako-cloud/edge-sdk` specifier and the runtime resolved it, the
+    // function read a scoped service credential the platform never generated,
+    // and it created `hh_local:groceries:2026-08` -- an id `encodeURIComponent`
+    // escapes -- through the `/service/` document routes.
+    let service_route =
+        format!("/{PROJECT_ID}--{ENVIRONMENT_ID}/functions/v1/{SERVICE_FUNCTION_NAME}");
+    let (status, body) = request(GATEWAY_PORT, "GET", &service_route, &BTreeMap::new(), None);
+    assert_eq!(
+        status,
+        200,
+        "the function importing @mako-cloud/edge-sdk did not answer: {body}\n--- container \
+         output ---\n{}",
+        container.logs()
+    );
+    let written: serde_json::Value = serde_json::from_str(&body)
+        .unwrap_or_else(|_| panic!("the service function returned non-json: {body}"));
+    assert_eq!(written["ok"], true, "the service function failed: {body}");
+    assert_eq!(written["documentId"], SERVICE_FUNCTION_DOCUMENT_ID);
+    assert_eq!(
+        written["created"], true,
+        "the first invocation creates the document: {body}"
+    );
+
+    // A second invocation is a fresh worker with a fresh request id: reading
+    // the document back proves the first write reached the data plane rather
+    // than any in-process state.
+    let (status, body) = request(GATEWAY_PORT, "GET", &service_route, &BTreeMap::new(), None);
+    assert_eq!(status, 200, "the second invocation failed: {body}");
+    let reread: serde_json::Value = serde_json::from_str(&body).expect("service function json");
+    assert_eq!(
+        reread["created"], false,
+        "the second invocation must find the document the first wrote: {body}"
+    );
+    assert_eq!(
+        reread["readTitle"], "groceries",
+        "the function read back what it wrote: {body}"
+    );
+
+    // And the document is really there, read directly rather than through the
+    // function: the id is percent-encoded in the path exactly as the SDK sends
+    // it, which is what the data-plane route has to decode before comparing it
+    // with the body's primary key.
+    let encoded_id = SERVICE_FUNCTION_DOCUMENT_ID.replace(':', "%3A");
+    let document_path = format!(
+        "/v1/projects/{PROJECT_ID}/environments/{ENVIRONMENT_ID}/service/collections/\
+         {COLLECTION_ID}/documents/{encoded_id}"
+    );
+    let service_headers = |request_id: &str| {
+        BTreeMap::from([
+            ("x-mako-service-key".to_owned(), service_key.clone()),
+            (
+                "x-mako-bypass-reason".to_owned(),
+                "edge smoke verifies the function's write".to_owned(),
+            ),
+            ("x-mako-request-id".to_owned(), request_id.to_owned()),
+        ])
+    };
+    let (status, body) = request(
+        DATA_PLANE_PORT,
+        "GET",
+        &document_path,
+        &service_headers("req_edgesmokedocument000000000001"),
+        None,
+    );
+    assert_eq!(
+        status, 200,
+        "an escaped document id must resolve on the service route: {body}"
+    );
+    let document: serde_json::Value = serde_json::from_str(&body).expect("document json");
+    assert_eq!(
+        document["primaryKey"], SERVICE_FUNCTION_DOCUMENT_ID,
+        "the stored id is the decoded one: {body}"
+    );
+    assert_eq!(document["body"]["title"], "groceries");
+
+    // Reusing one request id across two service requests is the caller's
+    // mistake, not an outage: it is a quota reservation conflict, and
+    // reporting it as `unavailable` sent clients into a retry loop that could
+    // never succeed.
+    let reused = "req_edgesmokereuse00000000000001";
+    let (status, body) = request(
+        DATA_PLANE_PORT,
+        "GET",
+        &document_path,
+        &service_headers(reused),
+        None,
+    );
+    assert_eq!(
+        status, 200,
+        "the first use of a request id succeeds: {body}"
+    );
+    // `try_request` sets `content-type: application/json` for a body itself;
+    // sending it again would make the header ambiguous and be refused first.
+    let mut writing = service_headers(reused);
+    writing.insert(
+        "idempotency-key".to_owned(),
+        "edge-smoke-request-id-reuse-mutation".to_owned(),
+    );
+    let (status, body) = request(
+        DATA_PLANE_PORT,
+        "POST",
+        &document_path,
+        &writing,
+        Some(&serde_json::json!({
+            "mutationId": "edge-smoke-request-id-reuse-mutation",
+            "schemaVersion": 1,
+            "operation": "update",
+            "expectedRevision": document["revision"],
+            "body": {
+                "id": SERVICE_FUNCTION_DOCUMENT_ID,
+                "ownerId": "usr_budget_function",
+                "title": "reused",
+                "updatedAt": 1_786_752_000_000_i64,
+            },
+        })),
+    );
+    assert_eq!(
+        status, 409,
+        "reusing a request id is a conflict, not an outage: {body}"
+    );
+    assert!(
+        body.contains("X-Mako-Request-Id"),
+        "the refusal must name the reused request id: {body}"
+    );
+
+    // --- The worker sandbox: what tenant code may and may not do. ---------
+    //
+    // The runtime reads an *empty* permission list as "granted without
+    // restriction" and a missing one as no grant at all, so a worker started
+    // with `allow_net: []` could reach every host, and one with
+    // `allow_write: []` could write anywhere the container can. The supervisor
+    // therefore spells every denied capability `null`.
+    //
+    // This deploys a function that attempts each escape in turn and reports
+    // the outcome of every one rather than throwing on the first. The
+    // "foreign" origin it tries is the platform API's own host on the
+    // neighbouring port -- the control plane, genuinely listening on this
+    // machine -- so a refusal is a denial and not an unreachable address, and
+    // it shows the grant is bounded to one `host:port` rather than to a host.
+    let sandbox_route =
+        format!("/{PROJECT_ID}--{ENVIRONMENT_ID}/functions/v1/{SANDBOX_FUNCTION_NAME}");
+    let (status, body) = request(GATEWAY_PORT, "GET", &sandbox_route, &BTreeMap::new(), None);
+    assert_eq!(
+        status,
+        200,
+        "the sandbox probe function did not answer: {body}\n--- container output ---\n{}",
+        container.logs()
+    );
+    let sandbox: serde_json::Value = serde_json::from_str(&body)
+        .unwrap_or_else(|_| panic!("the sandbox function returned non-json: {body}"));
+
+    // `deny_all` denies the function's own destinations, not the platform API
+    // the runtime injects: a function that could not reach it could not use
+    // the SDK, which is what the `budget` assertions above exercise.
+    assert_eq!(
+        sandbox["platformFetch"]["outcome"], "succeeded",
+        "a function must still reach the platform API origin under deny_all: {body}"
+    );
+    assert_eq!(
+        sandbox["platformFetch"]["status"], 200,
+        "the platform API origin answered the function: {body}"
+    );
+
+    // `NotCapable` is Deno's refusal for a capability the worker was never
+    // granted. Asserting the error class, not just the failure, is what keeps
+    // this from passing on a connection error or a missing file.
+    for attempt in [
+        "fetchForeignHost",
+        "openSocketToForeignHost",
+        "writeOutsideWorkerDirectory",
+        "readSupervisorState",
+        "readUngrantedEnvironmentVariable",
+    ] {
+        let outcome = &sandbox["attempts"][attempt];
+        assert_eq!(
+            outcome["outcome"], "refused",
+            "{attempt} was not refused: {body}"
+        );
+        assert_eq!(
+            outcome["error"], "NotCapable",
+            "{attempt} was refused by something other than the permission sandbox: {body}"
+        );
+    }
+    // These three are refused by the runtime image before a permission is
+    // consulted -- it blocks subprocesses outright, exposes no `Deno.dlopen`,
+    // and never resolves a module specifier computed at runtime -- so only the
+    // refusal is asserted. The grants are withheld as well, which is what
+    // keeps these refused if the image's surface ever widens.
+    for attempt in ["spawnProcess", "loadNativeLibrary", "importRemoteModule"] {
+        assert_eq!(
+            sandbox["attempts"][attempt]["outcome"], "refused",
+            "{attempt} was not refused: {body}"
+        );
+    }
+
     // The line the function printed must reach the retained log store and be
     // served through the management API -- with the address and password it
     // deliberately carries masked, because the store scrubs what customer
@@ -307,6 +548,54 @@ fn deployed_function_is_served_through_the_edge_gateway() {
         INTERNAL_AUTH_SECRET,
     );
     let reading = BTreeMap::from([("authorization".to_owned(), format!("Bearer {session}"))]);
+
+    // --- A function secret carrying a value the developer supplies. --------
+    //
+    // The bootstrap wrote the deployed function's credential through the
+    // domain service; this is the same thing over the public route, which is
+    // what a developer or the console uses. The response must carry metadata
+    // only: a supplied value is never echoed back, and creating a name twice
+    // is a conflict rather than a silent overwrite.
+    let supplied_path = format!(
+        "/v1/projects/{PROJECT_ID}/environments/{ENVIRONMENT_ID}/function-secrets/SUPPLIED_KEY"
+    );
+    let supplied_value = "mako_sk.key_supplied.edge_smoke_do_not_log_00000000";
+    let mut writing_secret = reading.clone();
+    writing_secret.insert(
+        "idempotency-key".to_owned(),
+        "edge-smoke-supplied-secret".to_owned(),
+    );
+    let (status, body) = request(
+        CONTROL_PLANE_PORT,
+        "PUT",
+        &supplied_path,
+        &writing_secret,
+        Some(&serde_json::json!({ "value": supplied_value })),
+    );
+    assert_eq!(status, 201, "a supplied secret value is accepted: {body}");
+    assert!(
+        !body.contains(supplied_value),
+        "a supplied secret value is never returned: {body}"
+    );
+    let supplied: serde_json::Value = serde_json::from_str(&body).expect("secret json");
+    assert_eq!(supplied["name"], "SUPPLIED_KEY");
+    assert_eq!(supplied["version"], 1);
+    assert_eq!(supplied["state"], "active");
+    let (status, body) = request(
+        CONTROL_PLANE_PORT,
+        "PUT",
+        &supplied_path,
+        &writing_secret,
+        Some(&serde_json::json!({ "value": "mako_sk.key_supplied.a_different_value_0000000000" })),
+    );
+    assert_eq!(status, 409, "a secret value is written once: {body}");
+    let (status, body) = request(CONTROL_PLANE_PORT, "GET", &supplied_path, &reading, None);
+    assert_eq!(status, 200, "reading the secret's metadata failed: {body}");
+    assert!(
+        !body.contains("edge_smoke_do_not_log"),
+        "reading a secret must never disclose its value: {body}"
+    );
+
     let logs_path = format!(
         "/v1/projects/{PROJECT_ID}/environments/{ENVIRONMENT_ID}/observability/logs?limit=50"
     );
@@ -490,6 +779,26 @@ fn engine_command(engine: &[String]) -> Command {
     command
 }
 
+/// The `--network` value the runtime container runs with, if any.
+///
+/// Every service in this suite binds loopback, and a function reaches the data
+/// plane at `host.containers.internal`. Rootless Podman's default pasta
+/// networking forwards that address to the host's *external* addresses only,
+/// so a loopback-bound data plane answers `connection refused`;
+/// `--map-host-loopback` is what makes the host's loopback reachable without
+/// exposing any service beyond it. `MAKO_EDGE_TEST_NETWORK` replaces the value
+/// for another engine or host layout (Docker typically wants `host`), and an
+/// empty value leaves the engine's default in place.
+fn runtime_network(engine: &[String]) -> Option<String> {
+    if let Ok(value) = std::env::var("MAKO_EDGE_TEST_NETWORK") {
+        return (!value.is_empty()).then_some(value);
+    }
+    engine
+        .first()
+        .is_some_and(|binary| binary.ends_with("podman"))
+        .then(|| "pasta:--map-host-loopback,169.254.1.2".to_owned())
+}
+
 /// Start the pinned runtime on the same contract a deployment uses. The parts
 /// that matter are the authorization, which must equal the services' internal
 /// auth secret, and the region, which must equal theirs.
@@ -511,8 +820,17 @@ fn start_runtime(engine: &[String], root: &Path) -> RuntimeContainer {
         "{} is missing; the runtime main worker is required",
         main_worker.display()
     );
+    // The runtime supplies `@mako-cloud/edge-sdk` to every worker from this
+    // file. Without it the supervisor refuses to start, and a function that
+    // imports the SDK could not resolve it.
+    assert!(
+        main_worker.join("edge-sdk-source.ts").exists(),
+        "{} is missing; run `npm run build:runtime-module -w @mako-cloud/edge-sdk`",
+        main_worker.join("edge-sdk-source.ts").display()
+    );
 
-    let status = engine_command(engine)
+    let mut command = engine_command(engine);
+    command
         .args([
             "run",
             "--detach",
@@ -542,7 +860,11 @@ fn start_runtime(engine: &[String], root: &Path) -> RuntimeContainer {
             "--tmpfs",
             "/var/lib/mako-runtime-workers:rw,noexec,nosuid,size=128m",
         ])
-        .args(runtime_environment())
+        .args(runtime_environment());
+    if let Some(network) = runtime_network(engine) {
+        command.args(["--network".to_owned(), network]);
+    }
+    let status = command
         .arg(&pin)
         .args([
             "start",

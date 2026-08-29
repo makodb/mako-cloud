@@ -175,8 +175,26 @@ test("the packaged pin and main worker preserve the hosted request boundary", as
   assert.match(supervisor, /\/_mako\/runtime\/v1\/deployments\/retire/u);
   assert.match(supervisor, /crypto\.subtle\.encrypt/u);
   assert.match(supervisor, /crypto\.subtle\.decrypt/u);
-  assert.match(supervisor, /allow_net: \[\]/u);
   assert.match(supervisor, /deployment_loaded/u);
+
+  // Deny by default, spelled the way the runtime reads it. An empty list is
+  // Deno's "granted without restriction", so a worker started with
+  // `allow_net: []` reaches every host and one with `allow_write: []` writes
+  // anywhere the container can; `null` is the absence of a grant. Neither
+  // worker may hand out an empty list for anything.
+  const emptyGrant = /allow_(?:all|env|net|read|write|import|run|ffi|sys): \[\]/u;
+  assert.doesNotMatch(supervisor, emptyGrant);
+  assert.doesNotMatch(mainWorker, emptyGrant);
+  for (const grant of ["write", "import", "run", "ffi", "sys"]) {
+    assert.match(supervisor, new RegExp(`allow_${grant}: null`, "u"));
+    assert.match(mainWorker, new RegExp(`allow_${grant}: null`, "u"));
+  }
+  // What remains is bounded: the worker's own directory, the names it was
+  // given, and the origins its egress policy allows.
+  assert.match(supervisor, /allow_net: networkGrants\(limits\.outboundNetwork\)/u);
+  assert.match(supervisor, /allow_read: \[directory\]/u);
+  assert.match(mainWorker, /allow_net: \[originGrant\(requiredEnvironment\("MAKO_API_URL"\)\)\]/u);
+  assert.match(mainWorker, /allow_read: \[functionPath\]/u);
 });
 
 test("runtime output redaction covers every exact active secret", () => {

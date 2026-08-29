@@ -90,6 +90,13 @@ functions omit it rather than synthesizing an identity.
 - Protocol v1 has no unrestricted egress mode. A worker receives either
   `deny_all` or a bounded host allowlist with a per-invocation request count;
   the worker sandbox or its mandatory network proxy enforces that policy.
+  `deny_all` denies the function's own destinations. It does not deny the
+  platform API origin the runtime injects as `MAKO_API_URL`: that origin is the
+  one the first-party SDK is built to call, the function never chose it, and a
+  function that could not reach it could neither read nor write a document. The
+  supervisor for this pin therefore grants exactly one `host:port` -- the API
+  origin -- and refuses a manifest carrying the allowlist variant rather than
+  honouring only the part of it the sandbox can enforce (see below).
 - The supervisor passes only explicitly attached environment names and values
   to the user runtime. The main runtime's environment is never copied wholesale.
 - User exceptions and upstream error strings are mapped to stable
@@ -110,3 +117,36 @@ selected environment variables, and calls `worker.fetch` with an abort signal.
 Mako owns health and lifecycle endpoints; upstream example routes such as
 `/_internal/health`, `/_internal/metric`, and `/_internal/upload` are not part of
 the Mako protocol and are never reachable from the public gateway.
+
+### Worker permissions
+
+`EdgeRuntime.userWorkers.create` forwards its `permissions` object to Deno's own
+permission set, where the encoding is easy to read backwards: **an empty list is
+a grant without restriction, and `null` is the absence of a grant.** A populated
+list is the restriction. Every capability a function must not hold is therefore
+passed as `null`, never as `[]`.
+
+| Grant | Value | Effect |
+| --- | --- | --- |
+| `allow_env` | the attached secret names plus the `MAKO_*` values the supervisor injects | `Deno.env.get` of any other name is refused |
+| `allow_net` | one `host:port`: the platform API origin, plus whatever the egress policy allows | `fetch`, `Deno.connect`, `WebSocket`, and DNS to anything else are refused |
+| `allow_read` | the worker's own directory | every other path is refused |
+| `allow_write` | `null` | the function cannot write anywhere, including `/tmp` |
+| `allow_import` | `null` | a module fetched over the network is never loaded; the bundle validator already refuses remote specifiers, and this closes the runtime half |
+| `allow_run`, `allow_ffi`, `allow_sys` | `null` | withheld even though this image also blocks subprocesses outright and exposes no `Deno.dlopen`, so a widened image surface does not become a widened sandbox |
+
+The SDK is reached through the worker's inline import map, which resolves the
+one first-party specifier onto a file inside the worker directory, so it needs
+no network or import grant. `mako functions serve` gives the local worker the
+same grants, so a function that runs locally is not one the hosted sandbox will
+refuse.
+
+Protocol v1's `outboundNetwork` also defines an allowlist variant carrying
+`hosts` and `maxRequestsPerInvocation`. The supervisor for this pin refuses a
+manifest that carries it. The host bound could be enforced through `allow_net`,
+but a per-invocation request count cannot be enforced from inside an isolate the
+tenant controls -- tenant code can reach the network through `fetch`,
+`WebSocket`, or `Deno.connect`, and can replace any counter installed beside it
+-- so honouring the variant would mean asserting a bound nothing applies.
+Enforcing it needs the mandatory network proxy this section already names, and
+no deploy path emits the variant until then.

@@ -1,4 +1,5 @@
 import type { Command } from "../cli/registry.js";
+import { allowedOriginsCommands } from "./allowed-origins.js";
 import { authCommands } from "./auth.js";
 import { authRegistrationCommands } from "./auth-registration.js";
 import { authSettingsCommands } from "./auth-settings.js";
@@ -44,6 +45,7 @@ export const commands: readonly Command[] = [
   ...usersCommands,
   ...keysCommands,
   ...authSettingsCommands,
+  ...allowedOriginsCommands,
   ...functionsCommands,
   ...functionsDeployCommands,
   serveCommand,

@@ -31,9 +31,10 @@ use mako_control_plane::{
     DeveloperIdentityId, DeveloperLookupKey, DeveloperPrincipal, DeveloperRegistrationStore,
     DeveloperRoleRecord, EnvironmentRecord, FunctionAdminService, FunctionBundleUpload,
     FunctionConfiguration, FunctionLimits, FunctionName, FunctionSecretEncryptionKey,
-    FunctionSourceFile, MembershipRecord, NewFunction, NewFunctionVersion, OrganizationId,
-    OrganizationRecord, OrganizationRole, OrganizationStore, ProjectRecord, ProjectStore,
-    RuntimeDeploymentClient, RuntimeDeploymentClientConfig, RuntimeSupervisorCredential,
+    FunctionSecretName, FunctionSecretValue, FunctionSourceFile, MembershipRecord, NewFunction,
+    NewFunctionVersion, OrganizationId, OrganizationRecord, OrganizationRole, OrganizationStore,
+    ProjectRecord, ProjectStore, RuntimeDeploymentClient, RuntimeDeploymentClientConfig,
+    RuntimeSupervisorCredential,
 };
 use mako_data_plane_service::DataPlaneGraph;
 use mako_documents::{
@@ -42,7 +43,7 @@ use mako_documents::{
 };
 use mako_identity::{
     Argon2idParameters, KeyEncryptionKey, NormalizedEmail, PasswordPolicy, PasswordService,
-    ProjectCredentialId, ProjectCredentialKind,
+    ProjectCredentialId, ProjectCredentialKind, ServiceCredentialOperation, ServiceCredentialScope,
 };
 use mako_object_store::MemoryObjectStore;
 use mako_policy::{
@@ -66,6 +67,24 @@ const FUNCTION_NAME: &str = "hello";
 const FUNCTION_ENTRYPOINT: &str = "index.ts";
 const FUNCTION_REGION: &str = "local";
 const RUNTIME_VERSION: &str = "v1.74.3";
+/// The second sample function: it imports the edge SDK, is given a scoped
+/// service credential as a supplied function secret, and reads and writes one
+/// document through the `/service/` routes. The edge smoke suite invokes it,
+/// which is what covers the SDK import, the supplied secret value, and an
+/// escaped document id together.
+const SERVICE_FUNCTION_NAME: &str = "budget";
+const SERVICE_FUNCTION_SECRET: &str = "BUDGET_SERVICE_KEY";
+const SERVICE_CREDENTIAL_ID: &str = "key_localbootbudget";
+/// Deliberately holds `:`, which `encodeURIComponent` escapes: the data-plane
+/// route has to percent-decode the path before comparing it with the body's
+/// primary key, and this is the document that proves it.
+const SERVICE_FUNCTION_DOCUMENT_ID: &str = "hh_local:groceries:2026-08";
+/// The third sample function: it attempts every escape a tenant would try out
+/// of the worker sandbox and reports the outcome of each rather than throwing.
+/// The edge smoke suite asserts that every attempt is refused while the
+/// platform's own API origin stays reachable, which is what keeps the
+/// supervisor's worker permissions honest.
+const SANDBOX_FUNCTION_NAME: &str = "sandbox";
 
 /// The function body the bootstrapped tenant deploys. The edge test asserts on
 /// this response, so it stays trivial and self-describing. The log line
@@ -80,6 +99,156 @@ const FUNCTION_SOURCE: &str = r#"export default {
       JSON.stringify({ ok: true, function: "hello", method: request.method, path: url.pathname }),
       { status: 200, headers: { "content-type": "application/json" } },
     );
+  },
+};
+"#;
+
+/// The second function's body. It reaches the data plane the way
+/// `docs/edge-functions.md` documents: the SDK comes from the runtime as
+/// `@mako-cloud/edge-sdk`, the credential comes from an attached function
+/// secret, and the document id contains a character the SDK escapes in the
+/// path. Each data-plane call gets its own request id, because a quota
+/// reservation is keyed by it and reusing one is refused as a conflict.
+const SERVICE_FUNCTION_SOURCE: &str = r#"import { createServiceClient } from "@mako-cloud/edge-sdk";
+
+const DOCUMENT_ID = "hh_local:groceries:2026-08";
+
+function documents(requestId: string, step: string) {
+  return createServiceClient({
+    endpoint: Deno.env.get("MAKO_API_URL"),
+    projectId: Deno.env.get("MAKO_PROJECT_ID"),
+    environmentId: Deno.env.get("MAKO_ENVIRONMENT_ID"),
+    serviceCredential: Deno.env.get("BUDGET_SERVICE_KEY"),
+    reason: "budget function maintains a derived row",
+    requestId: requestId + step,
+  }).documents("todos");
+}
+
+export default {
+  async fetch(request: Request): Promise<Response> {
+    const url = new URL(request.url);
+    const requestId = request.headers.get("x-mako-request-id") ?? "req_budgetlocal0";
+    const documentId = url.searchParams.get("id") ?? DOCUMENT_ID;
+    try {
+      const existing = await documents(requestId, "r").get(documentId);
+      const result = await documents(requestId, "w").mutate(documentId, {
+        mutationId: requestId + "-budget-write",
+        schemaVersion: 1,
+        operation: existing === null ? "create" : "update",
+        expectedRevision: existing === null ? null : existing.revision,
+        body: {
+          id: documentId,
+          ownerId: "usr_budget_function",
+          title: "groceries",
+          updatedAt: Date.now(),
+        },
+      });
+      return Response.json({
+        ok: true,
+        function: "budget",
+        documentId,
+        created: existing === null,
+        readTitle: existing === null ? null : existing.body.title,
+        revision: result.document === null ? null : result.document.revision,
+      });
+    } catch (error) {
+      return Response.json(
+        { ok: false, function: "budget", documentId, message: String(error) },
+        { status: 500 },
+      );
+    }
+  },
+};
+"#;
+
+/// The third function's body. Every attempt here is one a tenant's code could
+/// make against the runtime it shares with other tenants; each is reported
+/// rather than thrown, so one refusal does not hide the next.
+///
+/// The "foreign" origin is the platform API's own host on the neighbouring
+/// port. In the local stack that is the control plane -- a service listening on
+/// the same machine that a tenant function must never reach -- so a refusal
+/// here is a real denial rather than an unreachable address, and it proves the
+/// network grant is bounded to one `host:port` rather than to a host.
+const SANDBOX_FUNCTION_SOURCE: &str = r#"const attempts: Record<string, unknown> = {};
+
+async function attempt(name: string, run: () => Promise<unknown> | unknown): Promise<void> {
+  try {
+    const value = await run();
+    attempts[name] = { outcome: "succeeded", detail: String(value).slice(0, 200) };
+  } catch (error) {
+    const thrown = error as { constructor?: { name?: string }; name?: string; message?: string };
+    attempts[name] = {
+      outcome: "refused",
+      error: thrown?.constructor?.name ?? thrown?.name ?? "unknown",
+      message: String(thrown?.message ?? error).slice(0, 200),
+    };
+  }
+}
+
+export default {
+  async fetch(_request: Request): Promise<Response> {
+    const api = new URL(Deno.env.get("MAKO_API_URL") ?? "");
+    const foreign = `${api.protocol}//${api.hostname}:${Number(api.port) + 1}`;
+
+    let platformFetch: unknown = { outcome: "not attempted" };
+    try {
+      const response = await fetch(`${api.origin}/readyz`);
+      platformFetch = { outcome: "succeeded", status: response.status };
+    } catch (error) {
+      platformFetch = { outcome: "refused", message: String(error).slice(0, 200) };
+    }
+
+    await attempt("fetchForeignHost", async () => {
+      const response = await fetch(`${foreign}/readyz`);
+      return `status ${response.status}`;
+    });
+
+    await attempt("openSocketToForeignHost", async () => {
+      const connection = await Deno.connect({ hostname: api.hostname, port: Number(api.port) + 1 });
+      connection.close();
+      return "connected";
+    });
+
+    await attempt("writeOutsideWorkerDirectory", async () => {
+      await Deno.writeTextFile("/tmp/mako-sandbox-escape", "escaped");
+      return "wrote /tmp/mako-sandbox-escape";
+    });
+
+    await attempt("readSupervisorState", async () => {
+      const names: string[] = [];
+      for await (const entry of Deno.readDir("/var/lib/mako-runtime-supervisor")) {
+        names.push(entry.name);
+      }
+      return `listed ${names.length} entries`;
+    });
+
+    await attempt("spawnProcess", async () => {
+      const output = await new Deno.Command("/bin/sh", { args: ["-c", "id"] }).output();
+      return `exit ${output.code}`;
+    });
+
+    await attempt("loadNativeLibrary", () => {
+      const open = (Deno as unknown as { dlopen?: unknown }).dlopen;
+      if (typeof open !== "function") throw new Error("Deno.dlopen is not exposed to a user worker");
+      return String(
+        (open as (path: string, symbols: unknown) => unknown)("/lib/x86_64-linux-gnu/libc.so.6", {
+          getpid: { parameters: [], result: "i32" },
+        }),
+      );
+    });
+
+    await attempt("readUngrantedEnvironmentVariable", () => {
+      const value = Deno.env.get("MAKO_RUNTIME_STATE_KEY");
+      return value === undefined ? "undefined" : `disclosed ${value.length} characters`;
+    });
+
+    await attempt("importRemoteModule", async () => {
+      const module = await import(`${foreign}/module.ts`);
+      return `imported ${Object.keys(module).join(",")}`;
+    });
+
+    return Response.json({ ok: true, function: "sandbox", platformFetch, attempts });
   },
 };
 "#;
@@ -118,10 +287,16 @@ fn run() -> Result<String, String> {
     let collection_id =
         CollectionId::parse(COLLECTION_ID).map_err(|_| "collection id is invalid".to_owned())?;
 
-    let public_key = seed_data_plane(&data_config, &tenant, &collection_id, now)?;
-    seed_control_plane(&control_config, &tenant, &collection_id, now)?;
+    let seeded = seed_data_plane(&data_config, &tenant, &collection_id, now)?;
+    seed_control_plane(
+        &control_config,
+        &tenant,
+        &collection_id,
+        seeded.service_credential.as_deref(),
+        now,
+    )?;
 
-    let summary = json!({
+    let mut summary = json!({
         "developerId": DEVELOPER_ID,
         "developerEmail": DEVELOPER_EMAIL,
         "developerPassword": DEVELOPER_PASSWORD,
@@ -129,11 +304,24 @@ fn run() -> Result<String, String> {
         "projectId": PROJECT_ID,
         "environmentId": ENVIRONMENT_ID,
         "collectionId": COLLECTION_ID,
-        "publicProjectKey": public_key,
+        "publicProjectKey": seeded.public_key,
         "functionName": FUNCTION_NAME,
         "functionEntrypoint": FUNCTION_ENTRYPOINT,
         "functionRegion": FUNCTION_REGION,
+        "sandboxFunctionName": SANDBOX_FUNCTION_NAME,
+        "serviceFunctionName": SERVICE_FUNCTION_NAME,
+        "serviceFunctionSecret": SERVICE_FUNCTION_SECRET,
+        "serviceFunctionDocumentId": SERVICE_FUNCTION_DOCUMENT_ID,
     });
+    // Reported like the developer password and the public project key: a
+    // throwaway local tenant's credentials, and the only run that can report
+    // this one is the run that issued it. A repeated run keeps the credential
+    // the deployed function already holds and says nothing about it.
+    if let Some(credential) = seeded.service_credential
+        && let Some(object) = summary.as_object_mut()
+    {
+        object.insert("serviceCredential".to_owned(), json!(credential));
+    }
     serde_json::to_string_pretty(&summary).map_err(|_| "summary could not be encoded".to_owned())
 }
 
@@ -149,15 +337,27 @@ fn ensure_local(environment: DeploymentEnvironment) -> Result<(), String> {
     ))
 }
 
+/// What seeding the data plane produced for the caller to report and to hand
+/// to the control plane.
+struct SeededDataPlane {
+    public_key: String,
+    /// The scoped service credential, present only on the run that issued it.
+    /// It is unrecoverable afterwards, and the deployed function already holds
+    /// it as a function secret, so a repeated run neither reissues nor reports
+    /// one.
+    service_credential: Option<String>,
+}
+
 /// Seed the store the data plane serves from: the public project key clients
-/// present, the signing key that issues their sessions, and the collection
+/// present, the signing key that issues their sessions, the scoped service
+/// credential the sample service function runs under, and the collection
 /// metadata without which every document operation is rejected as not found.
 fn seed_data_plane(
     config: &ServiceConfig,
     tenant: &TenantScope,
     collection_id: &CollectionId,
     now: u64,
-) -> Result<String, String> {
+) -> Result<SeededDataPlane, String> {
     let graph = DataPlaneGraph::open(config).map_err(|error| {
         format!("data-plane storage could not be opened (is the data plane running?): {error}")
     })?;
@@ -220,6 +420,41 @@ fn seed_data_plane(
                 .map_err(|_| "signing key could not be initialized".to_owned())?;
         }
 
+        // The credential the sample service function runs under, scoped to
+        // the one collection and to what it does there. It lives in the data
+        // plane's identity store because that is what verifies a presented
+        // `X-Mako-Service-Key`; the control plane only keeps it as the
+        // function's secret.
+        let service_credential_id = ProjectCredentialId::parse(SERVICE_CREDENTIAL_ID)
+            .map_err(|_| "service credential id is invalid".to_owned())?;
+        let service_credential = if store
+            .project_credential_metadata(&service_credential_id)
+            .await
+            .map_err(|error| format!("service credential could not be read: {error:?}"))?
+            .is_some()
+        {
+            None
+        } else {
+            let scope = ServiceCredentialScope::new(
+                [collection_id.as_str().to_owned()],
+                [
+                    ServiceCredentialOperation::Create,
+                    ServiceCredentialOperation::Read,
+                    ServiceCredentialOperation::Update,
+                ],
+            )
+            .map_err(|_| "service credential scope is invalid".to_owned())?;
+            Some(
+                store
+                    .create_service_credential(service_credential_id, scope, now)
+                    .await
+                    .map_err(|error| format!("service credential could not be created: {error:?}"))?
+                    .credential
+                    .expose_once()
+                    .to_owned(),
+            )
+        };
+
         install_collection(
             graph.document_engine(),
             tenant,
@@ -228,7 +463,10 @@ fn seed_data_plane(
         )
         .await?;
         install_development_policy(&graph, tenant, collection_id).await?;
-        Ok(public_key)
+        Ok(SeededDataPlane {
+            public_key,
+            service_credential,
+        })
     })
 }
 
@@ -239,6 +477,7 @@ fn seed_control_plane(
     config: &ServiceConfig,
     tenant: &TenantScope,
     collection_id: &CollectionId,
+    service_credential: Option<&str>,
     now: u64,
 ) -> Result<(), String> {
     let settings = config
@@ -392,6 +631,7 @@ fn seed_control_plane(
             projects: &projects,
             organizations: &organizations,
             secret: secret.expose_secret(),
+            service_credential,
             supervisor: config.runtime_supervisor_address,
             region: &config.region,
             actor: &DeveloperPrincipal::for_local_bootstrap(developer_id, DEVELOPER_EMAIL),
@@ -414,6 +654,7 @@ struct FunctionDeployment<'a> {
     projects: &'a ProjectStore,
     organizations: &'a OrganizationStore,
     secret: &'a str,
+    service_credential: Option<&'a str>,
     supervisor: std::net::SocketAddr,
     region: &'a str,
     actor: &'a DeveloperPrincipal,
@@ -427,6 +668,7 @@ async fn deploy_function(deployment: FunctionDeployment<'_>) -> Result<(), Strin
         projects,
         organizations,
         secret,
+        service_credential,
         supervisor,
         region,
         actor,
@@ -474,7 +716,7 @@ async fn deploy_function(deployment: FunctionDeployment<'_>) -> Result<(), Strin
         projects.clone(),
         organizations.clone(),
         audit,
-        credentials,
+        credentials.clone(),
         // Bundles are only read when a hosted runtime fetches one. Local
         // function serving mounts the source directory instead, so the artifact
         // does not need to outlive this process.
@@ -483,8 +725,79 @@ async fn deploy_function(deployment: FunctionDeployment<'_>) -> Result<(), Strin
     )
     .map_err(|_| "function administration is unavailable".to_owned())?;
 
+    deploy_sample(
+        &functions,
+        actor,
+        tenant,
+        FUNCTION_NAME,
+        FUNCTION_SOURCE,
+        Vec::new(),
+        now,
+    )
+    .await?;
+
+    // The sandbox probe holds no secret and needs no credential, so it deploys
+    // before the gate below: a repeated run that cannot re-issue the service
+    // credential still leaves this one deployed.
+    deploy_sample(
+        &functions,
+        actor,
+        tenant,
+        SANDBOX_FUNCTION_NAME,
+        SANDBOX_FUNCTION_SOURCE,
+        Vec::new(),
+        now,
+    )
+    .await?;
+
+    // The second sample carries the scoped credential as a supplied function
+    // secret. Only the run that issued the credential can write the secret --
+    // the value is unrecoverable afterwards -- so a later run leaves the
+    // already-deployed function and its already-attached secret alone.
+    let secret_name = FunctionSecretName::parse(SERVICE_FUNCTION_SECRET)
+        .map_err(|_| "function secret name is invalid".to_owned())?;
+    match service_credential {
+        Some(credential) => {
+            let value = FunctionSecretValue::parse(credential)
+                .map_err(|_| "service credential is not a usable secret value".to_owned())?;
+            credentials
+                .create_function_secret_with_value(actor, tenant, secret_name.clone(), value, now)
+                .await
+                .map_err(|error| format!("function secret could not be created: {error:?}"))?;
+        }
+        None => {
+            eprintln!(
+                "no newly issued service credential; leaving the {SERVICE_FUNCTION_NAME} function \
+                 and its {SERVICE_FUNCTION_SECRET} secret as they are"
+            );
+            return Ok(());
+        }
+    }
+    deploy_sample(
+        &functions,
+        actor,
+        tenant,
+        SERVICE_FUNCTION_NAME,
+        SERVICE_FUNCTION_SOURCE,
+        vec![secret_name],
+        now,
+    )
+    .await
+}
+
+/// One sample function, from creation to a promoted version. Already deployed
+/// is success: repeated runs must not duplicate a version.
+async fn deploy_sample(
+    functions: &FunctionAdminService,
+    actor: &DeveloperPrincipal,
+    tenant: &TenantScope,
+    function_name: &str,
+    source: &str,
+    secret_names: Vec<FunctionSecretName>,
+    now: u64,
+) -> Result<(), String> {
     let name =
-        FunctionName::parse(FUNCTION_NAME).map_err(|_| "function name is invalid".to_owned())?;
+        FunctionName::parse(function_name).map_err(|_| "function name is invalid".to_owned())?;
     if functions
         .get_function(actor, tenant, &name, now)
         .await
@@ -502,7 +815,7 @@ async fn deploy_function(deployment: FunctionDeployment<'_>) -> Result<(), Strin
                 configuration: FunctionConfiguration {
                     verify_jwt: false,
                     regions: vec![FUNCTION_REGION.to_owned()],
-                    secret_names: Vec::new(),
+                    secret_names,
                     limits: FunctionLimits {
                         cpu_milliseconds: 1_000,
                         wall_milliseconds: 10_000,
@@ -526,7 +839,7 @@ async fn deploy_function(deployment: FunctionDeployment<'_>) -> Result<(), Strin
                 entrypoint: FUNCTION_ENTRYPOINT.to_owned(),
                 files: vec![FunctionSourceFile {
                     path: FUNCTION_ENTRYPOINT.to_owned(),
-                    contents: FUNCTION_SOURCE.as_bytes().to_vec(),
+                    contents: source.as_bytes().to_vec(),
                 }],
                 dependencies: BTreeMap::new(),
             },
@@ -691,6 +1004,31 @@ mod tests {
             let refusal = ensure_local(environment).expect_err("must refuse");
             assert!(refusal.contains("refusing to run"));
         }
+    }
+
+    /// The service function's body is a source literal, so the names it reads
+    /// cannot be checked by the compiler. Drift here would deploy a function
+    /// that looks right and fails at its first request.
+    #[test]
+    fn the_service_function_reads_the_names_the_bootstrap_actually_seeds() {
+        for name in [
+            SERVICE_FUNCTION_SECRET,
+            SERVICE_FUNCTION_DOCUMENT_ID,
+            COLLECTION_ID,
+        ] {
+            assert!(
+                SERVICE_FUNCTION_SOURCE.contains(name),
+                "the {SERVICE_FUNCTION_NAME} function does not mention {name}"
+            );
+        }
+        // The whole point of the sample: it imports the SDK the runtime
+        // supplies rather than vendoring one, and writes an id that has to be
+        // escaped in the path.
+        assert!(SERVICE_FUNCTION_SOURCE.contains("\"@mako-cloud/edge-sdk\""));
+        assert!(SERVICE_FUNCTION_DOCUMENT_ID.contains(':'));
+        FunctionName::parse(SERVICE_FUNCTION_NAME).expect("service function name");
+        ProjectCredentialId::parse(SERVICE_CREDENTIAL_ID).expect("service credential id");
+        FunctionSecretName::parse(SERVICE_FUNCTION_SECRET).expect("service function secret name");
     }
 
     #[test]

@@ -1,19 +1,28 @@
 import { readFileSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
-import type {
-  CreateFunctionRequest,
-  FunctionConfiguration,
-  FunctionDeployment,
-  FunctionLogPage,
-  FunctionTestRequest,
-  MakoManagementClient,
+import {
+  type CreateFunctionRequest,
+  type FunctionConfiguration,
+  type FunctionDeployment,
+  type FunctionLogPage,
+  type FunctionSecret,
+  type FunctionTestRequest,
+  ManagementApiError,
+  type MakoManagementClient,
 } from "@mako-cloud/management-sdk";
 
 import type { CommandContext } from "../cli/context.js";
-import { usageError } from "../cli/errors.js";
+import { CliError, EXIT, usageError } from "../cli/errors.js";
 import type { Command, CommandArgs, OptionSpec, PositionalSpec } from "../cli/registry.js";
-import { pairsToObject, SECRET_FILE_OPTION, TENANT_OPTIONS, tenantFrom } from "./shared.js";
+import {
+  pairsToObject,
+  SECRET_FILE_OPTION,
+  type Tenant,
+  TENANT_OPTIONS,
+  tenantFrom,
+} from "./shared.js";
 
 // ---- shared pieces (also used by `functions deploy`) ------------------------
 
@@ -415,13 +424,123 @@ async function logs(context: CommandContext, args: CommandArgs): Promise<void> {
 
 // ---- secrets --------------------------------------------------------------
 
+/** The options that carry a value the caller already holds, if either is set. */
+const SUPPLIED_VALUE_OPTIONS: Readonly<Record<string, OptionSpec>> = {
+  value: {
+    type: "string",
+    description:
+      "Store this value instead of a generated one (a scoped service credential, say); it is never shown again",
+    placeholder: "<value>",
+  },
+  "value-file": {
+    type: "string",
+    description:
+      "Read the value to store from this file, ignoring one trailing newline; safer than --value, which a shell records",
+    placeholder: "<path>",
+  },
+};
+
+async function suppliedValue(args: CommandArgs): Promise<string | undefined> {
+  const inline = args.string("value");
+  const path = args.string("value-file");
+  if (inline !== undefined && path !== undefined) {
+    throw usageError("pass either --value or --value-file, not both");
+  }
+  if (inline !== undefined) {
+    if (inline === "") throw usageError("--value cannot be empty");
+    return inline;
+  }
+  if (path === undefined) return undefined;
+  const contents = await readFile(path, "utf8").catch(() => {
+    throw usageError(`--value-file ${path} could not be read`);
+  });
+  // `--secret-file` writes a value with a trailing newline, so a value read
+  // back from one round-trips without the caller having to trim it.
+  const value = contents.replace(/\r?\n$/u, "");
+  if (value === "") throw usageError(`--value-file ${path} is empty`);
+  return value;
+}
+
+/**
+ * Creates a secret from a value the caller supplies.
+ *
+ * `PUT …/function-secrets/{secretName}` has no management-SDK method, so --
+ * like the data-job artifact transfer in `data.ts` -- the request is made
+ * directly with the same bearer credential and Origin the SDK would send. The
+ * value goes in the body and is never echoed back.
+ */
+async function putSecretValue(
+  context: CommandContext,
+  tenant: Tenant,
+  name: string,
+  value: string,
+): Promise<FunctionSecret> {
+  const endpoint = await context.endpoint();
+  const credential = await context.credential();
+  const provider = credential.accessToken;
+  const token = typeof provider === "string" ? provider : await provider();
+  const url = new URL(
+    `v1/projects/${encodeURIComponent(tenant.projectId)}/environments/${encodeURIComponent(
+      tenant.environmentId,
+    )}/function-secrets/${encodeURIComponent(name)}`,
+    endpoint.endsWith("/") ? endpoint : `${endpoint}/`,
+  );
+  const fetchImpl = context.io.fetch ?? globalThis.fetch;
+  const response = await fetchImpl(
+    new Request(url, {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        "Idempotency-Key": context.idempotencyKey(),
+        Origin: new URL(endpoint).origin,
+      },
+      body: JSON.stringify({ value }),
+    }),
+  );
+  if (!response.ok) throw await secretValueError(response);
+  return (await response.json()) as FunctionSecret;
+}
+
+async function secretValueError(response: Response): Promise<Error> {
+  const body: unknown = await response.json().catch(() => undefined);
+  const error = isRecord(body) ? body.error : undefined;
+  if (isRecord(error) && typeof error.code === "string" && typeof error.message === "string") {
+    return new ManagementApiError(
+      error as unknown as ConstructorParameters<typeof ManagementApiError>[0],
+      response.status,
+    );
+  }
+  return new CliError(
+    `storing the function secret failed with HTTP ${response.status}`,
+    EXIT.api,
+    "CLI_SECRET_VALUE",
+  );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 async function secretsCreate(context: CommandContext, args: CommandArgs): Promise<void> {
   const name = args.requirePositional(0, "name");
-  const { projectId, environmentId } = tenantFrom(context, args);
+  const tenant = tenantFrom(context, args);
+  const value = await suppliedValue(args);
+  if (value !== undefined) {
+    // The caller already has the value, so nothing is displayed and
+    // --secret-file would have nothing to write; silently ignoring it would
+    // leave someone believing a file holds the secret.
+    if (args.string("secret-file") !== undefined) {
+      throw usageError("--secret-file has nothing to write for a supplied value");
+    }
+    context.out(await putSecretValue(context, tenant, name, value));
+    return;
+  }
   const client = await context.management();
   const issue = await client.createFunctionSecret(
-    projectId,
-    environmentId,
+    tenant.projectId,
+    tenant.environmentId,
     name,
     context.idempotencyKey(),
   );
@@ -654,10 +773,11 @@ export const functionsCommands: readonly Command[] = [
   },
   {
     path: ["functions", "secrets", "create"],
-    summary: "Create a function secret and show its value once",
-    operations: ["createFunctionSecret"],
+    summary:
+      "Create a function secret, either generated and shown once or from a value you supply with --value/--value-file",
+    operations: ["createFunctionSecret", "createFunctionSecretValue"],
     positionals: [{ name: "name", description: "Secret name", required: true }],
-    options: { ...TENANT_OPTIONS, ...SECRET_FILE_OPTION },
+    options: { ...TENANT_OPTIONS, ...SECRET_FILE_OPTION, ...SUPPLIED_VALUE_OPTIONS },
     run: secretsCreate,
   },
   {

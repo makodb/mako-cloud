@@ -148,6 +148,9 @@ function functionsApi(state) {
     if (rest === "/function-secrets" && method === "POST") {
       return { status: 201, json: { secret: secret({ name: body.name }), value: "fs_live_do_not_log_0001" } };
     }
+    if (rest === "/function-secrets/SERVICE_KEY" && method === "PUT") {
+      return { status: 201, json: secret({ name: "SERVICE_KEY" }) };
+    }
     if (rest === "/function-secrets/API_KEY" && method === "GET") return { status: 200, json: secret() };
     if (rest === "/function-secrets/API_KEY" && method === "DELETE") return { status: 200, json: secret({ state: "retired" }) };
     if (rest === "/function-secrets/API_KEY/actions/rotate" && method === "POST") {
@@ -323,6 +326,51 @@ test("logs print one plain line per entry and --all follows cursors", async (t) 
 
   const badLimit = await cli(["functions", "logs", "hello", ...TENANT, "--limit", "0"]);
   assert.equal(badLimit.code, 2);
+});
+
+test("a supplied secret value is sent write-once and never echoed", async (t) => {
+  // The pattern the docs describe: a scoped service credential a function
+  // needs, stored under the name the function reads. Before this, the only
+  // way to give a function a credential was to write it into the uploaded
+  // bundle -- a secret at rest in a stored artifact.
+  const { api, cli, directory } = await setup(t);
+  const value = "mako_sk.key_households.do_not_log_0001";
+
+  const inline = await cli(["functions", "secrets", "create", "SERVICE_KEY", ...TENANT, "--value", value]);
+  assert.equal(inline.code, 0, inline.stderr);
+  const [put] = api.find(`${BASE}/function-secrets/SERVICE_KEY`, "PUT");
+  assert.equal(put.body.value, value);
+  assert.match(put.headers["idempotency-key"], /^[0-9a-f-]{36}$/u);
+  // The caller already holds the value, so nothing shows it back.
+  assert.doesNotMatch(inline.stdout, /do_not_log/u);
+  assert.doesNotMatch(inline.stderr, /do_not_log/u);
+  assert.match(inline.stdout, /name\s+SERVICE_KEY/u);
+  // The generated path was not taken.
+  assert.equal(api.find(`${BASE}/function-secrets`, "POST").length, 0);
+
+  // --value-file keeps the value out of shell history, and round-trips a file
+  // `--secret-file` wrote, which ends with a newline.
+  const path = join(directory, "service.key");
+  await writeFile(path, `${value}\n`);
+  const fromFile = await cli(["functions", "secrets", "create", "SERVICE_KEY", ...TENANT, "--value-file", path]);
+  assert.equal(fromFile.code, 0, fromFile.stderr);
+  assert.equal(api.find(`${BASE}/function-secrets/SERVICE_KEY`, "PUT")[1].body.value, value);
+
+  const both = await cli([
+    "functions", "secrets", "create", "SERVICE_KEY", ...TENANT, "--value", value, "--value-file", path,
+  ]);
+  assert.equal(both.code, 2, "--value and --value-file are mutually exclusive");
+  const missing = await cli(["functions", "secrets", "create", "SERVICE_KEY", ...TENANT, "--value-file", join(directory, "absent")]);
+  assert.equal(missing.code, 2);
+  const empty = await cli(["functions", "secrets", "create", "SERVICE_KEY", ...TENANT, "--value", ""]);
+  assert.equal(empty.code, 2);
+  const withSecretFile = await cli([
+    "functions", "secrets", "create", "SERVICE_KEY", ...TENANT, "--value", value,
+    "--secret-file", join(directory, "unused.txt"),
+  ]);
+  assert.equal(withSecretFile.code, 2, "--secret-file has nothing to write for a supplied value");
+  const store = await readFile(join(directory, "credentials.json"), "utf8");
+  assert.doesNotMatch(store, /do_not_log/u);
 });
 
 test("function secrets are shown exactly once and never on stderr", async (t) => {

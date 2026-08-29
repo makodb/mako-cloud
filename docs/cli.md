@@ -26,7 +26,7 @@ are printed by the test so a new one is a visible decision: `/v1/operator*`
 (a separate identity), `/{projectRef}/functions` (invocation, an application
 concern), and the application-runtime routes under an environment (`auth/*`,
 `documents`, `service/*`, `replication/*`), which SDKs and RxDB clients call
-with project credentials. Every other operation — 164 at the time of writing —
+with project credentials. Every other operation — 166 at the time of writing —
 maps to a command.
 
 ## Signing in
@@ -163,6 +163,19 @@ Identifiers that name the resource acted on are positional.
   [auth-providers.md](auth-providers.md)). A provider given without
   `clientSecret` keeps the installed one. The secret is sent once, in the
   request, and appears in no output.
+- Browser origins: `mako allowed-origins get` shows the origins allowed to
+  call an environment's application API from a browser, one per line
+  (`(none)` when the list is empty); `mako allowed-origins set --origin
+  <url>…` replaces the list whole and `--none` clears it. A browser
+  application needs its own origin listed here whatever host it is served
+  from — the project's ordinary API URL is on the platform hostname, and a
+  custom domain is a convenience, never a prerequisite. Origins are given
+  exactly as the browser sends them — `https://app.example.com`, or
+  `http://127.0.0.1:5173` for a local development server (plain http only to
+  loopback) — repeatable up to 16; a path, a query, a trailing slash, a
+  default port, or plain http off loopback is refused before anything is
+  sent. Both commands say on stderr that the management and operator APIs
+  never answer cross-origin, whatever is listed.
 - Webhooks: `mako webhooks create --url <https-url> --subscribe
   <collection>[:<insert,update,delete>] ...` registers an endpoint for
   collection events; the signing secret is
@@ -235,6 +248,13 @@ Generated from the command registry; every command also answers `--help` with it
 | command | does |
 | ------- | ---- |
 | `mako activity` | Audited actions in this environment, newest first |
+
+### `mako allowed-origins`
+
+| command | does |
+| ------- | ---- |
+| `mako allowed-origins get` | Show the browser origins allowed to call this environment's application API |
+| `mako allowed-origins set` | Replace the browser origins allowed to call this environment's application API; --none allows no cross-origin access |
 
 ### `mako auth`
 
@@ -352,7 +372,7 @@ Generated from the command registry; every command also answers `--help` with it
 | `mako functions get <name>` | Show a function, its configuration, and its active version |
 | `mako functions list` | List the functions in an environment |
 | `mako functions logs <name>` | Read a function's sanitized logs, newest page first |
-| `mako functions secrets create <name>` | Create a function secret and show its value once *(prints a secret once)* |
+| `mako functions secrets create <name>` | Create a function secret: generated and shown once, or stored from `--value <v>` / `--value-file <path>` (a service credential, say) and never shown *(prints a secret once)* |
 | `mako functions secrets get <name>` | Show a function secret's version and state, never its value |
 | `mako functions secrets retire <name>` | Retire a function secret so no new deployment can attach it *(confirmed)* |
 | `mako functions secrets rotate <name>` | Rotate a function secret and show the new value once *(confirmed, prints a secret once)* |

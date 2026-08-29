@@ -2,7 +2,7 @@
 // This file runs inside the pinned runtime image and intentionally has no
 // network imports, so the runtime contract never depends on a moving resource.
 
-import { RuntimeSupervisor } from "./supervisor.ts";
+import { originGrant, RuntimeSupervisor } from "./supervisor.ts";
 
 type UserWorker = {
   fetch(request: Request, options: { signal: AbortSignal }): Promise<Response>;
@@ -22,6 +22,19 @@ declare const EdgeRuntime: {
       cpuTimeSoftLimitMs: number;
       cpuTimeHardLimitMs: number;
       staticPatterns: string[];
+      // An empty list is Deno's spelling of "granted without restriction";
+      // `null` is the absence of a grant. Nothing here may be `[]`.
+      permissions: {
+        allow_all: boolean;
+        allow_env: string[] | null;
+        allow_net: string[] | null;
+        allow_read: string[] | null;
+        allow_write: string[] | null;
+        allow_import: string[] | null;
+        allow_run: string[] | null;
+        allow_ffi: string[] | null;
+        allow_sys: string[] | null;
+      };
       context: Record<string, unknown>;
     }): Promise<UserWorker>;
   };
@@ -117,23 +130,40 @@ Deno.serve({ port: 9000, hostname: "0.0.0.0" }, async (request: Request) => {
 });
 
 function createWorker(requestId: string, traceId: string): Promise<UserWorker> {
+  const environment = {
+    ...userEnvironment,
+    MAKO_API_URL: requiredEnvironment("MAKO_API_URL"),
+    MAKO_PROJECT_ID: projectId,
+    MAKO_ENVIRONMENT_ID: environmentId,
+    MAKO_FUNCTION_NAME: functionName,
+  };
   return EdgeRuntime.userWorkers.create({
     servicePath: functionPath,
     maybeEntrypoint: `file://${functionPath}/${entrypoint}`,
     memoryLimitMb: 150,
     workerTimeoutMs: wallTimeMilliseconds,
     noModuleCache: false,
-    envVars: Object.entries({
-      ...userEnvironment,
-      MAKO_API_URL: requiredEnvironment("MAKO_API_URL"),
-      MAKO_PROJECT_ID: projectId,
-      MAKO_ENVIRONMENT_ID: environmentId,
-      MAKO_FUNCTION_NAME: functionName,
-    }),
+    envVars: Object.entries(environment),
     forceCreate: false,
     cpuTimeSoftLimitMs: 10_000,
     cpuTimeHardLimitMs: 20_000,
     staticPatterns: [`${functionPath}/**/*.wasm`],
+    // The same grants a hosted deployment gets, so a function that works
+    // locally is not one the hosted sandbox will refuse: its own directory,
+    // the environment names it was given, the platform API origin, and
+    // nothing else. Denied capabilities are `null` -- an empty list would
+    // grant them without restriction.
+    permissions: {
+      allow_all: false,
+      allow_env: Object.keys(environment),
+      allow_net: [originGrant(requiredEnvironment("MAKO_API_URL"))],
+      allow_read: [functionPath],
+      allow_write: null,
+      allow_import: null,
+      allow_run: null,
+      allow_ffi: null,
+      allow_sys: null,
+    },
     context: {
       runtimeProtocol: 1,
       projectId,

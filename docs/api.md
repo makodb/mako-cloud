@@ -58,6 +58,21 @@ reuse one stable key when retrying an ambiguous timeout. A changed payload with
 the same key is a conflict. RxDB pushes additionally persist per-row mutation
 outcomes, so a dropped response cannot create a second revision.
 
+Two rules on the document routes are easy to miss:
+
+- A document mutation's `Idempotency-Key` **must equal the body's
+  `mutationId`**. They are one identity, not two, and a mismatch is a `409
+  conflict` rather than a validation error.
+- `X-Mako-Request-Id` identifies one request. The data plane keys a quota
+  reservation by it, so presenting one request id on two different requests is
+  a `409 conflict` naming the reuse -- not something to retry. `/service/`
+  routes additionally require the header to be present, so a caller making
+  several requests sends a fresh id for each.
+
+`{documentId}` is percent-decoded before it is compared with the body's primary
+key, so an id containing `:`, `@`, `/`, or a space is written by escaping it in
+the path exactly as `encodeURIComponent` does. A malformed escape is refused.
+
 Honor retry advice:
 
 - retry transient throttling only after the returned delay;

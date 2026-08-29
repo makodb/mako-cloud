@@ -2,6 +2,8 @@
 // It intentionally imports no network modules and persists only AES-GCM
 // ciphertext outside the container's tmpfs worker directory.
 
+import { EDGE_SDK_SOURCE } from "./edge-sdk-source.ts";
+
 type UserWorker = {
   fetch(request: Request, options?: { signal: AbortSignal }): Promise<Response>;
 };
@@ -20,16 +22,19 @@ declare const EdgeRuntime: {
       cpuTimeSoftLimitMs: number;
       cpuTimeHardLimitMs: number;
       staticPatterns: string[];
+      // Deno reads a missing grant as `null`, and an *empty list* as
+      // "granted without restriction" -- a populated list is the restriction.
+      // Every field a worker must not hold is therefore `null`, never `[]`.
       permissions: {
         allow_all: boolean;
-        allow_env: string[];
-        allow_net: string[];
-        allow_read: string[];
-        allow_write: string[];
-        allow_import: string[];
-        allow_run: string[];
-        allow_ffi: string[];
-        allow_sys: string[];
+        allow_env: string[] | null;
+        allow_net: string[] | null;
+        allow_read: string[] | null;
+        allow_write: string[] | null;
+        allow_import: string[] | null;
+        allow_run: string[] | null;
+        allow_ffi: string[] | null;
+        allow_sys: string[] | null;
       };
       context: Record<string, unknown>;
     }): Promise<UserWorker>;
@@ -69,6 +74,15 @@ const MAX_LOGS_PER_DEPLOYMENT = 4_096;
 // supervisor consumes and strips it; it must never reach a caller.
 const WORKER_LOG_HEADER = "x-mako-worker-logs";
 const SHIM_MODULE = "__mako_console_shim.ts";
+// The edge SDK is a first-party module of the runtime, not something a
+// function vendors: its built source travels in this worker's module graph
+// (`edge-sdk-source.ts`), the supervisor materializes it into each worker
+// directory under a reserved name, and the worker's own import map -- which
+// holds this one mapping and nothing else -- resolves the bare specifier onto
+// it. A worker may read nothing outside its directory and has no network, so
+// the module has to be inside it.
+const SDK_SPECIFIER = "@mako-cloud/edge-sdk";
+const SDK_MODULE = "__mako_edge_sdk.mjs";
 const MAX_SHIPPED_LOG_LINES = 64;
 const MAX_SHIPPED_LOG_BYTES = 16 * 1024;
 // Total message text retained per deployment. JSON escaping can inflate a
@@ -639,6 +653,11 @@ async function materializeWorker(
     if (parent !== "") await Deno.mkdir(`${directory}/${parent}`, { recursive: true });
     await Deno.writeFile(`${directory}/${entrypoint}`, bundle);
   }
+  // Written last: the platform's module always wins over a bundle that
+  // carries the reserved name. Uploads that claim it are refused at
+  // validation, so this only decides restores of state written before that
+  // rule existed.
+  await Deno.writeTextFile(`${directory}/${SDK_MODULE}`, EDGE_SDK_SOURCE);
   return await createWorker(load, directory, region, true);
 }
 
@@ -673,18 +692,29 @@ async function createWorker(
     cpuTimeSoftLimitMs: limits.cpuMilliseconds,
     cpuTimeHardLimitMs: limits.cpuMilliseconds,
     staticPatterns: [`${directory}/**/*.wasm`],
+    // Deny by default. In Deno's permission model an empty list is a grant
+    // without restriction and `null` is no grant at all, so everything a
+    // function has no business holding is `null`: it may not write, spawn a
+    // process, open a native library, read the host's identity, or import a
+    // module from anywhere but its own directory. What remains is bounded:
+    // the environment names the platform gave it, its own worker directory,
+    // and the origins its egress policy allows.
     permissions: {
       allow_all: false,
       allow_env: environment.map(([name]) => name ?? "").filter((name) => name !== ""),
-      allow_net: [],
+      allow_net: networkGrants(limits.outboundNetwork),
       allow_read: [directory],
-      allow_write: [],
-      allow_import: [],
-      allow_run: [],
-      allow_ffi: [],
-      allow_sys: [],
+      allow_write: null,
+      allow_import: null,
+      allow_run: null,
+      allow_ffi: null,
+      allow_sys: null,
     },
     context: {
+      // The runtime reads `importMapPath` out of the worker context. It holds
+      // exactly one first-party mapping: a function cannot introduce its own,
+      // and no specifier resolves outside this directory.
+      importMapPath: firstPartyImportMap(directory),
       runtimeProtocol: PROTOCOL_VERSION,
       projectId: address.projectId,
       environmentId: address.environmentId,
@@ -925,9 +955,7 @@ function isSourceArchive(value: unknown): value is SourceArchive {
           ([specifier, target]) =>
             specifier.length <= 512 &&
             typeof target === "string" &&
-            (target.startsWith("mako:") ||
-              target === "@mako-cloud/edge-sdk" ||
-              validRelativePath(target)),
+            (target === SDK_SPECIFIER || validRelativePath(target)),
         ),
     )
   );
@@ -1366,13 +1394,58 @@ async function constantTimeEqual(candidate: string | null, expected: string): Pr
 function rewriteImports(source: string, importer: string, imports: Record<string, string>): string {
   let rewritten = source;
   for (const [specifier, target] of Object.entries(imports)) {
-    if (target.startsWith("mako:") || target === "@mako-cloud/edge-sdk") continue;
+    // Resolved by the worker's import map, not by rewriting the source.
+    if (target === SDK_SPECIFIER) continue;
     const relative = relativeImport(importer, target);
     rewritten = rewritten
       .replaceAll(`"${specifier}"`, `"${relative}"`)
       .replaceAll(`'${specifier}'`, `'${relative}'`);
   }
   return rewritten;
+}
+
+/**
+ * The hosts one worker may open a connection to, as Deno `--allow-net`
+ * entries. There is no unrestricted grant and no empty list here: an empty
+ * list is how Deno spells "every host", which is what this list existing at
+ * all is meant to prevent.
+ *
+ * `deny_all` denies the *function's* own destinations. It does not deny the
+ * platform's API origin, which the runtime injects as `MAKO_API_URL` and the
+ * first-party SDK is built to call: a function that could not reach it could
+ * not read or write a document, which is the reason hosted functions exist.
+ * Protocol v1's wire type also carries an allowlist variant, but no deploy
+ * path emits one and a per-invocation request count cannot be enforced from
+ * inside an isolate the tenant controls, so `isLimits` still refuses a
+ * manifest that carries one rather than honouring half of it.
+ */
+function networkGrants(policy: RuntimeLimits["outboundNetwork"]): string[] {
+  if (policy.mode !== "deny_all") throw new Error("unsupported outbound network policy");
+  return [originGrant(requiredEnvironment("MAKO_API_URL"))];
+}
+
+/**
+ * One `host:port` grant for an absolute origin. The port is always explicit,
+ * so granting an API host does not also grant every other service listening on
+ * the same machine.
+ */
+export function originGrant(value: string): string {
+  const url = new URL(value);
+  if ((url.protocol !== "http:" && url.protocol !== "https:") || url.hostname === "") {
+    throw new Error("invalid platform origin");
+  }
+  const port = url.port !== "" ? url.port : url.protocol === "https:" ? "443" : "80";
+  return `${url.hostname}:${port}`;
+}
+
+/**
+ * The worker's import map, inline. `data:{encodeURIComponent(json)}?{base}` is
+ * the form the runtime accepts, and the base directory is the worker's own, so
+ * the one mapping resolves to a file the worker is allowed to read.
+ */
+function firstPartyImportMap(directory: string): string {
+  const map = { imports: { [SDK_SPECIFIER]: `./${SDK_MODULE}` } };
+  return `data:${encodeURIComponent(JSON.stringify(map))}?${encodeURIComponent(directory)}`;
 }
 
 function relativeImport(importer: string, target: string): string {
