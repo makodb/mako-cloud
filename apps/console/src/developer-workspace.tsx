@@ -119,6 +119,7 @@ export function EnvironmentWorkspaceScreen({
 function consoleDestinations(projectId: string, environmentId: string): WorkspaceDestination[] {
   const base = `/projects/${projectId}/environments/${environmentId}`;
   return [
+    { id: "storage", label: "Storage", path: `${base}/storage`, permitted: true },
     { id: "logs", label: "Logs", path: `${base}/logs`, permitted: true },
     { id: "usage", label: "Usage", path: `${base}/usage`, permitted: true },
     { id: "activity", label: "Activity", path: `${base}/activity`, permitted: true },
@@ -129,11 +130,6 @@ function consoleDestinations(projectId: string, environmentId: string): Workspac
 /// developer should see the shape of the product, and nothing here pretends
 /// to work.
 const UNAVAILABLE_DESTINATIONS: readonly { id: string; label: string; reason: string }[] = [
-  {
-    id: "storage",
-    label: "Storage",
-    reason: "Application file storage is not available on this deployment yet.",
-  },
   {
     id: "auth-providers",
     label: "Auth providers",

@@ -61,7 +61,15 @@ test("a deep link opens inside the shell with its context and every destination"
 
   const destinations = page.getByRole("navigation", { name: "Environment destinations" });
   // Backend-authorized destinations and the console-served ones are all there.
-  for (const label of ["overview", "collections", "functions", "Logs", "Usage", "Activity"]) {
+  for (const label of [
+    "overview",
+    "collections",
+    "functions",
+    "Storage",
+    "Logs",
+    "Usage",
+    "Activity",
+  ]) {
     await expect(destinations.getByRole("link", { name: label, exact: true })).toBeVisible();
   }
   await expect(
@@ -69,13 +77,14 @@ test("a deep link opens inside the shell with its context and every destination"
   ).toHaveAttribute("aria-current", "page");
 
   // Areas the deployment lacks are shown, disabled, with a reason -- never hidden.
-  for (const label of ["Storage", "Auth providers", "Webhooks", "Schedules", "Domains"]) {
+  for (const label of ["Auth providers", "Webhooks", "Schedules", "Domains"]) {
     const item = destinations.locator(".destination-unavailable", { hasText: label });
     await expect(item).toBeVisible();
     await expect(item).toHaveAttribute("aria-disabled", "true");
     await expect(item).toContainText("Not available on this deployment");
   }
-  expect(await destinations.getByRole("link", { name: "Storage" }).count()).toBe(0);
+  await expect(destinations.locator(".destination-unavailable")).toHaveCount(4);
+  expect(await destinations.getByRole("link", { name: "Webhooks" }).count()).toBe(0);
 
   // Moving to a console-served destination keeps the shell and marks it current.
   await destinations.getByRole("link", { name: "Logs", exact: true }).click();
@@ -92,7 +101,7 @@ test("a deep link opens inside the shell with its context and every destination"
 
 test("an unknown destination fails closed to not found", async ({ page }) => {
   await installApi(page);
-  await page.goto(`/projects/${PROJECT_ID}/environments/${ENVIRONMENT_ID}/storage`);
+  await page.goto(`/projects/${PROJECT_ID}/environments/${ENVIRONMENT_ID}/webhooks`);
   await expect(page.getByRole("heading", { name: "Page not found" })).toBeVisible();
 });
 

@@ -1901,13 +1901,13 @@ impl RawConfig {
             ));
         }
         if environment == DeploymentEnvironment::Production
-            && service == ServiceKind::ControlPlane
+            && matches!(service, ServiceKind::ControlPlane | ServiceKind::DataPlane)
             && object_store_access_key.is_none()
         {
             return Err(ConfigDiagnostic::new(
                 ConfigErrorCode::MissingValue,
                 "secrets.object_store",
-                "authenticated object storage is required for the production control plane",
+                "authenticated object storage is required for the production control plane and data plane",
             ));
         }
         if let Some(value) = object_store_access_key.as_ref() {

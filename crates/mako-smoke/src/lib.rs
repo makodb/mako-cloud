@@ -497,6 +497,152 @@ fn read_chunked(reader: &mut BufReader<TcpStream>) -> Result<String, String> {
     Ok(String::from_utf8_lossy(&body).into_owned())
 }
 
+/// A loopback stand-in for the S3-compatible object store: enough of the
+/// protocol for the platform's client (bucket HEAD/PUT, object PUT with
+/// `if-none-match`, GET, DELETE), in memory, unauthenticated. The smoke
+/// stack has no seaweed to talk to; this lets the real client code run.
+pub struct ObjectStoreStub {
+    pub endpoint: String,
+    stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl ObjectStoreStub {
+    /// Listens on a free loopback port until dropped.
+    pub fn start() -> Self {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("stub listener");
+        let port = listener.local_addr().expect("stub address").port();
+        listener
+            .set_nonblocking(true)
+            .expect("stub listener non-blocking");
+        let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let stopping = std::sync::Arc::clone(&stop);
+        std::thread::spawn(move || {
+            let mut objects: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+            let mut buckets: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+            while !stopping.load(std::sync::atomic::Ordering::Relaxed) {
+                let (mut stream, _) = match listener.accept() {
+                    Ok(accepted) => accepted,
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        std::thread::sleep(Duration::from_millis(10));
+                        continue;
+                    }
+                    Err(_) => break,
+                };
+                let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
+                let mut raw = Vec::new();
+                let mut buffer = [0u8; 8192];
+                let (head_end, mut content_length) = loop {
+                    let read = match stream.read(&mut buffer) {
+                        Ok(0) | Err(_) => break (None, 0),
+                        Ok(read) => read,
+                    };
+                    raw.extend_from_slice(&buffer[..read]);
+                    if let Some(position) = raw.windows(4).position(|window| window == b"\r\n\r\n")
+                    {
+                        let head = String::from_utf8_lossy(&raw[..position]).to_string();
+                        let length = head
+                            .lines()
+                            .find_map(|line| {
+                                let (name, value) = line.split_once(':')?;
+                                name.trim()
+                                    .eq_ignore_ascii_case("content-length")
+                                    .then(|| value.trim().parse::<usize>().ok())?
+                            })
+                            .unwrap_or(0);
+                        break (Some(position + 4), length);
+                    }
+                };
+                let Some(head_end) = head_end else { continue };
+                while raw.len() < head_end + content_length {
+                    match stream.read(&mut buffer) {
+                        Ok(0) | Err(_) => break,
+                        Ok(read) => raw.extend_from_slice(&buffer[..read]),
+                    }
+                }
+                if raw.len() < head_end + content_length {
+                    content_length = raw.len().saturating_sub(head_end);
+                }
+                let head = String::from_utf8_lossy(&raw[..head_end]).to_string();
+                let mut request_line = head.lines().next().unwrap_or("").split_whitespace();
+                let method = request_line.next().unwrap_or("").to_owned();
+                let target = request_line.next().unwrap_or("/").to_owned();
+                let path = target.split('?').next().unwrap_or("/").to_owned();
+                let body = raw[head_end..head_end + content_length].to_vec();
+                let has_if_none_match = head
+                    .lines()
+                    .any(|line| line.to_ascii_lowercase().starts_with("if-none-match:"));
+                let mut segments = path.trim_start_matches('/').splitn(2, '/');
+                let bucket = segments.next().unwrap_or("").to_owned();
+                let key = segments.next().map(str::to_owned);
+                let (status, payload): (u16, Vec<u8>) = match (method.as_str(), key) {
+                    ("PUT", None) => {
+                        buckets.insert(bucket);
+                        (200, Vec::new())
+                    }
+                    ("HEAD", None) => (
+                        if buckets.contains(&bucket) { 200 } else { 404 },
+                        Vec::new(),
+                    ),
+                    ("PUT", Some(key)) => {
+                        let full = format!("{bucket}/{key}");
+                        if has_if_none_match && objects.contains_key(&full) {
+                            (412, Vec::new())
+                        } else {
+                            objects.insert(full, body);
+                            (200, Vec::new())
+                        }
+                    }
+                    ("GET", Some(key)) => match objects.get(&format!("{bucket}/{key}")) {
+                        Some(bytes) => (200, bytes.clone()),
+                        None => (404, Vec::new()),
+                    },
+                    ("HEAD", Some(key)) => (
+                        if objects.contains_key(&format!("{bucket}/{key}")) {
+                            200
+                        } else {
+                            404
+                        },
+                        Vec::new(),
+                    ),
+                    ("DELETE", Some(key)) => {
+                        objects.remove(&format!("{bucket}/{key}"));
+                        (204, Vec::new())
+                    }
+                    _ => (400, Vec::new()),
+                };
+                let reason = match status {
+                    200 => "OK",
+                    204 => "No Content",
+                    404 => "Not Found",
+                    412 => "Precondition Failed",
+                    _ => "Bad Request",
+                };
+                let mut response = format!(
+                    "HTTP/1.1 {status} {reason}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    payload.len()
+                )
+                .into_bytes();
+                if method != "HEAD" {
+                    response.extend_from_slice(&payload);
+                }
+                let _ = stream.write_all(&response);
+                let _ = stream.flush();
+            }
+        });
+        Self {
+            endpoint: format!("http://127.0.0.1:{port}"),
+            stop,
+        }
+    }
+}
+
+impl Drop for ObjectStoreStub {
+    fn drop(&mut self) {
+        self.stop.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::{io::Write, net::TcpListener, thread};

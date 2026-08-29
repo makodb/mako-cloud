@@ -33,7 +33,7 @@ Configuration accepts references, never inline secret values:
 - `env:VARIABLE_NAME` reads an existing process environment variable.
 - `file:/mounted/path` reads a UTF-8 secret file up to 64 KiB and removes one trailing newline.
 
-Resolved values are redacted from `Debug`, `Display`, and startup summaries. Production startup requires an internal-auth secret reference and an HTTPS public URL. The production control plane additionally requires paired object-store access-key and secret-key references. Keep referenced environment variables and files out of source control.
+Resolved values are redacted from `Debug`, `Display`, and startup summaries. Production startup requires an internal-auth secret reference and an HTTPS public URL. The production control plane and data plane additionally require paired object-store access-key and secret-key references: the control plane for function bundles and data-job artifacts, the data plane for application file storage. Keep referenced environment variables and files out of source control.
 
 ## Startup diagnostics
 

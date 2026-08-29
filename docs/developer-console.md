@@ -39,15 +39,18 @@ Inside an environment the sidebar lists every destination the platform
 authorises for the developer — Overview, Data, Collections, Sync, Users,
 Policies, Functions, Observability, Backups, API & Connect, Settings — plus
 the destinations the console serves from signals the API already exposes:
-Logs (retained, scrubbed function output), Usage (this month's meters against
-the plan), and Activity (the audit trail as the developer may read it).
+Storage (the environment's buckets with their object counts and stored bytes,
+each bucket's access, size and content-type limits, and rules, and its
+objects — listed by prefix, paged, and deletable), Logs (retained, scrubbed
+function output), Usage (this month's meters against the plan), and Activity
+(the audit trail as the developer may read it).
 
-Product areas the deployment does not provide yet — Storage, Auth providers,
-Webhooks, Schedules, Domains — are listed and disabled with a reason, never
-hidden: the shape of the product is visible before every area is enabled.
+Product areas the deployment does not provide yet — Auth providers, Webhooks,
+Schedules, Domains — are listed and disabled with a reason, never hidden: the
+shape of the product is visible before every area is enabled.
 
-Routes: `/projects/{projectId}/environments/{environmentId}/{logs|usage|activity}` join the
-existing environment routes; every pre-existing deep link keeps working and
+Routes: `/projects/{projectId}/environments/{environmentId}/{storage|logs|usage|activity}`
+and `…/storage/{bucketId}` join the existing environment routes; every pre-existing deep link keeps working and
 opens inside the shell with its context shown.
 
 ## Context and accessibility

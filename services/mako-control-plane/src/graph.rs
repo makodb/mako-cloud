@@ -1380,6 +1380,22 @@ mod tests {
             mako_service_runtime::HttpMethod::Post,
             "/v1/operator/developer-waitlist/dev_example00/actions/approve"
         ));
+        assert!(router.permits(
+            mako_service_runtime::HttpMethod::Post,
+            "/v1/projects/prj_example00/environments/env_example00/storage-buckets"
+        ));
+        assert!(router.permits(
+            mako_service_runtime::HttpMethod::Patch,
+            "/v1/projects/prj_example00/environments/env_example00/storage-buckets/avatars"
+        ));
+        assert!(router.permits(
+            mako_service_runtime::HttpMethod::Get,
+            "/v1/projects/prj_example00/environments/env_example00/storage-buckets/avatars/objects"
+        ));
+        assert!(router.permits(
+            mako_service_runtime::HttpMethod::Delete,
+            "/v1/projects/prj_example00/environments/env_example00/storage-buckets/avatars/objects/users/42/me.png"
+        ));
         assert!(router.permits(mako_service_runtime::HttpMethod::Get, "/metrics"));
         assert!(!router.permits(
             mako_service_runtime::HttpMethod::Get,
@@ -1430,6 +1446,75 @@ mod tests {
             block_on(graph.adapter.get(b"\x01control-outage-test")).expect("control read"),
             Some(b"available".to_vec())
         );
+        block_on(graph.shutdown()).expect("shutdown");
+    }
+
+    /// An object path is the one management path parameter that spans
+    /// segments, so its escapes are checked where the route binds it, before
+    /// the developer is even authenticated and long before the data plane is
+    /// asked to delete anything.
+    #[test]
+    fn storage_object_paths_are_checked_before_the_data_plane_is_asked() {
+        let directory = local_tempdir("control-plane-storage-paths");
+        let config = config_for(directory.path(), DeploymentEnvironment::Local);
+        let unavailable = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("unused listener");
+        let endpoint = unavailable.local_addr().expect("unused endpoint");
+        drop(unavailable);
+        let graph = Arc::new(
+            ControlPlaneGraph::open_with_data_plane_endpoint(&config, endpoint)
+                .expect("control-plane graph"),
+        );
+        let router = crate::control_plane_router(Arc::clone(&graph)).expect("router");
+        let objects = "/v1/projects/prj_example0001/environments/env_example0001/storage-buckets/avatars/objects";
+
+        // An empty segment (`users//me.png`) never gets this far: the transport
+        // refuses it before routing. These reach the handler and are refused there.
+        for escaping in [
+            "users/../secrets.txt",
+            "users/%2e%2e/me.png",
+            "users/./me.png",
+        ] {
+            let refused = dispatch(
+                &router,
+                request(
+                    HttpMethod::Delete,
+                    &format!("{objects}/{escaping}"),
+                    None,
+                    None,
+                    b"",
+                    "127.0.0.9:1000",
+                ),
+            )
+            .expect_err("an escaping object path is refused");
+            assert_eq!(
+                refused.envelope().error.code,
+                mako_api::ErrorCode::InvalidRequest
+            );
+            assert_eq!(
+                refused.envelope().error.message,
+                "storage object path is invalid"
+            );
+        }
+
+        let unauthenticated = dispatch(
+            &router,
+            request(
+                HttpMethod::Delete,
+                &format!("{objects}/users/42/me.png"),
+                None,
+                None,
+                b"",
+                "127.0.0.9:1000",
+            ),
+        )
+        .expect_err("a well-formed path still needs a developer");
+        assert_eq!(
+            unauthenticated.envelope().error.code,
+            mako_api::ErrorCode::Unauthenticated
+        );
+
+        drop(router);
+        let graph = Arc::try_unwrap(graph).unwrap_or_else(|_| panic!("route owners dropped"));
         block_on(graph.shutdown()).expect("shutdown");
     }
 

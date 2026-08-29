@@ -26,11 +26,13 @@ const FLOW_RESOURCES = [
   "edge_invocations_per_month",
   "edge_compute_milliseconds_per_month",
   "log_bytes_per_month",
+  "object_egress_bytes_per_month",
 ] as const;
 
 /** Resources sampled as a height; the period's figure is the sample average. */
 const LEVEL_RESOURCES = [
   "storage_bytes",
+  "object_storage_bytes",
   "application_users",
   "environments",
   "collections_per_environment",

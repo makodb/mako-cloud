@@ -24,6 +24,7 @@ import { HomeDashboard } from "./home.js";
 import { LogsScreen } from "./logs.js";
 import { PolicyScreen } from "./policies.js";
 import { ProjectHome } from "./project-home.js";
+import { StorageScreen } from "./storage.js";
 import { InvitationAcceptScreen, TeamScreen } from "./teams.js";
 import { UsageScreen } from "./usage.js";
 import { RequireDeveloperSession, SignInView, useConsoleRoute } from "./router.js";
@@ -341,6 +342,21 @@ export function ConsoleApp({
                 navigate={navigate}
               >
                 <ActivityScreen projectId={route.projectId} environmentId={route.environmentId} />
+              </StagedEnvironmentLayout>
+            ) : route.name === "storage" ? (
+              <StagedEnvironmentLayout
+                enabled={developerWorkspaceEnabled}
+                projectId={route.projectId}
+                environmentId={route.environmentId}
+                section="storage"
+                navigate={navigate}
+              >
+                <StorageScreen
+                  projectId={route.projectId}
+                  environmentId={route.environmentId}
+                  bucketId={route.bucketId}
+                  navigate={navigate}
+                />
               </StagedEnvironmentLayout>
             ) : (
               <NotFound path={route.path} onHome={() => navigate("/")} />

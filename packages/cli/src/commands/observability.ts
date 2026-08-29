@@ -246,11 +246,13 @@ const FLOW_RESOURCES: readonly string[] = [
   "edge_invocations_per_month",
   "edge_compute_milliseconds_per_month",
   "log_bytes_per_month",
+  "object_egress_bytes_per_month",
 ];
 
 /** Resources sampled as a height; a period's figure is the sample average. */
 const LEVEL_RESOURCES: readonly string[] = [
   "storage_bytes",
+  "object_storage_bytes",
   "application_users",
   "environments",
   "collections_per_environment",

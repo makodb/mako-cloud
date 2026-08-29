@@ -75,6 +75,14 @@ impl S3ObjectStoreConfig {
             maximum_object_bytes: MAX_OBJECT_BYTES,
         }
     }
+
+    /// The same store on a different bucket, so distinct kinds of content never
+    /// share a namespace.
+    #[must_use]
+    pub fn with_bucket(mut self, bucket: impl Into<String>) -> Self {
+        self.bucket = bucket.into();
+        self
+    }
 }
 
 #[derive(Clone)]

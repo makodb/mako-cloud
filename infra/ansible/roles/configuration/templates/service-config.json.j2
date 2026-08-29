@@ -93,10 +93,10 @@
     "shutdown_grace_seconds": 30
   },
   "secrets": {
-    "internal_auth": "file:/run/credentials/{{ item.name }}.service/internal-auth"{% if item.name == 'mako-control-plane' %},
-    "object_store_access_key": "file:/run/credentials/mako-control-plane.service/object-store-access-key",
-    "object_store_secret_key": "file:/run/credentials/mako-control-plane.service/object-store-secret-key"{% if mako_developer_registration_enabled | bool %},
+    "internal_auth": "file:/run/credentials/{{ item.name }}.service/internal-auth"{% if item.name in ['mako-control-plane', 'mako-data-plane'] %},
+    "object_store_access_key": "file:/run/credentials/{{ item.name }}.service/object-store-access-key",
+    "object_store_secret_key": "file:/run/credentials/{{ item.name }}.service/object-store-secret-key"{% endif %}{% if item.name == 'mako-control-plane' and mako_developer_registration_enabled | bool %},
     "developer_mail_encryption": "file:/run/credentials/mako-control-plane.service/developer-mail-encryption",
-    "developer_smtp_password": "file:/run/credentials/mako-control-plane.service/developer-smtp-password"{% endif %}{% endif %}
+    "developer_smtp_password": "file:/run/credentials/mako-control-plane.service/developer-smtp-password"{% endif %}
   }
 }

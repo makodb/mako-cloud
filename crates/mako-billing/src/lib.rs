@@ -202,15 +202,26 @@ pub fn enforcement_policy(
         let Some(cap) = entitlement.cap() else {
             continue;
         };
-        // Only the resources the gateway actually meters can be capped by it.
-        // Stored bytes and user counts are levels measured on a schedule, not
-        // something a single request can be refused for here.
+        // Only a resource the data plane can refuse a request for becomes a
+        // cap here. Replication and object egress are flows the gateway
+        // charges per request, so their caps are ordinary hard windows. Stored
+        // object bytes are a level, but one the data plane knows exactly at
+        // upload time, so its cap travels as a hard limit whose window is
+        // nominal and whose `limit` is compared against the running total.
+        // Document storage bytes and user counts are levels measured on a
+        // schedule and stay uncapped here.
         let enforced = match resource {
             QuotaResource::ReplicationRequestsPerMinute => {
                 Some((GatewayQuotaResource::ReplicationRequests, MONTH))
             }
             QuotaResource::ReplicationBytesPerMonth => {
                 Some((GatewayQuotaResource::ReplicationBytes, MONTH))
+            }
+            QuotaResource::ObjectEgressBytesPerMonth => {
+                Some((GatewayQuotaResource::EgressBytes, MONTH))
+            }
+            QuotaResource::ObjectStorageBytes => {
+                Some((GatewayQuotaResource::ObjectStorageBytes, MONTH))
             }
             _ => None,
         };
@@ -249,7 +260,7 @@ pub fn catalog() -> Vec<Plan> {
         Plan {
             id: "free".to_owned(),
             display_name: "Free".to_owned(),
-            version: 1,
+            version: 2,
             entitlements: BTreeMap::from([
                 (
                     QuotaResource::StorageBytes,
@@ -260,6 +271,20 @@ pub fn catalog() -> Vec<Plan> {
                 ),
                 (
                     QuotaResource::ReplicationBytesPerMonth,
+                    Entitlement {
+                        included: 5 * 1024 * 1024 * 1024,
+                        overage_billed: false,
+                    },
+                ),
+                (
+                    QuotaResource::ObjectStorageBytes,
+                    Entitlement {
+                        included: 1024 * 1024 * 1024,
+                        overage_billed: false,
+                    },
+                ),
+                (
+                    QuotaResource::ObjectEgressBytesPerMonth,
                     Entitlement {
                         included: 5 * 1024 * 1024 * 1024,
                         overage_billed: false,
@@ -284,7 +309,7 @@ pub fn catalog() -> Vec<Plan> {
         Plan {
             id: "pro".to_owned(),
             display_name: "Pro".to_owned(),
-            version: 1,
+            version: 2,
             entitlements: BTreeMap::from([
                 (
                     QuotaResource::StorageBytes,
@@ -295,6 +320,20 @@ pub fn catalog() -> Vec<Plan> {
                 ),
                 (
                     QuotaResource::ReplicationBytesPerMonth,
+                    Entitlement {
+                        included: 250 * 1024 * 1024 * 1024,
+                        overage_billed: true,
+                    },
+                ),
+                (
+                    QuotaResource::ObjectStorageBytes,
+                    Entitlement {
+                        included: 50 * 1024 * 1024 * 1024,
+                        overage_billed: true,
+                    },
+                ),
+                (
+                    QuotaResource::ObjectEgressBytesPerMonth,
                     Entitlement {
                         included: 250 * 1024 * 1024 * 1024,
                         overage_billed: true,
@@ -437,6 +476,56 @@ mod tests {
                 plan.id
             );
         }
+    }
+
+    /// Object storage is the one level the data plane can refuse a request
+    /// for, because it knows the stored total exactly at upload time. Its cap
+    /// and the object egress cap therefore have to reach the gateway policy
+    /// as hard limits on a free plan, and must not on a plan that bills the
+    /// excess.
+    #[test]
+    fn object_storage_and_egress_caps_reach_the_gateway_as_hard_limits() {
+        const MONTH: u64 = 30 * 24 * 60 * 60 * 1_000;
+        const GIB: u64 = 1024 * 1024 * 1024;
+        let capped = enforcement_policy(&free().entitlements).expect("policy");
+
+        let stored = capped
+            .limit(GatewayQuotaResource::ObjectStorageBytes)
+            .expect("stored object bytes are limited on the free plan");
+        assert_eq!(
+            stored.hard,
+            Some(window(GIB, MONTH)),
+            "the free plan's object storage cap did not become a hard limit"
+        );
+        assert!(
+            stored.rate.is_none(),
+            "stored bytes are a level and must not be rate limited"
+        );
+
+        let egress = capped
+            .limit(GatewayQuotaResource::EgressBytes)
+            .expect("object egress is limited on the free plan");
+        assert_eq!(
+            egress.hard,
+            Some(window(5 * GIB, MONTH)),
+            "the free plan's object egress cap did not become a hard limit"
+        );
+
+        // A plan that bills for the excess keeps serving past the included
+        // amount, so neither resource may carry a cap there.
+        let billed = enforcement_policy(&pro().entitlements).expect("policy");
+        assert!(
+            billed
+                .limit(GatewayQuotaResource::ObjectStorageBytes)
+                .is_none_or(|limit| limit.hard.is_none()),
+            "the pro plan capped object storage it bills overage on"
+        );
+        assert!(
+            billed
+                .limit(GatewayQuotaResource::EgressBytes)
+                .is_none_or(|limit| limit.hard.is_none()),
+            "the pro plan capped object egress it bills overage on"
+        );
     }
 
     #[test]

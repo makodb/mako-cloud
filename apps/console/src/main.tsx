@@ -9,6 +9,7 @@ import "./home.css";
 import "./project-home.css";
 import "./surfaced.css";
 import "./usage-activity.css";
+import "./storage.css";
 
 declare global {
   interface Window {

@@ -53,6 +53,12 @@ export type ConsoleRoute =
       readonly environmentId: string;
     }
   | {
+      readonly name: "storage";
+      readonly projectId: string;
+      readonly environmentId: string;
+      readonly bucketId?: string;
+    }
+  | {
       readonly name: "environment_workspace";
       readonly projectId: string;
       readonly environmentId: string;
@@ -179,6 +185,17 @@ export function matchConsoleRoute(pathname: string): ConsoleRoute {
       name: environmentPage[3] as "logs" | "usage" | "activity",
       projectId: environmentPage[1],
       environmentId: environmentPage[2],
+    };
+  }
+  const storage = normalized.match(
+    /^\/projects\/(prj_[A-Za-z0-9_-]{8,64})\/environments\/(env_[A-Za-z0-9_-]{8,64})\/storage(?:\/([a-z][a-z0-9-]{1,62}))?$/u,
+  );
+  if (storage?.[1] !== undefined && storage[2] !== undefined) {
+    return {
+      name: "storage",
+      projectId: storage[1],
+      environmentId: storage[2],
+      ...(storage[3] === undefined ? {} : { bucketId: storage[3] }),
     };
   }
   const environmentWorkspace = normalized.match(

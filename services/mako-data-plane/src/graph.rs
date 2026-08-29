@@ -126,8 +126,14 @@ impl StorageOwner {
     }
 }
 
+/// Application objects never share a bucket with function bundles or artifacts.
+const APPLICATION_OBJECT_BUCKET: &str = "mako-application-objects-v1";
+
 struct DataPlaneComponents {
     documents: DocumentEngine,
+    object_store: Arc<mako_object_store::S3ObjectStore>,
+    object_key_root: mako_file_storage::ObjectKeyRoot,
+    enforce_object_store: bool,
     telemetry: Arc<mako_telemetry_client::TelemetryEmitter>,
     storage_sampler: Arc<crate::telemetry::StorageSampler>,
     quota_checkpoints: Arc<crate::telemetry::QuotaCheckpointer>,
@@ -202,6 +208,35 @@ impl DataPlaneGraph {
             Vec::new(),
         )
         .map_err(|_| DataPlaneGraphError::InvalidKeyMaterial)?;
+        let object_key_root = mako_file_storage::ObjectKeyRoot::from_bytes(blake3::derive_key(
+            "mako/data-plane/object-encryption/v1",
+            secret.expose_secret().as_bytes(),
+        ));
+        let object_access = config
+            .object_store_access_key
+            .as_ref()
+            .ok_or(DataPlaneGraphError::MissingKeyMaterial)?;
+        let object_secret = config
+            .object_store_secret_key
+            .as_ref()
+            .ok_or(DataPlaneGraphError::MissingKeyMaterial)?;
+        let object_store = Arc::new(
+            mako_object_store::S3ObjectStore::new(
+                mako_object_store::S3ObjectStoreConfig::loopback(
+                    config.object_store_endpoint.clone(),
+                    config.region.clone(),
+                )
+                .with_bucket(APPLICATION_OBJECT_BUCKET),
+                mako_object_store::S3Credentials::new(
+                    object_access.expose_secret(),
+                    object_secret.expose_secret(),
+                )
+                .map_err(|_| DataPlaneGraphError::InvalidKeyMaterial)?,
+            )
+            .map_err(|_| DataPlaneGraphError::InvalidKeyMaterial)?,
+        );
+        let enforce_object_store =
+            config.environment == mako_config::DeploymentEnvironment::Production;
         let explorer_cursor_key = blake3::derive_key(
             "mako/data-plane/explorer-cursor-signing/v1",
             secret.expose_secret().as_bytes(),
@@ -297,6 +332,9 @@ impl DataPlaneGraph {
             storage,
             adapter,
             components: DataPlaneComponents {
+                object_store,
+                object_key_root,
+                enforce_object_store,
                 // The telemetry store has an ingest endpoint that nothing has
                 // ever called, which is why every signal the management API
                 // serves from it answers empty. This is the emitting side.
@@ -528,6 +566,20 @@ impl DataPlaneGraph {
         .map_err(Into::into)
     }
 
+    /// Buckets and objects of one tenant, over this node's object store.
+    pub fn file_storage(
+        &self,
+        trusted_tenant: &TenantScope,
+    ) -> Result<mako_file_storage::FileStorageService, mako_file_storage::FileStorageError> {
+        mako_file_storage::FileStorageService::new(
+            Arc::clone(&self.adapter),
+            Arc::clone(&self.components.object_store) as Arc<dyn mako_object_store::ObjectStore>,
+            &self.components.object_key_root,
+            trusted_tenant.clone(),
+            Durability::Sync,
+        )
+    }
+
     pub fn policy_store(
         &self,
         trusted_tenant: &TenantScope,
@@ -750,6 +802,9 @@ impl DataPlaneGraph {
             gateway: true,
             quota: true,
             audit: true,
+            object_store: !self.components.enforce_object_store
+                || self.components.object_store.dependency_ready()
+                || self.components.object_store.ensure_bucket().is_ok(),
         }
     }
 
@@ -798,6 +853,8 @@ pub struct DataPlaneReadiness {
     pub gateway: bool,
     pub quota: bool,
     pub audit: bool,
+    /// The application object store answers, or this deployment does not require it.
+    pub object_store: bool,
 }
 
 impl DataPlaneReadiness {
@@ -810,6 +867,7 @@ impl DataPlaneReadiness {
             && self.gateway
             && self.quota
             && self.audit
+            && self.object_store
     }
 
     fn snapshot(&self) -> ReadinessSnapshot {
@@ -821,6 +879,7 @@ impl DataPlaneReadiness {
             ("gateway", self.gateway),
             ("quota", self.quota),
             ("audit", self.audit),
+            ("object_store", self.object_store),
         ];
         let failed = dependencies
             .into_iter()
@@ -1323,7 +1382,13 @@ mod tests {
 
         let graph = DataPlaneGraph::open(&config).expect("production graph");
         assert_eq!(graph.storage_mode(), StorageMode::ProductionRocksDb);
-        assert!(graph.readiness().is_ready());
+        // Production refuses to serve without its object store: every other
+        // dependency is ready, and the store, unreachable here, is what holds it.
+        let readiness = graph.readiness();
+        assert!(readiness.storage.is_ready());
+        assert!(!readiness.object_store);
+        assert!(!readiness.is_ready());
+        assert_eq!(readiness.to_string(), "dependencies_not_ready:object_store");
         block_on(graph.shutdown()).expect("shutdown");
     }
 
@@ -1355,6 +1420,25 @@ mod tests {
             (
                 "TEST_DATA_PLANE_ROOT_KEY",
                 "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+            ),
+            // Application objects need the object store's credentials, as the
+            // control plane does for bundles; the store itself is only reached
+            // when an object is written or, in production, at readiness.
+            (
+                "MAKO_OBJECT_STORE_ACCESS_KEY_REF",
+                "env:TEST_OBJECT_STORE_ACCESS_KEY",
+            ),
+            (
+                "TEST_OBJECT_STORE_ACCESS_KEY",
+                "test-object-store-access-key",
+            ),
+            (
+                "MAKO_OBJECT_STORE_SECRET_KEY_REF",
+                "env:TEST_OBJECT_STORE_SECRET_KEY",
+            ),
+            (
+                "TEST_OBJECT_STORE_SECRET_KEY",
+                "test-object-store-secret-key",
             ),
         ])
         .load(ServiceKind::DataPlane)

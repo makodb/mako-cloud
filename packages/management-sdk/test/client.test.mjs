@@ -251,6 +251,69 @@ test("operator inventory covers every operator operation in the OpenAPI contract
   assert.deepEqual([...OPERATOR_OPERATIONS].sort(), operations);
 });
 
+test("storage object paths keep their slashes on the wire and bucket deletion carries its confirmation", async () => {
+  const requests = [];
+  const client = createManagementClient({
+    endpoint: "https://api.example.test",
+    credential: { kind: "developer_session", accessToken: "developer-session-token" },
+    fetch: async (request) => {
+      requests.push(request);
+      return Response.json(
+        request.method === "DELETE" && request.url.includes("/objects/")
+          ? storageObject()
+          : { objectCount: 2, totalBytes: 1024 },
+      );
+    },
+  });
+  assert.deepEqual(
+    await client.deleteStorageObject("prj_example0001", "env_example0001", "avatars", "users/42/me avatar.png"),
+    storageObject(),
+  );
+  assert.equal(
+    requests[0].url,
+    "https://api.example.test/v1/projects/prj_example0001/environments/env_example0001/storage-buckets/avatars/objects/users/42/me%20avatar.png",
+  );
+  for (const escaping of ["", "users//me.png", "users/../me.png", "/me.png", "me.png/"]) {
+    await assert.rejects(
+      client.deleteStorageObject("prj_example0001", "env_example0001", "avatars", escaping),
+      TypeError,
+    );
+  }
+  assert.deepEqual(
+    await client.deleteStorageBucket(
+      "prj_example0001",
+      "env_example0001",
+      "avatars",
+      "delete avatars",
+      true,
+    ),
+    { objectCount: 2, totalBytes: 1024 },
+  );
+  assert.equal(
+    requests[1].url,
+    "https://api.example.test/v1/projects/prj_example0001/environments/env_example0001/storage-buckets/avatars?deleteObjects=true",
+  );
+  assert.equal(requests[1].headers.get("confirmation"), "delete avatars");
+  await client.deleteStorageBucket("prj_example0001", "env_example0001", "avatars", "delete avatars");
+  assert.equal(
+    requests[2].url,
+    "https://api.example.test/v1/projects/prj_example0001/environments/env_example0001/storage-buckets/avatars",
+  );
+  assert.equal(requests.length, 3, "a refused path never reaches the network");
+});
+
+function storageObject() {
+  return {
+    path: "users/42/me avatar.png",
+    contentType: "image/png",
+    sizeBytes: 512,
+    ownerId: "usr_example0001",
+    digest: "sha256:abc",
+    createdAt: "2026-08-13T00:00:00Z",
+    updatedAt: "2026-08-13T00:00:00Z",
+  };
+}
+
 function team() {
   return {
     id: "org_abcdefgh",

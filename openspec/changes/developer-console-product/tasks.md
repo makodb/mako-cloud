@@ -20,11 +20,11 @@
 
 ## 3. Phase 3 — application file storage
 
-- [ ] 3.1 Data plane: bucket and object metadata records per environment; object bytes in the object store under tenant-prefixed encrypted keys.
-- [ ] 3.2 Policy evaluation for objects through the document-policy engine over a synthetic object document; public-bucket reads without a session.
-- [ ] 3.3 Application API: upload, download, list, delete under a bucket; service-credential path with privileged audit; path validation.
-- [ ] 3.4 Metering: object storage bytes (sampled) and object egress (flow) on the ledger and rate card; plan allowances and caps.
-- [ ] 3.5 Console: buckets, objects, limits; management OpenAPI and SDK; Caddy allowlist; backup inventory gains objects.
+- [x] 3.1 Data plane: bucket and object metadata records per environment; object bytes in the object store under tenant-prefixed encrypted keys.
+- [x] 3.2 Policy evaluation for objects through the document-policy engine over a synthetic object document; public-bucket reads without a session.
+- [x] 3.3 Application API: upload, download, list, delete under a bucket; service-credential path with privileged audit; path validation.
+- [x] 3.4 Metering: object storage bytes (sampled) and object egress (flow) on the ledger and rate card; plan allowances and caps.
+- [x] 3.5 Console: buckets, objects, limits; management OpenAPI and SDK; Caddy allowlist; backup inventory gains objects.
 - [ ] 3.6 Tests: policy denial, path escape refusal, metering on the bill; smoke through the real stack; deploy and requalify.
 
 ## 4. Phase 3 — auth providers and email templates

@@ -14,9 +14,11 @@ ConditionPathExists=/opt/mako/current/bin/{{ item.name }}
 ConditionPathExists=/etc/mako/services/{{ item.name }}.json
 {% endif %}
 ConditionPathExists=/etc/mako/credentials/internal-auth
-{% if item.name == 'mako-control-plane' %}
+{% if item.name in ['mako-control-plane', 'mako-data-plane'] %}
 ConditionPathExists=/etc/mako/credentials/object-store-access-key
 ConditionPathExists=/etc/mako/credentials/object-store-secret-key
+{% endif %}
+{% if item.name == 'mako-control-plane' %}
 {% if mako_developer_registration_enabled | bool %}
 ConditionPathExists=/etc/mako/credentials/developer-mail-encryption
 ConditionPathExists=/etc/mako/credentials/developer-smtp-password
@@ -45,13 +47,13 @@ LoadCredential=telemetry-authorization:/etc/mako/credentials/internal-auth
 {% else %}
 LoadCredential=internal-auth:/etc/mako/credentials/internal-auth
 {% endif %}
-{% if item.name == 'mako-control-plane' %}
+{% if item.name in ['mako-control-plane', 'mako-data-plane'] %}
 LoadCredential=object-store-access-key:/etc/mako/credentials/object-store-access-key
 LoadCredential=object-store-secret-key:/etc/mako/credentials/object-store-secret-key
-{% if mako_developer_registration_enabled | bool %}
+{% endif %}
+{% if item.name == 'mako-control-plane' and mako_developer_registration_enabled | bool %}
 LoadCredential=developer-mail-encryption:/etc/mako/credentials/developer-mail-encryption
 LoadCredential=developer-smtp-password:/etc/mako/credentials/developer-smtp-password
-{% endif %}
 {% endif %}
 {% if item.database_path is defined and item.name != 'mako-control-plane' %}
 ExecStartPre=/opt/mako/current/bin/mako-storage-ops provision --database-path={{ item.database_path }} --service={{ item.name }} --database-id={{ item.database_id }} --confirm=PROVISION --accept-matching-marker

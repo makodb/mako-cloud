@@ -195,13 +195,13 @@
       - (item.content | b64decode | from_json).limits.max_request_bytes == 16777216
       - (item.content | b64decode | from_json).secrets.internal_auth == "file:/run/credentials/" + item.item.name + ".service/internal-auth"
       - >-
-        item.item.name != "mako-control-plane" or
+        item.item.name not in ["mako-control-plane", "mako-data-plane"] or
         (item.content | b64decode | from_json).secrets.object_store_access_key ==
-        "file:/run/credentials/mako-control-plane.service/object-store-access-key"
+        "file:/run/credentials/" + item.item.name + ".service/object-store-access-key"
       - >-
-        item.item.name != "mako-control-plane" or
+        item.item.name not in ["mako-control-plane", "mako-data-plane"] or
         (item.content | b64decode | from_json).secrets.object_store_secret_key ==
-        "file:/run/credentials/mako-control-plane.service/object-store-secret-key"
+        "file:/run/credentials/" + item.item.name + ".service/object-store-secret-key"
       - >-
         item.item.name != "mako-control-plane" or
         (item.content | b64decode | from_json).developer_registration.enabled ==

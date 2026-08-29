@@ -20,6 +20,10 @@ const POLICY_NAMESPACE: u8 = 0x48;
 const AUTHORIZATION_NAMESPACE: u8 = 0x49;
 const IDENTITY_NAMESPACE: u8 = 0x4a;
 const INTERNAL_RPC_NAMESPACE: u8 = 0x4b;
+const BUCKET_NAMESPACE: u8 = 0x4c;
+const BUCKET_RECORD: u8 = 0x01;
+const BUCKET_OBJECT: u8 = 0x02;
+const BUCKET_TOTALS: u8 = 0x03;
 const INDEX_ENTRY: u8 = 0x10;
 const INDEX_UNIQUE_OWNER: u8 = 0x11;
 const INDEX_COMPONENT: u8 = 0x01;
@@ -147,6 +151,69 @@ impl TenantKeyspace {
     #[must_use]
     pub fn environment_metadata_key(&self) -> Vec<u8> {
         self.namespaced(ENVIRONMENT_METADATA)
+    }
+
+    /// Every bucket record in the environment.
+    pub fn buckets_range(&self) -> Result<KeyRange, KeyCodecError> {
+        let mut prefix = self.namespaced(BUCKET_NAMESPACE);
+        prefix.push(BUCKET_RECORD);
+        prefix_range(&prefix)
+    }
+
+    pub fn bucket_key(&self, bucket: impl AsRef<[u8]>) -> Result<Vec<u8>, KeyCodecError> {
+        let mut key = self.namespaced(BUCKET_NAMESPACE);
+        key.push(BUCKET_RECORD);
+        encode_required_segment(&mut key, "bucket", bucket.as_ref())?;
+        Ok(key)
+    }
+
+    /// The running object count and byte total of one bucket.
+    pub fn bucket_totals_key(&self, bucket: impl AsRef<[u8]>) -> Result<Vec<u8>, KeyCodecError> {
+        let mut key = self.namespaced(BUCKET_NAMESPACE);
+        key.push(BUCKET_TOTALS);
+        encode_required_segment(&mut key, "bucket", bucket.as_ref())?;
+        Ok(key)
+    }
+
+    /// Every bucket's totals record, for the environment's sampled level.
+    pub fn bucket_totals_range(&self) -> Result<KeyRange, KeyCodecError> {
+        let mut prefix = self.namespaced(BUCKET_NAMESPACE);
+        prefix.push(BUCKET_TOTALS);
+        prefix_range(&prefix)
+    }
+
+    fn object_prefix(&self, bucket: &[u8]) -> Result<Vec<u8>, KeyCodecError> {
+        let mut prefix = self.namespaced(BUCKET_NAMESPACE);
+        prefix.push(BUCKET_OBJECT);
+        encode_required_segment(&mut prefix, "bucket", bucket)?;
+        Ok(prefix)
+    }
+
+    /// Every object metadata record of one bucket, in path order.
+    pub fn objects_range(&self, bucket: impl AsRef<[u8]>) -> Result<KeyRange, KeyCodecError> {
+        prefix_range(&self.object_prefix(bucket.as_ref())?)
+    }
+
+    pub fn object_key(
+        &self,
+        bucket: impl AsRef<[u8]>,
+        path: impl AsRef<[u8]>,
+    ) -> Result<Vec<u8>, KeyCodecError> {
+        let mut key = self.object_prefix(bucket.as_ref())?;
+        encode_required_segment(&mut key, "object", path.as_ref())?;
+        Ok(key)
+    }
+
+    pub fn decode_object_key(
+        &self,
+        bucket: impl AsRef<[u8]>,
+        key: &[u8],
+    ) -> Result<Vec<u8>, KeyCodecError> {
+        let prefix = self.object_prefix(bucket.as_ref())?;
+        let mut offset = require_prefix(key, &prefix)?;
+        let path = decode_segment(key, &mut offset)?;
+        require_end(key, offset)?;
+        Ok(path)
     }
 
     pub fn collections_range(&self) -> Result<KeyRange, KeyCodecError> {
@@ -1085,6 +1152,56 @@ fn require_end(key: &[u8], offset: usize) -> Result<(), KeyCodecError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bucket_and_object_keys_stay_inside_their_bucket_and_decode_back() {
+        let keyspace = TenantKeyspace::new("prj_a", "env_a").expect("keyspace");
+        let bucket = keyspace.bucket_key("avatars").expect("bucket key");
+        let totals = keyspace.bucket_totals_key("avatars").expect("totals key");
+        let object = keyspace
+            .object_key("avatars", "users/42/me.png")
+            .expect("object key");
+        assert_ne!(bucket, totals);
+        assert_ne!(bucket, object);
+        let buckets = keyspace.buckets_range().expect("buckets range");
+        assert!(buckets.contains(&bucket));
+        assert!(
+            !buckets.contains(&object),
+            "objects live outside the bucket records"
+        );
+        let objects = keyspace.objects_range("avatars").expect("objects range");
+        assert!(objects.contains(&object));
+        assert!(!objects.contains(&bucket));
+        let other = keyspace
+            .object_key("avatars-2", "users/42/me.png")
+            .expect("other bucket");
+        assert!(
+            !objects.contains(&other),
+            "a bucket's range never reaches a sibling"
+        );
+        assert_eq!(
+            keyspace
+                .decode_object_key("avatars", &object)
+                .expect("decode"),
+            b"users/42/me.png".to_vec()
+        );
+        assert!(keyspace.decode_object_key("avatars-2", &object).is_err());
+        let mut sorted = [
+            keyspace.object_key("avatars", "b").expect("b"),
+            keyspace.object_key("avatars", "a/z").expect("a/z"),
+            keyspace.object_key("avatars", "a").expect("a"),
+        ];
+        sorted.sort();
+        let paths: Vec<_> = sorted
+            .iter()
+            .map(|key| keyspace.decode_object_key("avatars", key).expect("decode"))
+            .collect();
+        assert_eq!(
+            paths,
+            vec![b"a".to_vec(), b"a/z".to_vec(), b"b".to_vec()],
+            "object keys sort by path"
+        );
+    }
 
     #[test]
     fn arbitrary_separator_bytes_round_trip_without_collision() {

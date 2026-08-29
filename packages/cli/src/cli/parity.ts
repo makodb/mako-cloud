@@ -16,6 +16,8 @@ export const EXCLUDED_PATH_PATTERNS: readonly RegExp[] = [
   /\/collections\/\{collectionId\}\/documents(?:\/|$)/u,
   /\/environments\/\{environmentId\}\/service\//u,
   /\/collections\/\{collectionId\}\/replication\//u,
+  // Object upload, download, and listing: what an application does with a session.
+  /\/environments\/\{environmentId\}\/storage\//u,
 ];
 
 export interface OpenApiLike {

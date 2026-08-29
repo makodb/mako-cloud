@@ -20,6 +20,8 @@ telemetry outage costs reporting rather than availability.
 | `application_users` | Sampled on signup and administrative lifecycle | Average of samples |
 | `replication_requests_per_minute`, `replication_bytes_per_month` | Emitted where the gateway charges the request | Sum of records |
 | `edge_invocations_per_month` | Emitted by the edge gateway's audit sink, admitted invocations only | Sum of records |
+| `object_storage_bytes` | Bytes held in an environment's buckets, sampled by the data plane the way `storage_bytes` is | Average of samples |
+| `object_egress_bytes_per_month` | Bytes served by object downloads, emitted by the data plane per download request | Sum of records |
 
 Flows sum; levels average. Twelve samples of the same nine stored gigabytes
 are one overage, not twelve, and a mid-period delete halves the storage
@@ -49,6 +51,17 @@ price covers -- exceeding it on a paid plan is normal and billed, never
 blocked, because capping there would stop a customer at the moment they
 started paying more. Platform rate limits are neither: every plan carries
 them and no plan removes them.
+
+Application file storage is two entitlements on each plan. Free includes
+1 GiB of stored object bytes and 5 GiB of object egress per month and caps
+at both; Pro includes 50 GiB stored and 250 GiB of egress and bills the
+excess at $0.02 per GiB-month stored and $0.09 per GiB served. The egress
+cap is an ordinary hard window on the gateway's `egress_bytes` resource. The
+stored-bytes cap is a level rather than a flow, so it travels on the
+installed quota policy as a hard limit on `object_storage_bytes` whose
+window is nominal: the data plane compares the limit against its running
+total of object bytes before admitting an upload, and nothing is charged
+against a windowed counter for it.
 
 A team records its plan (`free` by default, including teams
 stored before plans existed). The only way onto another plan in the beta is

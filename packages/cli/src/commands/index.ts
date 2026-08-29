@@ -13,6 +13,7 @@ import { keysCommands } from "./keys.js";
 import { observabilityCommands } from "./observability.js";
 import { policiesCommands } from "./policies.js";
 import { projectsCommands } from "./projects.js";
+import { storageCommands } from "./storage.js";
 import { teamsCommands } from "./teams.js";
 import { usersCommands } from "./users.js";
 import { workspaceCommands } from "./workspace.js";
@@ -44,4 +45,5 @@ export const commands: readonly Command[] = [
   ...workspaceCommands,
   ...explorerCommands,
   ...dataCommands,
+  ...storageCommands,
 ];

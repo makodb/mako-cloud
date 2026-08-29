@@ -3,6 +3,7 @@
 #![forbid(unsafe_code)]
 
 use std::{
+    borrow::Cow,
     collections::{BTreeMap, BTreeSet, HashSet},
     error::Error,
     fmt,
@@ -276,6 +277,9 @@ struct Route {
     method: HttpMethod,
     pattern: RoutePattern,
     handler: RouteHandler,
+    /// A larger request body this one route accepts; every other route keeps
+    /// the listener's bound.
+    body_limit_bytes: Option<usize>,
 }
 
 /// Explicit method-and-path allowlist for production domain handlers.
@@ -311,6 +315,7 @@ impl HttpRouter {
         let RouteResolution::Matched {
             handler,
             parameters,
+            ..
         } = self.resolve(Some(request.method), &request.path)
         else {
             return None;
@@ -320,8 +325,9 @@ impl HttpRouter {
     }
 
     /// Registers an exact segmented path. A segment written as `{name}` binds a
-    /// single non-empty path parameter; wildcards and optional segments are not
-    /// supported.
+    /// single non-empty path parameter; a final segment written as `{name...}`
+    /// binds the rest of the path (one or more segments, joined with `/`).
+    /// Optional segments and wildcards elsewhere are not supported.
     pub fn add_route<F>(
         &mut self,
         method: HttpMethod,
@@ -331,6 +337,26 @@ impl HttpRouter {
     where
         F: Fn(HttpRequest) -> HandlerResult + Send + Sync + 'static,
     {
+        self.add_route_with_body_limit(method, pattern, None, handler)
+    }
+
+    /// Like [`Self::add_route`], with a request-body bound that applies to this
+    /// route only. The listener's bound stays in force for every other route,
+    /// so a route that must accept a large body says so at registration and
+    /// nothing else grows with it.
+    pub fn add_route_with_body_limit<F>(
+        &mut self,
+        method: HttpMethod,
+        pattern: &str,
+        body_limit_bytes: Option<usize>,
+        handler: F,
+    ) -> Result<(), RouteRegistrationError>
+    where
+        F: Fn(HttpRequest) -> HandlerResult + Send + Sync + 'static,
+    {
+        if body_limit_bytes == Some(0) {
+            return Err(RouteRegistrationError::InvalidPattern);
+        }
         let parsed = RoutePattern::parse(pattern)?;
         if parsed.captures("/healthz").is_some() || parsed.captures("/readyz").is_some() {
             return Err(RouteRegistrationError::ReservedReadinessRoute);
@@ -346,13 +372,14 @@ impl HttpRouter {
             method,
             pattern: parsed,
             handler: Arc::new(handler),
+            body_limit_bytes,
         });
         Ok(())
     }
 
     fn resolve(&self, method: Option<HttpMethod>, path: &str) -> RouteResolution {
         let mut allowed = BTreeSet::new();
-        let mut selected: Option<(usize, RouteHandler, BTreeMap<String, String>)> = None;
+        let mut selected: Option<SelectedRoute> = None;
         for route in &self.routes {
             let Some(parameters) = route.pattern.captures(path) else {
                 continue;
@@ -361,22 +388,30 @@ impl HttpRouter {
             if method != Some(route.method) {
                 continue;
             }
-            let candidate = (
-                route.pattern.specificity,
-                Arc::clone(&route.handler),
+            let candidate = SelectedRoute {
+                specificity: route.pattern.specificity,
+                handler: Arc::clone(&route.handler),
                 parameters,
-            );
+                body_limit_bytes: route.body_limit_bytes,
+            };
             if selected
                 .as_ref()
-                .is_none_or(|current| candidate.0 > current.0)
+                .is_none_or(|current| candidate.specificity > current.specificity)
             {
                 selected = Some(candidate);
             }
         }
-        if let Some((_, handler, parameters)) = selected {
+        if let Some(SelectedRoute {
+            handler,
+            parameters,
+            body_limit_bytes,
+            ..
+        }) = selected
+        {
             RouteResolution::Matched {
                 handler,
                 parameters,
+                body_limit_bytes,
             }
         } else if allowed.is_empty() {
             RouteResolution::NotFound
@@ -386,10 +421,19 @@ impl HttpRouter {
     }
 }
 
+/// The most specific route matching a request, with what dispatch needs from it.
+struct SelectedRoute {
+    specificity: usize,
+    handler: RouteHandler,
+    parameters: BTreeMap<String, String>,
+    body_limit_bytes: Option<usize>,
+}
+
 enum RouteResolution {
     Matched {
         handler: RouteHandler,
         parameters: BTreeMap<String, String>,
+        body_limit_bytes: Option<usize>,
     },
     MethodNotAllowed(BTreeSet<HttpMethod>),
     NotFound,
@@ -410,7 +454,22 @@ impl RoutePattern {
         let mut specificity = 0;
         let mut segments = Vec::new();
         for segment in split_path(value).ok_or(RouteRegistrationError::InvalidPattern)? {
+            if segments
+                .last()
+                .is_some_and(|last| matches!(last, RouteSegment::Rest(_)))
+            {
+                // Nothing may follow the segment that takes the rest.
+                return Err(RouteRegistrationError::InvalidPattern);
+            }
             if let Some(name) = segment
+                .strip_prefix('{')
+                .and_then(|part| part.strip_suffix("...}"))
+            {
+                if !valid_parameter_name(name) || !names.insert(name.to_owned()) {
+                    return Err(RouteRegistrationError::InvalidPattern);
+                }
+                segments.push(RouteSegment::Rest(name.to_owned()));
+            } else if let Some(name) = segment
                 .strip_prefix('{')
                 .and_then(|part| part.strip_suffix('}'))
             {
@@ -432,30 +491,60 @@ impl RoutePattern {
         })
     }
 
+    fn takes_rest(&self) -> bool {
+        matches!(self.segments.last(), Some(RouteSegment::Rest(_)))
+    }
+
     fn captures(&self, path: &str) -> Option<BTreeMap<String, String>> {
         let incoming = split_path(path)?;
-        if incoming.len() != self.segments.len() {
+        let fixed = if self.takes_rest() {
+            self.segments.len() - 1
+        } else {
+            self.segments.len()
+        };
+        let minimum = fixed + usize::from(self.takes_rest());
+        if incoming.len() < minimum || (!self.takes_rest() && incoming.len() != fixed) {
             return None;
         }
         let mut parameters = BTreeMap::new();
-        for (pattern, value) in self.segments.iter().zip(incoming) {
+        for (pattern, value) in self.segments.iter().zip(&incoming) {
             match pattern {
                 RouteSegment::Static(expected) if expected != value => return None,
                 RouteSegment::Static(_) => {}
                 RouteSegment::Parameter(name) => {
-                    parameters.insert(name.clone(), value.to_owned());
+                    parameters.insert(name.clone(), (*value).to_owned());
+                }
+                RouteSegment::Rest(name) => {
+                    // The rest must be at least one segment; it keeps its `/`s.
+                    let rest = incoming[fixed..].join("/");
+                    if rest.is_empty() {
+                        return None;
+                    }
+                    parameters.insert(name.clone(), rest);
                 }
             }
         }
         Some(parameters)
     }
 
+    fn fixed_len(&self) -> usize {
+        self.segments.len() - usize::from(self.takes_rest())
+    }
+
+    /// Whether some path could match both patterns.
     fn overlaps(&self, other: &Self) -> bool {
-        self.segments.len() == other.segments.len()
-            && self
-                .segments
+        let (mine, theirs) = (self.fixed_len(), other.fixed_len());
+        let lengths_compatible = match (self.takes_rest(), other.takes_rest()) {
+            (false, false) => mine == theirs,
+            // A rest takes one segment at least, so the exact pattern must reach past the prefix.
+            (true, false) => theirs > mine,
+            (false, true) => mine > theirs,
+            (true, true) => true,
+        };
+        lengths_compatible
+            && self.segments[..mine.min(theirs)]
                 .iter()
-                .zip(&other.segments)
+                .zip(&other.segments[..mine.min(theirs)])
                 .all(|(left, right)| match (left, right) {
                     (RouteSegment::Static(left), RouteSegment::Static(right)) => left == right,
                     _ => true,
@@ -467,6 +556,8 @@ impl RoutePattern {
 enum RouteSegment {
     Static(String),
     Parameter(String),
+    /// The final segment of a pattern, taking everything after it.
+    Rest(String),
 }
 
 fn split_path(path: &str) -> Option<Vec<&str>> {
@@ -482,8 +573,31 @@ fn valid_request_path(path: &str) -> bool {
     path.starts_with('/')
         && path.len() <= MAX_REQUEST_TARGET_BYTES
         && path.is_ascii()
-        && !path.contains(['%', '\\', '\0'])
+        && !path.contains(['\\', '\0'])
+        && well_formed_escapes(path)
         && split_path(path).is_some()
+}
+
+/// Percent-escapes are admitted only when complete, and are left exactly as
+/// written: the router matches raw segments, and a handler that wants the
+/// decoded value decodes it itself, so `%2F` never turns into a separator.
+fn well_formed_escapes(path: &str) -> bool {
+    let bytes = path.as_bytes();
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'%' {
+            let Some(escape) = bytes.get(index + 1..index + 3) else {
+                return false;
+            };
+            if !escape.iter().all(u8::is_ascii_hexdigit) {
+                return false;
+            }
+            index += 3;
+        } else {
+            index += 1;
+        }
+    }
+    true
 }
 
 fn valid_parameter_name(name: &str) -> bool {
@@ -658,7 +772,7 @@ impl Read for ResponseBody {
 /// A response with security-sensitive headers owned by the transport.
 pub struct HttpResponse {
     status: u16,
-    content_type: &'static str,
+    content_type: Cow<'static, str>,
     headers: Vec<Header>,
     body: ResponseBody,
     body_length: Option<usize>,
@@ -683,12 +797,16 @@ impl HttpResponse {
     }
 
     #[must_use]
-    pub fn bytes(status: u16, content_type: &'static str, body: impl Into<Vec<u8>>) -> Self {
+    pub fn bytes(
+        status: u16,
+        content_type: impl Into<Cow<'static, str>>,
+        body: impl Into<Vec<u8>>,
+    ) -> Self {
         let body = body.into();
         let body_length = body.len();
         Self {
             status,
-            content_type,
+            content_type: content_type.into(),
             headers: Vec::new(),
             body: ResponseBody::Fixed(Cursor::new(body)),
             body_length: Some(body_length),
@@ -702,10 +820,14 @@ impl HttpResponse {
     }
 
     #[must_use]
-    pub fn stream(status: u16, content_type: &'static str, body: StreamingBody) -> Self {
+    pub fn stream(
+        status: u16,
+        content_type: impl Into<Cow<'static, str>>,
+        body: StreamingBody,
+    ) -> Self {
         Self {
             status,
-            content_type,
+            content_type: content_type.into(),
             headers: Vec::new(),
             body: ResponseBody::Streaming(body),
             body_length: None,
@@ -1029,14 +1151,16 @@ fn process_request(
     }
 
     let resolution = router.resolve(method, &path);
-    let (handler, path_parameters, method) = match resolution {
+    let (handler, path_parameters, method, body_limit_bytes) = match resolution {
         RouteResolution::Matched {
             handler,
             parameters,
+            body_limit_bytes,
         } => (
             handler,
             parameters,
             method.expect("a matched route always has a supported method"),
+            body_limit_bytes,
         ),
         RouteResolution::MethodNotAllowed(allowed) => {
             return send_response(
@@ -1066,12 +1190,13 @@ fn process_request(
             );
         }
     };
-    let body = match read_bounded_body(&mut request, config.max_request_body_bytes) {
+    let body_limit_bytes = body_limit_bytes.unwrap_or(config.max_request_body_bytes);
+    let body = match read_bounded_body(&mut request, body_limit_bytes) {
         Ok(body) => body,
         Err(BodyReadError::TooLarge) => {
             return send_response(
                 request,
-                request_body_too_large(&request_id, config.max_request_body_bytes).into_response(),
+                request_body_too_large(&request_id, body_limit_bytes).into_response(),
                 &request_id,
                 stopping,
             );
@@ -1159,7 +1284,7 @@ fn send_streaming_response(
         return Err(ServiceRuntimeError::ResponseFailed);
     };
     let version = request.http_version().clone();
-    let headers = response_headers(headers, content_type, request_id)?;
+    let headers = response_headers(headers, &content_type, request_id)?;
     let mut writer = request.into_writer();
     write_streaming_response(
         writer.as_mut(),
@@ -1241,7 +1366,7 @@ fn build_response(
     request_id: &str,
     stopping: Arc<AtomicBool>,
 ) -> Result<ResponseBox, ServiceRuntimeError> {
-    let headers = response_headers(response.headers, response.content_type, request_id)?;
+    let headers = response_headers(response.headers, &response.content_type, request_id)?;
     let body = match response.body {
         ResponseBody::Fixed(body) => ResponseBody::Fixed(body),
         ResponseBody::Streaming(body) => {
@@ -1260,7 +1385,7 @@ fn build_response(
 
 fn response_headers(
     mut headers: Vec<Header>,
-    content_type: &'static str,
+    content_type: &str,
     request_id: &str,
 ) -> Result<Vec<Header>, ServiceRuntimeError> {
     for (name, value) in [
@@ -1693,6 +1818,117 @@ mod tests {
         assert_eq!(body["apiVersion"], "v1");
         assert_eq!(body["error"]["code"], "not_found");
         assert_eq!(body["error"]["requestId"], request_id);
+    }
+
+    #[test]
+    fn a_trailing_rest_segment_binds_the_remaining_path_and_nothing_may_follow_it() {
+        let pattern = RoutePattern::parse("/v1/storage/{bucketId}/objects/{objectPath...}")
+            .expect("rest pattern");
+        let captures = pattern
+            .captures("/v1/storage/avatars/objects/users/42/me.png")
+            .expect("captures");
+        assert_eq!(captures["bucketId"], "avatars");
+        assert_eq!(captures["objectPath"], "users/42/me.png");
+        assert_eq!(
+            pattern
+                .captures("/v1/storage/avatars/objects/me.png")
+                .expect("one segment")["objectPath"],
+            "me.png"
+        );
+        assert!(
+            pattern.captures("/v1/storage/avatars/objects").is_none(),
+            "the rest must be at least one segment"
+        );
+        assert!(
+            RoutePattern::parse("/v1/{rest...}/tail").is_err(),
+            "nothing follows a rest segment"
+        );
+        assert!(RoutePattern::parse("/v1/{rest...}/{other...}").is_err());
+        let listing = RoutePattern::parse("/v1/storage/{bucketId}/objects").expect("listing");
+        assert!(
+            !pattern.overlaps(&listing),
+            "a listing needs no rest segment, so the two never take the same path"
+        );
+        let mut router = HttpRouter::new();
+        router
+            .add_route(HttpMethod::Get, "/v1/storage/{bucketId}/objects", |_| {
+                Ok(HttpResponse::json(200, &serde_json::json!({"listing": true})).unwrap())
+            })
+            .expect("listing route");
+        router
+            .add_route(
+                HttpMethod::Get,
+                "/v1/storage/{bucketId}/objects/{objectPath...}",
+                |_| Ok(HttpResponse::json(200, &serde_json::json!({"object": true})).unwrap()),
+            )
+            .expect("object route beside its listing");
+        assert!(matches!(
+            router.resolve(Some(HttpMethod::Get), "/v1/storage/b/objects/a/b/c"),
+            RouteResolution::Matched { parameters, .. } if parameters["objectPath"] == "a/b/c"
+        ));
+        assert!(matches!(
+            router.resolve(Some(HttpMethod::Get), "/v1/storage/b/objects"),
+            RouteResolution::Matched { parameters, .. } if !parameters.contains_key("objectPath")
+        ));
+    }
+
+    #[test]
+    fn percent_escapes_are_admitted_when_complete_and_kept_as_written() {
+        let pattern =
+            RoutePattern::parse("/v1/storage/{bucketId}/objects/{objectPath...}").expect("pattern");
+        let captures = pattern
+            .captures("/v1/storage/b/objects/caf%C3%A9%20menu/a%2Fb.txt")
+            .expect("escaped path routes");
+        assert_eq!(captures["objectPath"], "caf%C3%A9%20menu/a%2Fb.txt");
+        assert!(valid_request_path("/v1/storage/b/objects/a%20b"));
+        assert!(
+            !valid_request_path("/v1/storage/b/objects/a%2"),
+            "a truncated escape"
+        );
+        assert!(
+            !valid_request_path("/v1/storage/b/objects/a%zz"),
+            "a non-hex escape"
+        );
+        assert!(
+            !valid_request_path("/v1/storage/b/objects/a%"),
+            "a bare percent"
+        );
+        assert!(!valid_request_path("/v1/a\\b"));
+    }
+
+    #[test]
+    fn a_route_may_carry_its_own_body_bound() {
+        let mut router = HttpRouter::new();
+        assert!(matches!(
+            router.add_route_with_body_limit(HttpMethod::Put, "/big", Some(0), |_| {
+                Ok(HttpResponse::json(200, &serde_json::json!({})).unwrap())
+            }),
+            Err(RouteRegistrationError::InvalidPattern)
+        ));
+        router
+            .add_route_with_body_limit(HttpMethod::Put, "/big", Some(4096), |_| {
+                Ok(HttpResponse::json(200, &serde_json::json!({})).unwrap())
+            })
+            .expect("bounded route");
+        router
+            .add_route(HttpMethod::Put, "/small", |_| {
+                Ok(HttpResponse::json(200, &serde_json::json!({})).unwrap())
+            })
+            .expect("default route");
+        assert!(matches!(
+            router.resolve(Some(HttpMethod::Put), "/big"),
+            RouteResolution::Matched {
+                body_limit_bytes: Some(4096),
+                ..
+            }
+        ));
+        assert!(matches!(
+            router.resolve(Some(HttpMethod::Put), "/small"),
+            RouteResolution::Matched {
+                body_limit_bytes: None,
+                ..
+            }
+        ));
     }
 
     #[test]

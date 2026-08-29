@@ -46,6 +46,32 @@ impl ObjectAddress {
         })
     }
 
+    /// An application object: bytes an application stored under a bucket, addressed by
+    /// the digest of what is actually stored (ciphertext, when the caller encrypts) so
+    /// the store's integrity check holds. Metadata keeps the logical path; the address
+    /// changes whenever the content does, which is what makes an immutable store serve
+    /// a mutable path.
+    pub fn application_object(
+        tenant: TenantScope,
+        bucket: &str,
+        digest: &str,
+    ) -> Result<Self, ObjectStoreError> {
+        if !valid_digest(digest) || !valid_bucket_name(bucket) {
+            return Err(ObjectStoreError::InvalidAddress);
+        }
+        let digest_bytes = decode_digest(digest).ok_or(ObjectStoreError::InvalidAddress)?;
+        let path = format!(
+            "projects/{}/environments/{}/buckets/{bucket}/objects/{digest}.blob",
+            tenant.project_id(),
+            tenant.environment_id(),
+        );
+        Ok(Self {
+            tenant,
+            path,
+            digest: digest_bytes,
+        })
+    }
+
     pub fn data_job_artifact(
         tenant: TenantScope,
         job_id: &str,
@@ -172,6 +198,20 @@ pub struct MemoryObjectStore {
     objects: Arc<Mutex<BTreeMap<String, Arc<[u8]>>>>,
 }
 
+impl MemoryObjectStore {
+    /// Every stored path with its bytes; for tests that assert on what the
+    /// store holds without going through an address.
+    #[must_use]
+    pub fn dump(&self) -> BTreeMap<String, Vec<u8>> {
+        self.objects
+            .lock()
+            .expect("object store lock")
+            .iter()
+            .map(|(path, bytes)| (path.clone(), bytes.to_vec()))
+            .collect()
+    }
+}
+
 impl fmt::Debug for MemoryObjectStore {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
@@ -235,6 +275,22 @@ impl ObjectStore for MemoryObjectStore {
             .remove(address.path());
         Ok(())
     }
+}
+
+/// Bucket names are lowercase, start with a letter, and use only letters, digits,
+/// and single hyphens: safe in an object key, a URL, and a header without escaping.
+#[must_use]
+pub fn valid_bucket_name(bucket: &str) -> bool {
+    (2..=63).contains(&bucket.len())
+        && bucket
+            .bytes()
+            .next()
+            .is_some_and(|byte| byte.is_ascii_lowercase())
+        && bucket
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+        && !bucket.ends_with('-')
+        && !bucket.contains("--")
 }
 
 fn valid_digest(value: &str) -> bool {

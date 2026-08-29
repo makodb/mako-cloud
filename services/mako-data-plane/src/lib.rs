@@ -9,6 +9,7 @@ mod explorer_metrics;
 mod graph;
 mod internal_http;
 mod replication_http;
+mod storage_http;
 pub mod telemetry;
 
 use std::sync::Arc;
@@ -27,6 +28,7 @@ pub fn data_plane_router(graph: Arc<DataPlaneGraph>) -> Result<HttpRouter, Route
     document_http::add_document_routes(&mut router, Arc::clone(&graph))?;
     explorer_http::add_explorer_routes(&mut router, Arc::clone(&graph))?;
     replication_http::add_replication_routes(&mut router, Arc::clone(&graph))?;
+    storage_http::add_storage_routes(&mut router, Arc::clone(&graph))?;
     internal_http::add_internal_routes(&mut router, graph)?;
     Ok(router)
 }

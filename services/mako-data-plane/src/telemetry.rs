@@ -37,6 +37,8 @@ const MAX_PENDING_SAMPLES: usize = 4_096;
 pub enum Measurement {
     StoredBytes,
     ApplicationUsers,
+    /// Bytes held in the tenant's buckets, from the totals every object write keeps.
+    ObjectBytes,
 }
 
 /// One tenant, identified the way its keyspace is.
@@ -63,6 +65,11 @@ impl StorageSampler {
     /// Note that a tenant's stored size may have changed.
     pub fn mark(&self, tenant: &TenantScope) {
         self.mark_measurement(Measurement::StoredBytes, tenant);
+    }
+
+    /// Note that a tenant's stored object bytes may have changed.
+    pub fn mark_objects(&self, tenant: &TenantScope) {
+        self.mark_measurement(Measurement::ObjectBytes, tenant);
     }
 
     /// Note that a tenant's application-user count may have changed.
@@ -125,6 +132,26 @@ impl StorageSampler {
                     Ok(range) => adapter.count_keys(range).await.ok(),
                     Err(_) => None,
                 },
+                Measurement::ObjectBytes => match (
+                    ProjectId::parse(tenant.0.clone()),
+                    EnvironmentId::parse(tenant.1.clone()),
+                ) {
+                    (Ok(project), Ok(environment)) => {
+                        match mako_file_storage::BucketStore::new(
+                            Arc::clone(adapter),
+                            &TenantScope::new(project, environment),
+                            mako_storage::Durability::Sync,
+                        ) {
+                            Ok(store) => store
+                                .environment_totals()
+                                .await
+                                .ok()
+                                .map(|totals| totals.total_bytes),
+                            Err(_) => None,
+                        }
+                    }
+                    _ => None,
+                },
             };
             let (Ok(project), Ok(environment)) = (
                 ProjectId::parse(tenant.0.clone()),
@@ -160,6 +187,7 @@ impl StorageSampler {
             let (resource, unit) = match measurement {
                 Measurement::StoredBytes => (QuotaResource::StorageBytes, "bytes"),
                 Measurement::ApplicationUsers => (QuotaResource::ApplicationUsers, "users"),
+                Measurement::ObjectBytes => (QuotaResource::ObjectStorageBytes, "bytes"),
             };
             emitter.record(ObservabilityRecord {
                 tenant: scope,
@@ -200,7 +228,7 @@ const MAX_PENDING_QUOTA_WINDOWS: usize = 8;
 /// The metered resources whose quota counters are worth cross-checking: the
 /// two replication charges, because they are exactly what the usage ledger
 /// records per admitted request under these product names.
-const CHECKPOINTED_RESOURCES: [(GatewayQuotaResource, QuotaResource); 2] = [
+const CHECKPOINTED_RESOURCES: [(GatewayQuotaResource, QuotaResource); 3] = [
     (
         GatewayQuotaResource::ReplicationRequests,
         QuotaResource::ReplicationRequestsPerMinute,
@@ -208,6 +236,10 @@ const CHECKPOINTED_RESOURCES: [(GatewayQuotaResource, QuotaResource); 2] = [
     (
         GatewayQuotaResource::ReplicationBytes,
         QuotaResource::ReplicationBytesPerMonth,
+    ),
+    (
+        GatewayQuotaResource::EgressBytes,
+        QuotaResource::ObjectEgressBytesPerMonth,
     ),
 ];
 

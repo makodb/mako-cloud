@@ -1,0 +1,63 @@
+/* Storage screen: bucket list with totals, bucket settings, and its objects. */
+
+.storage-screen .panel {
+  width: 100%;
+}
+
+.storage-screen .section-heading p:last-child {
+  margin-bottom: 0;
+}
+
+.bucket-table th.numeric,
+.bucket-table td.numeric,
+.object-table th.numeric,
+.object-table td.numeric {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.bucket-table tbody th,
+.object-table tbody th {
+  font-weight: 600;
+}
+
+.bucket-table td,
+.object-table td {
+  vertical-align: top;
+}
+
+.bucket-table time,
+.object-table time {
+  white-space: nowrap;
+}
+
+.bucket-table .button-row {
+  flex-wrap: nowrap;
+}
+
+.object-path {
+  overflow-wrap: anywhere;
+}
+
+.bucket-totals dd {
+  font-variant-numeric: tabular-nums;
+}
+
+.object-filter {
+  display: grid;
+  grid-template-columns: minmax(12rem, 24rem) auto;
+  align-items: end;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.field-hint {
+  display: block;
+  margin: -0.5rem 0 1rem;
+  color: #57736b;
+}
+
+.field-hint code {
+  font-size: 0.85em;
+}

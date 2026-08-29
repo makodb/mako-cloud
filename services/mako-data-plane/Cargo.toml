@@ -19,6 +19,8 @@ mako-telemetry-client = { path = "../../crates/mako-telemetry-client" }
 mako-audit = { path = "../../crates/mako-audit" }
 mako-config = { path = "../../crates/mako-config" }
 mako-documents = { path = "../../crates/mako-documents" }
+mako-file-storage = { path = "../../crates/mako-file-storage" }
+mako-object-store = { path = "../../crates/mako-object-store" }
 mako-gateway = { path = "../../crates/mako-gateway" }
 mako-identity = { path = "../../crates/mako-identity" }
 mako-internal-rpc = { path = "../../crates/mako-internal-rpc" }

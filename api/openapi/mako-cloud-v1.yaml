@@ -1650,6 +1650,208 @@ paths:
                 $ref: "#/components/schemas/FunctionSecretIssue"
         default:
           $ref: "#/components/responses/ApiError"
+  /v1/projects/{projectId}/environments/{environmentId}/storage-buckets:
+    get:
+      tags: [Management]
+      operationId: listStorageBuckets
+      summary: List file storage buckets with their object totals
+      description: >-
+        Buckets live in the data plane that serves the environment; this lists
+        them as it holds them, with the object count and stored bytes each one
+        currently carries.
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/EnvironmentId"
+      responses:
+        "200":
+          description: Environment storage buckets
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/StorageBucket"
+        default:
+          $ref: "#/components/responses/ApiError"
+    post:
+      tags: [Management]
+      operationId: createStorageBucket
+      summary: Create a file storage bucket
+      description: >-
+        The bucket is installed in the data plane that serves the environment
+        and accepts application traffic when this returns. Omitted settings take
+        their defaults: policy-governed access, a 1 MiB object limit, every
+        content type, and no rules. A bucket id that already exists is refused
+        with `conflict` unless the request repeats its exact configuration, in
+        which case the existing bucket is returned; reconfigure a bucket with
+        PATCH.
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/EnvironmentId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateStorageBucketRequest"
+      responses:
+        "201":
+          description: Storage bucket installed and accepting application traffic
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StorageBucket"
+        default:
+          $ref: "#/components/responses/ApiError"
+  /v1/projects/{projectId}/environments/{environmentId}/storage-buckets/{bucketId}:
+    get:
+      tags: [Management]
+      operationId: getStorageBucket
+      summary: Inspect a storage bucket and its object totals
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/EnvironmentId"
+        - $ref: "#/components/parameters/BucketId"
+      responses:
+        "200":
+          description: Storage bucket
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StorageBucket"
+        default:
+          $ref: "#/components/responses/ApiError"
+    patch:
+      tags: [Management]
+      operationId: updateStorageBucket
+      summary: Reconfigure a storage bucket
+      description: >-
+        Fields present in the request replace the bucket's current settings;
+        omitted fields keep their values. The whole configuration is reinstalled
+        and the bucket's version rises. Objects already stored are unaffected by
+        a new size limit or content-type list; those govern new writes.
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/EnvironmentId"
+        - $ref: "#/components/parameters/BucketId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateStorageBucketRequest"
+      responses:
+        "200":
+          description: Reconfigured storage bucket
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StorageBucket"
+        default:
+          $ref: "#/components/responses/ApiError"
+    delete:
+      tags: [Management]
+      operationId: deleteStorageBucket
+      summary: Delete a storage bucket
+      description: >-
+        An empty bucket is removed outright. A bucket holding objects is refused
+        with `conflict` unless `deleteObjects` is true, in which case every
+        object is deleted with it; the response reports what was removed.
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/EnvironmentId"
+        - $ref: "#/components/parameters/BucketId"
+        - name: confirmation
+          in: header
+          required: true
+          schema:
+            type: string
+            minLength: 8
+            maxLength: 200
+        - name: deleteObjects
+          in: query
+          required: false
+          description: Delete the bucket's objects along with it
+          schema:
+            type: boolean
+            default: false
+      responses:
+        "200":
+          description: Storage bucket removed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StorageBucketRemoval"
+        default:
+          $ref: "#/components/responses/ApiError"
+  /v1/projects/{projectId}/environments/{environmentId}/storage-buckets/{bucketId}/objects:
+    get:
+      tags: [Management]
+      operationId: listStorageObjects
+      summary: List objects in a storage bucket
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/EnvironmentId"
+        - $ref: "#/components/parameters/BucketId"
+        - name: prefix
+          in: query
+          required: false
+          description: Only objects whose path starts with this prefix
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 1024
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 100
+        - name: cursor
+          in: query
+          required: false
+          description: The `nextCursor` of the previous page
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 4096
+      responses:
+        "200":
+          description: Page of objects in path order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StorageObjectPage"
+        default:
+          $ref: "#/components/responses/ApiError"
+  /v1/projects/{projectId}/environments/{environmentId}/storage-buckets/{bucketId}/objects/{objectPath}:
+    delete:
+      tags: [Management]
+      operationId: deleteStorageObject
+      summary: Delete one object from a storage bucket
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/EnvironmentId"
+        - $ref: "#/components/parameters/BucketId"
+        - $ref: "#/components/parameters/ObjectPath"
+      responses:
+        "200":
+          description: The deleted object's metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StorageObject"
+        default:
+          $ref: "#/components/responses/ApiError"
   /v1/projects/{projectId}/environments/{environmentId}/auth/signup:
     post:
       tags: [Auth]
@@ -2015,6 +2217,121 @@ paths:
                 type: string
               x-sse-event-schema:
                 $ref: "#/components/schemas/LiveStreamEvent"
+        default:
+          $ref: "#/components/responses/ApiError"
+  /v1/projects/{projectId}/environments/{environmentId}/storage/{bucketId}/objects:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/EnvironmentId"
+      - $ref: "#/components/parameters/BucketId"
+    get:
+      tags: [Storage]
+      operationId: listBucketObjects
+      summary: List the objects the caller may read
+      description: >-
+        Objects in path order, each evaluated as a read under the bucket's
+        rules; a listing never names what a read would refuse. A public bucket
+        answers without a credential.
+      security:
+        - applicationBearer: []
+        - {}
+      parameters:
+        - name: prefix
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 512
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 100
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 512
+      responses:
+        "200":
+          description: Readable objects
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApplicationObjectPage"
+        default:
+          $ref: "#/components/responses/ApiError"
+  /v1/projects/{projectId}/environments/{environmentId}/storage/{bucketId}/objects/{objectPath}:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/EnvironmentId"
+      - $ref: "#/components/parameters/BucketId"
+      - $ref: "#/components/parameters/ObjectPath"
+    put:
+      tags: [Storage]
+      operationId: putBucketObject
+      summary: Store an object under a bucket
+      description: >-
+        The request body is the object; its `Content-Type` is recorded. A new
+        path is a create and an existing one an update under the bucket's
+        rules. Objects above the bucket's size, of a content type it does not
+        allow, or beyond the plan's stored-bytes ceiling are refused.
+      security:
+        - applicationBearer: []
+      requestBody:
+        required: true
+        content:
+          "*/*":
+            schema:
+              type: string
+              format: binary
+      responses:
+        "200":
+          description: The stored object's record
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApplicationObject"
+        default:
+          $ref: "#/components/responses/ApiError"
+    get:
+      tags: [Storage]
+      operationId: getBucketObject
+      summary: Download an object
+      description: >-
+        The bytes with their content type and an ETag of the plaintext digest.
+        A public bucket answers without a credential; any refusal sends no
+        bytes. Downloads are metered as object egress.
+      security:
+        - applicationBearer: []
+        - {}
+      responses:
+        "200":
+          description: The object
+          content:
+            "*/*":
+              schema:
+                type: string
+                format: binary
+        default:
+          $ref: "#/components/responses/ApiError"
+    delete:
+      tags: [Storage]
+      operationId: deleteBucketObject
+      summary: Delete an object
+      security:
+        - applicationBearer: []
+      responses:
+        "200":
+          description: The deleted object's record
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApplicationObject"
         default:
           $ref: "#/components/responses/ApiError"
   /v1/projects/{projectId}/environments/{environmentId}/observability/usage:
@@ -4796,6 +5113,24 @@ components:
         type: integer
         format: int64
         minimum: 1
+    BucketId:
+      name: bucketId
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/BucketId"
+    ObjectPath:
+      name: objectPath
+      in: path
+      required: true
+      description: >-
+        The object's full path within the bucket, `/`-separated, so it spans
+        path segments; percent-encode any character that cannot appear in a URL
+        path segment. Segments are never empty and never `.` or `..`.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 1024
     ObservabilityCursor:
       name: cursor
       in: query
@@ -7025,6 +7360,188 @@ components:
         value:
           type: string
           minLength: 32
+    BucketId:
+      type: string
+      pattern: "^[a-z][a-z0-9-]{1,62}$"
+    StorageBucketAccess:
+      type: string
+      description: >-
+        `policy` evaluates the bucket's rules against the application-user
+        session for every operation; `public` serves reads without a session
+        and still evaluates the rules for every write.
+      enum: [policy, public]
+    StorageBucketRule:
+      type: object
+      additionalProperties: false
+      required: [id, effect, operations, expression]
+      properties:
+        id:
+          type: string
+          minLength: 1
+        effect:
+          type: string
+          enum: [allow, deny]
+        operations:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            enum: [create, read, update, delete]
+        expression:
+          type: string
+          minLength: 1
+    StorageBucket:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          id,
+          access,
+          maxObjectBytes,
+          allowedContentTypes,
+          rules,
+          version,
+          objectCount,
+          totalBytes,
+          createdAt,
+          updatedAt,
+        ]
+      properties:
+        id:
+          $ref: "#/components/schemas/BucketId"
+        access:
+          $ref: "#/components/schemas/StorageBucketAccess"
+        maxObjectBytes:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 16777216
+        allowedContentTypes:
+          type: array
+          description: Media types or `type/*` patterns; empty allows every type
+          items:
+            type: string
+            minLength: 1
+        rules:
+          type: array
+          items:
+            $ref: "#/components/schemas/StorageBucketRule"
+        version:
+          type: integer
+          format: int64
+          minimum: 1
+        objectCount:
+          type: integer
+          format: int64
+          minimum: 0
+        totalBytes:
+          type: integer
+          format: int64
+          minimum: 0
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    CreateStorageBucketRequest:
+      type: object
+      additionalProperties: false
+      required: [id]
+      properties:
+        id:
+          $ref: "#/components/schemas/BucketId"
+        access:
+          $ref: "#/components/schemas/StorageBucketAccess"
+        maxObjectBytes:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 16777216
+          default: 1048576
+        allowedContentTypes:
+          type: array
+          items:
+            type: string
+            minLength: 1
+        rules:
+          type: array
+          items:
+            $ref: "#/components/schemas/StorageBucketRule"
+    UpdateStorageBucketRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        access:
+          $ref: "#/components/schemas/StorageBucketAccess"
+        maxObjectBytes:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 16777216
+        allowedContentTypes:
+          type: array
+          items:
+            type: string
+            minLength: 1
+        rules:
+          type: array
+          items:
+            $ref: "#/components/schemas/StorageBucketRule"
+    StorageBucketRemoval:
+      type: object
+      additionalProperties: false
+      required: [objectCount, totalBytes]
+      properties:
+        objectCount:
+          type: integer
+          format: int64
+          minimum: 0
+        totalBytes:
+          type: integer
+          format: int64
+          minimum: 0
+    StorageObject:
+      type: object
+      additionalProperties: false
+      required: [path, contentType, sizeBytes, ownerId, digest, createdAt, updatedAt]
+      properties:
+        path:
+          type: string
+          minLength: 1
+          maxLength: 1024
+        contentType:
+          type: string
+        sizeBytes:
+          type: integer
+          format: int64
+          minimum: 0
+        ownerId:
+          type: [string, "null"]
+          description: The application user who stored the object, when one did
+        digest:
+          type: string
+          description: Content digest, `sha256:` followed by the hex digest
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    StorageObjectPage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          maxItems: 1000
+          items:
+            $ref: "#/components/schemas/StorageObject"
+        nextCursor:
+          type: [string, "null"]
+          maxLength: 4096
     AuthUser:
       type: object
       additionalProperties: false
@@ -7421,6 +7938,47 @@ components:
         overageBilled: {type: boolean}
         reason: {type: string, minLength: 1, maxLength: 500}
         expiresAtUnixSeconds: {type: integer, format: int64, minimum: 1}
+    ApplicationObject:
+      type: object
+      additionalProperties: false
+      required: [bucketId, path, contentType, sizeBytes, ownerId, digest, storedDigest, createdAtUnixSeconds, updatedAtUnixSeconds]
+      properties:
+        bucketId:
+          $ref: "#/components/schemas/BucketId"
+        path:
+          type: string
+          maxLength: 512
+        contentType:
+          type: string
+        sizeBytes:
+          type: integer
+          format: int64
+          minimum: 0
+        ownerId:
+          type: [string, "null"]
+        digest:
+          type: string
+          description: "`sha256:` of the plaintext, what a client can verify."
+        storedDigest:
+          type: string
+          description: "`sha256:` of what the object store holds."
+        createdAtUnixSeconds:
+          type: integer
+          format: int64
+        updatedAtUnixSeconds:
+          type: integer
+          format: int64
+    ApplicationObjectPage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ApplicationObject"
+        nextCursor:
+          type: [string, "null"]
     QuotaResource:
       type: string
       enum:
@@ -7434,6 +7992,8 @@ components:
         - edge_invocations_per_month
         - edge_compute_milliseconds_per_month
         - log_bytes_per_month
+        - object_storage_bytes
+        - object_egress_bytes_per_month
     EventOutcome:
       type: string
       enum: [allowed, denied, failed]

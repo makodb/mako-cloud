@@ -34,12 +34,14 @@ pub enum Aggregation {
 pub fn aggregation(resource: QuotaResource) -> Aggregation {
     match resource {
         QuotaResource::StorageBytes
+        | QuotaResource::ObjectStorageBytes
         | QuotaResource::ApplicationUsers
         | QuotaResource::Environments
         | QuotaResource::CollectionsPerEnvironment
         | QuotaResource::EdgeFunctions => Aggregation::AverageOfSamples,
         QuotaResource::ReplicationRequestsPerMinute
         | QuotaResource::ReplicationBytesPerMonth
+        | QuotaResource::ObjectEgressBytesPerMonth
         | QuotaResource::EdgeInvocationsPerMonth
         | QuotaResource::EdgeComputeMillisecondsPerMonth
         | QuotaResource::LogBytesPerMonth => Aggregation::SumOfRecords,
@@ -107,13 +109,15 @@ impl OverageRate {
 ///
 /// Verified against supabase.com/pricing on 2026-08-25: Pro at $25/month,
 /// storage $0.125/GB beyond 8 GB, egress $0.09/GB beyond 250 GB, $0.00325 per
-/// monthly active user beyond 100,000, and $2 per million invocations beyond
-/// two million. Until the beta ends nothing is collected regardless.
+/// monthly active user beyond 100,000, $2 per million invocations beyond two
+/// million, file storage $0.021/GB beyond 100 GB (priced here at $0.02 per
+/// GiB-month beyond 50 GiB), and file egress at the same $0.09/GB as
+/// replication. Until the beta ends nothing is collected regardless.
 #[must_use]
 pub fn default_rate_card() -> RateCard {
     const GIB: u64 = 1024 * 1024 * 1024;
     RateCard {
-        version: 1,
+        version: 2,
         base_micro_dollars: BTreeMap::from([
             ("free".to_owned(), 0),
             // $25 per month.
@@ -150,6 +154,22 @@ pub fn default_rate_card() -> RateCard {
                 OverageRate {
                     micro_dollars: 2_000_000,
                     unit_size: 1_000_000,
+                },
+            ),
+            (
+                QuotaResource::ObjectStorageBytes,
+                // $0.02 per GiB-month of stored objects beyond the included.
+                OverageRate {
+                    micro_dollars: 20_000,
+                    unit_size: GIB,
+                },
+            ),
+            (
+                QuotaResource::ObjectEgressBytesPerMonth,
+                // $0.09 per GiB of object downloads beyond the included amount.
+                OverageRate {
+                    micro_dollars: 90_000,
+                    unit_size: GIB,
                 },
             ),
         ]),
@@ -453,6 +473,109 @@ mod tests {
         assert_eq!(
             period_quantity(QuotaResource::StorageBytes, &samples),
             8 * GIB
+        );
+    }
+
+    /// Stored objects and their downloads are two more line items on the
+    /// bill, one a level and one a flow. On the free plan both cap: use past
+    /// the allowance is refused upstream, so the bill shows the excess as
+    /// overage of zero and charges nothing for it.
+    #[test]
+    fn a_free_plan_lists_object_storage_and_egress_but_caps_instead_of_billing() {
+        let free = plan("free").expect("free plan");
+        // Three samples of the same two stored gigabytes are two gigabytes,
+        // not six; two downloads of three gigabytes are six served.
+        let stored = period_quantity(QuotaResource::ObjectStorageBytes, &[2 * GIB; 3]);
+        let served = period_quantity(QuotaResource::ObjectEgressBytesPerMonth, &[3 * GIB; 2]);
+        assert_eq!(stored, 2 * GIB);
+        assert_eq!(served, 6 * GIB);
+        let usage = BTreeMap::from([
+            (QuotaResource::ObjectStorageBytes, stored),
+            (QuotaResource::ObjectEgressBytesPerMonth, served),
+        ]);
+
+        let rated = rate_period(&free, &default_rate_card(), &usage);
+        let line = |resource| {
+            rated
+                .line_items
+                .iter()
+                .find(|item| item.resource == resource)
+                .cloned()
+                .expect("line item")
+        };
+        assert_eq!(
+            line(QuotaResource::ObjectStorageBytes),
+            LineItem {
+                resource: QuotaResource::ObjectStorageBytes,
+                quantity: 2 * GIB,
+                included: GIB,
+                overage: 0,
+                amount_micro_dollars: 0,
+            }
+        );
+        assert_eq!(
+            line(QuotaResource::ObjectEgressBytesPerMonth),
+            LineItem {
+                resource: QuotaResource::ObjectEgressBytesPerMonth,
+                quantity: 6 * GIB,
+                included: 5 * GIB,
+                overage: 0,
+                amount_micro_dollars: 0,
+            }
+        );
+        assert_eq!(rated.total_micro_dollars, 0, "free stayed free");
+    }
+
+    /// On the pro plan the same two resources bill their excess: stored
+    /// object bytes at $0.02 per GiB-month over 50 GiB, downloads at $0.09
+    /// per GiB over 250 GiB, each rounded down to whole priced units.
+    #[test]
+    fn a_pro_plan_bills_object_storage_per_gib_month_and_egress_per_gib() {
+        // 60 GiB for half the samples and 44 GiB for the other half average
+        // to 52 GiB: two gigabytes over the included fifty.
+        let stored = period_quantity(QuotaResource::ObjectStorageBytes, &[60 * GIB, 44 * GIB]);
+        // 260.5 GiB served: ten and a half over, so ten priced units.
+        let served = period_quantity(
+            QuotaResource::ObjectEgressBytesPerMonth,
+            &[200 * GIB, 60 * GIB + GIB / 2],
+        );
+        let usage = BTreeMap::from([
+            (QuotaResource::ObjectStorageBytes, stored),
+            (QuotaResource::ObjectEgressBytesPerMonth, served),
+        ]);
+
+        let rated = rate_period(&pro(), &default_rate_card(), &usage);
+        let line = |resource| {
+            rated
+                .line_items
+                .iter()
+                .find(|item| item.resource == resource)
+                .cloned()
+                .expect("line item")
+        };
+        assert_eq!(
+            line(QuotaResource::ObjectStorageBytes),
+            LineItem {
+                resource: QuotaResource::ObjectStorageBytes,
+                quantity: 52 * GIB,
+                included: 50 * GIB,
+                overage: 2 * GIB,
+                amount_micro_dollars: 2 * 20_000,
+            }
+        );
+        assert_eq!(
+            line(QuotaResource::ObjectEgressBytesPerMonth),
+            LineItem {
+                resource: QuotaResource::ObjectEgressBytesPerMonth,
+                quantity: 260 * GIB + GIB / 2,
+                included: 250 * GIB,
+                overage: 10 * GIB + GIB / 2,
+                amount_micro_dollars: 10 * 90_000,
+            }
+        );
+        assert_eq!(
+            rated.total_micro_dollars,
+            25_000_000 + 2 * 20_000 + 10 * 90_000
         );
     }
 

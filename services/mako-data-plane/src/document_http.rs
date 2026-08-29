@@ -438,7 +438,7 @@ pub(crate) async fn active_policy(
         .transpose()
 }
 
-async fn service_authorizer(
+pub(crate) async fn service_authorizer(
     graph: &Arc<DataPlaneGraph>,
     request: &HttpRequest,
     tenant: &TenantScope,

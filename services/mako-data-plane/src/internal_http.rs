@@ -490,6 +490,15 @@ async fn execute_operation(
         IdentityAdminOperation::InspectIndex => {
             execute_index_inspect(graph, request, tenant, command, now).await
         }
+        IdentityAdminOperation::InstallBucket
+        | IdentityAdminOperation::RemoveBucket
+        | IdentityAdminOperation::ListBuckets
+        | IdentityAdminOperation::InspectBucket
+        | IdentityAdminOperation::ListBucketObjects
+        | IdentityAdminOperation::DeleteBucketObject => {
+            crate::storage_http::execute_bucket_operation(graph, request, tenant, command, now)
+                .await
+        }
         IdentityAdminOperation::CreateProjectCredential
         | IdentityAdminOperation::RotateProjectCredential => Err(auth_http::invalid(
             request,
@@ -1811,7 +1820,7 @@ fn user_permissions(command: &IdentityAdminCommand) -> Vec<AdminUserPermission> 
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn require_permission(
+pub(crate) async fn require_permission(
     graph: &Arc<DataPlaneGraph>,
     request: &HttpRequest,
     tenant: &mako_api::TenantScope,
@@ -2041,7 +2050,7 @@ fn create_user_request(
     })
 }
 
-fn parse_input<T: for<'de> Deserialize<'de>>(
+pub(crate) fn parse_input<T: for<'de> Deserialize<'de>>(
     request: &HttpRequest,
     input: &Value,
 ) -> Result<T, HttpApiError> {
@@ -2114,6 +2123,12 @@ const fn operation_name(operation: IdentityAdminOperation) -> &'static str {
     match operation {
         IdentityAdminOperation::InstallCollection => "install_collection",
         IdentityAdminOperation::InstallPolicy => "install_policy",
+        IdentityAdminOperation::InstallBucket => "install_bucket",
+        IdentityAdminOperation::RemoveBucket => "remove_bucket",
+        IdentityAdminOperation::ListBuckets => "list_buckets",
+        IdentityAdminOperation::InspectBucket => "inspect_bucket",
+        IdentityAdminOperation::ListBucketObjects => "list_bucket_objects",
+        IdentityAdminOperation::DeleteBucketObject => "delete_bucket_object",
         IdentityAdminOperation::InstallIndex => "install_index",
         IdentityAdminOperation::InstallQuotaPolicy => "install_quota_policy",
         IdentityAdminOperation::InspectIndex => "inspect_index",

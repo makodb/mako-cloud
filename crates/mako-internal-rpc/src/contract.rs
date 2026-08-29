@@ -251,6 +251,13 @@ pub enum IdentityAdminOperation {
     /// exists only in the control store leaves every read filtered out and every
     /// write denied.
     InstallPolicy,
+    /// Bucket lifecycle and object administration for application file storage.
+    InstallBucket,
+    RemoveBucket,
+    ListBuckets,
+    InspectBucket,
+    ListBucketObjects,
+    DeleteBucketObject,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
@@ -266,6 +273,8 @@ pub enum IdentityAdminPermission {
     ExecuteDataJobs,
     ManageCollections,
     ManagePolicies,
+    ReadBuckets,
+    ManageBuckets,
 }
 
 /// Collection metadata propagated to the data plane. `metadata` is the
@@ -320,6 +329,47 @@ pub struct InstallPolicyInput {
     pub collection_id: String,
     pub version: u64,
     pub policy: Value,
+}
+
+/// A bucket as the control plane configured it, installed into the data plane
+/// verbatim; the data plane validates it again before it takes effect.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct InstallBucketInput {
+    pub bucket: Value,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct RemoveBucketInput {
+    pub bucket_id: String,
+    /// Delete the bucket's objects too; without it a bucket holding objects is refused.
+    #[serde(default)]
+    pub delete_objects: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct InspectBucketInput {
+    pub bucket_id: String,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct ListBucketObjectsInput {
+    pub bucket_id: String,
+    #[serde(default)]
+    pub prefix: Option<String>,
+    pub limit: u64,
+    #[serde(default)]
+    pub cursor: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct DeleteBucketObjectInput {
+    pub bucket_id: String,
+    pub path: String,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]

@@ -832,6 +832,89 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/projects/{projectId}/environments/{environmentId}/storage-buckets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List file storage buckets with their object totals
+         * @description Buckets live in the data plane that serves the environment; this lists them as it holds them, with the object count and stored bytes each one currently carries.
+         */
+        get: operations["listStorageBuckets"];
+        put?: never;
+        /**
+         * Create a file storage bucket
+         * @description The bucket is installed in the data plane that serves the environment and accepts application traffic when this returns. Omitted settings take their defaults: policy-governed access, a 1 MiB object limit, every content type, and no rules. A bucket id that already exists is refused with `conflict` unless the request repeats its exact configuration, in which case the existing bucket is returned; reconfigure a bucket with PATCH.
+         */
+        post: operations["createStorageBucket"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/projects/{projectId}/environments/{environmentId}/storage-buckets/{bucketId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Inspect a storage bucket and its object totals */
+        get: operations["getStorageBucket"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete a storage bucket
+         * @description An empty bucket is removed outright. A bucket holding objects is refused with `conflict` unless `deleteObjects` is true, in which case every object is deleted with it; the response reports what was removed.
+         */
+        delete: operations["deleteStorageBucket"];
+        options?: never;
+        head?: never;
+        /**
+         * Reconfigure a storage bucket
+         * @description Fields present in the request replace the bucket's current settings; omitted fields keep their values. The whole configuration is reinstalled and the bucket's version rises. Objects already stored are unaffected by a new size limit or content-type list; those govern new writes.
+         */
+        patch: operations["updateStorageBucket"];
+        trace?: never;
+    };
+    "/v1/projects/{projectId}/environments/{environmentId}/storage-buckets/{bucketId}/objects": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List objects in a storage bucket */
+        get: operations["listStorageObjects"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/projects/{projectId}/environments/{environmentId}/storage-buckets/{bucketId}/objects/{objectPath}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete one object from a storage bucket */
+        delete: operations["deleteStorageObject"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/projects/{projectId}/environments/{environmentId}/auth/signup": {
         parameters: {
             query?: never;
@@ -1057,6 +1140,61 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/projects/{projectId}/environments/{environmentId}/storage/{bucketId}/objects": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                environmentId: components["parameters"]["EnvironmentId"];
+                bucketId: components["parameters"]["BucketId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * List the objects the caller may read
+         * @description Objects in path order, each evaluated as a read under the bucket's rules; a listing never names what a read would refuse. A public bucket answers without a credential.
+         */
+        get: operations["listBucketObjects"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/projects/{projectId}/environments/{environmentId}/storage/{bucketId}/objects/{objectPath}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                environmentId: components["parameters"]["EnvironmentId"];
+                bucketId: components["parameters"]["BucketId"];
+                /** @description The object's full path within the bucket, `/`-separated, so it spans path segments; percent-encode any character that cannot appear in a URL path segment. Segments are never empty and never `.` or `..`. */
+                objectPath: components["parameters"]["ObjectPath"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Download an object
+         * @description The bytes with their content type and an ETag of the plaintext digest. A public bucket answers without a credential; any refusal sends no bytes. Downloads are metered as object egress.
+         */
+        get: operations["getBucketObject"];
+        /**
+         * Store an object under a bucket
+         * @description The request body is the object; its `Content-Type` is recorded. A new path is a create and an existing one an update under the bucket's rules. Objects above the bucket's size, of a content type it does not allow, or beyond the plan's stored-bytes ceiling are refused.
+         */
+        put: operations["putBucketObject"];
+        post?: never;
+        /** Delete an object */
+        delete: operations["deleteBucketObject"];
         options?: never;
         head?: never;
         patch?: never;
@@ -3842,6 +3980,80 @@ export interface components {
             secret: components["schemas"]["FunctionSecret"];
             value: string;
         };
+        BucketId: string;
+        /**
+         * @description `policy` evaluates the bucket's rules against the application-user session for every operation; `public` serves reads without a session and still evaluates the rules for every write.
+         * @enum {string}
+         */
+        StorageBucketAccess: "policy" | "public";
+        StorageBucketRule: {
+            id: string;
+            /** @enum {string} */
+            effect: "allow" | "deny";
+            operations: ("create" | "read" | "update" | "delete")[];
+            expression: string;
+        };
+        StorageBucket: {
+            id: components["schemas"]["BucketId"];
+            access: components["schemas"]["StorageBucketAccess"];
+            /** Format: int64 */
+            maxObjectBytes: number;
+            /** @description Media types or `type/*` patterns; empty allows every type */
+            allowedContentTypes: string[];
+            rules: components["schemas"]["StorageBucketRule"][];
+            /** Format: int64 */
+            version: number;
+            /** Format: int64 */
+            objectCount: number;
+            /** Format: int64 */
+            totalBytes: number;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        CreateStorageBucketRequest: {
+            id: components["schemas"]["BucketId"];
+            access?: components["schemas"]["StorageBucketAccess"];
+            /**
+             * Format: int64
+             * @default 1048576
+             */
+            maxObjectBytes: number;
+            allowedContentTypes?: string[];
+            rules?: components["schemas"]["StorageBucketRule"][];
+        };
+        UpdateStorageBucketRequest: {
+            access?: components["schemas"]["StorageBucketAccess"];
+            /** Format: int64 */
+            maxObjectBytes?: number;
+            allowedContentTypes?: string[];
+            rules?: components["schemas"]["StorageBucketRule"][];
+        };
+        StorageBucketRemoval: {
+            /** Format: int64 */
+            objectCount: number;
+            /** Format: int64 */
+            totalBytes: number;
+        };
+        StorageObject: {
+            path: string;
+            contentType: string;
+            /** Format: int64 */
+            sizeBytes: number;
+            /** @description The application user who stored the object, when one did */
+            ownerId: string | null;
+            /** @description Content digest, `sha256:` followed by the hex digest */
+            digest: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        StorageObjectPage: {
+            items: components["schemas"]["StorageObject"][];
+            nextCursor: string | null;
+        };
         AuthUser: {
             id: string;
             /** Format: email */
@@ -4016,8 +4228,28 @@ export interface components {
             /** Format: int64 */
             expiresAtUnixSeconds?: number;
         };
+        ApplicationObject: {
+            bucketId: components["schemas"]["BucketId"];
+            path: string;
+            contentType: string;
+            /** Format: int64 */
+            sizeBytes: number;
+            ownerId: string | null;
+            /** @description `sha256:` of the plaintext, what a client can verify. */
+            digest: string;
+            /** @description `sha256:` of what the object store holds. */
+            storedDigest: string;
+            /** Format: int64 */
+            createdAtUnixSeconds: number;
+            /** Format: int64 */
+            updatedAtUnixSeconds: number;
+        };
+        ApplicationObjectPage: {
+            items: components["schemas"]["ApplicationObject"][];
+            nextCursor: string | null;
+        };
         /** @enum {string} */
-        QuotaResource: "environments" | "collections_per_environment" | "storage_bytes" | "replication_requests_per_minute" | "replication_bytes_per_month" | "application_users" | "edge_functions" | "edge_invocations_per_month" | "edge_compute_milliseconds_per_month" | "log_bytes_per_month";
+        QuotaResource: "environments" | "collections_per_environment" | "storage_bytes" | "replication_requests_per_minute" | "replication_bytes_per_month" | "application_users" | "edge_functions" | "edge_invocations_per_month" | "edge_compute_milliseconds_per_month" | "log_bytes_per_month" | "object_storage_bytes" | "object_egress_bytes_per_month";
         /** @enum {string} */
         EventOutcome: "allowed" | "denied" | "failed";
         RetentionWindow: {
@@ -4544,6 +4776,9 @@ export interface components {
         FunctionSecretName: components["schemas"]["FunctionSecretName"];
         FunctionName: components["schemas"]["FunctionName"];
         FunctionVersion: number;
+        BucketId: components["schemas"]["BucketId"];
+        /** @description The object's full path within the bucket, `/`-separated, so it spans path segments; percent-encode any character that cannot appear in a URL path segment. Segments are never empty and never `.` or `..`. */
+        ObjectPath: string;
         /** @description Opaque cursor that expires with the signal retention window. */
         ObservabilityCursor: string;
         ObservabilityFrom: string;
@@ -6519,6 +6754,206 @@ export interface operations {
             default: components["responses"]["ApiError"];
         };
     };
+    listStorageBuckets: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                environmentId: components["parameters"]["EnvironmentId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Environment storage buckets */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["StorageBucket"][];
+                    };
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    createStorageBucket: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                environmentId: components["parameters"]["EnvironmentId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateStorageBucketRequest"];
+            };
+        };
+        responses: {
+            /** @description Storage bucket installed and accepting application traffic */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StorageBucket"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    getStorageBucket: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                environmentId: components["parameters"]["EnvironmentId"];
+                bucketId: components["parameters"]["BucketId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Storage bucket */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StorageBucket"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    deleteStorageBucket: {
+        parameters: {
+            query?: {
+                /** @description Delete the bucket's objects along with it */
+                deleteObjects?: boolean;
+            };
+            header: {
+                confirmation: string;
+            };
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                environmentId: components["parameters"]["EnvironmentId"];
+                bucketId: components["parameters"]["BucketId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Storage bucket removed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StorageBucketRemoval"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    updateStorageBucket: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                environmentId: components["parameters"]["EnvironmentId"];
+                bucketId: components["parameters"]["BucketId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateStorageBucketRequest"];
+            };
+        };
+        responses: {
+            /** @description Reconfigured storage bucket */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StorageBucket"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    listStorageObjects: {
+        parameters: {
+            query?: {
+                /** @description Only objects whose path starts with this prefix */
+                prefix?: string;
+                limit?: number;
+                /** @description The `nextCursor` of the previous page */
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                environmentId: components["parameters"]["EnvironmentId"];
+                bucketId: components["parameters"]["BucketId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Page of objects in path order */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StorageObjectPage"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    deleteStorageObject: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                environmentId: components["parameters"]["EnvironmentId"];
+                bucketId: components["parameters"]["BucketId"];
+                /** @description The object's full path within the bucket, `/`-separated, so it spans path segments; percent-encode any character that cannot appear in a URL path segment. Segments are never empty and never `.` or `..`. */
+                objectPath: components["parameters"]["ObjectPath"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The deleted object's metadata */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StorageObject"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
     signUp: {
         parameters: {
             query?: never;
@@ -6942,6 +7377,120 @@ export interface operations {
                 };
                 content: {
                     "text/event-stream": string;
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    listBucketObjects: {
+        parameters: {
+            query?: {
+                prefix?: string;
+                limit?: number;
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                environmentId: components["parameters"]["EnvironmentId"];
+                bucketId: components["parameters"]["BucketId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Readable objects */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApplicationObjectPage"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    getBucketObject: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                environmentId: components["parameters"]["EnvironmentId"];
+                bucketId: components["parameters"]["BucketId"];
+                /** @description The object's full path within the bucket, `/`-separated, so it spans path segments; percent-encode any character that cannot appear in a URL path segment. Segments are never empty and never `.` or `..`. */
+                objectPath: components["parameters"]["ObjectPath"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The object */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": string;
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    putBucketObject: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                environmentId: components["parameters"]["EnvironmentId"];
+                bucketId: components["parameters"]["BucketId"];
+                /** @description The object's full path within the bucket, `/`-separated, so it spans path segments; percent-encode any character that cannot appear in a URL path segment. Segments are never empty and never `.` or `..`. */
+                objectPath: components["parameters"]["ObjectPath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "*/*": string;
+            };
+        };
+        responses: {
+            /** @description The stored object's record */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApplicationObject"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    deleteBucketObject: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                environmentId: components["parameters"]["EnvironmentId"];
+                bucketId: components["parameters"]["BucketId"];
+                /** @description The object's full path within the bucket, `/`-separated, so it spans path segments; percent-encode any character that cannot appear in a URL path segment. Segments are never empty and never `.` or `..`. */
+                objectPath: components["parameters"]["ObjectPath"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The deleted object's record */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApplicationObject"];
                 };
             };
             default: components["responses"]["ApiError"];

@@ -2,10 +2,11 @@
 
 `mako` is the terminal counterpart of the developer console. Everything a
 developer can do in a browser — sign in, own teams and projects, shape
-collections and policies, issue keys, deploy functions, read logs, move data —
-can be done from a shell, a script, or CI with the same authorization and the
-same audit trail. It lives in `packages/cli` (`@mako-cloud/cli`) and drives the
-management API through `@mako-cloud/management-sdk`.
+collections and policies, issue keys, deploy functions, read logs, move data,
+manage file storage — can be done from a shell, a script, or CI with the same
+authorization and the same audit trail. It lives in `packages/cli`
+(`@mako-cloud/cli`) and drives the management API through
+`@mako-cloud/management-sdk`.
 
 ```bash
 npm run build -w @mako-cloud/cli
@@ -24,7 +25,7 @@ are printed by the test so a new one is a visible decision: `/v1/operator*`
 (a separate identity), `/{projectRef}/functions` (invocation, an application
 concern), and the application-runtime routes under an environment (`auth/*`,
 `documents`, `service/*`, `replication/*`), which SDKs and RxDB clients call
-with project credentials. Every other operation — 129 at the time of writing —
+with project credentials. Every other operation — 136 at the time of writing —
 maps to a command.
 
 ## Signing in
@@ -139,6 +140,13 @@ Identifiers that name the resource acted on are positional.
   also on failure. The capability is never printed or stored.
 - `mako functions serve <dir>` runs a function locally in the pinned edge
   runtime, as before (see [local-functions.md](local-functions.md)).
+- Storage: `mako storage buckets create <id> [--access policy|public]
+  [--max-object-bytes n] [--content-type t ...] [--rules <@file|-|json>]`
+  declares a bucket (see [file-storage.md](file-storage.md)); `update` sends
+  only the options given. `mako storage buckets delete <id>` is refused while
+  the bucket still holds objects unless `--delete-objects` confirms their
+  loss. `mako storage objects list <id>` pages a bucket's objects by prefix
+  (`--all` follows the cursor) and `objects delete <id> <path>` removes one.
 
 ## Hosted deployment
 
@@ -333,6 +341,18 @@ Generated from the command registry; every command also answers `--help` with it
 | `mako projects restore <project-id>` | Restore a suspended project or one in its deletion grace period |
 | `mako projects suspend <project-id>` | Suspend a project; its environments stop serving *(confirmed)* |
 | `mako projects transfer <project-id>` | Move a project to a team you administer, or to your personal space *(confirmed)* |
+
+### `mako storage`
+
+| command | does |
+| ------- | ---- |
+| `mako storage buckets create <bucket-id>` | Create a storage bucket; without rules a policy bucket refuses every request |
+| `mako storage buckets delete <bucket-id>` | Delete a storage bucket; one that still holds objects is refused unless --delete-objects confirms their loss *(confirmed)* |
+| `mako storage buckets get <bucket-id>` | Show a storage bucket, its limits, its rules, and its totals |
+| `mako storage buckets list` | List the environment's storage buckets with their object counts and totals |
+| `mako storage buckets update <bucket-id>` | Change a storage bucket's access, limits, content types, or rules; only given options are sent |
+| `mako storage objects delete <bucket-id> <path>` | Delete one object from a bucket by its path *(confirmed)* |
+| `mako storage objects list <bucket-id>` | List a bucket's objects in path order; --all follows the cursor to the end |
 
 ### `mako sync`
 

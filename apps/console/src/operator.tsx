@@ -29,6 +29,8 @@ const QUOTA_RESOURCES: readonly CreateQuotaOverrideRequest["resource"][] = [
   "edge_invocations_per_month",
   "edge_compute_milliseconds_per_month",
   "log_bytes_per_month",
+  "object_storage_bytes",
+  "object_egress_bytes_per_month",
 ];
 
 const SUPPORT_PERMISSIONS: readonly SupportPermission[] = [

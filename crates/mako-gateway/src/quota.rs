@@ -33,6 +33,15 @@ pub enum GatewayQuotaResource {
     FunctionRequestBytes,
     EgressRequests,
     EgressBytes,
+    /// The plan's ceiling on stored object bytes.
+    ///
+    /// Carried on the installed quota policy as a `hard` window limit whose
+    /// `limit` the data plane compares against its running total of object
+    /// bytes before admitting an upload. Stored bytes are a level, not a flow
+    /// of requests, so the window is nominal: nothing is charged against a
+    /// counter for this resource, and the limit does not reset when the
+    /// window rolls over.
+    ObjectStorageBytes,
 }
 
 impl GatewayQuotaResource {
@@ -49,6 +58,7 @@ impl GatewayQuotaResource {
             Self::FunctionRequestBytes => "function_request_bytes",
             Self::EgressRequests => "egress_requests",
             Self::EgressBytes => "egress_bytes",
+            Self::ObjectStorageBytes => "object_storage_bytes",
         }
     }
 }

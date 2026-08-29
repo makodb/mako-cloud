@@ -252,9 +252,17 @@ fn workspace_summary(
             }
         }
         let backups = graph.developer_backups(&tenant, now);
+        // The inventory names what a recovery has to bring back: the verified
+        // recovery points, and the objects applications stored beside their data.
+        let object_storage =
+            crate::storage_bucket_http::object_storage_totals(graph, request, &actor, &tenant)
+                .await;
         sections.insert(
             "backups".to_owned(),
-            current_section(now, json_value!({"verifiedCount": backups.len()})),
+            current_section(
+                now,
+                json_value!({"verifiedCount": backups.len(), "objectStorage": object_storage}),
+            ),
         );
         json(request, 200, &WorkspaceSummary { tenant, sections })
     })

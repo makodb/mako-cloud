@@ -575,10 +575,13 @@ pub(crate) async fn identity_permissions(
             IdentityAdminPermission::ManageSigningKeys,
             IdentityAdminPermission::ManageCollections,
             IdentityAdminPermission::ManagePolicies,
+            IdentityAdminPermission::ReadBuckets,
+            IdentityAdminPermission::ManageBuckets,
         ]),
-        OrganizationRole::Developer => {
-            BTreeSet::from([IdentityAdminPermission::ReadApplicationUsers])
-        }
+        OrganizationRole::Developer => BTreeSet::from([
+            IdentityAdminPermission::ReadApplicationUsers,
+            IdentityAdminPermission::ReadBuckets,
+        ]),
         OrganizationRole::Viewer => BTreeSet::new(),
     };
     Ok(permissions)

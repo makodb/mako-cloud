@@ -50,6 +50,12 @@ pub enum QuotaResource {
     EdgeInvocationsPerMonth,
     EdgeComputeMillisecondsPerMonth,
     LogBytesPerMonth,
+    /// Bytes currently held in an environment's buckets: a level, sampled by
+    /// the data plane the way `StorageBytes` is.
+    ObjectStorageBytes,
+    /// Bytes served by object downloads: a flow, recorded per request the way
+    /// `ReplicationBytesPerMonth` is.
+    ObjectEgressBytesPerMonth,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]

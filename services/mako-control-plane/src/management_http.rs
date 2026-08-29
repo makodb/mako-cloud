@@ -1719,7 +1719,7 @@ pub(crate) fn parse_json<T: for<'de> Deserialize<'de>>(
     serde_json::from_slice(request.body()).map_err(|_| invalid(request, "JSON body is invalid"))
 }
 
-fn require_confirmation(request: &HttpRequest) -> Result<&str, HttpApiError> {
+pub(crate) fn require_confirmation(request: &HttpRequest) -> Result<&str, HttpApiError> {
     let value = request
         .header(CONFIRMATION_HEADER)
         .ok_or_else(|| invalid(request, "confirmation header is required"))?;

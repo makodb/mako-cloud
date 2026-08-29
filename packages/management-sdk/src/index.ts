@@ -94,6 +94,13 @@ export const MANAGEMENT_OPERATIONS = [
   "getFunctionSecret",
   "retireFunctionSecret",
   "rotateFunctionSecret",
+  "listStorageBuckets",
+  "createStorageBucket",
+  "getStorageBucket",
+  "updateStorageBucket",
+  "deleteStorageBucket",
+  "listStorageObjects",
+  "deleteStorageObject",
   "uploadFunctionBundle",
   "listFunctions",
   "createFunction",
@@ -235,6 +242,14 @@ export type ServiceCredentialScope = components["schemas"]["ServiceCredentialSco
 export type JwtSigningKey = components["schemas"]["JwtSigningKey"];
 export type FunctionSecret = components["schemas"]["FunctionSecret"];
 export type FunctionSecretIssue = components["schemas"]["FunctionSecretIssue"];
+export type StorageBucket = components["schemas"]["StorageBucket"];
+export type StorageBucketAccess = components["schemas"]["StorageBucketAccess"];
+export type StorageBucketRule = components["schemas"]["StorageBucketRule"];
+export type CreateStorageBucketRequest = components["schemas"]["CreateStorageBucketRequest"];
+export type UpdateStorageBucketRequest = components["schemas"]["UpdateStorageBucketRequest"];
+export type StorageBucketRemoval = components["schemas"]["StorageBucketRemoval"];
+export type StorageObject = components["schemas"]["StorageObject"];
+export type StorageObjectPage = components["schemas"]["StorageObjectPage"];
 export type FunctionBundleUploadRequest = components["schemas"]["FunctionBundleUploadRequest"];
 export type FunctionBundleArtifact = components["schemas"]["FunctionBundleArtifact"];
 export type FunctionBundleUploadResult = components["schemas"]["FunctionBundleUploadResult"];
@@ -1356,6 +1371,127 @@ export class MakoManagementClient {
             path: { projectId, environmentId, secretName },
             header: { "Idempotency-Key": idempotencyKey },
           },
+        },
+      ),
+    );
+  }
+
+  async listStorageBuckets(projectId: string, environmentId: string): Promise<StorageBucket[]> {
+    const result = await this.#client.GET(
+      "/v1/projects/{projectId}/environments/{environmentId}/storage-buckets",
+      { params: { path: { projectId, environmentId } } },
+    );
+    return unwrap(result).items;
+  }
+
+  async createStorageBucket(
+    projectId: string,
+    environmentId: string,
+    input: CreateStorageBucketRequest,
+    idempotencyKey: string,
+  ): Promise<StorageBucket> {
+    return unwrap(
+      await this.#client.POST(
+        "/v1/projects/{projectId}/environments/{environmentId}/storage-buckets",
+        {
+          params: {
+            path: { projectId, environmentId },
+            header: { "Idempotency-Key": idempotencyKey },
+          },
+          body: input,
+        },
+      ),
+    );
+  }
+
+  async getStorageBucket(
+    projectId: string,
+    environmentId: string,
+    bucketId: string,
+  ): Promise<StorageBucket> {
+    return unwrap(
+      await this.#client.GET(
+        "/v1/projects/{projectId}/environments/{environmentId}/storage-buckets/{bucketId}",
+        { params: { path: { projectId, environmentId, bucketId } } },
+      ),
+    );
+  }
+
+  async updateStorageBucket(
+    projectId: string,
+    environmentId: string,
+    bucketId: string,
+    input: UpdateStorageBucketRequest,
+    idempotencyKey: string,
+  ): Promise<StorageBucket> {
+    return unwrap(
+      await this.#client.PATCH(
+        "/v1/projects/{projectId}/environments/{environmentId}/storage-buckets/{bucketId}",
+        {
+          params: {
+            path: { projectId, environmentId, bucketId },
+            header: { "Idempotency-Key": idempotencyKey },
+          },
+          body: input,
+        },
+      ),
+    );
+  }
+
+  async deleteStorageBucket(
+    projectId: string,
+    environmentId: string,
+    bucketId: string,
+    confirmation: string,
+    deleteObjects = false,
+  ): Promise<StorageBucketRemoval> {
+    return unwrap(
+      await this.#client.DELETE(
+        "/v1/projects/{projectId}/environments/{environmentId}/storage-buckets/{bucketId}",
+        {
+          params: {
+            path: { projectId, environmentId, bucketId },
+            header: { confirmation },
+            query: deleteObjects ? { deleteObjects: true } : {},
+          },
+        },
+      ),
+    );
+  }
+
+  async listStorageObjects(
+    projectId: string,
+    environmentId: string,
+    bucketId: string,
+    options: { readonly prefix?: string; readonly limit?: number; readonly cursor?: string } = {},
+  ): Promise<StorageObjectPage> {
+    return unwrap(
+      await this.#client.GET(
+        "/v1/projects/{projectId}/environments/{environmentId}/storage-buckets/{bucketId}/objects",
+        { params: { path: { projectId, environmentId, bucketId }, query: options } },
+      ),
+    );
+  }
+
+  async deleteStorageObject(
+    projectId: string,
+    environmentId: string,
+    bucketId: string,
+    objectPath: string,
+  ): Promise<StorageObject> {
+    return unwrap(
+      await this.#client.DELETE(
+        "/v1/projects/{projectId}/environments/{environmentId}/storage-buckets/{bucketId}/objects/{objectPath}",
+        {
+          params: {
+            path: {
+              projectId,
+              environmentId,
+              bucketId,
+              objectPath: validateStorageObjectPath(objectPath),
+            },
+          },
+          pathSerializer: storageObjectPathSerializer,
         },
       ),
     );
@@ -2721,6 +2857,43 @@ export class MakoOperatorClient {
 
 export function createOperatorClient(options: OperatorClientOptions): MakoOperatorClient {
   return new MakoOperatorClient(options);
+}
+
+/**
+ * An object path spans URL segments. Each segment is encoded on its own so the
+ * URL keeps the `/` separators the route binds on, while every other parameter
+ * is encoded whole, as openapi-fetch would have done.
+ */
+function storageObjectPathSerializer(
+  pathname: string,
+  pathParams: Record<string, unknown>,
+): string {
+  let url = pathname;
+  for (const [name, value] of Object.entries(pathParams)) {
+    if (typeof value !== "string") {
+      continue;
+    }
+    const encoded =
+      name === "objectPath"
+        ? value.split("/").map(encodeURIComponent).join("/")
+        : encodeURIComponent(value);
+    url = url.replace(`{${name}}`, encoded);
+  }
+  return url;
+}
+
+function validateStorageObjectPath(objectPath: string): string {
+  if (
+    objectPath.length === 0 ||
+    objectPath.length > 1024 ||
+    objectPath
+      .split("/")
+      .some((segment) => segment === "" || segment === "." || segment === "..") ||
+    Array.from(objectPath).some(isControl)
+  ) {
+    throw new TypeError("storage object path is invalid");
+  }
+  return objectPath;
 }
 
 function unwrap<T>(result: {

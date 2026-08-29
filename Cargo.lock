@@ -1188,9 +1188,11 @@ dependencies = [
  "mako-audit",
  "mako-config",
  "mako-documents",
+ "mako-file-storage",
  "mako-gateway",
  "mako-identity",
  "mako-internal-rpc",
+ "mako-object-store",
  "mako-policy",
  "mako-service-runtime",
  "mako-storage",
@@ -1274,6 +1276,23 @@ dependencies = [
  "mako-api",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "mako-file-storage"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "chacha20poly1305",
+ "futures",
+ "mako-api",
+ "mako-object-store",
+ "mako-policy",
+ "mako-storage",
+ "rand_core 0.6.4",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
 ]
 
 [[package]]

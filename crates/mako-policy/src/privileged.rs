@@ -316,6 +316,12 @@ pub struct PrivilegedBypassAuthorizer {
 }
 
 impl PrivilegedBypassAuthorizer {
+    /// The service actor the bypass was established for, as audited.
+    #[must_use]
+    pub fn actor_id(&self) -> &str {
+        self.audit_event.actor_id()
+    }
+
     pub fn establish(
         request: PrivilegedBypassRequest,
         audit_sink: &dyn PrivilegedBypassAuditSink,
