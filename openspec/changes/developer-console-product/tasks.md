@@ -16,7 +16,7 @@
 - [x] 2.1 Control plane: rename project (audited) with OpenAPI, SDK, Caddy allowlist.
 - [x] 2.2 Control plane: transfer project between owners — atomic owner change, both indexes, quota reinstall from the new plan, dual audit; refused if reinstall fails.
 - [x] 2.3 Console: project settings with rename, transfer, and deletion-with-grace, each confirmed.
-- [ ] 2.4 Smoke: transfer a project from a personal space to a team against real services; console e2e for settings; docs, traceability, deploy, requalify.
+- [x] 2.4 Smoke: transfer a project from a personal space to a team against real services; console e2e for settings; docs, traceability, deploy, requalify.
 
 ## 3. Phase 3 — application file storage
 
