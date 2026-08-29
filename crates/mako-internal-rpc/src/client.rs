@@ -13,9 +13,11 @@ use rand_core::{OsRng, RngCore};
 use serde::{Serialize, de::DeserializeOwned};
 
 use crate::{
-    DeploymentKey, FunctionSecretResolutionRequest, IdentityAdminCommand,
-    IdentityVerificationRequest, InternalAuthError, InternalCaller, InternalRequestAuthenticator,
-    InternalRoute, MAX_INTERNAL_BODY_BYTES, SignedInternalRequest,
+    ApplicationMailAcknowledgeRequest, ApplicationMailAcknowledgeResponse,
+    ApplicationMailDrainRequest, ApplicationMailDrainResponse, DeploymentKey,
+    FunctionSecretResolutionRequest, IdentityAdminCommand, IdentityVerificationRequest,
+    InternalAuthError, InternalCaller, InternalRequestAuthenticator, InternalRoute,
+    MAX_INTERNAL_BODY_BYTES, SignedInternalRequest,
 };
 
 const MAX_RESPONSE_HEADER_BYTES: usize = 32 * 1024;
@@ -182,6 +184,48 @@ impl ControlToDataClient {
     pub fn dependency_ready(&self) -> Result<bool, InternalClientError> {
         self.0.probe_ready()
     }
+
+    /// Takes a lease on application mail the data plane wants sent. The
+    /// request is not tenant-scoped -- one node holds every tenant's outbox --
+    /// so it travels under the fixed application-mail scope.
+    pub fn drain_application_mail(
+        &self,
+        request_id: &str,
+        request: &ApplicationMailDrainRequest,
+    ) -> Result<ApplicationMailDrainResponse, InternalClientError> {
+        deserialize_response(self.0.call(
+            InternalRoute::ApplicationMailDrain,
+            &application_mail_scope(),
+            request_id,
+            request_id,
+            request,
+        )?)
+    }
+
+    /// Tells the data plane the control plane durably holds these intents.
+    pub fn acknowledge_application_mail(
+        &self,
+        request_id: &str,
+        request: &ApplicationMailAcknowledgeRequest,
+    ) -> Result<ApplicationMailAcknowledgeResponse, InternalClientError> {
+        deserialize_response(self.0.call(
+            InternalRoute::ApplicationMailAcknowledge,
+            &application_mail_scope(),
+            request_id,
+            request_id,
+            request,
+        )?)
+    }
+}
+
+/// The scope application-mail routes travel under: not a tenant, a name for
+/// the node-wide outbox, so the signed envelope still names a scope.
+#[must_use]
+pub fn application_mail_scope() -> TenantScope {
+    TenantScope::new(
+        mako_api::ProjectId::parse("prj_applicationmail0").expect("fixed project id"),
+        mako_api::EnvironmentId::parse("env_applicationmail0").expect("fixed environment id"),
+    )
 }
 
 #[derive(Clone)]

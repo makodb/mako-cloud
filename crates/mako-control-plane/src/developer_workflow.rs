@@ -178,6 +178,28 @@ impl DeveloperMailCipher {
         kind: DeveloperMailKind,
         envelope: &DeveloperMailEnvelope,
     ) -> Result<EncryptedDeveloperMail, DeveloperWorkflowError> {
+        self.seal(&mail_aad(outbox_id, identity_id, kind), envelope)
+    }
+
+    pub fn decrypt(
+        &self,
+        record: &DeveloperMailOutboxRecord,
+    ) -> Result<DeveloperMailEnvelope, DeveloperWorkflowError> {
+        self.open(
+            &mail_aad(record.id(), record.identity_id(), record.kind()),
+            record.encrypted_mail(),
+        )
+    }
+
+    /// Encrypts an envelope under caller-supplied associated data. The
+    /// developer outbox binds its records to a developer identity; the
+    /// application outbox binds its own to a tenant and intent id with the
+    /// same key, so both stay unreadable at rest without it.
+    pub(crate) fn seal(
+        &self,
+        aad: &[u8],
+        envelope: &DeveloperMailEnvelope,
+    ) -> Result<EncryptedDeveloperMail, DeveloperWorkflowError> {
         envelope.validate()?;
         let plaintext = serde_json::to_vec(envelope)?;
         let mut nonce = [0_u8; 24];
@@ -187,7 +209,7 @@ impl DeveloperMailCipher {
                 XNonce::from_slice(&nonce),
                 Payload {
                     msg: &plaintext,
-                    aad: &mail_aad(outbox_id, identity_id, kind),
+                    aad,
                 },
             )
             .map_err(|_| DeveloperWorkflowError::MailEncryption)?;
@@ -198,22 +220,23 @@ impl DeveloperMailCipher {
         .map_err(DeveloperWorkflowError::Registration)
     }
 
-    pub fn decrypt(
+    pub(crate) fn open(
         &self,
-        record: &DeveloperMailOutboxRecord,
+        aad: &[u8],
+        encrypted: &EncryptedDeveloperMail,
     ) -> Result<DeveloperMailEnvelope, DeveloperWorkflowError> {
         let nonce = URL_SAFE_NO_PAD
-            .decode(record.encrypted_mail().nonce())
+            .decode(encrypted.nonce())
             .map_err(|_| DeveloperWorkflowError::MailEncryption)?;
         let ciphertext = URL_SAFE_NO_PAD
-            .decode(record.encrypted_mail().ciphertext())
+            .decode(encrypted.ciphertext())
             .map_err(|_| DeveloperWorkflowError::MailEncryption)?;
         let plaintext = XChaCha20Poly1305::new((&self.key.0).into())
             .decrypt(
                 XNonce::from_slice(&nonce),
                 Payload {
                     msg: &ciphertext,
-                    aad: &mail_aad(record.id(), record.identity_id(), record.kind()),
+                    aad,
                 },
             )
             .map_err(|_| DeveloperWorkflowError::MailEncryption)?;
@@ -1775,7 +1798,7 @@ impl DeveloperMailOutboxWorker {
     }
 }
 
-fn outbox_backoff(attempt: u32, maximum: u64) -> u64 {
+pub(crate) fn outbox_backoff(attempt: u32, maximum: u64) -> u64 {
     let exponent = attempt.saturating_sub(1).min(20);
     30_u64.saturating_mul(1_u64 << exponent).min(maximum)
 }

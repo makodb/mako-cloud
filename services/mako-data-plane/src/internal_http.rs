@@ -490,6 +490,13 @@ async fn execute_operation(
         IdentityAdminOperation::InspectIndex => {
             execute_index_inspect(graph, request, tenant, command, now).await
         }
+        IdentityAdminOperation::InstallAuthProviders
+        | IdentityAdminOperation::InspectAuthProviders => {
+            crate::auth_provider_http::execute_auth_provider_operation(
+                graph, request, tenant, command, now,
+            )
+            .await
+        }
         IdentityAdminOperation::InstallBucket
         | IdentityAdminOperation::RemoveBucket
         | IdentityAdminOperation::ListBuckets
@@ -2126,6 +2133,8 @@ const fn operation_name(operation: IdentityAdminOperation) -> &'static str {
         IdentityAdminOperation::InstallBucket => "install_bucket",
         IdentityAdminOperation::RemoveBucket => "remove_bucket",
         IdentityAdminOperation::ListBuckets => "list_buckets",
+        IdentityAdminOperation::InstallAuthProviders => "install_auth_providers",
+        IdentityAdminOperation::InspectAuthProviders => "inspect_auth_providers",
         IdentityAdminOperation::InspectBucket => "inspect_bucket",
         IdentityAdminOperation::ListBucketObjects => "list_bucket_objects",
         IdentityAdminOperation::DeleteBucketObject => "delete_bucket_object",

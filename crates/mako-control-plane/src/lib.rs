@@ -2,6 +2,7 @@
 
 #![forbid(unsafe_code)]
 
+mod application_mail;
 mod application_user;
 mod automation;
 mod collection;
@@ -11,6 +12,7 @@ mod deletion;
 mod developer_identity;
 mod developer_registration;
 mod developer_workflow;
+mod email_template;
 mod explorer;
 mod function;
 mod function_bundle;
@@ -141,6 +143,11 @@ pub use workspace::{
 
 /// Identifies this workspace component in diagnostics.
 pub const COMPONENT: &str = "control-plane";
+pub use application_mail::{
+    ApplicationMailConfig, ApplicationMailDepth, ApplicationMailError, ApplicationMailOutboxId,
+    ApplicationMailOutboxRecord, ApplicationMailSource, ApplicationMailSourceError,
+    ApplicationMailStore, ApplicationMailWorker, ApplicationMailWorkerReport, EnqueueOutcome,
+};
 pub use application_user::{
     ApplicationUserAccess, ApplicationUserAccessError, PolicyMetadataInvalidation,
 };
@@ -166,6 +173,11 @@ pub use deletion::{
     DeletionAuditAction, DeletionAuditEvent, DeletionAuditSink, DeletionBackend,
     DeletionBackendError, DeletionError, DeletionLifecycleService, DeletionScope, DeletionWorkflow,
     DeletionWorkflowState,
+};
+pub use email_template::{
+    EmailTemplateError, EmailTemplateKind, EmailTemplateRecord, EmailTemplateRender,
+    EmailTemplateService, EmailTemplateText, EmailTemplateView, MAXIMUM_SUBJECT_BYTES,
+    MAXIMUM_TEXT_BODY_BYTES, ResolvedEmailTemplate, preview_variables, render_template,
 };
 pub use function::{
     FunctionAdminError, FunctionAdminService, FunctionBackendError, FunctionConfiguration,

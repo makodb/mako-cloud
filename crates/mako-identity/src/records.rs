@@ -66,12 +66,63 @@ pub enum IdentityProvider {
     Oidc(String),
 }
 
+impl IdentityProvider {
+    /// An external OAuth / OpenID Connect provider, validated as a
+    /// [`ProviderName`]. Prefer this over constructing `Oidc` directly so a
+    /// provider name that cannot form an owner key never reaches a record.
+    pub fn oidc(name: impl Into<String>) -> Result<Self, IdentityRecordError> {
+        ProviderName::parse(name).map(|name| Self::Oidc(name.0))
+    }
+
+    /// The external provider name, or `None` for the built-in email provider.
+    #[must_use]
+    pub fn oidc_name(&self) -> Option<&str> {
+        match self {
+            Self::Email => None,
+            Self::Oidc(name) => Some(name),
+        }
+    }
+}
+
+/// A configured external sign-in provider name such as `google`, `github`,
+/// or `okta-acme`: `[a-z][a-z0-9-]{1,63}`.
+///
+/// The grammar is deliberately narrow because the name is a key segment of
+/// the provider-identity owner index and appears in sign-in URLs.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ProviderName(String);
+
+impl ProviderName {
+    pub fn parse(value: impl Into<String>) -> Result<Self, IdentityRecordError> {
+        let value = value.into();
+        validate_provider_name(&value)?;
+        Ok(Self(value))
+    }
+
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for ProviderName {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum UserCredentialKind {
     Password,
     EmailVerification,
     PasswordRecovery,
+    /// A single-use, expiring passwordless sign-in token delivered by email.
+    ///
+    /// Compatibility: this variant serializes as `magic_link`. Binaries built
+    /// before it existed cannot decode a credential record that carries it,
+    /// so roll the data plane forward before any magic link is issued.
+    MagicLink,
 }
 
 #[derive(Clone, Eq, PartialEq)]
@@ -279,10 +330,13 @@ impl UserIdentityRecord {
         created_at_unix_seconds: u64,
     ) -> Result<Self, IdentityRecordError> {
         let provider_subject = provider_subject.into();
-        if provider_subject.is_empty() || provider_subject.len() > 1024 {
+        if provider_subject.is_empty()
+            || provider_subject.len() > 1024
+            || provider_subject.chars().any(char::is_control)
+        {
             return Err(IdentityRecordError::InvalidField {
                 field: "provider subject",
-                reason: "must contain 1-1024 characters",
+                reason: "must contain 1-1024 non-control characters",
             });
         }
         Ok(Self {
@@ -544,6 +598,25 @@ fn validate_id(field: &'static str, value: &str) -> Result<(), IdentityRecordErr
     Ok(())
 }
 
+fn validate_provider_name(value: &str) -> Result<(), IdentityRecordError> {
+    let valid = matches!(
+        value.as_bytes().split_first(),
+        Some((first, rest))
+            if first.is_ascii_lowercase()
+                && (1..=63).contains(&rest.len())
+                && rest
+                    .iter()
+                    .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || *byte == b'-')
+    );
+    if !valid {
+        return Err(IdentityRecordError::InvalidField {
+            field: "provider name",
+            reason: "must be 2-64 lowercase ASCII letters, digits, or hyphens and start with a letter",
+        });
+    }
+    Ok(())
+}
+
 fn validate_metadata(
     field: &'static str,
     value: Value,
@@ -657,6 +730,82 @@ mod tests {
         let digest = CredentialDigest::new(vec![7; 32]).expect("digest");
         assert_eq!(format!("{digest:?}"), "CredentialDigest([REDACTED])");
         assert!(!format!("{digest:?}").contains('7'));
+    }
+
+    #[test]
+    fn provider_names_follow_the_narrow_grammar() {
+        for name in ["google", "github", "okta-acme", "a1", "x-", &"a".repeat(64)] {
+            assert_eq!(ProviderName::parse(name).expect(name).as_str(), name);
+            assert_eq!(
+                IdentityProvider::oidc(name).expect(name),
+                IdentityProvider::Oidc(name.to_owned())
+            );
+        }
+        for name in [
+            "",
+            "a",
+            "Google",
+            "1google",
+            "-google",
+            "google_workspace",
+            "google.com",
+            "goo gle",
+            "é",
+            &"a".repeat(65),
+        ] {
+            assert!(
+                matches!(
+                    ProviderName::parse(name),
+                    Err(IdentityRecordError::InvalidField {
+                        field: "provider name",
+                        ..
+                    })
+                ),
+                "{name:?} must be rejected"
+            );
+            assert!(
+                IdentityProvider::oidc(name).is_err(),
+                "{name:?} must be rejected"
+            );
+        }
+        assert_eq!(IdentityProvider::Email.oidc_name(), None);
+        assert_eq!(
+            IdentityProvider::oidc("google")
+                .expect("provider")
+                .oidc_name(),
+            Some("google")
+        );
+    }
+
+    #[test]
+    fn provider_subjects_reject_control_characters() {
+        let identity = |subject: &str| {
+            UserIdentityRecord::new(
+                tenant(),
+                UserIdentityId::parse("idn_abcdefgh").expect("identity"),
+                AppUserId::parse("usr_abcdefgh").expect("user"),
+                IdentityProvider::oidc("google").expect("provider"),
+                subject,
+                1,
+            )
+        };
+        assert!(identity("110248495921238986420").is_ok());
+        assert!(identity("").is_err());
+        assert!(identity("subject\n").is_err());
+        assert!(identity("sub\u{0}ject").is_err());
+        assert!(identity(&"s".repeat(1025)).is_err());
+    }
+
+    #[test]
+    fn magic_link_credentials_serialize_as_snake_case() {
+        assert_eq!(
+            serde_json::to_string(&UserCredentialKind::MagicLink).expect("encode"),
+            "\"magic_link\""
+        );
+        assert_eq!(
+            serde_json::from_str::<UserCredentialKind>("\"magic_link\"").expect("decode"),
+            UserCredentialKind::MagicLink
+        );
     }
 
     fn tenant() -> TenantScope {

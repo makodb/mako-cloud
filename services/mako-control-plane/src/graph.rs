@@ -10,13 +10,15 @@ use std::{
 use futures::executor::block_on;
 use mako_api::{ExplorerCapabilityKey, ExplorerCapabilityKeyRing};
 use mako_audit::{AuditStore, AuditStoreConfig, CursorSigningKey, TelemetryRedactor};
+use mako_auth_providers::ProviderSecretKey;
 use mako_config::{DeploymentEnvironment, ServiceConfig, ServiceKind};
 use mako_control_plane::{
-    ApplicationUserAccess, AutomationTokenService, CollectionAdminService, ControlAuditSink,
-    ControlPlaneAuthenticator, CredentialAdminService, DataJobService, DeveloperLookupKey,
-    DeveloperMailCipher, DeveloperMailEncryptionKey, DeveloperMailOutboxWorker,
-    DeveloperMailTransport, DeveloperRegistrationConfig, DeveloperRegistrationService,
-    DeveloperRegistrationStore, DeveloperRestoreService, DeveloperWorkspaceSecurity,
+    ApplicationMailConfig, ApplicationMailStore, ApplicationMailWorker, ApplicationUserAccess,
+    AutomationTokenService, CollectionAdminService, ControlAuditSink, ControlPlaneAuthenticator,
+    CredentialAdminService, DataJobService, DeveloperLookupKey, DeveloperMailCipher,
+    DeveloperMailEncryptionKey, DeveloperMailOutboxWorker, DeveloperMailTransport,
+    DeveloperRegistrationConfig, DeveloperRegistrationService, DeveloperRegistrationStore,
+    DeveloperRestoreService, DeveloperWorkspaceSecurity, EmailTemplateService,
     ExplorerGrantService, FunctionAdminService, FunctionDeploymentBackend,
     FunctionSecretEncryptionKey, LifecycleState, ManagementAuthorizer, ObservabilityBackend,
     ObservabilityService, OperatorAuditSink, OperatorAuthenticationAuditSink,
@@ -52,7 +54,7 @@ use crate::{
         DeploymentDeveloperSessionIssuer, DeploymentHostedSessionAuthenticator,
         deployment_authenticators,
     },
-    smtp::{ProductionSmtpConfig, ProductionSmtpTransport, SmtpTlsMode},
+    smtp::{ProductionSmtpConfig, ProductionSmtpTransport, SmtpCredentials, SmtpTlsMode},
 };
 
 const AUDIT_RETENTION_MILLISECONDS: u64 = 90 * 24 * 60 * 60 * 1_000;
@@ -131,6 +133,8 @@ struct ControlPlaneComponents {
     developer_registration: DeveloperRegistrationStore,
     developer_registration_service: DeveloperRegistrationService,
     developer_mail_worker: Option<DeveloperMailOutboxWorker>,
+    application_mail_worker: Option<ApplicationMailWorker>,
+    email_templates: EmailTemplateService,
     developer_metrics: Arc<DeveloperMetrics>,
     operator_authenticator: OperatorAuthenticator,
     operator_password_authentication: OperatorAuthenticationService,
@@ -161,6 +165,9 @@ struct ControlPlaneComponents {
     observability_backend: Arc<ProductionObservabilityBackend>,
     observability: ObservabilityService,
     function_resolution: FunctionResolutionService,
+    /// Seals application sign-in client secrets for the data plane, which
+    /// derives the same key from the same internal secret.
+    provider_secret_key: ProviderSecretKey,
     internal_deployment_key: DeploymentKey,
     enforce_production_dependencies: bool,
 }
@@ -198,16 +205,22 @@ impl ControlPlaneGraph {
                     tls_mode: match smtp.tls_mode {
                         mako_config::SmtpTlsMode::Wrapper => SmtpTlsMode::Wrapper,
                         mako_config::SmtpTlsMode::StartTls => SmtpTlsMode::StartTls,
+                        mako_config::SmtpTlsMode::Plaintext => SmtpTlsMode::Plaintext,
                     },
-                    username: smtp.username.clone(),
-                    password: smtp.password.expose_secret().to_owned(),
+                    credentials: match (&smtp.username, &smtp.password) {
+                        (Some(username), Some(password)) => Some(SmtpCredentials {
+                            username: username.clone(),
+                            password: password.expose_secret().to_owned(),
+                        }),
+                        _ => None,
+                    },
                     sender: smtp.sender.clone(),
                     timeout: smtp.timeout,
                 })
                 .map(|transport| Arc::new(transport) as Arc<dyn DeveloperMailTransport>)
             })
             .transpose()
-            .map_err(|_| ControlPlaneGraphError::Composition("authenticated SMTP"))
+            .map_err(|_| ControlPlaneGraphError::Composition("SMTP relay"))
     }
 
     /// `mail_transport` replaces the configured SMTP relay. Hosted registration
@@ -313,11 +326,14 @@ impl ControlPlaneGraph {
             ControlPlaneGraphError::Composition("operator authentication migration")
         })?;
         let developer_metrics = Arc::new(DeveloperMetrics::default());
+        let application_mail_config =
+            ApplicationMailConfig::from_registration(&developer_registration_config);
         let developer_mail_worker = smtp_transport
+            .clone()
             .map(|transport| {
                 DeveloperMailOutboxWorker::new(
                     developer_registration.clone(),
-                    DeveloperMailCipher::new(mail_key),
+                    DeveloperMailCipher::new(mail_key.clone()),
                     transport,
                     developer_registration_config,
                 )
@@ -490,6 +506,29 @@ impl ControlPlaneGraph {
             function_encryption_key.clone(),
         )
         .map_err(|_| ControlPlaneGraphError::Composition("function secret service"))?;
+        let email_templates = EmailTemplateService::new(
+            Arc::clone(&adapter),
+            Durability::Sync,
+            projects.clone(),
+            organizations.clone(),
+            Arc::clone(&control_audit),
+        )
+        .map_err(|_| ControlPlaneGraphError::Composition("email templates"))?;
+        // Application mail shares the developer transport and the developer
+        // mail key; without a relay there is nothing to drain intents into.
+        let application_mail_worker = smtp_transport
+            .map(|transport| {
+                ApplicationMailWorker::new(
+                    ApplicationMailStore::new(Arc::clone(&adapter), Durability::Sync)?,
+                    DeveloperMailCipher::new(mail_key),
+                    transport,
+                    Arc::new(data_plane_identity_admin.clone()),
+                    email_templates.clone(),
+                    application_mail_config,
+                )
+            })
+            .transpose()
+            .map_err(|_| ControlPlaneGraphError::Composition("application mail worker"))?;
         let object_access = config
             .object_store_access_key
             .as_ref()
@@ -621,6 +660,7 @@ impl ControlPlaneGraph {
         .map_err(|_| ControlPlaneGraphError::Composition("operator control center"))?;
         let function_resolution =
             FunctionResolutionService::new(Arc::clone(&adapter), function_encryption_key)?;
+        let provider_secret_key = ProviderSecretKey::derive(secret.expose_secret().as_bytes());
         let developer_workspace_security = DeveloperWorkspaceSecurity::new(blake3::derive_key(
             "mako/developer-workspace/step-up/v1",
             secret.expose_secret().as_bytes(),
@@ -648,6 +688,8 @@ impl ControlPlaneGraph {
                 developer_registration,
                 developer_registration_service,
                 developer_mail_worker,
+                application_mail_worker,
+                email_templates,
                 developer_metrics,
                 operator_authenticator,
                 operator_password_authentication,
@@ -678,6 +720,7 @@ impl ControlPlaneGraph {
                 observability_backend,
                 observability,
                 function_resolution,
+                provider_secret_key,
                 internal_deployment_key: deployment_key,
                 enforce_production_dependencies: config.environment
                     == DeploymentEnvironment::Production,
@@ -709,6 +752,16 @@ impl ControlPlaneGraph {
         self.components.developer_mail_worker.as_ref()
     }
 
+    #[must_use]
+    pub fn application_mail_worker(&self) -> Option<&ApplicationMailWorker> {
+        self.components.application_mail_worker.as_ref()
+    }
+
+    #[must_use]
+    pub fn email_template_service(&self) -> &EmailTemplateService {
+        &self.components.email_templates
+    }
+
     pub(crate) fn developer_metrics(&self) -> &Arc<DeveloperMetrics> {
         &self.components.developer_metrics
     }
@@ -727,6 +780,21 @@ impl ControlPlaneGraph {
         self.components
             .developer_metrics
             .observe_mail_worker_failure();
+    }
+
+    pub fn observe_application_mail(
+        &self,
+        report: &mako_control_plane::ApplicationMailWorkerReport,
+    ) {
+        self.components
+            .developer_metrics
+            .observe_application_mail(report);
+    }
+
+    pub fn observe_application_mail_worker_failure(&self) {
+        self.components
+            .developer_metrics
+            .observe_application_mail_worker_failure();
     }
 
     pub async fn cleanup_operator_authentication(
@@ -1006,6 +1074,14 @@ impl ControlPlaneGraph {
     #[must_use]
     pub fn function_resolution(&self) -> &FunctionResolutionService {
         &self.components.function_resolution
+    }
+
+    /// The key application sign-in client secrets are sealed under before
+    /// they travel to the data plane; the data plane opens them with the key
+    /// it derives from the same internal secret.
+    #[must_use]
+    pub fn provider_secret_key(&self) -> &ProviderSecretKey {
+        &self.components.provider_secret_key
     }
 
     #[must_use]

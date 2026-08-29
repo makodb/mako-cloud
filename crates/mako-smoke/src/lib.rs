@@ -21,6 +21,9 @@ use std::{
 
 use serde_json::Value;
 
+mod sign_in;
+pub use sign_in::{CapturedMail, OidcProviderStub, SmtpCaptureStub};
+
 pub const READINESS_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// The shared secret every smoke service is configured with.
@@ -383,6 +386,18 @@ pub fn try_request(
     headers: &BTreeMap<String, String>,
     body: Option<&Value>,
 ) -> Result<(u16, String), String> {
+    try_request_full(port, method, path, headers, body).map(|(status, _, body)| (status, body))
+}
+
+/// [`try_request`] that also hands back the response headers, lower-cased —
+/// a redirect's `location` is the whole point of a sign-in callback.
+pub fn try_request_full(
+    port: u16,
+    method: &str,
+    path: &str,
+    headers: &BTreeMap<String, String>,
+    body: Option<&Value>,
+) -> Result<(u16, BTreeMap<String, String>, String), String> {
     let mut stream = TcpStream::connect(("127.0.0.1", port)).map_err(|error| error.to_string())?;
     stream
         .set_read_timeout(Some(Duration::from_secs(30)))
@@ -419,6 +434,7 @@ pub fn try_request(
 
     let mut content_length = None;
     let mut chunked = false;
+    let mut response_headers = BTreeMap::new();
     loop {
         let mut line = String::new();
         reader
@@ -429,6 +445,7 @@ pub fn try_request(
             break;
         }
         if let Some((name, value)) = line.split_once(':') {
+            response_headers.insert(name.trim().to_ascii_lowercase(), value.trim().to_owned());
             if name.eq_ignore_ascii_case("content-length") {
                 content_length = value.trim().parse::<usize>().ok();
             } else if name.eq_ignore_ascii_case("transfer-encoding")
@@ -462,7 +479,7 @@ pub fn try_request(
             }
         }
     }
-    Ok((status, response))
+    Ok((status, response_headers, response))
 }
 
 /// Decode a chunked body into its payload.

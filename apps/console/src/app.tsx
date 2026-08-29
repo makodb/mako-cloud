@@ -24,6 +24,8 @@ import { HomeDashboard } from "./home.js";
 import { LogsScreen } from "./logs.js";
 import { PolicyScreen } from "./policies.js";
 import { ProjectHome } from "./project-home.js";
+import { AuthProvidersScreen } from "./auth-providers.js";
+import { EmailTemplatesScreen } from "./email-templates.js";
 import { StorageScreen } from "./storage.js";
 import { InvitationAcceptScreen, TeamScreen } from "./teams.js";
 import { UsageScreen } from "./usage.js";
@@ -342,6 +344,32 @@ export function ConsoleApp({
                 navigate={navigate}
               >
                 <ActivityScreen projectId={route.projectId} environmentId={route.environmentId} />
+              </StagedEnvironmentLayout>
+            ) : route.name === "auth_providers" ? (
+              <StagedEnvironmentLayout
+                enabled={developerWorkspaceEnabled}
+                projectId={route.projectId}
+                environmentId={route.environmentId}
+                section="auth-providers"
+                navigate={navigate}
+              >
+                <AuthProvidersScreen
+                  projectId={route.projectId}
+                  environmentId={route.environmentId}
+                />
+              </StagedEnvironmentLayout>
+            ) : route.name === "email_templates" ? (
+              <StagedEnvironmentLayout
+                enabled={developerWorkspaceEnabled}
+                projectId={route.projectId}
+                environmentId={route.environmentId}
+                section="email-templates"
+                navigate={navigate}
+              >
+                <EmailTemplatesScreen
+                  projectId={route.projectId}
+                  environmentId={route.environmentId}
+                />
               </StagedEnvironmentLayout>
             ) : route.name === "storage" ? (
               <StagedEnvironmentLayout

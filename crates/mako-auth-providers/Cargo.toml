@@ -1,0 +1,21 @@
+[package]
+name = "mako-auth-providers"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+base64.workspace = true
+blake3.workspace = true
+chacha20poly1305.workspace = true
+mako-api = { path = "../mako-api" }
+mako-http-client = { path = "../mako-http-client" }
+rand_core.workspace = true
+ring.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+url.workspace = true
+
+[lints]
+workspace = true

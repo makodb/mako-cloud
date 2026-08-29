@@ -62,8 +62,8 @@ pub use session_store::{
 
 pub use records::{
     AppUserId, AppUserRecord, AppUserStatus, CredentialDigest, IdentityProvider,
-    IdentityRecordError, SessionId, SessionRecord, SessionStatus, TokenFamilyId, TokenFamilyRecord,
-    TokenFamilyStatus, TrustedAppMetadata, UserCredentialId, UserCredentialKind,
+    IdentityRecordError, ProviderName, SessionId, SessionRecord, SessionStatus, TokenFamilyId,
+    TokenFamilyRecord, TokenFamilyStatus, TrustedAppMetadata, UserCredentialId, UserCredentialKind,
     UserCredentialRecord, UserIdentityId, UserIdentityRecord, UserProfileMetadata,
 };
 pub use signin::{
@@ -81,7 +81,8 @@ pub use signup::{
     VerificationEmail, VerificationToken,
 };
 pub use store::{
-    EmailVerificationOutcome, IdentityStore, IdentityStoreError, PasswordResetOutcome,
+    EmailVerificationOutcome, IdentityStore, IdentityStoreError, MagicLinkOutcome,
+    PasswordResetOutcome,
 };
 
 /// Identifies this workspace component in diagnostics.

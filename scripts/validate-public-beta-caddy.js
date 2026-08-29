@@ -80,6 +80,8 @@ const samplePath = (path) =>
     .replaceAll("{sessionId}", "ses_example0001")
     .replaceAll("{credentialId}", "crd_example0001")
     .replaceAll("{secretName}", "api-key")
+    .replaceAll("{provider}", "google")
+    .replaceAll("{templateKind}", "verification")
     .replaceAll("{bucketId}", "avatars")
     .replaceAll("{objectPath}", "users/42/me.png")
     .replaceAll("{functionName}", "health")

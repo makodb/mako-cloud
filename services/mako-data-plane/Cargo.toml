@@ -13,8 +13,10 @@ path = "src/main.rs"
 async-trait.workspace = true
 base64.workspace = true
 blake3.workspace = true
+rand_core.workspace = true
 futures.workspace = true
 mako-api = { path = "../../crates/mako-api" }
+mako-auth-providers = { path = "../../crates/mako-auth-providers" }
 mako-telemetry-client = { path = "../../crates/mako-telemetry-client" }
 mako-audit = { path = "../../crates/mako-audit" }
 mako-config = { path = "../../crates/mako-config" }

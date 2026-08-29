@@ -175,6 +175,9 @@ pub struct ServiceConfig {
 pub enum SmtpTlsMode {
     Wrapper,
     StartTls,
+    /// Unencrypted SMTP for a loopback relay such as mailpit. Refused in
+    /// production; the only mode in which credentials may be omitted.
+    Plaintext,
 }
 
 #[derive(Clone, Debug)]
@@ -182,8 +185,10 @@ pub struct AuthenticatedSmtpSettings {
     pub relay_hostname: String,
     pub port: u16,
     pub tls_mode: SmtpTlsMode,
-    pub username: String,
-    pub password: SecretString,
+    /// Present together with `password`; both are required unless the TLS
+    /// mode is `Plaintext`.
+    pub username: Option<String>,
+    pub password: Option<SecretString>,
     pub sender: String,
     pub timeout: Duration,
 }
@@ -1667,62 +1672,82 @@ impl RawConfig {
         if let Some(secret) = &smtp_password {
             validate_secret_shape(secret, "secrets.developer_smtp_password", 16, 4_096)?;
         }
-        let smtp_parts = [
-            self.developer_smtp_relay_hostname.is_some(),
-            self.developer_smtp_username.is_some(),
-            self.developer_smtp_sender.is_some(),
-            smtp_password.is_some(),
-        ];
-        if smtp_parts.iter().any(|present| *present) && !smtp_parts.iter().all(|present| *present) {
-            return Err(ConfigDiagnostic::new(
-                ConfigErrorCode::MissingValue,
-                "developer_registration.smtp",
-                "relay hostname, username, sender, and password secret are required together",
-            ));
-        }
         let smtp_tls_mode = match self.developer_smtp_tls_mode.as_str() {
             "wrapper" => SmtpTlsMode::Wrapper,
             "starttls" => SmtpTlsMode::StartTls,
+            "plaintext" => SmtpTlsMode::Plaintext,
             _ => {
                 return Err(invalid(
                     "developer_registration.smtp_tls_mode",
-                    "must be wrapper or starttls",
+                    "must be wrapper, starttls, or plaintext",
                 ));
             }
         };
+        // Plaintext exists for a loopback mailpit and the smoke suite's stub.
+        // Production mail leaves the host, so it is refused there outright
+        // rather than degraded to a warning.
+        if smtp_tls_mode == SmtpTlsMode::Plaintext
+            && environment == DeploymentEnvironment::Production
+        {
+            return Err(invalid(
+                "developer_registration.smtp_tls_mode",
+                "plaintext SMTP is refused in production; use starttls or wrapper",
+            ));
+        }
+        let relay_present = self.developer_smtp_relay_hostname.is_some();
+        let sender_present = self.developer_smtp_sender.is_some();
+        let username_present = self.developer_smtp_username.is_some();
+        let password_present = smtp_password.is_some();
+        let any_present = relay_present || sender_present || username_present || password_present;
+        let complete = if smtp_tls_mode == SmtpTlsMode::Plaintext {
+            relay_present && sender_present && username_present == password_present
+        } else {
+            relay_present && sender_present && username_present && password_present
+        };
+        if any_present && !complete {
+            return Err(ConfigDiagnostic::new(
+                ConfigErrorCode::MissingValue,
+                "developer_registration.smtp",
+                if smtp_tls_mode == SmtpTlsMode::Plaintext {
+                    "relay hostname and sender are required together, as are username and password secret"
+                } else {
+                    "relay hostname, username, sender, and password secret are required together"
+                },
+            ));
+        }
         let smtp = match (
             self.developer_smtp_relay_hostname,
-            self.developer_smtp_username,
             self.developer_smtp_sender,
-            smtp_password,
         ) {
-            (Some(relay_hostname), Some(username), Some(sender), Some(password)) => {
+            (Some(relay_hostname), Some(sender)) => {
                 validate_smtp_text(
                     &relay_hostname,
                     "developer_registration.smtp_relay_hostname",
                     1,
                     253,
                 )?;
-                validate_smtp_text(&username, "developer_registration.smtp_username", 1, 512)?;
+                if let Some(username) = &self.developer_smtp_username {
+                    validate_smtp_text(username, "developer_registration.smtp_username", 1, 512)?;
+                }
                 validate_smtp_text(&sender, "developer_registration.smtp_sender", 3, 512)?;
                 Some(AuthenticatedSmtpSettings {
                     relay_hostname,
                     port: u16::try_from(smtp_port).expect("SMTP port is bounded"),
                     tls_mode: smtp_tls_mode,
-                    username,
-                    password,
+                    username: self.developer_smtp_username,
+                    password: smtp_password,
                     sender,
                     timeout: Duration::from_secs(smtp_timeout_seconds),
                 })
             }
-            (None, None, None, None) => None,
+            (None, None) => None,
             _ => unreachable!("SMTP presence was validated"),
         };
         if registration_enabled && (mail_encryption_secret.is_none() || smtp.is_none()) {
             return Err(ConfigDiagnostic::new(
                 ConfigErrorCode::MissingValue,
                 "developer_registration",
-                "mail encryption and authenticated TLS SMTP are required when registration is enabled",
+                "mail encryption and an SMTP relay are required when registration is enabled",
             ));
         }
         let developer_registration = DeveloperRegistrationSettings {
@@ -2525,7 +2550,58 @@ mod tests {
         assert!(config.developer_registration.enabled);
         let smtp = config.developer_registration.smtp.expect("SMTP settings");
         assert_eq!(smtp.tls_mode, SmtpTlsMode::StartTls);
-        assert_eq!(format!("{:?}", smtp.password), "SecretString([REDACTED])");
+        assert_eq!(
+            format!("{:?}", smtp.password),
+            "Some(SecretString([REDACTED]))"
+        );
+    }
+
+    #[test]
+    fn plaintext_smtp_is_local_only_and_may_omit_credentials() {
+        let loader = ConfigLoader::from_environment([
+            ("MAKO_DEVELOPER_SMTP_RELAY_HOSTNAME", "127.0.0.1"),
+            ("MAKO_DEVELOPER_SMTP_PORT", "1025"),
+            ("MAKO_DEVELOPER_SMTP_TLS_MODE", "plaintext"),
+            (
+                "MAKO_DEVELOPER_SMTP_SENDER",
+                "Mako Local <no-reply@localhost>",
+            ),
+        ]);
+        let config = loader
+            .load(ServiceKind::ControlPlane)
+            .expect("local plaintext");
+        let smtp = config.developer_registration.smtp.expect("SMTP settings");
+        assert_eq!(smtp.tls_mode, SmtpTlsMode::Plaintext);
+        assert!(smtp.username.is_none());
+        assert!(smtp.password.is_none());
+
+        // Credentials are still a pair.
+        let error = ConfigLoader::from_environment([
+            ("MAKO_DEVELOPER_SMTP_RELAY_HOSTNAME", "127.0.0.1"),
+            ("MAKO_DEVELOPER_SMTP_TLS_MODE", "plaintext"),
+            ("MAKO_DEVELOPER_SMTP_SENDER", "no-reply@localhost"),
+            ("MAKO_DEVELOPER_SMTP_USERNAME", "mailpit"),
+        ])
+        .load(ServiceKind::ControlPlane)
+        .expect_err("a username without a password is incomplete");
+        assert_eq!(error.code, ConfigErrorCode::MissingValue);
+        assert_eq!(error.field, "developer_registration.smtp");
+
+        // Outside plaintext, credentials stay mandatory.
+        let error = ConfigLoader::from_environment([
+            ("MAKO_DEVELOPER_SMTP_RELAY_HOSTNAME", "smtp.example.test"),
+            ("MAKO_DEVELOPER_SMTP_TLS_MODE", "starttls"),
+            ("MAKO_DEVELOPER_SMTP_SENDER", "no-reply@example.test"),
+        ])
+        .load(ServiceKind::ControlPlane)
+        .expect_err("TLS relays require credentials");
+        assert_eq!(error.field, "developer_registration.smtp");
+
+        let error = production_control_loader([("MAKO_DEVELOPER_SMTP_TLS_MODE", "plaintext")])
+            .load(ServiceKind::ControlPlane)
+            .expect_err("production refuses plaintext before anything else about mail");
+        assert_eq!(error.code, ConfigErrorCode::InvalidValue);
+        assert_eq!(error.field, "developer_registration.smtp_tls_mode");
     }
 
     #[test]

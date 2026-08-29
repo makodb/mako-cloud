@@ -16,6 +16,7 @@ const DEVELOPER_DECISIONS: &[u8] = b"control/developer-review-decisions";
 const DEVELOPER_RATE_LIMITS: &[u8] = b"control/developer-rate-limits";
 const DEVELOPER_MAIL_OUTBOX: &[u8] = b"control/developer-mail-outbox";
 const DEVELOPER_MIGRATIONS: &[u8] = b"control/developer-migrations";
+const APPLICATION_MAIL_OUTBOX: &[u8] = b"control/application-mail-outbox/v1";
 const OPERATOR_ENTITLEMENTS: &[u8] = b"control/operator-auth/v1/entitlements";
 const OPERATOR_SESSIONS: &[u8] = b"control/operator-auth/v1/sessions";
 const OPERATOR_ATTEMPTS: &[u8] = b"control/operator-auth/v1/attempts";
@@ -238,6 +239,37 @@ impl ControlKeyspace {
 
     pub fn developer_migration_key(version: u32) -> Result<Vec<u8>, ControlKeyspaceError> {
         system_key(DEVELOPER_MIGRATIONS, &format!("{version:010}"))
+    }
+
+    /// One application mail the data plane asked for, keyed by its intent id
+    /// so a re-drained intent lands on the record it already produced.
+    pub fn application_mail_outbox_key(id: &str) -> Result<Vec<u8>, ControlKeyspaceError> {
+        system_key(APPLICATION_MAIL_OUTBOX, id)
+    }
+
+    pub fn application_mail_outbox_range() -> Result<KeyRange, ControlKeyspaceError> {
+        TenantKeyspace::system_domain_range(APPLICATION_MAIL_OUTBOX).map_err(ControlKeyspaceError)
+    }
+
+    /// An environment's customized email template for one kind of mail; the
+    /// absence of a record means the built-in default applies.
+    pub fn email_template_key(
+        project_id: &ProjectId,
+        environment_id: &EnvironmentId,
+        kind: crate::EmailTemplateKind,
+    ) -> Result<Vec<u8>, ControlKeyspaceError> {
+        system_key(
+            &email_template_domain(project_id, environment_id),
+            kind.as_str(),
+        )
+    }
+
+    pub fn email_templates_range(
+        project_id: &ProjectId,
+        environment_id: &EnvironmentId,
+    ) -> Result<KeyRange, ControlKeyspaceError> {
+        TenantKeyspace::system_domain_range(email_template_domain(project_id, environment_id))
+            .map_err(ControlKeyspaceError)
     }
 
     pub fn operator_entitlement_key(
@@ -713,6 +745,15 @@ fn developer_organization_domain(developer_id: &DeveloperIdentityId) -> Vec<u8> 
 
 fn environment_domain(project_id: &ProjectId) -> Vec<u8> {
     format!("control/environments/{}", project_id.as_str()).into_bytes()
+}
+
+fn email_template_domain(project_id: &ProjectId, environment_id: &EnvironmentId) -> Vec<u8> {
+    format!(
+        "control/email-templates/v1/{}/{}",
+        project_id.as_str(),
+        environment_id.as_str()
+    )
+    .into_bytes()
 }
 
 fn organization_project_domain(organization_id: &OrganizationId) -> Vec<u8> {

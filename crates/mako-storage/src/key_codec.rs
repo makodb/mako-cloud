@@ -50,6 +50,7 @@ const IDENTITY_USER_SESSION: u8 = 0x0b;
 const IDENTITY_PROJECT_CREDENTIAL: u8 = 0x0c;
 const IDENTITY_USER_EMAIL: u8 = 0x0d;
 const IDENTITY_SIGNING_KEY_RING: u8 = 0x0e;
+const IDENTITY_PROVIDER_IDENTITY_OWNER: u8 = 0x0f;
 const INTERNAL_RPC_NONCE: u8 = 0x01;
 const INTERNAL_RPC_IDEMPOTENCY: u8 = 0x02;
 const INTERNAL_RPC_RESPONSE: u8 = 0x03;
@@ -541,6 +542,25 @@ impl TenantKeyspace {
         encode_required_segment(&mut key, "user id", user_id.as_ref())?;
         encode_required_segment(&mut key, "credential kind", kind.as_ref())?;
         Ok(key)
+    }
+
+    /// Owner index from one external sign-in identity (provider name plus the
+    /// provider's subject) to the application user it is linked to. Both
+    /// segments are required, so a subject can never be confused across
+    /// providers and an empty subject can never claim a whole provider.
+    pub fn provider_identity_owner_key(
+        &self,
+        provider: impl AsRef<[u8]>,
+        subject: impl AsRef<[u8]>,
+    ) -> Result<Vec<u8>, KeyCodecError> {
+        let mut key = self.identity_record_prefix(IDENTITY_PROVIDER_IDENTITY_OWNER);
+        encode_required_segment(&mut key, "provider name", provider.as_ref())?;
+        encode_required_segment(&mut key, "provider subject", subject.as_ref())?;
+        Ok(key)
+    }
+
+    pub fn provider_identities_range(&self) -> Result<KeyRange, KeyCodecError> {
+        prefix_range(&self.identity_record_prefix(IDENTITY_PROVIDER_IDENTITY_OWNER))
     }
 
     #[must_use]
@@ -1392,6 +1412,60 @@ mod tests {
             first
                 .application_identity_key(b"record-a")
                 .expect("identity")
+        );
+
+        let provider = first
+            .provider_identity_owner_key(b"google", b"subject-a")
+            .expect("provider key");
+        assert!(
+            first
+                .environment_range()
+                .expect("range")
+                .contains(&provider)
+        );
+        assert!(
+            first
+                .provider_identities_range()
+                .expect("provider range")
+                .contains(&provider)
+        );
+        assert!(
+            !first
+                .normalized_email_owners_range()
+                .expect("email range")
+                .contains(&provider)
+        );
+        assert_ne!(
+            provider,
+            second
+                .provider_identity_owner_key(b"google", b"subject-a")
+                .expect("other environment")
+        );
+        assert_ne!(
+            provider,
+            first
+                .provider_identity_owner_key(b"github", b"subject-a")
+                .expect("other provider")
+        );
+        assert_ne!(
+            provider,
+            first
+                .provider_identity_owner_key(b"google", b"subject-b")
+                .expect("other subject")
+        );
+        assert_ne!(
+            first
+                .provider_identity_owner_key(b"goog", b"le-subject")
+                .expect("shifted boundary"),
+            first
+                .provider_identity_owner_key(b"google", b"subject")
+                .expect("provider key")
+        );
+        assert!(first.provider_identity_owner_key(b"google", b"").is_err());
+        assert!(
+            first
+                .provider_identity_owner_key(b"", b"subject-a")
+                .is_err()
         );
     }
 

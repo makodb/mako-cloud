@@ -77,13 +77,25 @@ test("a deep link opens inside the shell with its context and every destination"
   ).toHaveAttribute("aria-current", "page");
 
   // Areas the deployment lacks are shown, disabled, with a reason -- never hidden.
-  for (const label of ["Auth providers", "Webhooks", "Schedules", "Domains"]) {
+  for (const label of ["Webhooks", "Schedules", "Domains"]) {
     const item = destinations.locator(".destination-unavailable", { hasText: label });
     await expect(item).toBeVisible();
     await expect(item).toHaveAttribute("aria-disabled", "true");
     await expect(item).toContainText("Not available on this deployment");
   }
-  await expect(destinations.locator(".destination-unavailable")).toHaveCount(4);
+  await expect(destinations.locator(".destination-unavailable")).toHaveCount(3);
+  await expect(
+    destinations.getByRole("link", { name: "Auth providers", exact: true }),
+  ).toHaveAttribute(
+    "href",
+    `/projects/${PROJECT_ID}/environments/${ENVIRONMENT_ID}/auth-providers`,
+  );
+  await expect(
+    destinations.getByRole("link", { name: "Email templates", exact: true }),
+  ).toHaveAttribute(
+    "href",
+    `/projects/${PROJECT_ID}/environments/${ENVIRONMENT_ID}/email-templates`,
+  );
   expect(await destinations.getByRole("link", { name: "Webhooks" }).count()).toBe(0);
 
   // Moving to a console-served destination keeps the shell and marks it current.

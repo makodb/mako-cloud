@@ -29,10 +29,10 @@
 
 ## 4. Phase 3 — auth providers and email templates
 
-- [ ] 4.1 Control plane: provider configuration per environment with secret references; installation to the data plane like quota policy.
-- [ ] 4.2 Data plane: OAuth and OIDC callback flow issuing application-user sessions, identity linking by verified email plus subject, authentication events.
-- [ ] 4.3 Magic links: request, single-use spend, expiry, non-revealing responses.
-- [ ] 4.4 Email templates per environment with allowlisted variables, validation, and preview; wired into verification, recovery, invitation, and magic-link mail.
+- [x] 4.1 Control plane: provider configuration per environment with secret references; installation to the data plane like quota policy.
+- [x] 4.2 Data plane: OAuth and OIDC callback flow issuing application-user sessions, identity linking by verified email plus subject, authentication events.
+- [x] 4.3 Magic links: request, single-use spend, expiry, non-revealing responses.
+- [x] 4.4 Email templates per environment with allowlisted variables, validation, and preview; wired into verification, recovery, invitation, and magic-link mail.
 - [ ] 4.5 Console: providers and templates screens; OpenAPI, SDK, allowlist; tests including a provider stub end to end; deploy and requalify.
 
 ## 5. Phase 3 — database webhooks

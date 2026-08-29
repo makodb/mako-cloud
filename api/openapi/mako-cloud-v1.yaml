@@ -1650,6 +1650,146 @@ paths:
                 $ref: "#/components/schemas/FunctionSecretIssue"
         default:
           $ref: "#/components/responses/ApiError"
+  /v1/projects/{projectId}/environments/{environmentId}/email-templates:
+    get:
+      tags: [Management]
+      operationId: listEmailTemplates
+      summary: List the environment's application email templates
+      description: >-
+        Every kind the environment can send -- verification, recovery,
+        invitation, and magic link -- with the text currently in effect. A
+        kind that has not been customized carries the built-in default and
+        `isDefault: true`.
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/EnvironmentId"
+      responses:
+        "200":
+          description: The environment's email templates, one per kind
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/EmailTemplate"
+        default:
+          $ref: "#/components/responses/ApiError"
+  /v1/projects/{projectId}/environments/{environmentId}/email-templates/{templateKind}:
+    get:
+      tags: [Management]
+      operationId: getEmailTemplate
+      summary: Show one email template
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/EnvironmentId"
+        - $ref: "#/components/parameters/TemplateKind"
+      responses:
+        "200":
+          description: The template in effect for this kind
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmailTemplate"
+        default:
+          $ref: "#/components/responses/ApiError"
+    put:
+      tags: [Management]
+      operationId: updateEmailTemplate
+      summary: Customize an email template
+      description: >-
+        Replaces the subject and plain-text body the environment sends for
+        this kind. Templates are validated before they are stored: only the
+        kind's allowed `{{variables}}` may appear, every brace must belong to
+        a placeholder, the subject is one line of at most 200 bytes, and the
+        body is at most 32 KiB. Templates are plain text; markup is never
+        interpreted, so a template cannot carry script or remote content.
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/EnvironmentId"
+        - $ref: "#/components/parameters/TemplateKind"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmailTemplateText"
+      responses:
+        "200":
+          description: The stored template with its new version
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmailTemplate"
+        default:
+          $ref: "#/components/responses/ApiError"
+    delete:
+      tags: [Management]
+      operationId: resetEmailTemplate
+      summary: Reset an email template to the built-in default
+      description: >-
+        Removes the customization so the built-in default applies again.
+        Resetting a kind that was never customized succeeds and returns the
+        default.
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/EnvironmentId"
+        - $ref: "#/components/parameters/TemplateKind"
+      responses:
+        "200":
+          description: The built-in default now in effect
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmailTemplate"
+        default:
+          $ref: "#/components/responses/ApiError"
+  /v1/projects/{projectId}/environments/{environmentId}/email-templates/{templateKind}/actions/preview:
+    post:
+      tags: [Management]
+      operationId: previewEmailTemplate
+      summary: Render an email template with placeholder data
+      description: >-
+        Renders the template with illustrative values for the link, expiry,
+        recipient, and inviter and the environment's real project and
+        environment names. Without a body the stored template (or default) is
+        rendered; a body previews unsaved text, and either part may be
+        omitted to take it from the template in effect. Invalid text is
+        refused with the same message a save would give.
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/EnvironmentId"
+        - $ref: "#/components/parameters/TemplateKind"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                subject:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+                textBody:
+                  type: string
+                  minLength: 1
+                  maxLength: 32768
+      responses:
+        "200":
+          description: The rendered subject and body
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmailTemplateRender"
+        default:
+          $ref: "#/components/responses/ApiError"
   /v1/projects/{projectId}/environments/{environmentId}/storage-buckets:
     get:
       tags: [Management]
@@ -1852,6 +1992,60 @@ paths:
                 $ref: "#/components/schemas/StorageObject"
         default:
           $ref: "#/components/responses/ApiError"
+  /v1/projects/{projectId}/environments/{environmentId}/auth-settings:
+    get:
+      tags: [Management]
+      operationId: getAuthSettings
+      summary: Show the environment's application sign-in settings
+      description: >-
+        External sign-in providers with their client ids, the redirect
+        allowlist, and magic-link settings, as the data plane that mints
+        application sessions holds them. Client secrets are never returned;
+        each provider says only whether one is installed. An environment
+        that was never configured answers with no providers and version 0.
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/EnvironmentId"
+      responses:
+        "200":
+          description: The environment's sign-in settings without secrets
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthSettings"
+        default:
+          $ref: "#/components/responses/ApiError"
+    put:
+      tags: [Management]
+      operationId: updateAuthSettings
+      summary: Replace the environment's application sign-in settings
+      description: >-
+        A full replacement: the providers, redirect URLs, and magic-link
+        settings given become the environment's settings, and anything not
+        restated is gone. A provider's `clientSecret` is sealed for this
+        environment before it leaves the control plane; a provider given
+        without one keeps the secret already installed under its name, and
+        a provider that has none installed is refused. The installed version
+        advances by one.
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/EnvironmentId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AuthSettingsUpdate"
+      responses:
+        "200":
+          description: The installed sign-in settings without secrets
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthSettings"
+        default:
+          $ref: "#/components/responses/ApiError"
   /v1/projects/{projectId}/environments/{environmentId}/auth/signup:
     post:
       tags: [Auth]
@@ -1980,6 +2174,167 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AuthUser"
+        default:
+          $ref: "#/components/responses/ApiError"
+  /v1/projects/{projectId}/environments/{environmentId}/auth/providers/{provider}/start:
+    post:
+      tags: [Auth]
+      operationId: startProviderSignIn
+      summary: Start a sign-in through an enabled external provider
+      description: >-
+        The application names the registered redirect the browser should
+        come back to and receives the provider's authorization URL to
+        navigate to. A provider that is not enabled, or a redirect that is
+        not registered for the environment, is refused.
+      security:
+        - publicProjectKey: []
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/EnvironmentId"
+        - $ref: "#/components/parameters/ProviderName"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProviderSignInStartRequest"
+      responses:
+        "200":
+          description: Where to send the browser
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProviderSignInStart"
+        default:
+          $ref: "#/components/responses/ApiError"
+  /v1/projects/{projectId}/environments/{environmentId}/auth/providers/{provider}/callback:
+    get:
+      tags: [Auth]
+      operationId: completeProviderSignIn
+      summary: The provider's redirect target; sends the browser back with a one-time code
+      description: >-
+        Reached by browser navigation from the provider, so it carries no
+        project key. The signed `state` binds the round trip to the
+        environment and provider; after the code is redeemed with the
+        provider and the person is linked or created by verified email and
+        provider subject, the browser is redirected to the registered
+        redirect with a one-time code in the fragment, which the
+        application exchanges for a session. A refusal is also delivered as
+        a redirect, with an error in the fragment.
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/EnvironmentId"
+        - $ref: "#/components/parameters/ProviderName"
+        - name: state
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 2048
+        - name: code
+          in: query
+          required: false
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 2048
+        - name: error
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 256
+      responses:
+        "302":
+          description: The browser is sent to the registered redirect
+          headers:
+            Location:
+              schema:
+                type: string
+                format: uri
+        default:
+          $ref: "#/components/responses/ApiError"
+  /v1/projects/{projectId}/environments/{environmentId}/auth/providers/exchange:
+    post:
+      tags: [Auth]
+      operationId: exchangeProviderSignIn
+      summary: Trade the callback's one-time code for a session
+      security:
+        - publicProjectKey: []
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/EnvironmentId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProviderSignInExchangeRequest"
+      responses:
+        "200":
+          description: Authenticated session, as password sign-in answers
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthSession"
+        default:
+          $ref: "#/components/responses/ApiError"
+  /v1/projects/{projectId}/environments/{environmentId}/auth/magic-link:
+    post:
+      tags: [Auth]
+      operationId: requestMagicLink
+      summary: Ask for a single-use sign-in link by email
+      description: >-
+        Accepted whether or not the address is registered, so nothing here
+        reveals who has an account. When magic links are enabled and the
+        redirect is registered, a link bound to the environment and address
+        is mailed; it is spent on first use and expires after the configured
+        lifetime.
+      security:
+        - publicProjectKey: []
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/EnvironmentId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MagicLinkRequest"
+      responses:
+        "202":
+          description: Request accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MagicLinkAccepted"
+        default:
+          $ref: "#/components/responses/ApiError"
+  /v1/projects/{projectId}/environments/{environmentId}/auth/magic-link/redeem:
+    post:
+      tags: [Auth]
+      operationId: redeemMagicLink
+      summary: Redeem a magic link's token for a session
+      security:
+        - publicProjectKey: []
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/EnvironmentId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MagicLinkRedeemRequest"
+      responses:
+        "200":
+          description: Authenticated session, as password sign-in answers
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthSession"
         default:
           $ref: "#/components/responses/ApiError"
   /v1/projects/{projectId}/environments/{environmentId}/collections/{collectionId}/documents/{documentId}:
@@ -5099,6 +5454,18 @@ components:
       required: true
       schema:
         $ref: "#/components/schemas/FunctionSecretName"
+    ProviderName:
+      name: provider
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/ProviderName"
+    TemplateKind:
+      name: templateKind
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/EmailTemplateKind"
     FunctionName:
       name: functionName
       in: path
@@ -6550,6 +6917,10 @@ components:
     FunctionSecretName:
       type: string
       pattern: "^[A-Za-z_][A-Za-z0-9_]{0,127}$"
+    ProviderName:
+      type: string
+      description: A sign-in provider's name as the developer configured it
+      pattern: "^[a-z][a-z0-9-]{1,63}$"
     FunctionName:
       type: string
       pattern: "^[a-z][a-z0-9-]{0,62}$"
@@ -7360,6 +7731,61 @@ components:
         value:
           type: string
           minLength: 32
+    EmailTemplateKind:
+      type: string
+      description: >-
+        The application-user mail an environment sends: address verification,
+        password recovery, an invitation, or a magic sign-in link.
+      enum: [verification, recovery, invitation, magic_link]
+    EmailTemplateText:
+      type: object
+      description: >-
+        Plain text with `{{variable}}` placeholders. Every kind may use
+        `link`, `expires_at`, `email`, `project_name`, and
+        `environment_name`; invitations may also use `inviter`.
+      additionalProperties: false
+      required: [subject, textBody]
+      properties:
+        subject:
+          type: string
+          minLength: 1
+          maxLength: 200
+        textBody:
+          type: string
+          minLength: 1
+          maxLength: 32768
+    EmailTemplate:
+      type: object
+      additionalProperties: false
+      required: [kind, subject, textBody, isDefault, version, updatedAt]
+      properties:
+        kind:
+          $ref: "#/components/schemas/EmailTemplateKind"
+        subject:
+          type: string
+        textBody:
+          type: string
+        isDefault:
+          type: boolean
+          description: True when the built-in default is in effect and nothing is stored.
+        version:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Advances on every save; 0 for the default.
+        updatedAt:
+          type: [string, "null"]
+          format: date-time
+          description: When the customization was last saved; null for the default.
+    EmailTemplateRender:
+      type: object
+      additionalProperties: false
+      required: [subject, textBody]
+      properties:
+        subject:
+          type: string
+        textBody:
+          type: string
     BucketId:
       type: string
       pattern: "^[a-z][a-z0-9-]{1,62}$"
@@ -7542,6 +7968,197 @@ components:
         nextCursor:
           type: [string, "null"]
           maxLength: 4096
+    AuthProviderKind:
+      description: >-
+        Which protocol a provider speaks: OpenID Connect with discovery at
+        `{issuer}/.well-known/openid-configuration`, or GitHub's OAuth 2.0.
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [type, issuer]
+          properties:
+            type:
+              type: string
+              const: oidc
+            issuer:
+              type: string
+              format: uri
+              maxLength: 2048
+        - type: object
+          additionalProperties: false
+          required: [type]
+          properties:
+            type:
+              type: string
+              const: git_hub
+    AuthProviderView:
+      type: object
+      additionalProperties: false
+      required: [name, kind, clientId, scopes, enabled, hasSecret]
+      properties:
+        name:
+          $ref: "#/components/schemas/ProviderName"
+        kind:
+          $ref: "#/components/schemas/AuthProviderKind"
+        clientId:
+          type: string
+          minLength: 1
+          maxLength: 512
+        scopes:
+          type: array
+          maxItems: 16
+          items:
+            type: string
+            minLength: 1
+            maxLength: 64
+        enabled:
+          type: boolean
+        hasSecret:
+          type: boolean
+          description: Whether a client secret is installed; the secret itself is never returned
+    MagicLinkSettings:
+      type: object
+      additionalProperties: false
+      required: [enabled, linkTtlSeconds]
+      properties:
+        enabled:
+          type: boolean
+        linkTtlSeconds:
+          type: integer
+          format: int64
+          minimum: 60
+          maximum: 3600
+    AuthSettings:
+      type: object
+      additionalProperties: false
+      required: [providers, redirectUrls, magicLinks, version]
+      properties:
+        providers:
+          type: array
+          maxItems: 16
+          items:
+            $ref: "#/components/schemas/AuthProviderView"
+        redirectUrls:
+          type: array
+          maxItems: 32
+          items:
+            type: string
+            format: uri
+            maxLength: 2048
+        magicLinks:
+          $ref: "#/components/schemas/MagicLinkSettings"
+        version:
+          type: integer
+          format: int64
+          minimum: 0
+    AuthProviderUpdate:
+      type: object
+      additionalProperties: false
+      required: [name, kind, clientId, enabled]
+      properties:
+        name:
+          $ref: "#/components/schemas/ProviderName"
+        kind:
+          $ref: "#/components/schemas/AuthProviderKind"
+        clientId:
+          type: string
+          minLength: 1
+          maxLength: 512
+        clientSecret:
+          type: string
+          minLength: 1
+          maxLength: 4096
+          description: >-
+            Sealed before it leaves the control plane and never returned.
+            Omit it to keep the secret already installed under this name.
+        scopes:
+          type: array
+          maxItems: 16
+          items:
+            type: string
+            minLength: 1
+            maxLength: 64
+        enabled:
+          type: boolean
+    AuthSettingsUpdate:
+      type: object
+      additionalProperties: false
+      required: [providers, redirectUrls, magicLinks]
+      properties:
+        providers:
+          type: array
+          maxItems: 16
+          items:
+            $ref: "#/components/schemas/AuthProviderUpdate"
+        redirectUrls:
+          type: array
+          maxItems: 32
+          items:
+            type: string
+            format: uri
+            maxLength: 2048
+          description: >-
+            Where a provider callback or magic link may send the browser:
+            absolute `https` URLs (or `http` to loopback), matched exactly.
+        magicLinks:
+          $ref: "#/components/schemas/MagicLinkSettings"
+    ProviderSignInStartRequest:
+      type: object
+      additionalProperties: false
+      required: [redirectUrl]
+      properties:
+        redirectUrl:
+          type: string
+          format: uri
+          maxLength: 2048
+    ProviderSignInStart:
+      type: object
+      additionalProperties: false
+      required: [authorizationUrl, provider]
+      properties:
+        authorizationUrl:
+          type: string
+          format: uri
+        provider:
+          $ref: "#/components/schemas/ProviderName"
+    ProviderSignInExchangeRequest:
+      type: object
+      additionalProperties: false
+      required: [code]
+      properties:
+        code:
+          type: string
+          minLength: 1
+          maxLength: 256
+    MagicLinkRequest:
+      type: object
+      additionalProperties: false
+      required: [email, redirectUrl]
+      properties:
+        email:
+          type: string
+          format: email
+        redirectUrl:
+          type: string
+          format: uri
+          maxLength: 2048
+    MagicLinkAccepted:
+      type: object
+      additionalProperties: false
+      required: [accepted]
+      properties:
+        accepted:
+          type: boolean
+          const: true
+    MagicLinkRedeemRequest:
+      type: object
+      additionalProperties: false
+      required: [token]
+      properties:
+        token:
+          type: string
+          minLength: 1
+          maxLength: 256
     AuthUser:
       type: object
       additionalProperties: false

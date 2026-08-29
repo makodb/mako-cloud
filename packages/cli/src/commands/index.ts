@@ -1,9 +1,11 @@
 import type { Command } from "../cli/registry.js";
 import { authCommands } from "./auth.js";
 import { authRegistrationCommands } from "./auth-registration.js";
+import { authSettingsCommands } from "./auth-settings.js";
 import { authTokensCommands } from "./auth-tokens.js";
 import { collectionsCommands } from "./collections.js";
 import { dataCommands } from "./data.js";
+import { emailTemplatesCommands } from "./email-templates.js";
 import { envsCommands } from "./envs.js";
 import { explorerCommands } from "./explorer.js";
 import { functionsCommands } from "./functions.js";
@@ -38,6 +40,7 @@ export const commands: readonly Command[] = [
   ...policiesCommands,
   ...usersCommands,
   ...keysCommands,
+  ...authSettingsCommands,
   ...functionsCommands,
   ...functionsDeployCommands,
   serveCommand,
@@ -46,4 +49,5 @@ export const commands: readonly Command[] = [
   ...explorerCommands,
   ...dataCommands,
   ...storageCommands,
+  ...emailTemplatesCommands,
 ];

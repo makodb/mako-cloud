@@ -59,6 +59,16 @@ export type ConsoleRoute =
       readonly bucketId?: string;
     }
   | {
+      readonly name: "auth_providers";
+      readonly projectId: string;
+      readonly environmentId: string;
+    }
+  | {
+      readonly name: "email_templates";
+      readonly projectId: string;
+      readonly environmentId: string;
+    }
+  | {
       readonly name: "environment_workspace";
       readonly projectId: string;
       readonly environmentId: string;
@@ -185,6 +195,26 @@ export function matchConsoleRoute(pathname: string): ConsoleRoute {
       name: environmentPage[3] as "logs" | "usage" | "activity",
       projectId: environmentPage[1],
       environmentId: environmentPage[2],
+    };
+  }
+  const authProviders = normalized.match(
+    /^\/projects\/(prj_[A-Za-z0-9_-]{8,64})\/environments\/(env_[A-Za-z0-9_-]{8,64})\/auth-providers$/u,
+  );
+  if (authProviders?.[1] !== undefined && authProviders[2] !== undefined) {
+    return {
+      name: "auth_providers",
+      projectId: authProviders[1],
+      environmentId: authProviders[2],
+    };
+  }
+  const emailTemplates = normalized.match(
+    /^\/projects\/(prj_[A-Za-z0-9_-]{8,64})\/environments\/(env_[A-Za-z0-9_-]{8,64})\/email-templates$/u,
+  );
+  if (emailTemplates?.[1] !== undefined && emailTemplates[2] !== undefined) {
+    return {
+      name: "email_templates",
+      projectId: emailTemplates[1],
+      environmentId: emailTemplates[2],
     };
   }
   const storage = normalized.match(

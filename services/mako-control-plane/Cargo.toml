@@ -35,6 +35,7 @@ lettre.workspace = true
 mako-api = { path = "../../crates/mako-api" }
 mako-billing = { path = "../../crates/mako-billing" }
 mako-audit = { path = "../../crates/mako-audit" }
+mako-auth-providers = { path = "../../crates/mako-auth-providers" }
 mako-config = { path = "../../crates/mako-config" }
 mako-control-plane = { path = "../../crates/mako-control-plane" }
 mako-documents = { path = "../../crates/mako-documents" }

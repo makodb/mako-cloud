@@ -92,6 +92,14 @@ test("route matching fails closed for unknown and malformed locations", () => {
     { name: "storage", projectId: "prj_abcdefgh", environmentId: "env_abcdefgh" },
   );
   assert.deepEqual(
+    matchConsoleRoute("/projects/prj_abcdefgh/environments/env_abcdefgh/auth-providers"),
+    { name: "auth_providers", projectId: "prj_abcdefgh", environmentId: "env_abcdefgh" },
+  );
+  assert.deepEqual(
+    matchConsoleRoute("/projects/prj_abcdefgh/environments/env_abcdefgh/email-templates"),
+    { name: "email_templates", projectId: "prj_abcdefgh", environmentId: "env_abcdefgh" },
+  );
+  assert.deepEqual(
     matchConsoleRoute("/projects/prj_abcdefgh/environments/env_abcdefgh/storage/avatars"),
     {
       name: "storage",

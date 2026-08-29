@@ -832,6 +832,71 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/projects/{projectId}/environments/{environmentId}/email-templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the environment's application email templates
+         * @description Every kind the environment can send -- verification, recovery, invitation, and magic link -- with the text currently in effect. A kind that has not been customized carries the built-in default and `isDefault: true`.
+         */
+        get: operations["listEmailTemplates"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/projects/{projectId}/environments/{environmentId}/email-templates/{templateKind}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Show one email template */
+        get: operations["getEmailTemplate"];
+        /**
+         * Customize an email template
+         * @description Replaces the subject and plain-text body the environment sends for this kind. Templates are validated before they are stored: only the kind's allowed `{{variables}}` may appear, every brace must belong to a placeholder, the subject is one line of at most 200 bytes, and the body is at most 32 KiB. Templates are plain text; markup is never interpreted, so a template cannot carry script or remote content.
+         */
+        put: operations["updateEmailTemplate"];
+        post?: never;
+        /**
+         * Reset an email template to the built-in default
+         * @description Removes the customization so the built-in default applies again. Resetting a kind that was never customized succeeds and returns the default.
+         */
+        delete: operations["resetEmailTemplate"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/projects/{projectId}/environments/{environmentId}/email-templates/{templateKind}/actions/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Render an email template with placeholder data
+         * @description Renders the template with illustrative values for the link, expiry, recipient, and inviter and the environment's real project and environment names. Without a body the stored template (or default) is rendered; a body previews unsaved text, and either part may be omitted to take it from the template in effect. Invalid text is refused with the same message a save would give.
+         */
+        post: operations["previewEmailTemplate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/projects/{projectId}/environments/{environmentId}/storage-buckets": {
         parameters: {
             query?: never;
@@ -910,6 +975,30 @@ export interface paths {
         post?: never;
         /** Delete one object from a storage bucket */
         delete: operations["deleteStorageObject"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/projects/{projectId}/environments/{environmentId}/auth-settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show the environment's application sign-in settings
+         * @description External sign-in providers with their client ids, the redirect allowlist, and magic-link settings, as the data plane that mints application sessions holds them. Client secrets are never returned; each provider says only whether one is installed. An environment that was never configured answers with no providers and version 0.
+         */
+        get: operations["getAuthSettings"];
+        /**
+         * Replace the environment's application sign-in settings
+         * @description A full replacement: the providers, redirect URLs, and magic-link settings given become the environment's settings, and anything not restated is gone. A provider's `clientSecret` is sealed for this environment before it leaves the control plane; a provider given without one keeps the secret already installed under its name, and a provider that has none installed is refused. The installed version advances by one.
+         */
+        put: operations["updateAuthSettings"];
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1007,6 +1096,100 @@ export interface paths {
         get: operations["getCurrentAuthUser"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/projects/{projectId}/environments/{environmentId}/auth/providers/{provider}/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start a sign-in through an enabled external provider
+         * @description The application names the registered redirect the browser should come back to and receives the provider's authorization URL to navigate to. A provider that is not enabled, or a redirect that is not registered for the environment, is refused.
+         */
+        post: operations["startProviderSignIn"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/projects/{projectId}/environments/{environmentId}/auth/providers/{provider}/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The provider's redirect target; sends the browser back with a one-time code
+         * @description Reached by browser navigation from the provider, so it carries no project key. The signed `state` binds the round trip to the environment and provider; after the code is redeemed with the provider and the person is linked or created by verified email and provider subject, the browser is redirected to the registered redirect with a one-time code in the fragment, which the application exchanges for a session. A refusal is also delivered as a redirect, with an error in the fragment.
+         */
+        get: operations["completeProviderSignIn"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/projects/{projectId}/environments/{environmentId}/auth/providers/exchange": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Trade the callback's one-time code for a session */
+        post: operations["exchangeProviderSignIn"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/projects/{projectId}/environments/{environmentId}/auth/magic-link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ask for a single-use sign-in link by email
+         * @description Accepted whether or not the address is registered, so nothing here reveals who has an account. When magic links are enabled and the redirect is registered, a link bound to the environment and address is mailed; it is spent on first use and expires after the configured lifetime.
+         */
+        post: operations["requestMagicLink"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/projects/{projectId}/environments/{environmentId}/auth/magic-link/redeem": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Redeem a magic link's token for a session */
+        post: operations["redeemMagicLink"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3579,6 +3762,8 @@ export interface components {
         ApplicationSessionId: string;
         ProjectCredentialId: string;
         FunctionSecretName: string;
+        /** @description A sign-in provider's name as the developer configured it */
+        ProviderName: string;
         FunctionName: string;
         Team: {
             id: components["schemas"]["TeamId"];
@@ -3980,6 +4165,37 @@ export interface components {
             secret: components["schemas"]["FunctionSecret"];
             value: string;
         };
+        /**
+         * @description The application-user mail an environment sends: address verification, password recovery, an invitation, or a magic sign-in link.
+         * @enum {string}
+         */
+        EmailTemplateKind: "verification" | "recovery" | "invitation" | "magic_link";
+        /** @description Plain text with `{{variable}}` placeholders. Every kind may use `link`, `expires_at`, `email`, `project_name`, and `environment_name`; invitations may also use `inviter`. */
+        EmailTemplateText: {
+            subject: string;
+            textBody: string;
+        };
+        EmailTemplate: {
+            kind: components["schemas"]["EmailTemplateKind"];
+            subject: string;
+            textBody: string;
+            /** @description True when the built-in default is in effect and nothing is stored. */
+            isDefault: boolean;
+            /**
+             * Format: int64
+             * @description Advances on every save; 0 for the default.
+             */
+            version: number;
+            /**
+             * Format: date-time
+             * @description When the customization was last saved; null for the default.
+             */
+            updatedAt: string | null;
+        };
+        EmailTemplateRender: {
+            subject: string;
+            textBody: string;
+        };
         BucketId: string;
         /**
          * @description `policy` evaluates the bucket's rules against the application-user session for every operation; `public` serves reads without a session and still evaluates the rules for every write.
@@ -4053,6 +4269,77 @@ export interface components {
         StorageObjectPage: {
             items: components["schemas"]["StorageObject"][];
             nextCursor: string | null;
+        };
+        /** @description Which protocol a provider speaks: OpenID Connect with discovery at `{issuer}/.well-known/openid-configuration`, or GitHub's OAuth 2.0. */
+        AuthProviderKind: {
+            /** @constant */
+            type: "oidc";
+            /** Format: uri */
+            issuer: string;
+        } | {
+            /** @constant */
+            type: "git_hub";
+        };
+        AuthProviderView: {
+            name: components["schemas"]["ProviderName"];
+            kind: components["schemas"]["AuthProviderKind"];
+            clientId: string;
+            scopes: string[];
+            enabled: boolean;
+            /** @description Whether a client secret is installed; the secret itself is never returned */
+            hasSecret: boolean;
+        };
+        MagicLinkSettings: {
+            enabled: boolean;
+            /** Format: int64 */
+            linkTtlSeconds: number;
+        };
+        AuthSettings: {
+            providers: components["schemas"]["AuthProviderView"][];
+            redirectUrls: string[];
+            magicLinks: components["schemas"]["MagicLinkSettings"];
+            /** Format: int64 */
+            version: number;
+        };
+        AuthProviderUpdate: {
+            name: components["schemas"]["ProviderName"];
+            kind: components["schemas"]["AuthProviderKind"];
+            clientId: string;
+            /** @description Sealed before it leaves the control plane and never returned. Omit it to keep the secret already installed under this name. */
+            clientSecret?: string;
+            scopes?: string[];
+            enabled: boolean;
+        };
+        AuthSettingsUpdate: {
+            providers: components["schemas"]["AuthProviderUpdate"][];
+            /** @description Where a provider callback or magic link may send the browser: absolute `https` URLs (or `http` to loopback), matched exactly. */
+            redirectUrls: string[];
+            magicLinks: components["schemas"]["MagicLinkSettings"];
+        };
+        ProviderSignInStartRequest: {
+            /** Format: uri */
+            redirectUrl: string;
+        };
+        ProviderSignInStart: {
+            /** Format: uri */
+            authorizationUrl: string;
+            provider: components["schemas"]["ProviderName"];
+        };
+        ProviderSignInExchangeRequest: {
+            code: string;
+        };
+        MagicLinkRequest: {
+            /** Format: email */
+            email: string;
+            /** Format: uri */
+            redirectUrl: string;
+        };
+        MagicLinkAccepted: {
+            /** @constant */
+            accepted: true;
+        };
+        MagicLinkRedeemRequest: {
+            token: string;
         };
         AuthUser: {
             id: string;
@@ -4774,6 +5061,8 @@ export interface components {
         ApplicationSessionId: components["schemas"]["ApplicationSessionId"];
         ProjectCredentialId: components["schemas"]["ProjectCredentialId"];
         FunctionSecretName: components["schemas"]["FunctionSecretName"];
+        ProviderName: components["schemas"]["ProviderName"];
+        TemplateKind: components["schemas"]["EmailTemplateKind"];
         FunctionName: components["schemas"]["FunctionName"];
         FunctionVersion: number;
         BucketId: components["schemas"]["BucketId"];
@@ -6754,6 +7043,145 @@ export interface operations {
             default: components["responses"]["ApiError"];
         };
     };
+    listEmailTemplates: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                environmentId: components["parameters"]["EnvironmentId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The environment's email templates, one per kind */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["EmailTemplate"][];
+                    };
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    getEmailTemplate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                environmentId: components["parameters"]["EnvironmentId"];
+                templateKind: components["parameters"]["TemplateKind"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The template in effect for this kind */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailTemplate"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    updateEmailTemplate: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                environmentId: components["parameters"]["EnvironmentId"];
+                templateKind: components["parameters"]["TemplateKind"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EmailTemplateText"];
+            };
+        };
+        responses: {
+            /** @description The stored template with its new version */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailTemplate"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    resetEmailTemplate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                environmentId: components["parameters"]["EnvironmentId"];
+                templateKind: components["parameters"]["TemplateKind"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The built-in default now in effect */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailTemplate"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    previewEmailTemplate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                environmentId: components["parameters"]["EnvironmentId"];
+                templateKind: components["parameters"]["TemplateKind"];
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    subject?: string;
+                    textBody?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The rendered subject and body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailTemplateRender"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
     listStorageBuckets: {
         parameters: {
             query?: never;
@@ -6954,6 +7382,60 @@ export interface operations {
             default: components["responses"]["ApiError"];
         };
     };
+    getAuthSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                environmentId: components["parameters"]["EnvironmentId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The environment's sign-in settings without secrets */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthSettings"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    updateAuthSettings: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                environmentId: components["parameters"]["EnvironmentId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AuthSettingsUpdate"];
+            };
+        };
+        responses: {
+            /** @description The installed sign-in settings without secrets */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthSettings"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
     signUp: {
         parameters: {
             query?: never;
@@ -7105,6 +7587,147 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AuthUser"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    startProviderSignIn: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                environmentId: components["parameters"]["EnvironmentId"];
+                provider: components["parameters"]["ProviderName"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProviderSignInStartRequest"];
+            };
+        };
+        responses: {
+            /** @description Where to send the browser */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderSignInStart"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    completeProviderSignIn: {
+        parameters: {
+            query: {
+                state: string;
+                code?: string;
+                error?: string;
+            };
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                environmentId: components["parameters"]["EnvironmentId"];
+                provider: components["parameters"]["ProviderName"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The browser is sent to the registered redirect */
+            302: {
+                headers: {
+                    Location?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    exchangeProviderSignIn: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                environmentId: components["parameters"]["EnvironmentId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProviderSignInExchangeRequest"];
+            };
+        };
+        responses: {
+            /** @description Authenticated session, as password sign-in answers */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthSession"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    requestMagicLink: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                environmentId: components["parameters"]["EnvironmentId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MagicLinkRequest"];
+            };
+        };
+        responses: {
+            /** @description Request accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MagicLinkAccepted"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    redeemMagicLink: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                environmentId: components["parameters"]["EnvironmentId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MagicLinkRedeemRequest"];
+            };
+        };
+        responses: {
+            /** @description Authenticated session, as password sign-in answers */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthSession"];
                 };
             };
             default: components["responses"]["ApiError"];

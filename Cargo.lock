@@ -1076,6 +1076,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "mako-auth-providers"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "blake3",
+ "chacha20poly1305",
+ "mako-api",
+ "mako-http-client",
+ "rand_core 0.6.4",
+ "ring",
+ "serde",
+ "serde_json",
+ "url",
+]
+
+[[package]]
 name = "mako-benchmarks"
 version = "0.1.0"
 dependencies = [
@@ -1156,6 +1172,7 @@ dependencies = [
  "lettre",
  "mako-api",
  "mako-audit",
+ "mako-auth-providers",
  "mako-billing",
  "mako-config",
  "mako-control-plane",
@@ -1186,6 +1203,7 @@ dependencies = [
  "futures",
  "mako-api",
  "mako-audit",
+ "mako-auth-providers",
  "mako-config",
  "mako-documents",
  "mako-file-storage",
@@ -1198,6 +1216,7 @@ dependencies = [
  "mako-storage",
  "mako-sync",
  "mako-telemetry-client",
+ "rand_core 0.6.4",
  "serde",
  "serde_json",
  "tempfile",
@@ -1314,6 +1333,15 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+]
+
+[[package]]
+name = "mako-http-client"
+version = "0.1.0"
+dependencies = [
+ "rustls",
+ "url",
+ "webpki-roots",
 ]
 
 [[package]]
@@ -1443,6 +1471,8 @@ dependencies = [
 name = "mako-smoke"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
+ "ring",
  "serde_json",
  "tempfile",
 ]

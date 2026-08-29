@@ -410,7 +410,7 @@ pub(crate) async fn verify_bearer(
         .map_err(|_| unauthenticated(request, "application access token is invalid"))
 }
 
-async fn verify_public_key(
+pub(crate) async fn verify_public_key(
     graph: &DataPlaneGraph,
     tenant: &TenantScope,
     request: &HttpRequest,
@@ -432,7 +432,7 @@ async fn verify_public_key(
     Ok(())
 }
 
-async fn charge_auth(
+pub(crate) async fn charge_auth(
     graph: &DataPlaneGraph,
     tenant: &TenantScope,
     request: &HttpRequest,
@@ -671,7 +671,7 @@ fn application_actor(identity: &VerifiedAccessIdentity) -> ActorIdentity {
     }
 }
 
-fn session_wire(
+pub(crate) fn session_wire(
     request: &HttpRequest,
     grant: DataPlaneSessionGrant,
 ) -> Result<AuthSessionWire, HttpApiError> {
@@ -738,7 +738,7 @@ pub(crate) fn now_unix_seconds(request_id: &str) -> Result<u64, HttpApiError> {
         .map_err(|_| internal_from_id(request_id, "system clock is unavailable"))
 }
 
-fn require_json(request: &HttpRequest) -> Result<(), HttpApiError> {
+pub(crate) fn require_json(request: &HttpRequest) -> Result<(), HttpApiError> {
     let content_type = request
         .header("content-type")
         .and_then(|value| value.split(';').next())
@@ -832,7 +832,7 @@ struct RefreshWire {
 
 #[derive(Serialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
-struct AuthSessionWire {
+pub(crate) struct AuthSessionWire {
     access_token: String,
     refresh_token: String,
     expires_in: u64,

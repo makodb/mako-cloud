@@ -302,6 +302,121 @@ test("storage object paths keep their slashes on the wire and bucket deletion ca
   assert.equal(requests.length, 3, "a refused path never reaches the network");
 });
 
+test("auth settings are read and replaced whole; the client secret travels once, in the request body", async () => {
+  const requests = [];
+  const installed = {
+    providers: [
+      {
+        name: "google",
+        kind: { type: "oidc", issuer: "https://accounts.google.com" },
+        clientId: "client-id.apps.googleusercontent.com",
+        scopes: [],
+        enabled: true,
+        hasSecret: true,
+      },
+      { name: "github", kind: { type: "git_hub" }, clientId: "Iv1.github", scopes: [], enabled: false, hasSecret: true },
+    ],
+    redirectUrls: ["https://app.example.test/auth/callback"],
+    magicLinks: { enabled: true, linkTtlSeconds: 900 },
+    version: 3,
+  };
+  const client = createManagementClient({
+    endpoint: "https://api.example.test",
+    credential: { kind: "developer_session", accessToken: "developer-session-token" },
+    fetch: async (request) => {
+      requests.push(request);
+      return Response.json(installed);
+    },
+  });
+  assert.deepEqual(await client.getAuthSettings("prj_example0001", "env_example0001"), installed);
+  assert.equal(
+    requests[0].url,
+    "https://api.example.test/v1/projects/prj_example0001/environments/env_example0001/auth-settings",
+  );
+  assert.equal(requests[0].method, "GET");
+
+  const update = {
+    providers: [
+      {
+        name: "google",
+        kind: { type: "oidc", issuer: "https://accounts.google.com" },
+        clientId: "client-id.apps.googleusercontent.com",
+        clientSecret: "GOCSPX-plain-secret",
+        enabled: true,
+      },
+      { name: "github", kind: { type: "git_hub" }, clientId: "Iv1.github", enabled: false },
+    ],
+    redirectUrls: ["https://app.example.test/auth/callback"],
+    magicLinks: { enabled: true, linkTtlSeconds: 900 },
+  };
+  const replaced = await client.updateAuthSettings(
+    "prj_example0001",
+    "env_example0001",
+    update,
+    "idempotency-key-auth-settings-0001",
+  );
+  assert.deepEqual(replaced, installed);
+  assert.equal(requests[1].method, "PUT");
+  assert.equal(
+    requests[1].url,
+    "https://api.example.test/v1/projects/prj_example0001/environments/env_example0001/auth-settings",
+  );
+  assert.equal(requests[1].headers.get("idempotency-key"), "idempotency-key-auth-settings-0001");
+  assert.equal(requests[1].headers.get("content-type"), "application/json");
+  assert.deepEqual(await requests[1].json(), update, "the body is sent as given, secret included, once");
+  assert.doesNotMatch(JSON.stringify(replaced), /GOCSPX/u, "the answer carries no secret");
+});
+
+test("email templates are keyed by kind, saved with an idempotency key, and previewed with or without unsaved text", async () => {
+  const requests = [];
+  const template = {
+    kind: "magic_link",
+    subject: "Sign in to {{project_name}}",
+    textBody: "{{link}}",
+    isDefault: false,
+    version: 2,
+    updatedAt: "2026-08-29T10:00:00Z",
+  };
+  const client = createManagementClient({
+    endpoint: "https://api.example.test",
+    credential: { kind: "developer_session", accessToken: "developer-session-token" },
+    fetch: async (request) => {
+      requests.push(request);
+      if (request.url.endsWith("/email-templates")) return Response.json({ items: [template] });
+      if (request.url.endsWith("/actions/preview")) {
+        return Response.json({ subject: "Sign in to Field Notes", textBody: "https://example.test/link" });
+      }
+      return Response.json(template);
+    },
+  });
+  const base = "https://api.example.test/v1/projects/prj_example0001/environments/env_example0001/email-templates";
+  assert.deepEqual(await client.listEmailTemplates("prj_example0001", "env_example0001"), [template]);
+  assert.equal(requests[0].url, base);
+  assert.deepEqual(await client.getEmailTemplate("prj_example0001", "env_example0001", "magic_link"), template);
+  assert.equal(requests[1].url, `${base}/magic_link`);
+  await client.updateEmailTemplate(
+    "prj_example0001",
+    "env_example0001",
+    "magic_link",
+    { subject: template.subject, textBody: template.textBody },
+    "idempotency-key-0001",
+  );
+  assert.equal(requests[2].method, "PUT");
+  assert.equal(requests[2].url, `${base}/magic_link`);
+  assert.equal(requests[2].headers.get("idempotency-key"), "idempotency-key-0001");
+  assert.deepEqual(await requests[2].json(), { subject: template.subject, textBody: template.textBody });
+  await client.resetEmailTemplate("prj_example0001", "env_example0001", "magic_link");
+  assert.equal(requests[3].method, "DELETE");
+  assert.equal(requests[3].url, `${base}/magic_link`);
+  assert.equal(requests[3].headers.get("confirmation"), null, "a reset is not destructive of data");
+  const rendered = await client.previewEmailTemplate("prj_example0001", "env_example0001", "magic_link");
+  assert.equal(rendered.subject, "Sign in to Field Notes");
+  assert.equal(requests[4].url, `${base}/magic_link/actions/preview`);
+  assert.equal(await requests[4].text(), "", "no body previews the stored template");
+  await client.previewEmailTemplate("prj_example0001", "env_example0001", "magic_link", { subject: "Hi {{email}}" });
+  assert.deepEqual(await requests[5].json(), { subject: "Hi {{email}}" }, "only the given part is sent");
+});
+
 function storageObject() {
   return {
     path: "users/42/me avatar.png",

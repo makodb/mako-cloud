@@ -15,6 +15,16 @@ use mako_control_plane::{
 pub(crate) enum SmtpTlsMode {
     Wrapper,
     StartTls,
+    /// No TLS at all: for a loopback relay such as mailpit in local
+    /// deployments. Configuration refuses it in production before this type
+    /// is ever built.
+    Plaintext,
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub(crate) struct SmtpCredentials {
+    pub username: String,
+    pub password: String,
 }
 
 #[derive(Clone, Eq, PartialEq)]
@@ -22,8 +32,8 @@ pub(crate) struct ProductionSmtpConfig {
     pub relay_hostname: String,
     pub port: u16,
     pub tls_mode: SmtpTlsMode,
-    pub username: String,
-    pub password: String,
+    /// Required unless the TLS mode is plaintext.
+    pub credentials: Option<SmtpCredentials>,
     pub sender: String,
     pub timeout: Duration,
 }
@@ -37,7 +47,10 @@ impl fmt::Debug for ProductionSmtpConfig {
             .field("tls_mode", &self.tls_mode)
             .field("sender", &self.sender)
             .field("timeout", &self.timeout)
-            .field("credentials", &"[REDACTED]")
+            .field(
+                "credentials",
+                &self.credentials.as_ref().map(|_| "[REDACTED]"),
+            )
             .finish()
     }
 }
@@ -67,13 +80,24 @@ impl ProductionSmtpTransport {
                 .bytes()
                 .any(|byte| !(byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-')))
             || config.port == 0
-            || !(1..=512).contains(&config.username.len())
-            || config.username.chars().any(char::is_control)
-            || !(16..=4_096).contains(&config.password.len())
-            || config.password.chars().any(char::is_control)
             || !(1..=120).contains(&config.timeout.as_secs())
         {
             return Err(SmtpConfigurationError);
+        }
+        match &config.credentials {
+            Some(credentials) => {
+                if !(1..=512).contains(&credentials.username.len())
+                    || credentials.username.chars().any(char::is_control)
+                    || !(16..=4_096).contains(&credentials.password.len())
+                    || credentials.password.chars().any(char::is_control)
+                {
+                    return Err(SmtpConfigurationError);
+                }
+            }
+            None if config.tls_mode != SmtpTlsMode::Plaintext => {
+                return Err(SmtpConfigurationError);
+            }
+            None => {}
         }
         let sender = config
             .sender
@@ -89,14 +113,17 @@ impl ProductionSmtpTransport {
         let builder = match config.tls_mode {
             SmtpTlsMode::Wrapper => SmtpTransport::relay(&config.relay_hostname),
             SmtpTlsMode::StartTls => SmtpTransport::starttls_relay(&config.relay_hostname),
+            // lettre names this builder for what it is: no TLS is negotiated.
+            SmtpTlsMode::Plaintext => Ok(SmtpTransport::builder_dangerous(&config.relay_hostname)),
         }
         .map_err(|_| SmtpConfigurationError)?;
-        let transport = builder
-            .port(config.port)
-            .credentials(Credentials::new(config.username, config.password))
-            .authentication(vec![Mechanism::Plain, Mechanism::Login])
-            .timeout(Some(config.timeout))
-            .build();
+        let mut builder = builder.port(config.port).timeout(Some(config.timeout));
+        if let Some(credentials) = config.credentials {
+            builder = builder
+                .credentials(Credentials::new(credentials.username, credentials.password))
+                .authentication(vec![Mechanism::Plain, Mechanism::Login]);
+        }
+        let transport = builder.build();
         Ok(Self {
             transport: Arc::new(transport),
             sender,
@@ -192,7 +219,7 @@ pub(crate) struct SmtpConfigurationError;
 
 impl fmt::Display for SmtpConfigurationError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("authenticated TLS SMTP configuration is invalid")
+        formatter.write_str("SMTP relay configuration is invalid")
     }
 }
 
@@ -207,8 +234,10 @@ mod tests {
             relay_hostname: "smtp.example.test".to_owned(),
             port: 587,
             tls_mode: SmtpTlsMode::StartTls,
-            username: "smtp-user@example.test".to_owned(),
-            password: "a protected app password".to_owned(),
+            credentials: Some(SmtpCredentials {
+                username: "smtp-user@example.test".to_owned(),
+                password: "a protected app password".to_owned(),
+            }),
             sender: "Mako Cloud <no-reply@example.test>".to_owned(),
             timeout: Duration::from_secs(10),
         }
@@ -217,11 +246,38 @@ mod tests {
     #[test]
     fn configuration_requires_credentials_tls_and_redacts_secrets() {
         let config = valid_config();
-        assert!(!format!("{config:?}").contains(&config.password));
+        assert!(!format!("{config:?}").contains("a protected app password"));
+        assert!(!format!("{config:?}").contains("smtp-user"));
         ProductionSmtpTransport::new(config).expect("SMTP transport");
         let mut invalid = valid_config();
-        invalid.password = "short".to_owned();
+        invalid.credentials = Some(SmtpCredentials {
+            username: "smtp-user@example.test".to_owned(),
+            password: "short".to_owned(),
+        });
         assert!(ProductionSmtpTransport::new(invalid).is_err());
+        let mut missing = valid_config();
+        missing.credentials = None;
+        assert!(
+            ProductionSmtpTransport::new(missing).is_err(),
+            "a TLS relay without credentials is refused"
+        );
+    }
+
+    #[test]
+    fn plaintext_mode_builds_without_credentials_for_a_loopback_relay() {
+        let mut config = valid_config();
+        config.tls_mode = SmtpTlsMode::Plaintext;
+        config.relay_hostname = "127.0.0.1".to_owned();
+        config.port = 1025;
+        config.credentials = None;
+        let transport = ProductionSmtpTransport::new(config.clone()).expect("plaintext transport");
+        assert_eq!(transport.sender_domain, "example.test");
+        // Credentials are still accepted when the relay wants them.
+        config.credentials = Some(SmtpCredentials {
+            username: "mailpit".to_owned(),
+            password: "a mailpit password value".to_owned(),
+        });
+        ProductionSmtpTransport::new(config).expect("plaintext transport with credentials");
     }
 
     #[test]

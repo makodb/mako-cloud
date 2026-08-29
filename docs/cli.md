@@ -25,7 +25,7 @@ are printed by the test so a new one is a visible decision: `/v1/operator*`
 (a separate identity), `/{projectRef}/functions` (invocation, an application
 concern), and the application-runtime routes under an environment (`auth/*`,
 `documents`, `service/*`, `replication/*`), which SDKs and RxDB clients call
-with project credentials. Every other operation — 136 at the time of writing —
+with project credentials. Every other operation — 143 at the time of writing —
 maps to a command.
 
 ## Signing in
@@ -147,6 +147,21 @@ Identifiers that name the resource acted on are positional.
   the bucket still holds objects unless `--delete-objects` confirms their
   loss. `mako storage objects list <id>` pages a bucket's objects by prefix
   (`--all` follows the cursor) and `objects delete <id> <path>` removes one.
+- Email templates: `mako email-templates list` shows the four kinds an
+  environment sends to its application users and which are still the built-in
+  default; `set <kind> --subject <text> --body <@file|-|text>` saves a
+  plain-text template (see [application-mail.md](application-mail.md); an
+  unknown `{{variable}}` or a stray brace is refused with the API's message);
+  `reset <kind>` returns to the default; `preview <kind>` renders the stored
+  template with placeholder data, or `--subject`/`--body` render unsaved text
+  before it is saved.
+- Sign-in settings: `mako auth-settings get` shows an environment's external
+  providers (client ids and whether a secret is installed, never the secret),
+  redirect allowlist, and magic-link settings; `mako auth-settings set
+  --input <@file|-|json>` replaces them whole (see
+  [auth-providers.md](auth-providers.md)). A provider given without
+  `clientSecret` keeps the installed one. The secret is sent once, in the
+  request, and appears in no output.
 
 ## Hosted deployment
 
@@ -198,6 +213,13 @@ Generated from the command registry; every command also answers `--help` with it
 | `mako auth waitlist-status` | Show whether a registration is still on the wait-list |
 | `mako auth whoami` | Show the signed-in developer, their personal space, and teams |
 
+### `mako auth-settings`
+
+| command | does |
+| ------- | ---- |
+| `mako auth-settings get` | Show the environment's sign-in providers (without secrets), redirect allowlist, and magic-link settings |
+| `mako auth-settings set --input <@file\|-\|json>` | Replace the environment's sign-in settings from a JSON document; a provider without clientSecret keeps the installed one |
+
 ### `mako backups`
 
 | command | does |
@@ -227,6 +249,16 @@ Generated from the command registry; every command also answers `--help` with it
 | `mako data jobs cancel <job-id>` | Cancel a queued or running data job (committed rows are kept) *(confirmed)* |
 | `mako data jobs get <job-id>` | Show one data job; --wait polls it to a terminal state |
 | `mako data jobs list` | List import and export jobs of an environment |
+
+### `mako email-templates`
+
+| command | does |
+| ------- | ---- |
+| `mako email-templates get <kind>` | Show one email template's subject and body as they are in effect |
+| `mako email-templates list` | List the environment's application email templates; defaults are marked until customized |
+| `mako email-templates preview <kind>` | Render an email template with placeholder data; --subject or --body previews unsaved text |
+| `mako email-templates reset <kind>` | Reset an email template to the built-in default |
+| `mako email-templates set <kind>` | Customize an email template's subject and plain-text body; unknown {{variables}} are refused |
 
 ### `mako envs`
 

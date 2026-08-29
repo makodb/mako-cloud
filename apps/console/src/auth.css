@@ -1,0 +1,81 @@
+/* Auth providers and email templates: the environment's sign-in surface. */
+.auth-providers-screen table,
+.email-templates-screen table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.auth-providers-screen tbody th,
+.auth-providers-screen td {
+  padding: 0.5rem 0.75rem;
+  border-top: 1px solid var(--border, #d9dde3);
+  text-align: left;
+  vertical-align: top;
+}
+
+.auth-providers-screen td input[type="password"] {
+  width: 12rem;
+}
+
+.auth-providers-screen .stacked-form,
+.email-templates-screen .template-editor {
+  display: grid;
+  gap: 0.75rem;
+  max-width: 48rem;
+}
+
+.auth-providers-screen .stacked-form label,
+.email-templates-screen .template-editor label {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.auth-providers-screen textarea,
+.email-templates-screen textarea {
+  width: 100%;
+  font-family: var(--mono, ui-monospace, monospace);
+}
+
+.auth-providers-screen .form-actions,
+.email-templates-screen .button-row {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.email-templates-screen .template-layout {
+  display: grid;
+  grid-template-columns: minmax(12rem, 16rem) 1fr;
+  gap: 1.5rem;
+  align-items: start;
+}
+
+.email-templates-screen .template-kinds ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.25rem;
+}
+
+.email-templates-screen .template-kinds button {
+  width: 100%;
+  text-align: left;
+}
+
+.email-templates-screen .template-kinds button.active {
+  font-weight: 600;
+}
+
+.email-templates-screen .template-preview pre {
+  white-space: pre-wrap;
+  padding: 0.75rem;
+  border: 1px solid var(--border, #d9dde3);
+  border-radius: 0.375rem;
+}
+
+@media (max-width: 48rem) {
+  .email-templates-screen .template-layout {
+    grid-template-columns: 1fr;
+  }
+}

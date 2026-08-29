@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::{collections::BTreeSet, error::Error, fmt, str::FromStr};
 
 use mako_service_runtime::HttpMethod;
@@ -61,6 +62,9 @@ impl FromStr for InternalCaller {
 pub enum InternalRoute {
     IdentityAdmin,
     IdentityVerify,
+    /// The control plane collects application mail the data plane wrote.
+    ApplicationMailDrain,
+    ApplicationMailAcknowledge,
     FunctionSecretsResolve,
     OperatorEntitlementPlan,
     OperatorEntitlementApply,
@@ -72,6 +76,8 @@ impl InternalRoute {
         match self {
             Self::IdentityAdmin => "/_internal/v1/data/identity/admin",
             Self::IdentityVerify => "/_internal/v1/data/identity/verify",
+            Self::ApplicationMailDrain => "/_internal/v1/data/application-mail/drain",
+            Self::ApplicationMailAcknowledge => "/_internal/v1/data/application-mail/acknowledge",
             Self::FunctionSecretsResolve => "/_internal/v1/control/functions/resolve",
             Self::OperatorEntitlementPlan => "/_internal/v1/control/operator-entitlements/plan",
             Self::OperatorEntitlementApply => "/_internal/v1/control/operator-entitlements/apply",
@@ -86,7 +92,9 @@ impl InternalRoute {
     #[must_use]
     pub const fn caller(self) -> InternalCaller {
         match self {
-            Self::IdentityAdmin => InternalCaller::ControlPlane,
+            Self::IdentityAdmin | Self::ApplicationMailDrain | Self::ApplicationMailAcknowledge => {
+                InternalCaller::ControlPlane
+            }
             Self::IdentityVerify | Self::FunctionSecretsResolve => InternalCaller::EdgeGateway,
             Self::OperatorEntitlementPlan | Self::OperatorEntitlementApply => {
                 InternalCaller::OperatorAdmin
@@ -255,6 +263,9 @@ pub enum IdentityAdminOperation {
     InstallBucket,
     RemoveBucket,
     ListBuckets,
+    /// External sign-in providers and magic-link settings for an environment.
+    InstallAuthProviders,
+    InspectAuthProviders,
     InspectBucket,
     ListBucketObjects,
     DeleteBucketObject,
@@ -291,6 +302,58 @@ pub struct InstallCollectionInput {
 /// A document policy propagated to the data plane. `policy` is the policy
 /// model's own encoding, so the data plane validates it with the same codec it
 /// reads back rather than a parallel wire schema that could drift.
+/// The environment's sign-in settings as the control plane sealed them: the
+/// provider set with client secrets as ciphertext under the shared key, and
+/// whether magic links are enabled. The data plane validates before storing.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct InstallAuthProvidersInput {
+    pub settings: Value,
+}
+
+/// One email the data plane wants sent to an application user; the control
+/// plane renders it with the environment's template and delivers it.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct ApplicationMailIntent {
+    pub id: String,
+    pub project_id: String,
+    pub environment_id: String,
+    /// `verification`, `recovery`, `invitation`, or `magic_link`.
+    pub kind: String,
+    pub recipient: String,
+    /// Template variables, already safe to render: `link`, `expires_at`, ...
+    pub variables: BTreeMap<String, String>,
+    pub created_at_unix_seconds: u64,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct ApplicationMailDrainRequest {
+    /// How long the drained intents stay invisible to the next drain.
+    pub lease_seconds: u64,
+    pub limit: u64,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct ApplicationMailDrainResponse {
+    pub intents: Vec<ApplicationMailIntent>,
+}
+
+/// Intents the control plane has durably taken; the data plane forgets them.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct ApplicationMailAcknowledgeRequest {
+    pub ids: Vec<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct ApplicationMailAcknowledgeResponse {
+    pub acknowledged: u64,
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct InstallQuotaPolicyInput {

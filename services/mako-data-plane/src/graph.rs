@@ -134,6 +134,11 @@ struct DataPlaneComponents {
     object_store: Arc<mako_object_store::S3ObjectStore>,
     object_key_root: mako_file_storage::ObjectKeyRoot,
     enforce_object_store: bool,
+    /// Where the outside world reaches this node: provider callbacks come here.
+    public_url: String,
+    provider_secret_key: mako_auth_providers::ProviderSecretKey,
+    flow_state: mako_auth_providers::FlowStateVerifier,
+    provider_client: mako_auth_providers::ProviderClient,
     telemetry: Arc<mako_telemetry_client::TelemetryEmitter>,
     storage_sampler: Arc<crate::telemetry::StorageSampler>,
     quota_checkpoints: Arc<crate::telemetry::QuotaCheckpointer>,
@@ -237,6 +242,17 @@ impl DataPlaneGraph {
         );
         let enforce_object_store =
             config.environment == mako_config::DeploymentEnvironment::Production;
+        let public_url = issuer.clone();
+        let provider_secret_key =
+            mako_auth_providers::ProviderSecretKey::derive(secret.expose_secret().as_bytes());
+        let flow_state = mako_auth_providers::FlowStateVerifier::new(
+            mako_auth_providers::FlowStateKey::derive(secret.expose_secret().as_bytes()),
+        );
+        let provider_client =
+            mako_auth_providers::ProviderClient::new(mako_auth_providers::ProviderClientConfig {
+                allow_plain_http_loopback: !enforce_object_store,
+                ..mako_auth_providers::ProviderClientConfig::default()
+            });
         let explorer_cursor_key = blake3::derive_key(
             "mako/data-plane/explorer-cursor-signing/v1",
             secret.expose_secret().as_bytes(),
@@ -335,6 +351,10 @@ impl DataPlaneGraph {
                 object_store,
                 object_key_root,
                 enforce_object_store,
+                public_url,
+                provider_secret_key,
+                flow_state,
+                provider_client,
                 // The telemetry store has an ingest endpoint that nothing has
                 // ever called, which is why every signal the management API
                 // serves from it answers empty. This is the emitting side.
@@ -564,6 +584,30 @@ impl DataPlaneGraph {
             Durability::Sync,
         )
         .map_err(Into::into)
+    }
+
+    pub fn public_url(&self) -> &str {
+        &self.components.public_url
+    }
+
+    pub fn provider_secret_key(&self) -> &mako_auth_providers::ProviderSecretKey {
+        &self.components.provider_secret_key
+    }
+
+    pub fn flow_state(&self) -> &mako_auth_providers::FlowStateVerifier {
+        &self.components.flow_state
+    }
+
+    pub fn provider_client(&self) -> &mako_auth_providers::ProviderClient {
+        &self.components.provider_client
+    }
+
+    /// The node-wide outbox of mail the control plane sends for applications.
+    pub fn application_mail(&self) -> crate::application_mail::ApplicationMailOutbox {
+        crate::application_mail::ApplicationMailOutbox::new(
+            Arc::clone(&self.adapter),
+            Durability::Sync,
+        )
     }
 
     /// Buckets and objects of one tenant, over this node's object store.

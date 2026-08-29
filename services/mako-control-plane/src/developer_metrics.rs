@@ -2,7 +2,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use mako_api::ErrorCode;
 use mako_control_plane::{
-    DeveloperOutboxWorkerReport, DeveloperRegistrationHealthSnapshot,
+    ApplicationMailWorkerReport, DeveloperOutboxWorkerReport, DeveloperRegistrationHealthSnapshot,
     OperatorAuthenticationHealthSnapshot,
 };
 use mako_service_runtime::{HttpApiError, HttpResponse};
@@ -60,6 +60,11 @@ pub(crate) struct DeveloperMetrics {
     mail_retried: AtomicU64,
     mail_dead_lettered: AtomicU64,
     mail_worker_failures: AtomicU64,
+    application_mail_stored: AtomicU64,
+    application_mail_delivered: AtomicU64,
+    application_mail_retried: AtomicU64,
+    application_mail_dead_lettered: AtomicU64,
+    application_mail_worker_failures: AtomicU64,
     operator_sign_in_successes: AtomicU64,
     operator_sign_in_failures: AtomicU64,
     operator_throttles: AtomicU64,
@@ -131,6 +136,24 @@ impl DeveloperMetrics {
 
     pub(crate) fn observe_mail_worker_failure(&self) {
         self.mail_worker_failures.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub(crate) fn observe_application_mail(&self, report: &ApplicationMailWorkerReport) {
+        self.application_mail_stored
+            .fetch_add(report.stored as u64, Ordering::Relaxed);
+        self.application_mail_delivered
+            .fetch_add(report.delivered as u64, Ordering::Relaxed);
+        self.application_mail_retried
+            .fetch_add(report.retried as u64, Ordering::Relaxed);
+        self.application_mail_dead_lettered.fetch_add(
+            (report.dead_lettered + report.refused_at_intake) as u64,
+            Ordering::Relaxed,
+        );
+    }
+
+    pub(crate) fn observe_application_mail_worker_failure(&self) {
+        self.application_mail_worker_failures
+            .fetch_add(1, Ordering::Relaxed);
     }
 
     pub(crate) fn observe_operator_auth(
@@ -292,6 +315,32 @@ impl DeveloperMetrics {
             &mut output,
             "mako_developer_mail_worker_failures_total",
             self.mail_worker_failures.load(Ordering::Relaxed),
+        );
+        metric(
+            &mut output,
+            "mako_application_mail_stored_total",
+            self.application_mail_stored.load(Ordering::Relaxed),
+        );
+        metric(
+            &mut output,
+            "mako_application_mail_delivered_total",
+            self.application_mail_delivered.load(Ordering::Relaxed),
+        );
+        metric(
+            &mut output,
+            "mako_application_mail_retried_total",
+            self.application_mail_retried.load(Ordering::Relaxed),
+        );
+        metric(
+            &mut output,
+            "mako_application_mail_dead_lettered_total",
+            self.application_mail_dead_lettered.load(Ordering::Relaxed),
+        );
+        metric(
+            &mut output,
+            "mako_application_mail_worker_failures_total",
+            self.application_mail_worker_failures
+                .load(Ordering::Relaxed),
         );
         metric(
             &mut output,

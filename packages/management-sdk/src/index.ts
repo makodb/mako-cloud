@@ -94,6 +94,13 @@ export const MANAGEMENT_OPERATIONS = [
   "getFunctionSecret",
   "retireFunctionSecret",
   "rotateFunctionSecret",
+  "listEmailTemplates",
+  "getEmailTemplate",
+  "updateEmailTemplate",
+  "resetEmailTemplate",
+  "previewEmailTemplate",
+  "getAuthSettings",
+  "updateAuthSettings",
   "listStorageBuckets",
   "createStorageBucket",
   "getStorageBucket",
@@ -242,6 +249,16 @@ export type ServiceCredentialScope = components["schemas"]["ServiceCredentialSco
 export type JwtSigningKey = components["schemas"]["JwtSigningKey"];
 export type FunctionSecret = components["schemas"]["FunctionSecret"];
 export type FunctionSecretIssue = components["schemas"]["FunctionSecretIssue"];
+export type EmailTemplateKind = components["schemas"]["EmailTemplateKind"];
+export type EmailTemplateText = components["schemas"]["EmailTemplateText"];
+export type EmailTemplate = components["schemas"]["EmailTemplate"];
+export type EmailTemplateRender = components["schemas"]["EmailTemplateRender"];
+export type AuthSettings = components["schemas"]["AuthSettings"];
+export type AuthProviderView = components["schemas"]["AuthProviderView"];
+export type AuthProviderKind = components["schemas"]["AuthProviderKind"];
+export type AuthProviderUpdate = components["schemas"]["AuthProviderUpdate"];
+export type AuthSettingsUpdate = components["schemas"]["AuthSettingsUpdate"];
+export type MagicLinkSettings = components["schemas"]["MagicLinkSettings"];
 export type StorageBucket = components["schemas"]["StorageBucket"];
 export type StorageBucketAccess = components["schemas"]["StorageBucketAccess"];
 export type StorageBucketRule = components["schemas"]["StorageBucketRule"];
@@ -1371,6 +1388,117 @@ export class MakoManagementClient {
             path: { projectId, environmentId, secretName },
             header: { "Idempotency-Key": idempotencyKey },
           },
+        },
+      ),
+    );
+  }
+
+  async getAuthSettings(projectId: string, environmentId: string): Promise<AuthSettings> {
+    return unwrap(
+      await this.#client.GET(
+        "/v1/projects/{projectId}/environments/{environmentId}/auth-settings",
+        { params: { path: { projectId, environmentId } } },
+      ),
+    );
+  }
+
+  /**
+   * Replaces the environment's sign-in settings whole. A provider's
+   * `clientSecret` travels once, in this request body, and is never returned;
+   * omit it to keep the secret already installed under that provider's name.
+   */
+  async updateAuthSettings(
+    projectId: string,
+    environmentId: string,
+    input: AuthSettingsUpdate,
+    idempotencyKey: string,
+  ): Promise<AuthSettings> {
+    return unwrap(
+      await this.#client.PUT(
+        "/v1/projects/{projectId}/environments/{environmentId}/auth-settings",
+        {
+          params: {
+            path: { projectId, environmentId },
+            header: { "Idempotency-Key": idempotencyKey },
+          },
+          body: input,
+        },
+      ),
+    );
+  }
+
+  async listEmailTemplates(projectId: string, environmentId: string): Promise<EmailTemplate[]> {
+    const result = await this.#client.GET(
+      "/v1/projects/{projectId}/environments/{environmentId}/email-templates",
+      { params: { path: { projectId, environmentId } } },
+    );
+    return unwrap(result).items;
+  }
+
+  async getEmailTemplate(
+    projectId: string,
+    environmentId: string,
+    templateKind: EmailTemplateKind,
+  ): Promise<EmailTemplate> {
+    return unwrap(
+      await this.#client.GET(
+        "/v1/projects/{projectId}/environments/{environmentId}/email-templates/{templateKind}",
+        { params: { path: { projectId, environmentId, templateKind } } },
+      ),
+    );
+  }
+
+  async updateEmailTemplate(
+    projectId: string,
+    environmentId: string,
+    templateKind: EmailTemplateKind,
+    input: EmailTemplateText,
+    idempotencyKey: string,
+  ): Promise<EmailTemplate> {
+    return unwrap(
+      await this.#client.PUT(
+        "/v1/projects/{projectId}/environments/{environmentId}/email-templates/{templateKind}",
+        {
+          params: {
+            path: { projectId, environmentId, templateKind },
+            header: { "Idempotency-Key": idempotencyKey },
+          },
+          body: input,
+        },
+      ),
+    );
+  }
+
+  async resetEmailTemplate(
+    projectId: string,
+    environmentId: string,
+    templateKind: EmailTemplateKind,
+  ): Promise<EmailTemplate> {
+    return unwrap(
+      await this.#client.DELETE(
+        "/v1/projects/{projectId}/environments/{environmentId}/email-templates/{templateKind}",
+        { params: { path: { projectId, environmentId, templateKind } } },
+      ),
+    );
+  }
+
+  /** Renders the stored template, or the given unsaved text, with placeholder data. */
+  async previewEmailTemplate(
+    projectId: string,
+    environmentId: string,
+    templateKind: EmailTemplateKind,
+    input: { readonly subject?: string; readonly textBody?: string } = {},
+  ): Promise<EmailTemplateRender> {
+    const body = {
+      ...(input.subject !== undefined ? { subject: input.subject } : {}),
+      ...(input.textBody !== undefined ? { textBody: input.textBody } : {}),
+    };
+    return unwrap(
+      await this.#client.POST(
+        "/v1/projects/{projectId}/environments/{environmentId}/email-templates/{templateKind}/actions/preview",
+        {
+          params: { path: { projectId, environmentId, templateKind } },
+          ...(Object.keys(body).length > 0 ? { body } : {}),
         },
       ),
     );

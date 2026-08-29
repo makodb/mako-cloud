@@ -120,6 +120,18 @@ function consoleDestinations(projectId: string, environmentId: string): Workspac
   const base = `/projects/${projectId}/environments/${environmentId}`;
   return [
     { id: "storage", label: "Storage", path: `${base}/storage`, permitted: true },
+    {
+      id: "auth-providers",
+      label: "Auth providers",
+      path: `${base}/auth-providers`,
+      permitted: true,
+    },
+    {
+      id: "email-templates",
+      label: "Email templates",
+      path: `${base}/email-templates`,
+      permitted: true,
+    },
     { id: "logs", label: "Logs", path: `${base}/logs`, permitted: true },
     { id: "usage", label: "Usage", path: `${base}/usage`, permitted: true },
     { id: "activity", label: "Activity", path: `${base}/activity`, permitted: true },
@@ -130,11 +142,6 @@ function consoleDestinations(projectId: string, environmentId: string): Workspac
 /// developer should see the shape of the product, and nothing here pretends
 /// to work.
 const UNAVAILABLE_DESTINATIONS: readonly { id: string; label: string; reason: string }[] = [
-  {
-    id: "auth-providers",
-    label: "Auth providers",
-    reason: "Social sign-in and magic links are not available on this deployment yet.",
-  },
   {
     id: "webhooks",
     label: "Webhooks",

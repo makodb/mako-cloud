@@ -14,6 +14,7 @@ use std::{
 
 use futures::executor::block_on;
 use mako_config::{ServiceConfig, ServiceKind};
+use mako_control_plane::ApplicationMailError;
 use mako_control_plane_service::{ControlPlaneGraph, control_plane_router};
 use mako_service_runtime::{
     HttpTransportConfig, ReadinessProbe, serve_http_transport_with_readiness,
@@ -21,6 +22,14 @@ use mako_service_runtime::{
 
 fn main() -> ExitCode {
     start(ServiceKind::ControlPlane)
+}
+
+const fn application_mail_failure_class(error: &ApplicationMailError) -> &'static str {
+    match error {
+        ApplicationMailError::Source(_) => "data_plane",
+        ApplicationMailError::Storage(_) | ApplicationMailError::LimitExceeded => "storage",
+        _ => "delivery_worker",
+    }
 }
 
 fn start(service: ServiceKind) -> ExitCode {
@@ -65,19 +74,48 @@ fn start(service: ServiceKind) -> ExitCode {
     let mail_worker = graph.developer_mail_worker().cloned().map(|worker| {
         let stopping = Arc::clone(&mail_stopping);
         let metrics = Arc::clone(&graph);
+        // Application mail rides the same thread and transport: first the
+        // developer outbox, then a drain of the data plane's intents into the
+        // application outbox and a delivery pass over it.
+        let application_worker = graph.application_mail_worker().cloned();
         thread::spawn(move || {
+            let mut application_failures: u64 = 0;
             while !stopping.load(Ordering::Acquire) {
                 let now = SystemTime::now()
                     .duration_since(SystemTime::UNIX_EPOCH)
                     .map(|duration| duration.as_secs());
                 match now {
-                    Ok(now) => match block_on(worker.run_once(now)) {
-                        Ok(report) => metrics.observe_developer_mail(&report),
-                        Err(_) => {
-                            metrics.observe_developer_mail_worker_failure();
-                            eprintln!("developer mail outbox pass failed: class=delivery_worker");
+                    Ok(now) => {
+                        match block_on(worker.run_once(now)) {
+                            Ok(report) => metrics.observe_developer_mail(&report),
+                            Err(_) => {
+                                metrics.observe_developer_mail_worker_failure();
+                                eprintln!(
+                                    "developer mail outbox pass failed: class=delivery_worker"
+                                );
+                            }
                         }
-                    },
+                        if let Some(application) = &application_worker {
+                            match block_on(application.run_once(now)) {
+                                Ok(report) => {
+                                    application_failures = 0;
+                                    metrics.observe_application_mail(&report);
+                                }
+                                Err(error) => {
+                                    metrics.observe_application_mail_worker_failure();
+                                    // The data plane may simply not be up yet;
+                                    // say so once, then once a minute.
+                                    if application_failures.is_multiple_of(12) {
+                                        eprintln!(
+                                            "application mail pass failed: class={}",
+                                            application_mail_failure_class(&error)
+                                        );
+                                    }
+                                    application_failures = application_failures.saturating_add(1);
+                                }
+                            }
+                        }
+                    }
                     Err(_) => eprintln!("developer mail outbox pass failed: class=clock"),
                 }
                 thread::park_timeout(Duration::from_secs(5));

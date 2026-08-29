@@ -3,12 +3,14 @@
 #![forbid(unsafe_code)]
 
 mod audit;
+mod auth_settings_http;
 mod collection_http;
 mod credential_http;
 mod data_job_http;
 mod developer_auth_http;
 mod developer_metrics;
 mod developer_metrics_http;
+mod email_template_http;
 mod explorer_http;
 mod explorer_invalidation;
 mod function_http;
@@ -55,11 +57,13 @@ pub fn control_plane_router(
     workspace_http::add_workspace_routes(&mut router, Arc::clone(&graph))?;
     identity_admin_http::add_identity_admin_routes(&mut router, Arc::clone(&graph))?;
     credential_http::add_credential_routes(&mut router, Arc::clone(&graph))?;
+    email_template_http::add_email_template_routes(&mut router, Arc::clone(&graph))?;
     function_http::add_function_routes(&mut router, Arc::clone(&graph))?;
     observability_http::add_observability_routes(&mut router, Arc::clone(&graph))?;
     operator_http::add_operator_routes(&mut router, Arc::clone(&graph))?;
     collection_http::add_collection_routes(&mut router, Arc::clone(&graph))?;
     storage_bucket_http::add_storage_bucket_routes(&mut router, Arc::clone(&graph))?;
+    auth_settings_http::add_auth_settings_routes(&mut router, Arc::clone(&graph))?;
     policy_http::add_policy_routes(&mut router, graph)?;
     Ok(router)
 }

@@ -48,11 +48,19 @@ Successful startup emits only service, deployment, listener, storage path, and w
 Hosted developer registration is deny-by-default. Enabling
 `developer_registration.enabled` requires bounded token/session lifetimes,
 layered rate limits, password-work and pending-outbox limits, finite retention,
-a protected mail-encryption secret, and a complete authenticated SMTP
+a protected mail-encryption secret, and a complete SMTP
 relay/port/TLS mode/username/sender/password set. Production accepts only
 verified TLS modes (`starttls` or wrapper TLS); missing mail material stops
 startup. The public origin is the validated HTTPS server URL. See
 [developer registration](developer-registration.md).
+
+`MAKO_DEVELOPER_SMTP_TLS_MODE=plaintext` speaks unencrypted SMTP and is the
+one mode in which `MAKO_DEVELOPER_SMTP_USERNAME` and
+`MAKO_DEVELOPER_SMTP_PASSWORD_REF` may be omitted (they are still required
+together when either is set). It is for the local compose stack's mailpit
+and for tests only: a production configuration that names it fails with
+`CONFIG_INVALID_VALUE at developer_registration.smtp_tls_mode`. The same relay
+carries [application mail](application-mail.md).
 
 ## Public-beta configuration
 
