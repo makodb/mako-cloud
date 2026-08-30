@@ -1,8 +1,10 @@
+# Rational Money App Specification
+
 ## Purpose
 
 Rational is the platform's reference money-management application: a Monarch-style product that households use to track accounts, transactions, budgets, and goals, built only on what Mako Cloud offers applications, and kept running as the standing proof that those capabilities hold up together.
 
-## ADDED Requirements
+## Requirements
 
 ### Requirement: Sign-in by every application method
 Rational SHALL let a person sign up and sign in with email and password, with a registered external provider, and by magic link, and SHALL keep the session across browser restarts until it is signed out or revoked. A sign-in method the environment has not enabled MUST be shown as unavailable rather than failing on use.

@@ -1,6 +1,6 @@
 # Requirements-to-test traceability
 
-This matrix is the release-facing index from every scenario in the nineteen capability specs named in `scripts/validate-requirements-traceability.js` to its primary evidence. The remaining capability specs under `openspec/specs/` are not indexed here. `Automated` means the cited test executes in the repository test suites. Supporting tests may exercise more behavior than the scenario named here.
+This matrix is the release-facing index from every scenario in the twenty capability specs named in `scripts/validate-requirements-traceability.js` to its primary evidence. The remaining capability specs under `openspec/specs/` are not indexed here. `Automated` means the cited test executes in the repository test suites. Supporting tests may exercise more behavior than the scenario named here.
 
 Evidence marked `(mocked backend)` runs against intercepted HTTP responses rather than a running service, so it proves client behavior and not that the server implements the scenario. Evidence marked `(end-to-end)` drives the real service binaries. A scenario whose only evidence is mocked has no automated proof that the server side works.
 
@@ -152,11 +152,14 @@ Run `npm run validate:traceability` whenever a scenario or row changes. The vali
 | PA-07 | Rotated token is replayed | `crates/mako-identity/src/refresh.rs::rotates_hashes_allows_bounded_concurrency_and_revokes_on_replay` | Automated |
 | PA-08 | Administrator disables a user | `crates/mako-identity/src/lifecycle.rs::lifecycle_changes_revoke_sessions_and_publish_one_ordered_stream` | Automated |
 | PA-09 | User edits profile metadata | `crates/mako-identity/src/records.rs::records_retain_project_environment_scope_and_separate_metadata` | Automated |
-| PA-10 | Public credential is used without a user session | `crates/mako-gateway/src/replication.rs::authorizes_public_user_context_and_returns_retryable_quota_errors` | Automated |
-| PA-11 | Service credential is rotated | `crates/mako-identity/src/project_credentials.rs::credentials_are_one_time_scoped_rotatable_and_public_keys_never_bypass` | Automated |
-| PA-12 | Developer without user-admin permission attempts deletion | `crates/mako-identity/src/admin.rs::admin_surface_checks_permissions_audits_and_exposes_no_credentials` | Automated |
-| PA-13 | Repeated failed sign-ins occur | `crates/mako-identity/src/rate_limit.rs::limiter_reserves_admission_fails_closed_and_reports_retry_window` | Automated |
-| PA-14 | Authentication fails | `crates/mako-identity/src/signin.rs::wrong_absent_and_unverified_accounts_share_one_failure_response` | Automated |
+| PA-10 | A function sets app metadata under a service credential | `services/mako-data-plane/src/service_user_http.rs::a_read_composes_the_next_claim_and_the_epoch_it_read_guards_the_write` and `crates/mako-smoke/tests/rational.rs::rationals_own_model_serves_a_household_over_http` (end-to-end) | Automated |
+| PA-11 | Public credential is used without a user session | `crates/mako-gateway/src/replication.rs::authorizes_public_user_context_and_returns_retryable_quota_errors` | Automated |
+| PA-12 | Service credential is rotated | `crates/mako-identity/src/project_credentials.rs::credentials_are_one_time_scoped_rotatable_and_public_keys_never_bypass` | Automated |
+| PA-13 | Developer without user-admin permission attempts deletion | `crates/mako-identity/src/admin.rs::admin_surface_checks_permissions_audits_and_exposes_no_credentials` | Automated |
+| PA-14 | Repeated failed sign-ins occur | `crates/mako-identity/src/rate_limit.rs::limiter_reserves_admission_fails_closed_and_reports_retry_window` | Automated |
+| PA-15 | Authentication fails | `crates/mako-identity/src/signin.rs::wrong_absent_and_unverified_accounts_share_one_failure_response` | Automated |
+| PA-16 | An application on a listed origin calls its project | `crates/mako-smoke/tests/custom_domains.rs::a_domain_is_served_only_while_its_dns_proof_stands` (end-to-end) | Automated |
+| PA-17 | An unlisted origin and a management route | `crates/mako-smoke/tests/custom_domains.rs::a_domain_is_served_only_while_its_dns_proof_stands` (end-to-end) | Automated |
 
 ## Security / document policies
 
@@ -165,19 +168,20 @@ Run `npm run validate:traceability` whenever a scenario or row changes. The vali
 | DP-01 | Collection has no active policies | `crates/mako-policy/src/evaluator.rs::absent_policy_and_scope_mismatch_fail_closed` | Automated |
 | DP-02 | Update policy checks ownership | `crates/mako-policy/src/document_hook.rs::write_hook_uses_proposed_create_and_both_update_states_without_partial_writes` | Automated |
 | DP-03 | Policy references untrusted metadata | `crates/mako-policy/src/compiler.rs::unknown_fields_calls_and_cost_excess_return_source_diagnostics` | Automated |
-| DP-04 | Allow and deny both match | `crates/mako-policy/src/evaluator.rs::matching_allow_is_required_and_matching_deny_overrides` | Automated |
-| DP-05 | Ownership is changed by update | `crates/mako-policy/src/document_hook.rs::write_hook_uses_proposed_create_and_both_update_states_without_partial_writes` | Automated |
-| DP-06 | Document changes between check and commit | `crates/mako-documents/tests/document_invariants.rs::concurrent_revision_change_and_acknowledgement_invariants_survive_restart` | Automated |
-| DP-07 | Conflict exists on unreadable document | `crates/mako-sync/src/push.rs::bounded_push_commits_rows_and_returns_only_readable_conflicts` | Automated |
-| DP-08 | Edge function uses caller context | `packages/edge-sdk/test/client.test.mjs::auth and document clients automatically propagate the verified caller` | Automated |
-| DP-09 | Team field changes | `crates/mako-policy/src/visibility.rs::classifies_all_visibility_transitions_without_protected_new_content` | Automated |
-| DP-10 | Policy becomes more restrictive | `crates/mako-policy/src/authorization_epoch.rs::trusted_claim_changes_advance_only_the_subject_and_publish_in_order` | Automated |
-| DP-11 | Invalid policy is submitted | `crates/mako-policy/src/store.rs::validation_activation_failure_and_rollback_preserve_atomic_history` | Automated |
-| DP-12 | New policy set activates | `crates/mako-policy/src/store.rs::validation_activation_failure_and_rollback_preserve_atomic_history` | Automated |
-| DP-13 | Edge function uses default data client | `packages/edge-sdk/test/client.test.mjs::the runtime request helper consumes only trusted caller and correlation headers` | Automated |
-| DP-14 | Service credential performs maintenance | `crates/mako-policy/src/privileged.rs::service_bypass_is_scoped_and_requires_a_successful_audit_append` | Automated |
-| DP-15 | Policy evaluator is unavailable | `crates/mako-policy/src/evaluator.rs::timeout_unavailability_invalid_context_and_internal_failure_deny` | Automated |
-| DP-16 | Write is denied | `crates/mako-policy/src/document_hook.rs::write_hook_uses_proposed_create_and_both_update_states_without_partial_writes` | Automated |
+| DP-04 | A document scoped to a confirmed address | `crates/mako-policy/src/evaluator.rs::an_invitation_is_read_only_by_the_confirmed_holder_of_its_address` | Automated |
+| DP-05 | Allow and deny both match | `crates/mako-policy/src/evaluator.rs::matching_allow_is_required_and_matching_deny_overrides` | Automated |
+| DP-06 | Ownership is changed by update | `crates/mako-policy/src/document_hook.rs::write_hook_uses_proposed_create_and_both_update_states_without_partial_writes` | Automated |
+| DP-07 | Document changes between check and commit | `crates/mako-documents/tests/document_invariants.rs::concurrent_revision_change_and_acknowledgement_invariants_survive_restart` | Automated |
+| DP-08 | Conflict exists on unreadable document | `crates/mako-sync/src/push.rs::bounded_push_commits_rows_and_returns_only_readable_conflicts` | Automated |
+| DP-09 | Edge function uses caller context | `packages/edge-sdk/test/client.test.mjs::auth and document clients automatically propagate the verified caller` | Automated |
+| DP-10 | Team field changes | `crates/mako-policy/src/visibility.rs::classifies_all_visibility_transitions_without_protected_new_content` | Automated |
+| DP-11 | Policy becomes more restrictive | `crates/mako-policy/src/authorization_epoch.rs::trusted_claim_changes_advance_only_the_subject_and_publish_in_order` | Automated |
+| DP-12 | Invalid policy is submitted | `crates/mako-policy/src/store.rs::validation_activation_failure_and_rollback_preserve_atomic_history` | Automated |
+| DP-13 | New policy set activates | `crates/mako-policy/src/store.rs::validation_activation_failure_and_rollback_preserve_atomic_history` | Automated |
+| DP-14 | Edge function uses default data client | `packages/edge-sdk/test/client.test.mjs::the runtime request helper consumes only trusted caller and correlation headers` | Automated |
+| DP-15 | Service credential performs maintenance | `crates/mako-policy/src/privileged.rs::service_bypass_is_scoped_and_requires_a_successful_audit_append` | Automated |
+| DP-16 | Policy evaluator is unavailable | `crates/mako-policy/src/evaluator.rs::timeout_unavailability_invalid_context_and_internal_failure_deny` | Automated |
+| DP-17 | Write is denied | `crates/mako-policy/src/document_hook.rs::write_hook_uses_proposed_create_and_both_update_states_without_partial_writes` | Automated |
 
 ## Storage / document engine
 
@@ -199,31 +203,36 @@ Run `npm run validate:traceability` whenever a scenario or row changes. The vali
 | DE-14 | Tombstone is compacted safely | `crates/mako-documents/src/retention.rs::expires_checkpoints_before_compacting_history_and_tombstones` | Automated |
 | DE-15 | Indexed query is executed | `crates/mako-documents/src/query.rs::primary_key_and_compound_range_queries_page_deterministically` | Automated |
 | DE-16 | Query lacks an eligible index | `crates/mako-documents/src/query.rs::unbounded_unsupported_and_cursor_mismatch_queries_fail_closed` | Automated |
-| DE-17 | Unique index finds duplicate data | `crates/mako-documents/src/index_build.rs::duplicate_unique_build_fails_with_non_sensitive_diagnostics` | Automated |
-| DE-18 | Writes occur during index build | `crates/mako-documents/src/index_build.rs::change_log_catch_up_precedes_atomic_activation` | Automated |
-| DE-19 | Process restarts after acknowledgement | `crates/mako-documents/tests/document_invariants.rs::concurrent_revision_change_and_acknowledgement_invariants_survive_restart` | Automated |
-| DE-20 | Concurrent write occurs during a page read | `crates/mako-documents/src/read.rs::multi_key_reads_remain_on_one_snapshot_during_concurrent_writes` | Automated |
+| DE-17 | A range with no equality walks the collection | `crates/mako-documents/src/query.rs::a_one_sided_range_over_a_single_field_index_walks_the_collection` | Automated |
+| DE-18 | Unique index finds duplicate data | `crates/mako-documents/src/index_build.rs::duplicate_unique_build_fails_with_non_sensitive_diagnostics` | Automated |
+| DE-19 | Writes occur during index build | `crates/mako-documents/src/index_build.rs::change_log_catch_up_precedes_atomic_activation` | Automated |
+| DE-20 | Process restarts after acknowledgement | `crates/mako-documents/tests/document_invariants.rs::concurrent_revision_change_and_acknowledgement_invariants_survive_restart` | Automated |
+| DE-21 | Concurrent write occurs during a page read | `crates/mako-documents/src/read.rs::multi_key_reads_remain_on_one_snapshot_during_concurrent_writes` | Automated |
 
 ## Sync / RxDB replication
 
 | ID | Scenario | Primary automated evidence | Status |
 | --- | --- | --- | --- |
 | RR-01 | Application starts replication | `packages/rxdb-client/test/config.test.mjs::normalizes a bounded browser or Node configuration` | Automated |
-| RR-02 | Initial pull | `crates/mako-sync/src/pull.rs::null_checkpoint_pull_captures_high_water_and_returns_commit_order` | Automated |
-| RR-03 | Changes are not visible to the caller | `crates/mako-sync/tests/multi_client.rs::clients_handle_hidden_visibility_delete_reconnect_and_expired_checkpoint` | Automated |
-| RR-04 | Assumed master matches | `crates/mako-sync/src/push.rs::bounded_push_commits_rows_and_returns_only_readable_conflicts` | Automated |
-| RR-05 | Assumed master is stale | `crates/mako-sync/tests/multi_client.rs::concurrent_offline_clients_conflict_and_winner_retry_is_idempotent` | Automated |
-| RR-06 | Push is not authorized | `packages/rxdb-client/test/push.test.mjs::surfaces denied rows as non-retryable policy errors` | Automated |
-| RR-07 | Push response is lost | `crates/mako-sync/tests/multi_client.rs::concurrent_offline_clients_conflict_and_winner_retry_is_idempotent` | Automated |
-| RR-08 | Visible document changes | `crates/mako-sync/src/live.rs::live_delivery_filters_frames_heartbeats_and_overflow_resyncs` | Automated |
-| RR-09 | Client reconnects | `crates/mako-sync/tests/multi_client.rs::clients_handle_hidden_visibility_delete_reconnect_and_expired_checkpoint` | Automated |
-| RR-10 | Remote document is deleted | `crates/mako-sync/src/pull.rs::pull_delivers_stored_and_visibility_transition_tombstones` | Automated |
-| RR-11 | Document update revokes its own visibility | `crates/mako-policy/src/visibility.rs::classifies_all_visibility_transitions_without_protected_new_content` | Automated |
-| RR-12 | User membership is revoked | `packages/rxdb-client/test/security-reset.test.mjs::pauses, securely clears, notifies, and restarts under a new identifier` | Automated |
-| RR-13 | Client schema is outdated | `packages/rxdb-client/test/recovery.test.mjs::surfaces migration and full-resync states through application hooks` | Automated |
-| RR-14 | Access token expires during live sync | `packages/rxdb-client/test/refresh.test.mjs::automatically rotates an expiring access token once for concurrent callers` | Automated |
-| RR-15 | Refresh session is revoked | `packages/rxdb-client/test/refresh.test.mjs::clears revoked or unavailable refresh state and requires authentication` | Automated |
-| RR-16 | Client exceeds a transient rate limit | `crates/mako-gateway/src/replication.rs::authorizes_public_user_context_and_returns_retryable_quota_errors` | Automated |
+| RR-02 | Application restarts on durable storage | `packages/rxdb-client/test/replication-state.test.mjs::a restart resumes from the persisted checkpoint and security generation` | Automated |
+| RR-03 | Application signs in through a provider with the integration | `packages/rxdb-client/test/provider-sign-in.test.mjs::completes a provider sign-in from the fragment and the session behaves like a password one` | Automated |
+| RR-04 | Initial pull | `crates/mako-sync/src/pull.rs::null_checkpoint_pull_captures_high_water_and_returns_commit_order` | Automated |
+| RR-05 | Changes are not visible to the caller | `crates/mako-sync/tests/multi_client.rs::clients_handle_hidden_visibility_delete_reconnect_and_expired_checkpoint` | Automated |
+| RR-06 | A document leaves the filtered slice | `crates/mako-sync/src/pull.rs::a_filter_narrows_a_scope_tombstones_what_leaves_it_and_binds_the_checkpoint` | Automated |
+| RR-07 | Assumed master matches | `crates/mako-sync/src/push.rs::bounded_push_commits_rows_and_returns_only_readable_conflicts` | Automated |
+| RR-08 | Assumed master is stale | `crates/mako-sync/tests/multi_client.rs::concurrent_offline_clients_conflict_and_winner_retry_is_idempotent` | Automated |
+| RR-09 | Push is not authorized | `packages/rxdb-client/test/push.test.mjs::surfaces denied rows as non-retryable policy errors` | Automated |
+| RR-10 | Push response is lost | `crates/mako-sync/tests/multi_client.rs::concurrent_offline_clients_conflict_and_winner_retry_is_idempotent` | Automated |
+| RR-11 | Visible document changes | `crates/mako-sync/src/live.rs::live_delivery_filters_frames_heartbeats_and_overflow_resyncs` | Automated |
+| RR-12 | Client reconnects | `crates/mako-sync/tests/multi_client.rs::clients_handle_hidden_visibility_delete_reconnect_and_expired_checkpoint` | Automated |
+| RR-13 | One connection carries many collections | `packages/rxdb-client/test/live-group.test.mjs::one connection routes each collection's events to its own stream` and `crates/mako-smoke/tests/database_service.rs::an_application_user_authenticates_reads_writes_and_queries_their_own_data` (end-to-end) | Automated |
+| RR-14 | Remote document is deleted | `crates/mako-sync/src/pull.rs::pull_delivers_stored_and_visibility_transition_tombstones` | Automated |
+| RR-15 | Document update revokes its own visibility | `crates/mako-policy/src/visibility.rs::classifies_all_visibility_transitions_without_protected_new_content` | Automated |
+| RR-16 | User membership is revoked | `packages/rxdb-client/test/security-reset.test.mjs::pauses, securely clears, notifies, and restarts under a new identifier` | Automated |
+| RR-17 | Client schema is outdated | `packages/rxdb-client/test/recovery.test.mjs::surfaces migration and full-resync states through application hooks` | Automated |
+| RR-18 | Access token expires during live sync | `packages/rxdb-client/test/refresh.test.mjs::automatically rotates an expiring access token once for concurrent callers` | Automated |
+| RR-19 | Refresh session is revoked | `packages/rxdb-client/test/refresh.test.mjs::clears revoked or unavailable refresh state and requires authentication` | Automated |
+| RR-20 | Client exceeds a transient rate limit | `crates/mako-gateway/src/replication.rs::authorizes_public_user_context_and_returns_retryable_quota_errors` | Automated |
 
 ## Operations / local bootstrap and smoke verification
 
@@ -287,7 +296,8 @@ Run `npm run validate:traceability` whenever a scenario or row changes. The vali
 | ID | Scenario | Primary automated evidence | Status |
 | --- | --- | --- | --- |
 | SF-01 | A developer schedules a nightly function | `crates/mako-control-plane/src/function_schedule.rs::a_due_schedule_is_invoked_with_its_request_and_the_run_recorded` and `crates/mako-smoke/tests/edge_function.rs::deployed_function_is_served_through_the_edge_gateway` (end-to-end) | Automated |
-| SF-02 | A run overlaps the next due time | `crates/mako-control-plane/src/function_schedule.rs::a_held_lease_skips_the_next_due_time_and_the_schedule_continues` | Automated |
+| SF-02 | A public caller claims to be a schedule | `crates/mako-edge-gateway/src/lib.rs::a_public_caller_cannot_claim_to_be_a_schedule` | Automated |
+| SF-03 | A run overlaps the next due time | `crates/mako-control-plane/src/function_schedule.rs::a_held_lease_skips_the_next_due_time_and_the_schedule_continues` | Automated |
 
 ## Operations / custom domains
 
@@ -320,3 +330,30 @@ Run `npm run validate:traceability` whenever a scenario or row changes. The vali
 | DC-11 | A developer reviews recent activity | `apps/console/test-e2e/usage-activity.spec.ts::the activity feed lists newest first, filters by outcome and action, and loads more` (mocked backend) | Automated |
 | DC-12 | A developer transfers a project to a team | `apps/console/test-e2e/project-home.spec.ts::transferring a personal project to a team confirms, posts the team, and shows the new owner` (mocked backend) and `crates/mako-smoke/tests/project_transfer.rs::a_project_is_transferred_between_a_personal_space_and_a_team` (end-to-end) | Automated |
 | DC-13 | A developer deletes a project | `apps/console/test-e2e/project-home.spec.ts::settings shows identifiers and owner and offers deletion with grace` (mocked backend) | Automated |
+
+## Samples / Rational money app
+
+| ID | Scenario | Primary automated evidence | Status |
+| --- | --- | --- | --- |
+| RA-01 | A person signs in with a provider | `crates/mako-smoke/tests/rational.rs::rationals_own_model_serves_a_household_over_http` (end-to-end) and `examples/rational/test/sign-in.spec.ts::a provider round trip signs the person in and the session survives a reload` (mocked backend) | Automated |
+| RA-02 | A person signs in by magic link | `crates/mako-smoke/tests/rational.rs::rationals_own_model_serves_a_household_over_http` (end-to-end) and `examples/rational/test/sign-in.spec.ts::a magic link signs the person in once and is refused the second time` (mocked backend) | Automated |
+| RA-03 | An invited member joins | `examples/rational/test-live/households.spec.ts::an invitation is accepted, replicates, and a removal clears the member's copy` (end-to-end) | Automated |
+| RA-04 | A member is removed | `examples/rational/test-live/households.spec.ts::an invitation is accepted, replicates, and a removal clears the member's copy` (end-to-end) | Automated |
+| RA-05 | A CSV statement is imported | `crates/mako-smoke/tests/rational.rs::rationals_own_model_serves_a_household_over_http` (end-to-end) and `examples/rational/test-unit/csv.test.mjs::a duplicate is one already stored, and two identical rows in a file are not` | Automated |
+| RA-06 | A simulated institution syncs | `examples/rational/test-unit/institution.test.mjs::an overlapping window repeats the entries it shares, with the same ids` | Automated |
+| RA-07 | A receipt is attached | `crates/mako-smoke/tests/rational.rs::rationals_own_model_serves_a_household_over_http` (end-to-end) and `examples/rational/test/receipts.spec.ts::a receipt is attached by one member and opened by another` (mocked backend) | Automated |
+| RA-08 | A split does not add up | `examples/rational/test/rational.spec.ts::transactions are created with splits that must add up, edited, and deleted` (mocked backend) | Automated |
+| RA-09 | A rule categorizes an import | `examples/rational/test-unit/rules.test.mjs::the first rule by priority wins, and ties are broken the same way everywhere` and `examples/rational/test/import.spec.ts::a bank export is previewed, deduplicated, categorized by a rule, and imported` (mocked backend) | Automated |
+| RA-10 | The nightly job categorizes synced transactions | `examples/rational/test-unit/nightly.test.mjs::an uncategorized transaction is filed, and the rule that filed it is recorded` | Automated |
+| RA-11 | Spending is tracked against a budget | `examples/rational/test-unit/budgets.test.mjs::a budget reports allowance, spent, remaining, and percent` | Automated |
+| RA-12 | A budget rolls over | `examples/rational/test-unit/budgets.test.mjs::rollover compounds across an unbroken run, and an overspend carries forward` and `examples/rational/test/plan.spec.ts::a budget rolls over, a recurring charge is confirmed, and a goal is saved towards` (mocked backend) | Automated |
+| RA-13 | A recurrence is detected | `examples/rational/test-unit/recurrences.test.mjs::an interval is the one every gap is close to, or none` | Automated |
+| RA-14 | A contribution advances a goal | `examples/rational/test-unit/goals.test.mjs::progress is the sum of a goal's own contributions, not an account balance` | Automated |
+| RA-15 | Net worth history accrues | `examples/rational/test-unit/nightly.test.mjs::net worth counts open accounts of the household's currency, liabilities as owed` and `examples/rational/test/nightly.spec.ts::the morning after: a filed transaction, a noticed bill, and a net-worth history` (mocked backend) | Automated |
+| RA-16 | A report is computed offline | `examples/rational/test-unit/reports.test.mjs::a currency is never converted into another` | Automated |
+| RA-17 | A large transaction fires an alert | `examples/rational/test-live/alerts.spec.ts::an alert the nightly job decided reaches the app and the household's endpoint, signed` (end-to-end) | Automated |
+| RA-18 | A condition still true tomorrow is the same alert | `examples/rational/test-live/alerts.spec.ts::an alert the nightly job decided reaches the app and the household's endpoint, signed` (end-to-end) and `examples/rational/test-unit/alerts.test.mjs::an alert already fired is not fired again` | Automated |
+| RA-19 | Edits made offline reach the household | `examples/rational/test-live/live.spec.ts::an offline edit is kept locally and pushed after reconnect` (end-to-end) | Automated |
+| RA-20 | The app restarts offline | `examples/rational/test-live/live.spec.ts::an offline restart shows the household from local storage` (end-to-end) | Automated |
+| RA-21 | A finding becomes a platform fix | `crates/mako-edge-gateway/src/lib.rs::a_public_caller_cannot_claim_to_be_a_schedule` and `crates/mako-documents/src/query.rs::a_one_sided_range_over_a_single_field_index_walks_the_collection` | Automated |
+| RA-22 | Rational runs on the beta | `crates/mako-smoke/tests/rational.rs::rationals_own_model_serves_a_household_over_http` (end-to-end), run by `scripts/run-rational-smoke-qualification.sh` | Automated |

@@ -10,7 +10,7 @@
   },
   "planHash": "d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073",
   "source": {
-    "digest": "e3d6a8f8fcd537f5a07813426f54a0c64bf9812de3849004241d2eeabe1294e3",
+    "digest": "858e142387f1b46eecbafb1e79895c70f41926a871886665e24dd7e9a1887b1b",
     "files": [
       {
         "path": ".env.example",
@@ -1478,8 +1478,8 @@
       },
       {
         "path": "crates/mako-smoke/src/lib.rs",
-        "sha256": "863c84d2ffeaccb3b1bf13a63918a548ff663a673320d1d94c01cfef6a7a35b7",
-        "size": 36003,
+        "sha256": "d50e33e1ed571443028e223f21b921095e232217530245798992a6e5bc2af87c",
+        "size": 37879,
         "mode": 420
       },
       {
@@ -1532,8 +1532,8 @@
       },
       {
         "path": "crates/mako-smoke/tests/file_storage.rs",
-        "sha256": "e925a5ac96c91ed54c76f7757fddefdd0929b93b45efb876e4331b925b588b89",
-        "size": 26096,
+        "sha256": "f2022cbe0b32935719d81b7740f8690e22601dffecbb2eb07e271b62ca27fbc1",
+        "size": 24516,
         "mode": 420
       },
       {
@@ -1552,6 +1552,12 @@
         "path": "crates/mako-smoke/tests/project_transfer.rs",
         "sha256": "9040911ae9568d962a277d272b1296593df3436df2079480f1fa40d04d725356",
         "size": 10158,
+        "mode": 420
+      },
+      {
+        "path": "crates/mako-smoke/tests/rational.rs",
+        "sha256": "3f5ed000628d8eb2e4c4b306916a5eea2d1206d99eb3080f5dd6d38dad050fbc",
+        "size": 35341,
         "mode": 420
       },
       {
@@ -3230,8 +3236,8 @@
       },
       {
         "path": "package.json",
-        "sha256": "49c0589990db644fa2beb64561a4bc86b7e37064f4ee01dc3e02322771c256d7",
-        "size": 5016,
+        "sha256": "549ea5183c67df751adc9fef51fb6ff5122007000c66b28b777dbbe501452bd4",
+        "size": 5095,
         "mode": 420
       },
       {
@@ -4232,8 +4238,8 @@
       },
       {
         "path": "scripts/run-public-beta-hosted-qualification.js",
-        "sha256": "00c298ad67ff2a5da6338b63311b2d69b50455eecb750f0172b4940ac4337bea",
-        "size": 6129,
+        "sha256": "13451f39b8bdfe25e5d22e81e51592e9a1e25b2a3aa104b93dae297b94f6feba",
+        "size": 6202,
         "mode": 420
       },
       {
@@ -4253,6 +4259,12 @@
         "sha256": "9012904b7b01de040f53af05f0dba0a17e3ca221c4f966e97ba9f0ff5590824b",
         "size": 19778,
         "mode": 420
+      },
+      {
+        "path": "scripts/run-rational-smoke-qualification.sh",
+        "sha256": "6004825d27abdb1b15efc7839ed4196b5dd756a71b740d6a2c52fbabcacaba7a",
+        "size": 2328,
+        "mode": 493
       },
       {
         "path": "scripts/run-rollback-qualification.sh",
@@ -4304,8 +4316,8 @@
       },
       {
         "path": "scripts/validate-documentation.js",
-        "sha256": "4a946e53f68b26a65caf7fe32ac9b752c928179fdd0a2fb64667e3ffd9114580",
-        "size": 4446,
+        "sha256": "95549d476d10d5eb0526a64c74d08353ff7d78e8ba87d4997b4028aee704bf5e",
+        "size": 4690,
         "mode": 420
       },
       {
@@ -4957,10 +4969,10 @@
       }
     ]
   },
-  "releaseDigest": "a26e29941d3dc49e39a45c09f6315897bebdf651d05fbbcc65154266556f6eda",
-  "generatedAt": "2026-08-30T12:36:23.913Z",
+  "releaseDigest": "66393dda4ae027887aef4db56d4bf83352c65efe8808e2f4589c30e40c9f2807",
+  "generatedAt": "2026-08-30T13:09:18.783Z",
   "candidateLayout": {
-    "root": ".local/public-beta-candidates/a26e29941d3dc49e39a45c09f6315897bebdf651d05fbbcc65154266556f6eda",
+    "root": ".local/public-beta-candidates/66393dda4ae027887aef4db56d4bf83352c65efe8808e2f4589c30e40c9f2807",
     "manifest": "manifest.json",
     "binaries": "bin",
     "console": "console"

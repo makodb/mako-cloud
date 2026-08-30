@@ -23,9 +23,14 @@ const capabilities = [
   ["SF", "openspec/specs/functions/scheduled-functions/spec.md"],
   ["CD", "openspec/specs/operations/custom-domains/spec.md"],
   ["AD", "openspec/specs/cloud/api-documentation/spec.md"],
+  ["RA", "openspec/specs/samples/rational-money-app/spec.md"],
 ];
 
-const mockedEvidence = ["apps/console/test-e2e/", "examples/local-first/test/"];
+const mockedEvidence = [
+  "apps/console/test-e2e/",
+  "examples/local-first/test/",
+  "examples/rational/test/",
+];
 
 const matrix = await readFile(resolve(root, matrixPath), "utf8");
 const rows = [

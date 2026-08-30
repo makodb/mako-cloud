@@ -976,6 +976,29 @@ function serviceHeaders() {
   };
 }
 
+/**
+ * Whether this deployment lets the service protocol be reached from outside.
+ *
+ * It should not: `/v1/.../service/...` is how an application's own trusted
+ * code talks to the data plane from inside the deployment, and a reverse proxy
+ * that published it would put a scoped credential on the internet. The beta
+ * answers 404 with no body for exactly that reason. A local stack does expose
+ * it, which is how the demo household gets seeded at all.
+ */
+let servicePublished = null;
+
+async function serviceIsReachable() {
+  if (servicePublished !== null) return servicePublished;
+  const probe = await dataRequest(
+    `/service/collections/${model.collections[0].id}/documents/mako-service-probe`,
+    { method: "GET", headers: serviceHeaders() },
+  );
+  // A data plane that answers at all says "no such document"; a proxy that
+  // hides the protocol answers 404 with nothing in it.
+  servicePublished = probe.status !== 404 || probe.body !== null;
+  return servicePublished;
+}
+
 async function serviceWrite(collectionId, document) {
   // The route compares the path segment with the body's id byte for byte, so
   // an id is sent verbatim (a `:` is a legal path character) rather than
@@ -1016,6 +1039,12 @@ async function serviceWrite(collectionId, document) {
 }
 
 try {
+  if (!(await serviceIsReachable())) {
+    log(
+      "this deployment does not publish the service protocol, as it should not; " +
+        "the demo household is not seeded. Households created in the app are unaffected.",
+    );
+  } else {
   const at = Date.now();
   await serviceWrite("households", {
     id: options["household-id"],
@@ -1037,6 +1066,7 @@ try {
       role: member.role,
       status: "active",
     });
+  }
   }
 } finally {
   const retired = mako(["keys", "retire", serviceKeyId, "--yes", ...tenant]);
