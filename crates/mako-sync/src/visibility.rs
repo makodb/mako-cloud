@@ -4,19 +4,32 @@ use mako_documents::{
 };
 use serde_json::Value;
 
+use crate::ReplicationFilter;
+
+/// The change one replication scope sees, or `None` when it sees nothing.
+///
+/// A filter narrows the scope after the policy has decided, and it narrows it
+/// the same way the policy does: a document that used to be in the scope and
+/// no longer is comes back as a tombstone. Without that, a transaction moved
+/// to another household -- or one whose household field is corrected -- would
+/// sit in the first household's local database for ever, because nothing
+/// would ever tell that database it left.
 pub(crate) fn replication_change(
     collection: &ScopedCollectionEngine,
     path: ReadAuthorizationPath,
     authorizer: &dyn DocumentReadAuthorizer,
     change: &ChangeDocument,
+    filter: Option<&ReplicationFilter>,
 ) -> Option<Value> {
     let previous = change.previous_document();
     let current = change.document();
-    let previous_visible = previous.is_some_and(|document| {
-        !document.is_deleted() && is_readable(collection, path, authorizer, document)
-    });
-    let current_visible =
-        !current.is_deleted() && is_readable(collection, path, authorizer, current);
+    let in_scope = |document: &CanonicalDocument| {
+        is_readable(collection, path, authorizer, document)
+            && filter.is_none_or(|filter| filter.matches(document.body()))
+    };
+    let previous_visible =
+        previous.is_some_and(|document| !document.is_deleted() && in_scope(document));
+    let current_visible = !current.is_deleted() && in_scope(current);
 
     if current_visible {
         Some(replication_document(current))

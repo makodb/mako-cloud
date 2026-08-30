@@ -3,9 +3,13 @@ use std::{error::Error, fmt};
 use mako_api::{ApiErrorEnvelope, CollectionId, TenantScope};
 use mako_identity::{AccessAuthorizationEpochs, AppUserId, SessionId};
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
-use serde_json::Value;
+use serde_json::{Map, Value};
 
 pub const MAX_PULL_BATCH_SIZE: usize = 1_000;
+/// A filter names one field by its dotted path and one string value; both are
+/// bounded because they are read on every change the scan examines.
+pub const MAX_FILTER_FIELD_BYTES: usize = 128;
+pub const MAX_FILTER_VALUE_BYTES: usize = 256;
 pub const MAX_PUSH_BATCH_SIZE: usize = 1_000;
 pub const MAX_MUTATION_ID_BYTES: usize = 256;
 
@@ -131,18 +135,79 @@ impl AuthenticatedReplicationContext {
     }
 }
 
+/// Narrows a replication scope to the documents whose field holds one value.
+///
+/// A user who belongs to several households may read every one of their
+/// documents, so without this a per-household local database receives all of
+/// them and discards what it did not want -- paying for the transfer, and
+/// re-examining every other household's changes on every pull. The filter is
+/// applied **after** the policy, so it can only ever narrow what the caller
+/// was already allowed to see; it is not an authorization mechanism and
+/// nothing about it is trusted.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct ReplicationFilter {
+    pub field: String,
+    pub value: String,
+}
+
+impl ReplicationFilter {
+    pub fn validate(&self) -> Result<(), ReplicationContractError> {
+        let field_valid = !self.field.is_empty()
+            && self.field.len() <= MAX_FILTER_FIELD_BYTES
+            && self.field.split('.').all(|segment| {
+                !segment.is_empty()
+                    && segment
+                        .bytes()
+                        .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+                    && !segment.as_bytes()[0].is_ascii_digit()
+            });
+        if !field_valid
+            || self.value.len() > MAX_FILTER_VALUE_BYTES
+            || self.value.chars().any(char::is_control)
+        {
+            return Err(ReplicationContractError::InvalidPullRequest);
+        }
+        Ok(())
+    }
+
+    /// Whether a replicated document body matches. A document that lacks the
+    /// field does not match, so a filtered scope never receives one whose
+    /// membership it cannot decide.
+    #[must_use]
+    pub fn matches(&self, body: &Map<String, Value>) -> bool {
+        let mut segments = self.field.split('.');
+        let first = segments.next().expect("a split always yields one segment");
+        let Some(mut value) = body.get(first) else {
+            return false;
+        };
+        for segment in segments {
+            match value.get(segment) {
+                Some(next) => value = next,
+                None => return false,
+            }
+        }
+        value.as_str() == Some(self.value.as_str())
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct PullRequest {
     pub checkpoint: Option<OpaqueCheckpoint>,
     pub schema_version: u64,
     pub batch_size: usize,
+    #[serde(default)]
+    pub filter: Option<ReplicationFilter>,
 }
 
 impl PullRequest {
     pub fn validate(&self) -> Result<(), ReplicationContractError> {
         if self.schema_version == 0 || !(1..=MAX_PULL_BATCH_SIZE).contains(&self.batch_size) {
             return Err(ReplicationContractError::InvalidPullRequest);
+        }
+        if let Some(filter) = &self.filter {
+            filter.validate()?;
         }
         Ok(())
     }
@@ -233,12 +298,24 @@ pub struct LiveStreamRequest {
     pub schema_version: u64,
     pub checkpoint: Option<OpaqueCheckpoint>,
     pub cursor: Option<OpaqueStreamCursor>,
+    /// The same narrowing the pull uses, and it has to be the same one: a
+    /// stream wider than the pull delivers documents the local database
+    /// discards, and one narrower silently withholds changes the pull would
+    /// have sent. The cursor and checkpoint are bound to it, so a scope
+    /// cannot resume under a filter it did not scan under.
+    #[serde(default)]
+    pub filter: Option<ReplicationFilter>,
 }
 
 impl LiveStreamRequest {
     pub fn validate(&self) -> Result<(), ReplicationContractError> {
         if self.schema_version == 0 || (self.checkpoint.is_some() && self.cursor.is_some()) {
             return Err(ReplicationContractError::InvalidStreamRequest);
+        }
+        if let Some(filter) = &self.filter {
+            filter
+                .validate()
+                .map_err(|_| ReplicationContractError::InvalidStreamRequest)?;
         }
         Ok(())
     }
@@ -319,6 +396,7 @@ mod tests {
                 checkpoint: None,
                 schema_version: 1,
                 batch_size: MAX_PULL_BATCH_SIZE,
+                filter: None,
             }
             .validate()
             .is_ok()
@@ -328,6 +406,7 @@ mod tests {
                 checkpoint: None,
                 schema_version: 1,
                 batch_size: MAX_PULL_BATCH_SIZE + 1,
+                filter: None,
             }
             .validate()
             .is_err()
@@ -368,6 +447,7 @@ mod tests {
                 cursor: Some(
                     OpaqueStreamCursor::new("msc1.abcdefghijkl".to_owned()).expect("cursor")
                 ),
+                filter: None,
             }
             .validate()
             .is_err()

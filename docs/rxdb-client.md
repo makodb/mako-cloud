@@ -337,6 +337,34 @@ must also assume that previously synchronized data can remain in local storage u
 authorization-epoch reset completes. Do not render a protected collection while a security reset
 or authentication-required state is active.
 
+## Replicating one slice of a collection
+
+A user who belongs to several households may read the documents of all of them, so a database
+per household receives every household's documents and discards what it did not want — paying for
+the transfer, and re-examining every other household's changes on every pull. `filter` narrows the
+scope to the documents whose field holds one value:
+
+```ts
+const config = normalizeMakoRxdbConfig({
+  ...scope,
+  collectionId: "transactions",
+  filter: { field: "household_id", value: householdId },
+});
+```
+
+It is applied **after** the policy, so it can only narrow what the caller was already allowed to
+read; it is not an authorization boundary and the platform trusts nothing about it. The pull and
+the live stream both use it — a stream wider than the pull delivers documents the database
+discards, and one narrower withholds changes the pull would have sent, so the client sends the same
+filter to both.
+
+A document that leaves the filter comes back as a tombstone, exactly as one that leaves the
+policy's reach does, so a transaction moved to another household disappears from the database it
+left instead of sitting there for ever. The checkpoint and the stream cursor are bound to the
+filter: resuming one under a different filter is refused rather than silently skipping every
+change the other filter passed over. Changing an open database's filter therefore means a new
+replication identifier and a fresh local store, the same as changing its collection.
+
 ## Conflict handling
 
 Mako follows RxDB's assumed-master-state protocol and returns readable master states as conflicts.

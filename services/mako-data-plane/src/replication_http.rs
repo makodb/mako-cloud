@@ -26,7 +26,8 @@ use mako_storage::Durability;
 use mako_sync::{
     LiveStreamError, LiveStreamEvent, LiveStreamLimits, LiveStreamRequest, LiveStreamSession,
     OpaqueCheckpoint, OpaqueStreamCursor, PullError, PullRequest, PullService, PushError,
-    PushRequest, PushService, ReplicationTokenCodec, ReplicationTokenKey, ResyncReason, SseFrame,
+    PushRequest, PushService, ReplicationFilter, ReplicationTokenCodec, ReplicationTokenKey,
+    ResyncReason, SseFrame,
 };
 
 use crate::{
@@ -504,6 +505,8 @@ fn live_request(request: &HttpRequest) -> Result<LiveStreamRequest, HttpApiError
     let mut schema_version = None;
     let mut checkpoint = None;
     let mut cursor = None;
+    let mut filter_field = None;
+    let mut filter_value = None;
     for (name, value) in request.query() {
         match name.as_str() {
             "schemaVersion" if schema_version.is_none() => {
@@ -518,14 +521,29 @@ fn live_request(request: &HttpRequest) -> Result<LiveStreamRequest, HttpApiError
             "cursor" if cursor.is_none() => {
                 cursor = Some(parse_opaque::<OpaqueStreamCursor>(request, value)?);
             }
+            // The stream's narrowing has to be the one the pull uses, so it
+            // is named the same way and bound into the same tokens.
+            "filterField" if filter_field.is_none() => filter_field = Some(value.to_owned()),
+            "filterValue" if filter_value.is_none() => filter_value = Some(value.to_owned()),
             _ => return Err(invalid(request, "replication stream query is invalid")),
         }
     }
+    let filter = match (filter_field, filter_value) {
+        (Some(field), Some(value)) => Some(ReplicationFilter { field, value }),
+        (None, None) => None,
+        _ => {
+            return Err(invalid(
+                request,
+                "a replication filter needs both filterField and filterValue",
+            ));
+        }
+    };
     let live = LiveStreamRequest {
         schema_version: schema_version
             .ok_or_else(|| invalid(request, "schemaVersion is required"))?,
         checkpoint,
         cursor,
+        filter,
     };
     live.validate()
         .map_err(|_| invalid(request, "replication stream query is invalid"))?;

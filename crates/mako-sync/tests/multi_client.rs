@@ -262,6 +262,7 @@ fn clients_handle_hidden_visibility_delete_reconnect_and_expired_checkpoint() {
                     checkpoint: None,
                     schema_version: 1,
                     batch_size: 10,
+                    filter: None,
                 },
                 &blue,
             )
@@ -284,6 +285,7 @@ fn clients_handle_hidden_visibility_delete_reconnect_and_expired_checkpoint() {
                     checkpoint: Some(blue_initial.checkpoint),
                     schema_version: 1,
                     batch_size: 10,
+                    filter: None,
                 },
                 &blue,
             )
@@ -299,6 +301,7 @@ fn clients_handle_hidden_visibility_delete_reconnect_and_expired_checkpoint() {
                     checkpoint: None,
                     schema_version: 1,
                     batch_size: 10,
+                    filter: None,
                 },
                 &red,
             )
@@ -328,6 +331,7 @@ fn clients_handle_hidden_visibility_delete_reconnect_and_expired_checkpoint() {
                     checkpoint: Some(blue_revoked.checkpoint.clone()),
                     schema_version: 1,
                     batch_size: 1,
+                    filter: None,
                 },
                 &blue,
             )
@@ -342,6 +346,7 @@ fn clients_handle_hidden_visibility_delete_reconnect_and_expired_checkpoint() {
                     checkpoint: Some(red_initial.checkpoint),
                     schema_version: 1,
                     batch_size: 10,
+                    filter: None,
                 },
                 &red,
             )
@@ -373,6 +378,7 @@ fn clients_handle_hidden_visibility_delete_reconnect_and_expired_checkpoint() {
                 schema_version: 1,
                 checkpoint: Some(red_caught_up.checkpoint),
                 cursor: None,
+                filter: None,
             },
             LiveStreamLimits::new(
                 NonZeroUsize::new(10).expect("batch"),
@@ -400,6 +406,7 @@ fn clients_handle_hidden_visibility_delete_reconnect_and_expired_checkpoint() {
                 schema_version: 1,
                 checkpoint: None,
                 cursor: Some(cursor),
+                filter: None,
             },
             LiveStreamLimits::new(
                 NonZeroUsize::new(10).expect("batch"),
@@ -427,6 +434,7 @@ fn clients_handle_hidden_visibility_delete_reconnect_and_expired_checkpoint() {
                     checkpoint: Some(blue_filled.checkpoint),
                     schema_version: 1,
                     batch_size: 10,
+                    filter: None,
                 },
                 &blue,
             )
@@ -491,6 +499,7 @@ fn checkpoint_resume_survives_a_rocksdb_service_restart() {
                 checkpoint: None,
                 schema_version: 1,
                 batch_size: 10,
+                filter: None,
             },
             &AllowAll,
         )
@@ -554,6 +563,7 @@ fn checkpoint_resume_survives_a_rocksdb_service_restart() {
                 checkpoint: Some(checkpoint),
                 schema_version: 1,
                 batch_size: 10,
+                filter: None,
             },
             &AllowAll,
         )

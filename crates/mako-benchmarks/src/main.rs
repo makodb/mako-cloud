@@ -383,6 +383,7 @@ fn benchmark_pull(config: &BenchmarkConfig, hidden: bool) -> AnyResult<Benchmark
         checkpoint: None,
         schema_version: 1,
         batch_size: config.dataset_documents,
+        filter: None,
     };
     let path = if hidden { "hidden-change-scan" } else { "pull" };
     measure(path, config.iterations, 1, |_| {
@@ -492,6 +493,7 @@ fn benchmark_live_fanout(config: &BenchmarkConfig) -> AnyResult<BenchmarkResult>
         schema_version: 1,
         checkpoint: None,
         cursor: None,
+        filter: None,
     };
     let limits = LiveStreamLimits::new(
         NonZeroUsize::new(16).unwrap(),

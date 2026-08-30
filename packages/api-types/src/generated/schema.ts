@@ -5053,6 +5053,14 @@ export interface components {
             checkpoint?: components["schemas"]["Checkpoint"] | null;
             schemaVersion: number;
             batchSize: number;
+            filter?: components["schemas"]["ReplicationFilter"] | null;
+        };
+        /** @description Narrows a replication scope to the documents whose field holds one value, applied **after** the policy: it can only narrow what the caller was already allowed to read, and nothing about it is trusted. A document that leaves the filter is delivered as a tombstone, exactly as one that leaves the policy's reach is, so the local database it left does not keep it. The checkpoint and stream cursor are bound to the filter: resuming one under a different filter is refused rather than silently skipping the changes the other filter passed over. */
+        ReplicationFilter: {
+            /** @description Dotted path of the document field, each segment `[A-Za-z_][A-Za-z0-9_]*`. */
+            field: string;
+            /** @description The string the field must equal. A document without the field never matches. */
+            value: string;
         };
         PullResponse: {
             documents: components["schemas"]["JsonDocument"][];
@@ -9332,6 +9340,9 @@ export interface operations {
                 checkpoint?: components["schemas"]["Checkpoint"];
                 /** @description Signed opaque Last-Event-ID resume cursor; mutually exclusive with checkpoint. */
                 cursor?: components["schemas"]["StreamCursor"];
+                /** @description With `filterValue`, narrows the stream exactly as `filter` narrows a pull, and it must be the same narrowing: a stream wider than the pull delivers documents the local database discards, and one narrower withholds changes the pull would have sent. Either both are given or neither. */
+                filterField?: string;
+                filterValue?: string;
             };
             header?: never;
             path: {

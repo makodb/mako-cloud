@@ -12,6 +12,12 @@ export const SUPPORTED_RXDB_RANGE = ">=17.0.0 <18.0.0" as const;
 
 export type MakoRxdbRuntime = "browser" | "node";
 
+/** Narrows a replicated scope to the documents whose field holds one value. */
+export interface MakoReplicationFilter {
+  readonly field: string;
+  readonly value: string;
+}
+
 export interface MakoRxdbClientConfig {
   readonly endpoint: string;
   readonly projectId: string;
@@ -23,6 +29,15 @@ export interface MakoRxdbClientConfig {
   readonly runtime: MakoRxdbRuntime;
   readonly pullBatchSize?: number;
   readonly pushBatchSize?: number;
+  /**
+   * Replicate only the documents whose field holds this value -- one
+   * household into one local database, rather than every household the user
+   * belongs to into all of them. Applied after the policy, so it only narrows
+   * what the caller could already read. The pull and the live stream both use
+   * it, and the checkpoint is bound to it: a database opened under one filter
+   * cannot resume a checkpoint scanned under another.
+   */
+  readonly filter?: MakoReplicationFilter;
 }
 
 export interface NormalizedMakoRxdbClientConfig {
@@ -36,6 +51,7 @@ export interface NormalizedMakoRxdbClientConfig {
   readonly runtime: MakoRxdbRuntime;
   readonly pullBatchSize: number;
   readonly pushBatchSize: number;
+  readonly filter: MakoReplicationFilter | null;
 }
 
 export class MakoRxdbConfigurationError extends Error {
@@ -83,6 +99,19 @@ export function normalizeMakoRxdbConfig(
   if (!Number.isSafeInteger(pushBatchSize) || pushBatchSize < 1 || pushBatchSize > 1_000) {
     throw new MakoRxdbConfigurationError("pushBatchSize must be between 1 and 1000");
   }
+  const filter = config.filter ?? null;
+  if (filter !== null) {
+    const fieldValid =
+      filter.field.length > 0 &&
+      filter.field.length <= 128 &&
+      filter.field.split(".").every((segment) => /^[A-Za-z_][A-Za-z0-9_]*$/u.test(segment));
+    if (!fieldValid) {
+      throw new MakoRxdbConfigurationError("filter.field is invalid");
+    }
+    if (filter.value.length > 256 || hasControlCharacters(filter.value)) {
+      throw new MakoRxdbConfigurationError("filter.value is invalid");
+    }
+  }
   return {
     endpoint,
     projectId: parseProjectId(config.projectId),
@@ -94,6 +123,7 @@ export function normalizeMakoRxdbConfig(
     runtime: config.runtime,
     pullBatchSize,
     pushBatchSize,
+    filter,
   };
 }
 

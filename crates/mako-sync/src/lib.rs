@@ -18,7 +18,7 @@ pub use contract::{
     AuthenticatedReplicationContext, LiveStreamEvent, LiveStreamRequest, MAX_MUTATION_ID_BYTES,
     MAX_PULL_BATCH_SIZE, MAX_PUSH_BATCH_SIZE, OpaqueCheckpoint, OpaqueStreamCursor, PullRequest,
     PullResponse, PushOutcome, PushOutcomeStatus, PushRequest, PushResponse, PushRow,
-    ReplicationContractError, ResyncReason,
+    ReplicationContractError, ReplicationFilter, ResyncReason,
 };
 pub use live::{
     LiveStreamError, LiveStreamLimits, LiveStreamSession, MAX_LIVE_BUFFER_EVENTS,

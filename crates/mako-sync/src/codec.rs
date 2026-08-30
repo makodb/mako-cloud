@@ -7,7 +7,8 @@ use rand_core::{OsRng, RngCore};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    AuthenticatedReplicationContext, OpaqueCheckpoint, OpaqueStreamCursor, ReplicationContractError,
+    AuthenticatedReplicationContext, OpaqueCheckpoint, OpaqueStreamCursor,
+    ReplicationContractError, ReplicationFilter,
 };
 
 const CHECKPOINT_PREFIX: &str = "mcp1.";
@@ -95,10 +96,11 @@ impl<'a> ReplicationTokenCodec<'a> {
         schema_version: u64,
         scanned_position: u64,
         document_tiebreaker: Option<&str>,
+        filter: Option<&ReplicationFilter>,
     ) -> Result<OpaqueCheckpoint, ReplicationTokenCodecError> {
         validate_schema_and_tiebreaker(schema_version, document_tiebreaker)?;
         let claims = CheckpointClaims {
-            binding: binding(context, schema_version),
+            binding: binding(context, schema_version, filter),
             scanned_position,
             document_tiebreaker: document_tiebreaker.map(str::to_owned),
         };
@@ -111,12 +113,13 @@ impl<'a> ReplicationTokenCodec<'a> {
         checkpoint: &OpaqueCheckpoint,
         context: &AuthenticatedReplicationContext,
         schema_version: u64,
+        filter: Option<&ReplicationFilter>,
     ) -> Result<VerifiedCheckpoint, ReplicationTokenCodecError> {
         if schema_version == 0 {
             return Err(ReplicationTokenCodecError::InvalidClaims);
         }
         let claims: CheckpointClaims = self.decode(CHECKPOINT_PREFIX, checkpoint.as_str())?;
-        verify_binding(&claims.binding, context, schema_version)?;
+        verify_binding(&claims.binding, context, schema_version, filter)?;
         validate_schema_and_tiebreaker(schema_version, claims.document_tiebreaker.as_deref())?;
         Ok(VerifiedCheckpoint {
             scanned_position: claims.scanned_position,
@@ -131,13 +134,14 @@ impl<'a> ReplicationTokenCodec<'a> {
         after_position: u64,
         through_high_water: u64,
         document_tiebreaker: Option<&str>,
+        filter: Option<&ReplicationFilter>,
     ) -> Result<OpaqueStreamCursor, ReplicationTokenCodecError> {
         validate_schema_and_tiebreaker(schema_version, document_tiebreaker)?;
         if after_position > through_high_water {
             return Err(ReplicationTokenCodecError::InvalidClaims);
         }
         let claims = StreamCursorClaims {
-            binding: binding(context, schema_version),
+            binding: binding(context, schema_version, filter),
             after_position,
             through_high_water,
             document_tiebreaker: document_tiebreaker.map(str::to_owned),
@@ -151,12 +155,13 @@ impl<'a> ReplicationTokenCodec<'a> {
         cursor: &OpaqueStreamCursor,
         context: &AuthenticatedReplicationContext,
         schema_version: u64,
+        filter: Option<&ReplicationFilter>,
     ) -> Result<VerifiedStreamCursor, ReplicationTokenCodecError> {
         if schema_version == 0 {
             return Err(ReplicationTokenCodecError::InvalidClaims);
         }
         let claims: StreamCursorClaims = self.decode(STREAM_CURSOR_PREFIX, cursor.as_str())?;
-        verify_binding(&claims.binding, context, schema_version)?;
+        verify_binding(&claims.binding, context, schema_version, filter)?;
         validate_schema_and_tiebreaker(schema_version, claims.document_tiebreaker.as_deref())?;
         if claims.after_position > claims.through_high_water {
             return Err(ReplicationTokenCodecError::InvalidClaims);
@@ -223,6 +228,12 @@ struct TokenBinding {
     schema_version: u64,
     environment_authorization_epoch: u64,
     user_authorization_epoch: u64,
+    /// The narrowing the scan ran under. A position means "everything up to
+    /// here that this scope wanted", so resuming it under a different filter
+    /// would skip every change the other filter passed over. A token minted
+    /// before filters existed carries none, which is what it scanned under.
+    #[serde(default)]
+    filter: Option<ReplicationFilter>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -242,7 +253,11 @@ struct StreamCursorClaims {
     document_tiebreaker: Option<String>,
 }
 
-fn binding(context: &AuthenticatedReplicationContext, schema_version: u64) -> TokenBinding {
+fn binding(
+    context: &AuthenticatedReplicationContext,
+    schema_version: u64,
+    filter: Option<&ReplicationFilter>,
+) -> TokenBinding {
     let epochs = context.authorization_epochs();
     TokenBinding {
         tenant: context.tenant().clone(),
@@ -251,6 +266,7 @@ fn binding(context: &AuthenticatedReplicationContext, schema_version: u64) -> To
         schema_version,
         environment_authorization_epoch: epochs.environment,
         user_authorization_epoch: epochs.user,
+        filter: filter.cloned(),
     }
 }
 
@@ -258,8 +274,9 @@ fn verify_binding(
     binding: &TokenBinding,
     context: &AuthenticatedReplicationContext,
     schema_version: u64,
+    filter: Option<&ReplicationFilter>,
 ) -> Result<(), ReplicationTokenCodecError> {
-    if binding != &self::binding(context, schema_version) {
+    if binding != &self::binding(context, schema_version, filter) {
         return Err(ReplicationTokenCodecError::BindingMismatch);
     }
     Ok(())
@@ -354,10 +371,10 @@ mod tests {
         let codec = ReplicationTokenCodec::new(&key);
         let request_context = context("prj_abcdefgh", "usr_abcdefgh", 3);
         let checkpoint = codec
-            .encode_checkpoint(&request_context, 4, 91, Some("doc-9"))
+            .encode_checkpoint(&request_context, 4, 91, Some("doc-9"), None)
             .expect("checkpoint");
         let verified = codec
-            .decode_checkpoint(&checkpoint, &request_context, 4)
+            .decode_checkpoint(&checkpoint, &request_context, 4, None)
             .expect("verify");
         assert_eq!(verified.scanned_position(), 91);
         assert_eq!(verified.document_tiebreaker(), Some("doc-9"));
@@ -367,24 +384,29 @@ mod tests {
         tampered.push('a');
         let tampered = OpaqueCheckpoint::new(tampered).expect("shape");
         assert!(matches!(
-            codec.decode_checkpoint(&tampered, &request_context, 4),
+            codec.decode_checkpoint(&tampered, &request_context, 4, None),
             Err(ReplicationTokenCodecError::InvalidSignature)
                 | Err(ReplicationTokenCodecError::Malformed)
         ));
         assert!(matches!(
-            codec.decode_checkpoint(&checkpoint, &context("prj_abcdefgh", "usr_otheruser", 3), 4),
+            codec.decode_checkpoint(
+                &checkpoint,
+                &context("prj_abcdefgh", "usr_otheruser", 3),
+                4,
+                None
+            ),
             Err(ReplicationTokenCodecError::BindingMismatch)
         ));
         assert!(matches!(
-            codec.decode_checkpoint(&checkpoint, &request_context, 5),
+            codec.decode_checkpoint(&checkpoint, &request_context, 5, None),
             Err(ReplicationTokenCodecError::BindingMismatch)
         ));
 
         let cursor = codec
-            .encode_stream_cursor(&request_context, 4, 91, 120, Some("doc-9"))
+            .encode_stream_cursor(&request_context, 4, 91, 120, Some("doc-9"), None)
             .expect("cursor");
         let cursor = codec
-            .decode_stream_cursor(&cursor, &request_context, 4)
+            .decode_stream_cursor(&cursor, &request_context, 4, None)
             .expect("verify cursor");
         assert_eq!(cursor.after_position(), 91);
         assert_eq!(cursor.through_high_water(), 120);

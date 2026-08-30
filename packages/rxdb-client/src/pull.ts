@@ -48,6 +48,7 @@ export function createMakoPullHandler<RxDocType>(
             checkpoint: checkpoint?.token ?? null,
             schemaVersion: config.schemaVersion,
             batchSize: config.pullBatchSize,
+            ...(config.filter === null ? {} : { filter: config.filter }),
           }),
         });
       } catch {

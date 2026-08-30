@@ -65,7 +65,12 @@ impl<'a> PullService<'a> {
             Some(checkpoint) => {
                 let position = self
                     .tokens
-                    .decode_checkpoint(checkpoint, context, request.schema_version)?
+                    .decode_checkpoint(
+                        checkpoint,
+                        context,
+                        request.schema_version,
+                        request.filter.as_ref(),
+                    )?
                     .scanned_position();
                 if let CheckpointStatus::Expired { minimum_position } =
                     self.collection.checkpoint_status(position).await?
@@ -98,6 +103,7 @@ impl<'a> PullService<'a> {
                     ReadAuthorizationPath::ReplicationPull,
                     authorizer,
                     change,
+                    request.filter.as_ref(),
                 ) {
                     documents.push(document);
                     if documents.len() == request.batch_size {
@@ -118,6 +124,7 @@ impl<'a> PullService<'a> {
             request.schema_version,
             scanned_through,
             None,
+            request.filter.as_ref(),
         )?;
         Ok(PullResponse {
             documents,
@@ -232,7 +239,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::ReplicationTokenKey;
+    use crate::{OpaqueCheckpoint, ReplicationFilter, ReplicationTokenKey};
 
     #[test]
     fn null_checkpoint_pull_captures_high_water_and_returns_commit_order() {
@@ -286,6 +293,7 @@ mod tests {
                         checkpoint: None,
                         schema_version: 2,
                         batch_size: 10,
+                        filter: None,
                     },
                     &allow,
                 )
@@ -309,6 +317,7 @@ mod tests {
                         checkpoint: None,
                         schema_version: 1,
                         batch_size: 10,
+                        filter: None,
                     },
                     &allow,
                 )
@@ -319,7 +328,7 @@ mod tests {
             assert_eq!(response.documents[1]["id"], "todo-b");
             assert_eq!(
                 ReplicationTokenCodec::new(&key)
-                    .decode_checkpoint(&response.checkpoint, &context, 1)
+                    .decode_checkpoint(&response.checkpoint, &context, 1, None)
                     .expect("checkpoint")
                     .scanned_position(),
                 4
@@ -332,6 +341,7 @@ mod tests {
                         checkpoint: None,
                         schema_version: 1,
                         batch_size: 2,
+                        filter: None,
                     },
                     &EvenValues,
                 )
@@ -347,14 +357,14 @@ mod tests {
             );
             assert_eq!(
                 ReplicationTokenCodec::new(&key)
-                    .decode_checkpoint(&visible.checkpoint, &context, 1)
+                    .decode_checkpoint(&visible.checkpoint, &context, 1, None)
                     .expect("visible checkpoint")
                     .scanned_position(),
                 4
             );
 
             let expired_checkpoint = ReplicationTokenCodec::new(&key)
-                .encode_checkpoint(&context, 1, 1, None)
+                .encode_checkpoint(&context, 1, 1, None, None)
                 .expect("old checkpoint");
             collection
                 .compact_through(2, Durability::Memory)
@@ -368,6 +378,7 @@ mod tests {
                             checkpoint: Some(expired_checkpoint),
                             schema_version: 1,
                             batch_size: 2,
+                            filter: None,
                         },
                         &allow,
                     )
@@ -431,6 +442,7 @@ mod tests {
                         checkpoint: None,
                         schema_version: 1,
                         batch_size: 10,
+                        filter: None,
                     },
                     &blue,
                 )
@@ -466,6 +478,7 @@ mod tests {
                         checkpoint: Some(initial.checkpoint),
                         schema_version: 1,
                         batch_size: 10,
+                        filter: None,
                     },
                     &blue,
                 )
@@ -498,6 +511,7 @@ mod tests {
                         checkpoint: Some(transition.checkpoint),
                         schema_version: 1,
                         batch_size: 10,
+                        filter: None,
                     },
                     &blue,
                 )
@@ -529,6 +543,7 @@ mod tests {
                         checkpoint: Some(before_delete.checkpoint),
                         schema_version: 1,
                         batch_size: 10,
+                        filter: None,
                     },
                     &blue,
                 )
@@ -617,6 +632,172 @@ mod tests {
         )
         .expect("metadata");
         DocumentValidator::compile(&metadata).expect("validator")
+    }
+
+    /// A validator whose documents carry the field a filter narrows on.
+    fn household_validator() -> DocumentValidator {
+        let metadata = CollectionMetadata::new(
+            CollectionId::parse("todos").expect("collection"),
+            CollectionMetadataVersion::new(1).expect("metadata version"),
+            SchemaVersion::new(1).expect("schema version"),
+            json!({
+                "type": "object",
+                "required": ["id", "household_id"],
+                "properties": {
+                    "id": {"type": "string"},
+                    "household_id": {"type": "string"}
+                },
+                "additionalProperties": false
+            }),
+            PrimaryKeyDefinition::field("id").expect("primary key"),
+            SchemaCompatibility::Compatible,
+            CollectionLifecycle::Active,
+        )
+        .expect("metadata");
+        DocumentValidator::compile(&metadata).expect("validator")
+    }
+
+    /// A user in two households reads the documents of both, so without a
+    /// filter a per-household local database receives the other's and
+    /// discards them -- paying for the transfer and re-examining every one of
+    /// them on every pull. The filter narrows the scope after the policy, and
+    /// narrows it the same way: a document that leaves the filter comes back
+    /// as a tombstone, because otherwise the database it left would keep it
+    /// for ever.
+    #[test]
+    fn a_filter_narrows_a_scope_tombstones_what_leaves_it_and_binds_the_checkpoint() {
+        futures::executor::block_on(async {
+            let adapter = Arc::new(MemoryAdapter::new());
+            let tenant = tenant();
+            let engine = DocumentEngine::new(adapter);
+            let collection_scope = CollectionScope::new(
+                tenant.clone(),
+                CollectionId::parse("todos").expect("collection"),
+            );
+            let collection = engine
+                .scope_collection(&tenant, collection_scope)
+                .expect("scope");
+            let sequencer = engine
+                .scope_sequencer(&tenant, &tenant, Durability::Memory)
+                .expect("sequencer");
+            let validator = household_validator();
+            let mut lease = sequencer
+                .lease(NonZeroU64::new(8).expect("lease"))
+                .await
+                .expect("lease");
+            let mut moved_revision = None;
+            for (id, household) in [
+                ("one-a", "hh_one"),
+                ("two-a", "hh_two"),
+                ("one-b", "hh_one"),
+                ("two-b", "hh_two"),
+            ] {
+                let position = lease.issue().expect("position");
+                let outcome = collection
+                    .create_document(MutationInput {
+                        mutation_id: MutationId::parse(format!("create-{id}")).expect("mutation"),
+                        commit_position: CommitPosition::new(position).expect("position"),
+                        document: validator
+                            .validate_create(json!({"id": id, "household_id": household}))
+                            .expect("document"),
+                        durability: Durability::Memory,
+                    })
+                    .await
+                    .expect("create");
+                let MutationCommitOutcome::Applied(applied) = outcome else {
+                    panic!("create must apply");
+                };
+                if id == "one-a" {
+                    moved_revision = Some(applied.revision);
+                }
+            }
+            sequencer.recover_high_water().await.expect("high water");
+
+            let context = context();
+            let key = ReplicationTokenKey::from_bytes([9; 32]);
+            let service = PullService::new(
+                &collection,
+                ReplicationTokenCodec::new(&key),
+                SchemaVersion::new(1).expect("schema version"),
+            );
+            let allow = AllowAll;
+            let filter = ReplicationFilter {
+                field: "household_id".to_owned(),
+                value: "hh_one".to_owned(),
+            };
+            let request = |checkpoint: Option<OpaqueCheckpoint>| PullRequest {
+                checkpoint,
+                schema_version: 1,
+                batch_size: 10,
+                filter: Some(filter.clone()),
+            };
+
+            // Only one household's documents, and the checkpoint still stands
+            // past everything scanned -- a page of the other household's
+            // changes must not stall the scan.
+            let response = service
+                .initial_pull(&context, &request(None), &allow)
+                .await
+                .expect("pull");
+            let ids: Vec<&str> = response
+                .documents
+                .iter()
+                .map(|document| document["id"].as_str().expect("id"))
+                .collect();
+            assert_eq!(ids, ["one-a", "one-b"]);
+            assert_eq!(
+                ReplicationTokenCodec::new(&key)
+                    .decode_checkpoint(&response.checkpoint, &context, 1, Some(&filter))
+                    .expect("checkpoint")
+                    .scanned_position(),
+                4,
+                "the scan advances past the changes the filter passed over"
+            );
+
+            // A checkpoint from this scope is not a checkpoint for another:
+            // resuming it unfiltered would skip everything the filter passed
+            // over, and it is refused rather than silently doing so.
+            let unfiltered = PullRequest {
+                checkpoint: Some(response.checkpoint.clone()),
+                schema_version: 1,
+                batch_size: 10,
+                filter: None,
+            };
+            assert!(matches!(
+                service.pull_authorized(&context, &unfiltered, &allow).await,
+                Err(PullError::Token(_))
+            ));
+
+            // The document moves to the other household. The scope it left
+            // is told, as a tombstone; the scope it joined receives it.
+            let position = lease.issue().expect("position");
+            collection
+                .update_document(
+                    moved_revision.expect("the moved document was created"),
+                    MutationInput {
+                        mutation_id: MutationId::parse("move-one-a").expect("mutation"),
+                        commit_position: CommitPosition::new(position).expect("position"),
+                        document: validator
+                            .validate_create(json!({"id": "one-a", "household_id": "hh_two"}))
+                            .expect("document"),
+                        durability: Durability::Memory,
+                    },
+                )
+                .await
+                .expect("update");
+            sequencer.recover_high_water().await.expect("high water");
+
+            let after = service
+                .pull_authorized(&context, &request(Some(response.checkpoint)), &allow)
+                .await
+                .expect("pull");
+            assert_eq!(after.documents.len(), 1);
+            assert_eq!(after.documents[0]["id"], "one-a");
+            assert_eq!(
+                after.documents[0]["_deleted"], true,
+                "a document that leaves the filter is a tombstone in the scope it left"
+            );
+        });
     }
 
     fn validator() -> DocumentValidator {

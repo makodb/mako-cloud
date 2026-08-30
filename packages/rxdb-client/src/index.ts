@@ -79,6 +79,7 @@ export {
   UnsupportedRxdbVersionError,
   assertSupportedRxdbVersion,
   normalizeMakoRxdbConfig,
+  type MakoReplicationFilter,
   type MakoRxdbClientConfig,
   type MakoRxdbRuntime,
   type NormalizedMakoRxdbClientConfig,

@@ -280,6 +280,13 @@ function streamUrl(
     base,
   );
   url.searchParams.set("schemaVersion", String(config.schemaVersion));
+  // The stream has to narrow exactly as the pull does: wider and the local
+  // database discards what it is sent, narrower and it never learns of
+  // changes the pull would have delivered.
+  if (config.filter !== null) {
+    url.searchParams.set("filterField", config.filter.field);
+    url.searchParams.set("filterValue", config.filter.value);
+  }
   if (cursor !== undefined) {
     url.searchParams.set("cursor", cursor);
   } else if (checkpoint !== undefined) {

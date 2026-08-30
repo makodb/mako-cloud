@@ -8,7 +8,8 @@ use mako_identity::AccessAuthorizationEpochs;
 
 use crate::{
     AuthenticatedReplicationContext, LiveStreamEvent, LiveStreamRequest, OpaqueStreamCursor,
-    ReplicationContractError, ReplicationTokenCodec, ReplicationTokenCodecError, ResyncReason,
+    ReplicationContractError, ReplicationFilter, ReplicationTokenCodec, ReplicationTokenCodecError,
+    ResyncReason,
     schema::{SchemaMigrationRequired, require_compatible_schema},
     visibility::replication_change,
 };
@@ -43,6 +44,7 @@ pub struct LiveStreamSession<'a> {
     last_scanned_position: u64,
     buffer: VecDeque<LiveStreamEvent>,
     requires_resync: bool,
+    filter: Option<ReplicationFilter>,
 }
 
 impl<'a> LiveStreamSession<'a> {
@@ -69,11 +71,21 @@ impl<'a> LiveStreamSession<'a> {
         }
         let committed_high_water = collection.capture_committed_high_water().await?;
         let (last_scanned_position, initial_resync) = if let Some(cursor) = &request.cursor {
-            let cursor = tokens.decode_stream_cursor(cursor, &context, request.schema_version)?;
+            let cursor = tokens.decode_stream_cursor(
+                cursor,
+                &context,
+                request.schema_version,
+                request.filter.as_ref(),
+            )?;
             (cursor.after_position(), Some(ResyncReason::Reconnected))
         } else if let Some(checkpoint) = &request.checkpoint {
             let position = tokens
-                .decode_checkpoint(checkpoint, &context, request.schema_version)?
+                .decode_checkpoint(
+                    checkpoint,
+                    &context,
+                    request.schema_version,
+                    request.filter.as_ref(),
+                )?
                 .scanned_position();
             let reason = match collection.checkpoint_status(position).await? {
                 CheckpointStatus::Valid => None,
@@ -97,6 +109,7 @@ impl<'a> LiveStreamSession<'a> {
             last_scanned_position,
             buffer: VecDeque::new(),
             requires_resync: initial_resync.is_some(),
+            filter: request.filter.clone(),
         };
         if let Some(reason) = initial_resync {
             session.force_resync(reason);
@@ -137,6 +150,7 @@ impl<'a> LiveStreamSession<'a> {
                 ReadAuthorizationPath::LiveStream,
                 self.authorizer,
                 change,
+                self.filter.as_ref(),
             ) {
                 documents.push(document);
             }
@@ -152,6 +166,7 @@ impl<'a> LiveStreamSession<'a> {
             self.schema_version,
             self.last_scanned_position,
             None,
+            self.filter.as_ref(),
         )?;
         let cursor = self.cursor(high_water)?;
         if documents.is_empty() {
@@ -212,6 +227,7 @@ impl<'a> LiveStreamSession<'a> {
             self.last_scanned_position,
             high_water.max(self.last_scanned_position),
             None,
+            self.filter.as_ref(),
         )?)
     }
 
@@ -389,12 +405,13 @@ mod tests {
             let context = context();
             let key = ReplicationTokenKey::from_bytes([5; 32]);
             let checkpoint = ReplicationTokenCodec::new(&key)
-                .encode_checkpoint(&context, 1, 0, None)
+                .encode_checkpoint(&context, 1, 0, None, None)
                 .expect("checkpoint");
             let request = LiveStreamRequest {
                 schema_version: 1,
                 checkpoint: Some(checkpoint.clone()),
                 cursor: None,
+                filter: None,
             };
             let visible = Visibility(true);
             assert!(matches!(
@@ -493,6 +510,7 @@ mod tests {
                 schema_version: 1,
                 checkpoint: None,
                 cursor: Some(cursor.clone()),
+                filter: None,
             };
             let mut reconnect = LiveStreamSession::open(
                 &collection,
@@ -517,6 +535,7 @@ mod tests {
                 schema_version: 1,
                 checkpoint: None,
                 cursor: None,
+                filter: None,
             };
             let mut signaled = LiveStreamSession::open(
                 &collection,
@@ -555,7 +574,7 @@ mod tests {
             ));
 
             let checkpoint_at_one = ReplicationTokenCodec::new(&key)
-                .encode_checkpoint(&context, 1, 1, None)
+                .encode_checkpoint(&context, 1, 1, None, None)
                 .expect("checkpoint at one");
             let mut expiring = LiveStreamSession::open(
                 &collection,
@@ -567,6 +586,7 @@ mod tests {
                     schema_version: 1,
                     checkpoint: Some(checkpoint_at_one),
                     cursor: None,
+                    filter: None,
                 },
                 limits(1, 1),
             )
