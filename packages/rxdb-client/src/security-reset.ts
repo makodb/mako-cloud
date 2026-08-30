@@ -35,9 +35,23 @@ export class MemoryReplicationSecurityStatePersistence
   }
 }
 
+/** What the coordinator knows about the moment it asks for a clear. */
+export interface ReplicatedDataClearContext {
+  /**
+   * Whether replication was running when the reset began. `false` means the
+   * clear is happening at startup, before this run opened anything: the
+   * previous generation's documents are on the device and there is no open
+   * handle to erase them through, so an implementation that clears through a
+   * collection it holds must instead remove the database by name. Clearing
+   * only through a handle silently kept the previous generation's data across
+   * a restart -- exactly the case a security reset exists to prevent.
+   */
+  readonly replicationRunning: boolean;
+}
+
 export interface AuthorizationEpochResetHooks {
   pauseReplication(): Promise<void>;
-  clearReplicatedCollection(): Promise<void>;
+  clearReplicatedCollection(context: ReplicatedDataClearContext): Promise<void>;
   startReplication(replicationIdentifier: string): Promise<void>;
   onSecurityReset(event: AuthorizationEpochResetEvent): Promise<void> | void;
 }
@@ -60,7 +74,14 @@ export class MakoAuthorizationEpochCoordinator {
   readonly #persistence: ReplicationSecurityStatePersistence;
   readonly #identifierFactory: (baseIdentifier: string, generation: number) => string;
   #state: ReplicationSecurityState | null = null;
-  #resetInFlight: Promise<ReplicationSecurityState> | null = null;
+  /**
+   * Every transition runs alone. A live `authorization_epoch_changed` and the
+   * app's own epoch sync after a write arrive at the same moment routinely,
+   * and two resets of one scope overlapping is not a slow path -- it is one
+   * clearing a database the other is replicating into (RxDB `DB8`). Waiting
+   * for a turn and re-reading the state is what makes the second a no-op.
+   */
+  #transitions: Promise<unknown> = Promise.resolve();
 
   constructor(
     baseIdentifier: string,
@@ -80,42 +101,62 @@ export class MakoAuthorizationEpochCoordinator {
     authorizationEpochs: AuthorizationEpochSnapshot,
   ): Promise<ReplicationSecurityState> {
     validateEpochs(authorizationEpochs);
-    const persisted = await this.#persistence.load();
-    if (persisted !== null) {
-      if (sameEpochs(persisted.authorizationEpochs, authorizationEpochs)) {
-        this.#state = persisted;
-        return persisted;
+    return this.#serialize(async () => {
+      const persisted = await this.#persistence.load();
+      if (persisted !== null) {
+        if (sameEpochs(persisted.authorizationEpochs, authorizationEpochs)) {
+          this.#state = persisted;
+          return persisted;
+        }
+        // Durable local data was replicated under other epochs: clear it
+        // before adopting the current ones. Nothing is running yet, so there
+        // is nothing to pause, the clear cannot go through an open handle,
+        // and the caller starts replication with the returned identifier.
+        return this.#reset(persisted, authorizationEpochs, { restart: false });
       }
-      // Durable local data was replicated under other epochs: clear it before
-      // adopting the current ones. Nothing is running yet, so there is
-      // nothing to pause and the caller starts replication with the returned
-      // identifier.
-      return this.#reset(persisted, authorizationEpochs, { restart: false });
-    }
-    const state: ReplicationSecurityState = {
-      authorizationEpochs,
-      replicationIdentifier: this.#baseIdentifier,
-      generation: 0,
-    };
-    await this.#persistence.save(state);
-    this.#state = state;
-    return state;
+      const state: ReplicationSecurityState = {
+        authorizationEpochs,
+        replicationIdentifier: this.#baseIdentifier,
+        generation: 0,
+      };
+      await this.#persistence.save(state);
+      this.#state = state;
+      return state;
+    });
   }
 
   async handleMismatch(current: AuthorizationEpochSnapshot): Promise<ReplicationSecurityState> {
     validateEpochs(current);
-    const state = this.#state ?? (await this.#persistence.load());
-    if (state === null) {
-      return this.initialize(current);
-    }
-    this.#state = state;
-    if (sameEpochs(state.authorizationEpochs, current)) {
-      return state;
-    }
-    this.#resetInFlight ??= this.#reset(state, current, { restart: true }).finally(() => {
-      this.#resetInFlight = null;
+    return this.#serialize(async () => {
+      // Read after taking the turn, never before: a caller that waited behind
+      // a reset must see what that reset settled on, or it resets again.
+      const state = this.#state ?? (await this.#persistence.load());
+      if (state === null) {
+        const initial: ReplicationSecurityState = {
+          authorizationEpochs: current,
+          replicationIdentifier: this.#baseIdentifier,
+          generation: 0,
+        };
+        await this.#persistence.save(initial);
+        this.#state = initial;
+        return initial;
+      }
+      this.#state = state;
+      if (sameEpochs(state.authorizationEpochs, current)) {
+        return state;
+      }
+      return this.#reset(state, current, { restart: true });
     });
-    return this.#resetInFlight;
+  }
+
+  /** Runs `operation` after every transition queued before it, failed or not. */
+  #serialize<T>(operation: () => Promise<T>): Promise<T> {
+    const run = this.#transitions.then(operation, operation);
+    this.#transitions = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
   }
 
   currentState(): ReplicationSecurityState | null {
@@ -130,7 +171,7 @@ export class MakoAuthorizationEpochCoordinator {
     if (options.restart) {
       await this.#hooks.pauseReplication();
     }
-    await this.#hooks.clearReplicatedCollection();
+    await this.#hooks.clearReplicatedCollection({ replicationRunning: options.restart });
     await this.#persistence.clearReplicationState?.();
     const generation = previousState.generation + 1;
     const state: ReplicationSecurityState = {

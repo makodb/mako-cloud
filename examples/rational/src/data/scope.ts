@@ -187,16 +187,21 @@ export class ScopeController<Ids extends CollectionId> {
       `rational:${this.definition.name}:v1`,
       {
         pauseReplication: () => this.#session?.pause() ?? Promise.resolve(),
-        clearReplicatedCollection: async () => {
+        clearReplicatedCollection: async ({ replicationRunning }) => {
           const session = this.#session;
           this.#session = null;
           // Tell the screens first so nothing renders from a database being erased.
           this.#patch((state) => ({ ...state, activity: "paused" }));
-          // A reset can also arrive before this run opened anything — the
-          // epochs moved while the person was away — and the previous
-          // generation's data is still on the device either way.
-          if (session === null) await removeDatabase(this.definition.databaseName);
-          else await session.remove();
+          // A reset also arrives before this run opened anything — the epochs
+          // moved while the person was away — and the previous generation's
+          // data is on the device either way. With nothing open there is no
+          // handle to erase it through, so it goes by database name.
+          if (!replicationRunning || session === null) {
+            await session?.remove();
+            await removeDatabase(this.definition.databaseName);
+          } else {
+            await session.remove();
+          }
         },
         onSecurityReset: (event: AuthorizationEpochResetEvent) => {
           this.#patch((state) => ({

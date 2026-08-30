@@ -377,8 +377,10 @@ const security = new MakoAuthorizationEpochCoordinator("mako-todos-v1", {
   async pauseReplication() {
     await replication.pause();
   },
-  async clearReplicatedCollection() {
-    await securelyRemoveLocalCollection();
+  async clearReplicatedCollection({ replicationRunning }) {
+    // `replicationRunning: false` means nothing is open yet: clear by
+    // database name, because there is no handle to clear through.
+    await securelyRemoveLocalData({ byName: !replicationRunning });
   },
   onSecurityReset(event) {
     router.showAuthenticationBoundary(event.reason);
@@ -404,6 +406,17 @@ persisted under different epochs — the user was removed from a group while the
 closed, for example — it runs `clearReplicatedCollection`, clears the persisted replication state,
 saves a new generation, and calls `onSecurityReset` before returning; nothing is running yet, so it
 does not pause, and the caller starts replication with the returned identifier.
+
+That case is why the clear is told whether replication was running. At startup there is no open
+collection, so an implementation that clears through a handle it holds does nothing at all and the
+previous generation's documents survive the restart — the one outcome a security reset exists to
+prevent. With `replicationRunning: false`, remove the database by name.
+
+Every transition runs alone. A live `authorization_epoch_changed` and the application's own epoch
+sync after a write arrive together routinely, and a second `initialize` or `handleMismatch` waits
+for the one in flight and then re-reads the settled state, so it returns that generation instead of
+starting another reset. Overlapping resets clear a database the other is replicating into, which
+RxDB reports as `DB8`.
 
 ## Schema migration and full resync
 
