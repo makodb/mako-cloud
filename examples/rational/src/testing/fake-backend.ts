@@ -70,6 +70,7 @@ export class FakeMakoBackend {
   /** Magic-link tokens, redeemable once. */
   readonly #magicLinks = new Map<string, { email: string; used: boolean }>();
   #sequence = 0;
+  readonly #objectStore = new Map<string, FakeObject>();
   #links = 0;
   #clock = 1_800_000_000_000;
   #lastMagicLink: string | null = null;
@@ -112,6 +113,18 @@ export class FakeMakoBackend {
     const provider = /\/auth\/providers\/([a-z0-9-]+)\/start$/u.exec(path);
     if (provider !== null) return this.#startProviderSignIn(provider[1] as string, init);
 
+    const object = /\/storage\/([a-z0-9-]+)\/objects(?:\/(.+))?$/u.exec(path);
+    if (object !== null) {
+      const storing = this.#authorize(init);
+      if (storing === null) return apiError(401, "unauthenticated", "the session is not valid");
+      return this.#objects(
+        storing,
+        object[1] as string,
+        object[2] === undefined ? null : decodeURIComponent(object[2]),
+        init,
+        url,
+      );
+    }
     if (/\/environments\/[^/]+\/replication\/stream$/u.test(path)) {
       const streaming = this.#authorize(init);
       if (streaming === null) return apiError(401, "unauthenticated", "the session is not valid");
@@ -758,6 +771,78 @@ export class FakeMakoBackend {
     }
   }
 
+  /**
+   * The storage bucket, with the rule the receipts bucket installs: the
+   * object carries the household as an attribute and the caller's claim
+   * decides. Attaching a household somebody is not a member of names a
+   * household and grants nothing, which is the point of checking the claim
+   * rather than the attribute.
+   */
+  async #objects(
+    user: FakeUser,
+    bucketId: string,
+    path: string | null,
+    init: RequestInit,
+    url: URL,
+  ): Promise<Response> {
+    const method = (init.method ?? "GET").toUpperCase();
+    if (path === null) {
+      if (method !== "GET") return apiError(405, "invalid_request", "method not allowed");
+      const prefix = url.searchParams.get("prefix") ?? "";
+      const limit = Number(url.searchParams.get("limit") ?? "50");
+      const items = [...this.#objectStore.values()]
+        .filter((record) => record.bucketId === bucketId && record.path.startsWith(prefix))
+        .filter((record) => this.#mayReachObject(user, record))
+        .sort((left, right) => left.path.localeCompare(right.path))
+        .slice(0, Number.isSafeInteger(limit) ? limit : 50)
+        .map(objectRecord);
+      return jsonResponse({ items, nextCursor: null });
+    }
+    const key = `${bucketId}/${path}`;
+    if (method === "PUT") {
+      const attributes = parseObjectAttributes(headerOf(init, "x-mako-object-attributes"));
+      if (attributes === null) {
+        return apiError(400, "invalid_request", "object attributes header is malformed");
+      }
+      const bytes = await requestBytes(init);
+      const record: FakeObject = {
+        bucketId,
+        path,
+        contentType: headerOf(init, "content-type") ?? "application/octet-stream",
+        bytes,
+        ownerId: user.id,
+        attributes,
+        updatedAt: this.#clock,
+      };
+      // The rule decides on the state being written, as it does on the server.
+      if (!this.#mayReachObject(user, record)) {
+        return apiError(403, "permission_denied", "the bucket's rules refused this write");
+      }
+      this.#objectStore.set(key, record);
+      return jsonResponse(objectRecord(record));
+    }
+    const stored = this.#objectStore.get(key);
+    if (stored === undefined) return apiError(404, "not_found", "object was not found");
+    if (!this.#mayReachObject(user, stored)) {
+      return apiError(403, "permission_denied", "the bucket's rules refused this read");
+    }
+    if (method === "DELETE") {
+      this.#objectStore.delete(key);
+      return jsonResponse(objectRecord(stored));
+    }
+    if (method !== "GET") return apiError(405, "invalid_request", "method not allowed");
+    return new Response(stored.bytes as BlobPart, {
+      status: 200,
+      headers: { "Content-Type": stored.contentType, ETag: `"${stored.bytes.byteLength}"` },
+    });
+  }
+
+  /** `claims.households[attributes.household_id] != null`, and nothing else. */
+  #mayReachObject(user: FakeUser, record: FakeObject): boolean {
+    const household = record.attributes.household_id;
+    return household !== undefined && user.households[household] !== undefined;
+  }
+
   #store(collectionId: CollectionId): CollectionStore {
     let store = this.#collections.get(collectionId);
     if (store === undefined) {
@@ -846,4 +931,66 @@ function matchesFilter(document: WireDocument, filter: ReplicationFilter): boole
     value = (value as Record<string, unknown>)[segment];
   }
   return value === filter.value;
+}
+
+/** One stored object, as the fake keeps it. */
+interface FakeObject {
+  readonly bucketId: string;
+  readonly path: string;
+  readonly contentType: string;
+  readonly bytes: Uint8Array;
+  readonly ownerId: string;
+  readonly attributes: Readonly<Record<string, string>>;
+  readonly updatedAt: number;
+}
+
+function objectRecord(record: FakeObject): Record<string, unknown> {
+  return {
+    bucketId: record.bucketId,
+    path: record.path,
+    contentType: record.contentType,
+    sizeBytes: record.bytes.byteLength,
+    ownerId: record.ownerId,
+    digest: `sha256:${record.bytes.byteLength}`,
+    storedDigest: `sha256:${record.bytes.byteLength}`,
+    createdAtUnixSeconds: record.updatedAt,
+    updatedAtUnixSeconds: record.updatedAt,
+    attributes: record.attributes,
+  };
+}
+
+/** `name=value` pairs, comma separated; null when the header is malformed. */
+function parseObjectAttributes(header: string | null): Record<string, string> | null {
+  if (header === null) return {};
+  const attributes: Record<string, string> = {};
+  for (const pair of header.split(",")) {
+    const trimmed = pair.trim();
+    if (trimmed === "") continue;
+    const separator = trimmed.indexOf("=");
+    if (separator < 1) return null;
+    attributes[trimmed.slice(0, separator).trim()] = trimmed.slice(separator + 1).trim();
+  }
+  return attributes;
+}
+
+function headerOf(init: RequestInit, name: string): string | null {
+  const headers = init.headers;
+  if (headers === undefined) return null;
+  if (headers instanceof Headers) return headers.get(name);
+  if (Array.isArray(headers)) {
+    const found = headers.find(([key]) => key.toLowerCase() === name);
+    return found?.[1] ?? null;
+  }
+  const entry = Object.entries(headers).find(([key]) => key.toLowerCase() === name);
+  return entry?.[1] ?? null;
+}
+
+async function requestBytes(init: RequestInit): Promise<Uint8Array> {
+  const body = init.body;
+  if (body === undefined || body === null) return new Uint8Array();
+  if (typeof body === "string") return new TextEncoder().encode(body);
+  if (body instanceof Uint8Array) return body;
+  if (body instanceof ArrayBuffer) return new Uint8Array(body);
+  if (body instanceof Blob) return new Uint8Array(await body.arrayBuffer());
+  throw new TypeError("unsupported object body");
 }

@@ -4,34 +4,28 @@
   "maxObjectBytes": 8388608,
   "allowedContentTypes": ["image/*", "application/pdf"],
   "notes": [
-    "Receipts live at households/<household_id>/transactions/<transaction_id>/<file>.",
-    "Limitation (findings log): the bucket rule language sees the object document (path, owner_id, ...) but cannot derive the household from the path prefix, and an object carries no household_id field to index the claim by. Until rules can read a path segment (or objects carry application fields), access is owner-only: the uploader is the only member who can read or delete the receipt, so a household member who did not upload it cannot open it.",
-    "Task 2.6 revisits this with the household claim once the platform supports it."
+    "Receipts live at households/<household_id>/transactions/<transaction_id>/<file>, and carry the household as an object attribute so the rules can read it.",
+    "The attribute names the household; the claim decides. Attaching a household the caller is not a member of matches no claim and grants nothing, which is the same shape as a document carrying a household_id the policy checks against the caller's claims.",
+    "Findings log #8: before object attributes the rule could only reach the uploader, so a receipt was invisible to the rest of the household."
   ],
   "rules": [
     {
-      "id": "owner-create",
+      "id": "member-writes",
       "effect": "allow",
-      "operations": ["create"],
-      "expression": "new.owner_id == identity.user_id"
+      "operations": ["create", "update"],
+      "expression": "claims.households[new.attributes.household_id] != null"
     },
     {
-      "id": "owner-update",
-      "effect": "allow",
-      "operations": ["update"],
-      "expression": "old.owner_id == identity.user_id && new.owner_id == identity.user_id"
-    },
-    {
-      "id": "owner-read",
+      "id": "member-reads",
       "effect": "allow",
       "operations": ["read"],
-      "expression": "old.owner_id == identity.user_id"
+      "expression": "claims.households[old.attributes.household_id] != null"
     },
     {
-      "id": "owner-delete",
+      "id": "member-deletes",
       "effect": "allow",
       "operations": ["delete"],
-      "expression": "old.owner_id == identity.user_id"
+      "expression": "claims.households[old.attributes.household_id] != null"
     }
   ]
 }

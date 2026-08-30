@@ -23,6 +23,7 @@ import {
   type ScopeSession,
   type ScopeState,
 } from "./scope.js";
+import { Receipts } from "./receipts.js";
 import { Transport, type TransportCounters } from "./transport.js";
 import { HouseholdWrites } from "./writes.js";
 
@@ -91,6 +92,7 @@ export class RationalApp {
   #directory: Controller<DirectoryCollectionId> | null = null;
   #household: Controller<HouseholdCollectionId> | null = null;
   #writes: HouseholdWrites | null = null;
+  #receipts: Receipts | null = null;
   readonly #stateStore = createReplicationStateStore();
   readonly #households: HouseholdsClient | null;
   #subscriptions = new Set<Subscription>();
@@ -145,6 +147,16 @@ export class RationalApp {
   /** The current household's write helpers, or null before one is open. */
   get writes(): HouseholdWrites | null {
     return this.#writes;
+  }
+
+  /**
+   * The current household's receipts, or null before one is open. Files are
+   * not documents: they live in the storage bucket, and every member of the
+   * household may open one because the object carries the household as an
+   * attribute the bucket's rules read.
+   */
+  get receipts(): Receipts | null {
+    return this.#receipts;
   }
 
   get household(): Controller<HouseholdCollectionId> | null {
@@ -382,6 +394,10 @@ export class RationalApp {
                 now: this.#now,
                 noteLocalWrite: () => controller.noteLocalWrite(),
               });
+        this.#receipts =
+          session === null
+            ? null
+            : new Receipts(this.config, this.auth, this.transport, householdId);
       }
       // The screens remount only when the session object itself changes.
       this.#patch((state) => ({
@@ -685,6 +701,7 @@ export class RationalApp {
     const controller = this.#household;
     this.#household = null;
     this.#writes = null;
+    this.#receipts = null;
     this.#householdWatch?.unsubscribe();
     this.#householdWatch = null;
     if (controller === null) return;

@@ -66,6 +66,15 @@ interface RationalWritesWire {
   createAccount(input: Record<string, unknown>): Promise<RationalDocumentWire>;
 }
 
+/** The household's receipts, as a browser test reaches them. */
+interface RationalReceiptsWire {
+  list(
+    transactionId: string,
+  ): Promise<ReadonlyArray<{ path: string; name: string; contentType: string; sizeBytes: number }>>;
+  open(path: string): Promise<Blob | null>;
+  remove(path: string): Promise<void>;
+}
+
 interface RationalCollectionWire {
   find(query?: Record<string, unknown>): {
     exec(): Promise<Array<{ toJSON(): RationalDocumentWire }>>;
@@ -98,6 +107,7 @@ interface RationalBrowserApplication {
   household: RationalHouseholdWire | null;
   directory: RationalHouseholdWire | null;
   writes: RationalWritesWire | null;
+  receipts: RationalReceiptsWire | null;
   signIn(email: string, password: string): Promise<void>;
   signUp(email: string, password: string): Promise<void>;
   signOut(): Promise<void>;
