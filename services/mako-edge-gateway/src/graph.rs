@@ -936,9 +936,10 @@ mod tests {
         let config = config_for(directory.path(), DeploymentEnvironment::Local);
         let graph = Arc::new(EdgeGatewayGraph::open(&config).expect("edge graph"));
         let router = crate::edge_gateway_router(graph).expect("edge routes");
-        // Seven methods on the public shape, seven on the custom-domain
-        // shape, and the scheduler's internal hop.
-        assert_eq!(router.route_count(), 15);
+        // Seven methods each on the public shape and the custom-domain shape,
+        // at the function's root and under the path it owns, plus the
+        // scheduler's internal hop.
+        assert_eq!(router.route_count(), 29);
         for method in [
             mako_service_runtime::HttpMethod::Get,
             mako_service_runtime::HttpMethod::Head,
@@ -954,7 +955,12 @@ mod tests {
             ));
             // The custom-domain shape: the hostname names the environment.
             assert!(router.permits(method, "/functions/v1/hello-world"));
-            assert!(!router.permits(method, "/functions/v1/hello-world/private"));
+            // A function owns the path under its name, on both shapes.
+            assert!(router.permits(method, "/functions/v1/hello-world/private"));
+            assert!(router.permits(
+                method,
+                "/prj_example00--env_example00/functions/v1/hello-world/orders/42"
+            ));
             assert!(!router.permits(method, "/functions/v2/hello-world"));
         }
         assert!(!router.permits(
