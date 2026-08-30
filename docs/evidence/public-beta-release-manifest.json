@@ -10,7 +10,7 @@
   },
   "planHash": "d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073",
   "source": {
-    "digest": "af378acef61f664732bdffe8fc1d0262adba8737c1c53f168031f9067bcf0a4f",
+    "digest": "c23317fcbe63c98ea308311f1aad976f68acfca4c0912ba1572998f1b3e6efd6",
     "files": [
       {
         "path": ".env.example",
@@ -1478,8 +1478,8 @@
       },
       {
         "path": "crates/mako-smoke/src/lib.rs",
-        "sha256": "2ba92aff533e4be2a16530e16158b89ff558345418eeabdef5dc65d4f26242bd",
-        "size": 30133,
+        "sha256": "731fe6e8fa8da1ec88ef88b604bb5e4d4d8b3e2333ac4495210d74cb08376267",
+        "size": 31190,
         "mode": 420
       },
       {
@@ -1514,8 +1514,8 @@
       },
       {
         "path": "crates/mako-smoke/tests/database_service.rs",
-        "sha256": "7f4832a297cb47d96f12b13182a580bff12f8be71c9698e36fd3a6e127f7d82f",
-        "size": 21945,
+        "sha256": "5903a305c4789ff916890c560919821a22ab8fb1855e69d7c2d05b3c2cc45007",
+        "size": 23662,
         "mode": 420
       },
       {
@@ -1952,8 +1952,8 @@
       },
       {
         "path": "examples/rational/PLATFORM-FINDINGS.md",
-        "sha256": "f8dbd79af5b5272cf05764df880c96ed01954e8de38c7347fb1e7e7346292bb9",
-        "size": 15842,
+        "sha256": "2302b57cc3c3a97aae4ec4eeeb6746531a4c1fb5d844b8362ccee49f940fe1ee",
+        "size": 17814,
         "mode": 420
       },
       {
@@ -2084,8 +2084,8 @@
       },
       {
         "path": "examples/rational/scripts/bootstrap.mjs",
-        "sha256": "ad7753468468668ae33b2ea350318357a1cf236d33145d904ee8f87ebe6c1dfb",
-        "size": 24181,
+        "sha256": "85a2f6a9b001ba1e1df126d359eddcabc62a360d241398efbb7150ae3b55aa11",
+        "size": 23884,
         "mode": 493
       },
       {
@@ -4304,8 +4304,8 @@
       },
       {
         "path": "services/mako-control-plane/src/identity_admin_http.rs",
-        "sha256": "b0a8f325e49c7a418e18c671c0df2ada7b88e6041bfe74547f8cb8324be53c8a",
-        "size": 20683,
+        "sha256": "ae625910cbd8d35d9c59936af6ebed43a84872e26d0e5c323bdb1470c608190a",
+        "size": 22661,
         "mode": 420
       },
       {
@@ -4582,13 +4582,13 @@
     ]
   },
   "artifacts": {
-    "digest": "5e7a237d7285e6ec82fe8327ff07becb4aadb8cc571c38b5afa4db6e49410d4e",
+    "digest": "4f0f46042f72539dbdcc17225f548bed43f0d2328a9d44d3d1fab22dccd59532",
     "files": [
       {
         "path": "bin/mako-control-plane",
         "source": "target/release/mako-control-plane",
-        "sha256": "8ea78886d40f8209b60443e424c12efcc717f3a636101b56c208b25cebab1771",
-        "size": 18132456,
+        "sha256": "30d5b81f60a564cd4652ec7d6282658a2067db5ccb729e4a9b900bf35a68d0a6",
+        "size": 18134824,
         "mode": 493
       },
       {
@@ -4684,10 +4684,10 @@
       }
     ]
   },
-  "releaseDigest": "a867b58b11649885b330730d108f9daf6fa6c5153ec2fe6f78b864755d7eacb9",
-  "generatedAt": "2026-08-30T02:57:34.014Z",
+  "releaseDigest": "ac995b7fa1e68bdc36c3a490bf9a9953b25b1274e21ddcdaa4c4bb284df38720",
+  "generatedAt": "2026-08-30T03:18:07.602Z",
   "candidateLayout": {
-    "root": ".local/public-beta-candidates/a867b58b11649885b330730d108f9daf6fa6c5153ec2fe6f78b864755d7eacb9",
+    "root": ".local/public-beta-candidates/ac995b7fa1e68bdc36c3a490bf9a9953b25b1274e21ddcdaa4c4bb284df38720",
     "manifest": "manifest.json",
     "binaries": "bin",
     "console": "console"

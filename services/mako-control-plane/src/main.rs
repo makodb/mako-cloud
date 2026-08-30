@@ -106,8 +106,11 @@ fn start(service: ServiceKind) -> ExitCode {
                                     // The data plane may simply not be up yet;
                                     // say so once, then once a minute.
                                     if application_failures.is_multiple_of(12) {
+                                        // The class alone says which half of the
+                                        // platform refused, which is not enough to
+                                        // act on: carry the error too.
                                         eprintln!(
-                                            "application mail pass failed: class={}",
+                                            "application mail pass failed: class={} detail={error}",
                                             application_mail_failure_class(&error)
                                         );
                                     }

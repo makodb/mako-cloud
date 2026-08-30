@@ -1,6 +1,7 @@
 use std::{collections::BTreeMap, sync::Arc};
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
+use mako_api::{ErrorCode, RetryAdvice};
 use mako_control_plane::{
     FunctionAdminError, FunctionBundleUpload, FunctionConfiguration, FunctionLogQuery,
     FunctionName, FunctionSourceFile, FunctionTestRequest, NewFunction, NewFunctionVersion,
@@ -625,7 +626,32 @@ fn function_error(request: &HttpRequest, error: FunctionAdminError) -> HttpApiEr
         | FunctionAdminError::InvalidDeployment
         | FunctionAdminError::InvalidTestRequest
         | FunctionAdminError::InvalidLogQuery => invalid(request, "function input is invalid"),
-        _ => unavailable(request, "function administration is unavailable"),
+        // The backend builds a bounded, control-character-free diagnostic for
+        // exactly this: saying which dependency refused and why. Discarding it
+        // left an operator with "unavailable" and nothing to act on.
+        FunctionAdminError::Backend(ref backend) => {
+            let detail = backend.to_string();
+            eprintln!(
+                "function administration failed: request={} cause=backend detail={detail}",
+                request.request_id()
+            );
+            HttpApiError::new(
+                503,
+                ErrorCode::Unavailable,
+                format!("the function runtime backend refused this operation: {detail}"),
+                request.request_id(),
+                RetryAdvice::AfterDelay { after_ms: 1_000 },
+            )
+        }
+        // The rest are the platform's own faults, so they stay generic to the
+        // caller -- but an operator reading the log learns which one.
+        ref other => {
+            eprintln!(
+                "function administration failed: request={} cause={other:?}",
+                request.request_id()
+            );
+            unavailable(request, "function administration is unavailable")
+        }
     }
 }
 
