@@ -6,6 +6,7 @@ export type Route =
   | { readonly name: "transactions"; readonly accountId?: string; readonly month?: string }
   | { readonly name: "categories" }
   | { readonly name: "tags" }
+  | { readonly name: "reports"; readonly month?: string }
   | { readonly name: "household" };
 
 export function parseRoute(hash: string): Route {
@@ -21,6 +22,10 @@ export function parseRoute(hash: string): Route {
         ...(month === null || month === "" ? {} : { month }),
       };
     }
+    case "reports": {
+      const month = parameters.get("month");
+      return { name: "reports", ...(month === null || month === "" ? {} : { month }) };
+    }
     case "categories":
       return { name: "categories" };
     case "tags":
@@ -33,6 +38,9 @@ export function parseRoute(hash: string): Route {
 }
 
 export function routeHash(route: Route): string {
+  if (route.name === "reports") {
+    return route.month === undefined ? "#/reports" : `#/reports?month=${route.month}`;
+  }
   if (route.name === "transactions") {
     const parameters = new URLSearchParams();
     if (route.accountId !== undefined) parameters.set("account", route.accountId);

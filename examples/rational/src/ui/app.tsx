@@ -3,6 +3,7 @@ import { Component, type ReactNode } from "react";
 import type { RationalApp } from "../data/rational.js";
 import { AccountsScreen } from "./accounts.js";
 import { CategoriesScreen } from "./categories.js";
+import { ReportsScreen } from "./reports.js";
 import { useBehavior } from "./hooks.js";
 import { HouseholdScreen } from "./household.js";
 import { useRoute } from "./router.js";
@@ -87,6 +88,13 @@ function Screens({ app }: { app: RationalApp }) {
               session={session}
               route={route}
               currency={currency}
+            />
+          ) : route.name === "reports" ? (
+            <ReportsScreen
+              key={`${state.generation}:reports`}
+              app={app}
+              session={session}
+              route={route}
             />
           ) : route.name === "categories" ? (
             <CategoriesScreen key={`${state.generation}:categories`} app={app} session={session} />
