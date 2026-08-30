@@ -60,7 +60,7 @@ verify_release_integrity() {
     (.artifacts.digest | type == "string" and test("^[0-9a-f]{64}$")) and
     (.artifacts.files | type == "array" and length > 0) and
     (all(.artifacts.files[];
-      (.path | type == "string" and test("^(bin/[a-z0-9-]+|console/[A-Za-z0-9._/-]+)$")) and
+      (.path | type == "string" and test("^(bin/[a-z0-9-]+|console/[A-Za-z0-9._/-]+|runtime-main/[a-z0-9-]+\\.ts)$")) and
       (.path | contains("//") | not) and
       (.path | split("/") | all(. != "." and . != "..")) and
       (.source | type == "string") and
@@ -69,7 +69,13 @@ verify_release_integrity() {
       (.mode == 420 or .mode == 493)
     )) and
     ([.artifacts.files[].path] | length == (unique | length))
-  ' "$manifest" >/dev/null
+  ' "$manifest" >/dev/null || {
+    # Without this the whole command fails under `set -e` with no output at
+    # all, which is the least useful thing a fail-closed check can do: the
+    # operator sees exit 1 and has nothing to act on.
+    echo "release manifest does not have the expected shape: $manifest" >&2
+    return 1
+  }
 
   local recorded_release computed_release
   recorded_release=$(jq -r '.releaseDigest' "$manifest")

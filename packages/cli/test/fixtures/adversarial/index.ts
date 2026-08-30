@@ -1,6 +1,21 @@
 const projectSecret = Deno.env.get("PROJECT_SECRET") ?? "missing";
 const projectMarker = Deno.env.get("PROJECT_MARKER") ?? "missing";
 
+/**
+ * A worker holds the names the platform attached to it and no others. The
+ * runtime does not merely leave another project's secret unset -- reading a
+ * name that was not attached is refused, and the refusal throws. Treating a
+ * throw as anything but "denied" would report the stronger guarantee as a
+ * failure.
+ */
+function environmentIsUnreadable(name: string): boolean {
+  try {
+    return Deno.env.get(name) === undefined;
+  } catch {
+    return true;
+  }
+}
+
 Deno.serve(async (request: Request) => {
   const url = new URL(request.url);
   if (url.pathname === "/inspect") {
@@ -15,7 +30,7 @@ Deno.serve(async (request: Request) => {
       projectSecret,
       projectId: Deno.env.get("MAKO_PROJECT_ID"),
       environmentId: Deno.env.get("MAKO_ENVIRONMENT_ID"),
-      undeclaredAbsent: Deno.env.get("OTHER_PROJECT_SECRET") === undefined,
+      undeclaredAbsent: environmentIsUnreadable("OTHER_PROJECT_SECRET"),
       processEnvironmentDenied,
     });
   }

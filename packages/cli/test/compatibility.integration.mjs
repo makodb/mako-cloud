@@ -25,7 +25,9 @@ test(
     await writeFile(environmentFile, "FUNCTION_MODE=compatibility\n", "utf8");
     await writeFile(secretFile, `TEST_SECRET=${secretValue}\n`, "utf8");
 
-    const outbound = createServer((_, response) => {
+    const outboundAttempts = [];
+    const outbound = createServer((request, response) => {
+      outboundAttempts.push(request.url);
       response.writeHead(200, { "content-type": "text/plain", "x-test-upstream": "reached" });
       response.end("outbound-ok");
     });
@@ -88,13 +90,20 @@ test(
     assert.equal(stream.headers.get("content-type"), "text/plain");
     assert.equal(await stream.text(), "stream-response");
 
+    // The function's own destinations are denied, here as in a deployment:
+    // protocol v1 has no unrestricted egress, and the one grant a worker gets
+    // is the platform API origin. The server this test runs is never reached,
+    // which is the point -- it is listening, so a refusal is a denial and not
+    // an unreachable address.
     const target = encodeURIComponent(
       `http://host.docker.internal:${outboundAddress.port}/qualified`,
     );
     const outboundResponse = await fetch(`${base}/outbound?target=${target}`);
     assert.equal(outboundResponse.status, 200);
-    assert.equal(outboundResponse.headers.get("x-upstream-result"), "reached");
-    assert.equal(await outboundResponse.text(), "outbound-ok");
+    assert.equal(outboundResponse.headers.get("x-upstream-result"), "denied");
+    assert.equal(outboundResponse.headers.get("x-upstream-error"), "NotCapable");
+    assert.equal(await outboundResponse.text(), "outbound-denied");
+    assert.deepEqual(outboundAttempts, []);
   },
 );
 

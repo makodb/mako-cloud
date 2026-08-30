@@ -4,6 +4,19 @@ import { javascriptModuleValue } from "./helper.js";
 
 const encoder = new TextEncoder();
 
+/**
+ * A worker holds the names the platform attached to it and no others. Reading
+ * one that was not attached is refused rather than answered with `undefined`,
+ * and the refusal throws.
+ */
+function environmentIsUnreadable(name: string): boolean {
+  try {
+    return Deno.env.get(name) === undefined;
+  } catch {
+    return true;
+  }
+}
+
 Deno.serve(async (request: Request) => {
   const url = new URL(request.url);
   if (url.pathname === "/features") {
@@ -25,19 +38,32 @@ Deno.serve(async (request: Request) => {
       environment: Deno.env.get("FUNCTION_MODE"),
       secret: Deno.env.get("TEST_SECRET"),
       undeclaredEnvironmentAbsent:
-        Deno.env.get("UNDECLARED_VALUE") === undefined && Deno.env.get("MAKO_JWKS") === undefined,
+        environmentIsUnreadable("UNDECLARED_VALUE") && environmentIsUnreadable("MAKO_JWKS"),
       functionPath: url.pathname,
       query: url.search,
     });
   }
   if (url.pathname === "/outbound") {
+    // A function's own destinations are denied: protocol v1 grants a worker
+    // the platform API origin and nothing else, so this reports whether the
+    // attempt was refused rather than what it reached.
     const target = url.searchParams.get("target");
     if (target === null) return new Response("missing target", { status: 400 });
-    const response = await fetch(target);
-    return new Response(await response.text(), {
-      status: response.status,
-      headers: { "x-upstream-result": response.headers.get("x-test-upstream") ?? "missing" },
-    });
+    try {
+      const response = await fetch(target);
+      return new Response(await response.text(), {
+        status: response.status,
+        headers: { "x-upstream-result": response.headers.get("x-test-upstream") ?? "missing" },
+      });
+    } catch (error) {
+      const thrown = error as { name?: string; constructor?: { name?: string } };
+      return new Response("outbound-denied", {
+        headers: {
+          "x-upstream-result": "denied",
+          "x-upstream-error": thrown?.name ?? thrown?.constructor?.name ?? "unknown",
+        },
+      });
+    }
   }
   if (url.pathname === "/stream") {
     return new Response(

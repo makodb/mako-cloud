@@ -109,6 +109,13 @@ teardown planner. Build the candidate with
 the pinned Ansible playbook with Caddy disabled. A running stateful environment
 changes releases only through `mako-release-operation upgrade` or `rollback`;
 it must not overwrite `/opt/mako/current` or create an empty storage fallback.
+The candidate carries the service binaries, the console bundle, and the edge
+runtime's main worker -- the supervisor that authenticates deployments,
+supplies the SDK module to every user worker, and sets each worker's
+permissions. The release operation installs that worker and restarts the
+runtime when it differs, so what runs tenant code is named by the release
+digest; the provisioning role's copy is for first boot only, and a release
+predating this carries no worker and leaves the provisioned one alone.
 After SQLite accepts control writes, release selection rejects binaries that do
 not declare compatibility with the active control SQLite format.
 

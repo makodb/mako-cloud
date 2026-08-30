@@ -28,6 +28,14 @@ default, so the same policies used by RxDB apply. Service-level maintenance is a
 separate explicit client initialized with an attached scoped service secret and
 produces a privileged-bypass audit record.
 
+The caller a function sees is the one the gateway verified. Your function is
+handed that credential on the reserved `x-mako-caller-authorization` header,
+which `createFunctionClientFromRequest` reads; the request's own
+`Authorization` header is **not** forwarded, so a function that admits
+anonymous callers cannot mistake an unverified bearer token for an identity.
+A call with no verified caller reaches the function with none, and the caller
+client then refuses rather than acting as somebody.
+
 ### The SDK is supplied by the runtime
 
 A function imports `@mako-cloud/edge-sdk` and nothing else has to happen: the
