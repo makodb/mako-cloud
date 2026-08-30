@@ -16,11 +16,11 @@
 - [x] 2.1 CSV import: column mapping UI, preview, duplicate detection against local data by date, amount, and normalized description, import batches recorded, account balance updated; fixtures shaped like real bank exports; unit tests for the parser and dedupe.
 - [x] 2.2 Categorization rules: rule editor (description match, amount range, account), client-side application on create and import with match counts, `rule_id` recorded on the transaction; unit tests for the rules engine.
 - [x] 2.3 Budgets: per-category monthly budgets, spent/remaining/percent, household total, rollover flag and computation across months; unit tests for the budget math.
-- [ ] 2.4 Recurring detection and upcoming bills: detection by normalized description and interval over history, confirm/adjust/dismiss, upcoming list with expected date and amount; unit tests.
-- [ ] 2.5 Goals with contributions, linked account, progress, and required monthly contribution; unit tests.
+- [x] 2.4 Recurring detection and upcoming bills: detection by normalized description and interval over history, confirm/adjust/dismiss, upcoming list with expected date and amount; unit tests.
+- [x] 2.5 Goals with contributions, linked account, progress, and required monthly contribution; unit tests.
 - [x] 2.6 Receipts: attach images to transactions through `MakoStorageClient` under `households/<id>/transactions/<txn>/`, open from the transaction, delete with the transaction, bucket rule allowing only household members; live-suite coverage that an outsider cannot read a receipt.
 - [x] 2.7 Reports: net worth (assets minus liabilities), cash flow, spending by category/account/month, all computed client-side with memoized selectors and an "as of last sync" stamp; a 50 000-transaction seeded household measured and recorded as a finding with numbers.
-- [ ] 2.8 Phase 2 findings recorded and fixed in the platform with regression tests.
+- [x] 2.8 Phase 2 findings recorded and fixed in the platform with regression tests.
 
 ## 3. Phase 3 — automation (institution sync, nightly job, alerts, snapshots)
 

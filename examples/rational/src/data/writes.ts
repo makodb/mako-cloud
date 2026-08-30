@@ -9,8 +9,10 @@ import type {
   Category,
   CategoryKind,
   ConnectionDocument,
+  Goal,
   HouseholdCollectionId,
   RationalDocuments,
+  Recurrence,
   Rule,
   Split,
   Tag,
@@ -92,6 +94,26 @@ export interface BudgetInput {
   readonly amount: number;
   readonly currency: string;
   readonly rollover: boolean;
+}
+
+export interface RecurrenceInput {
+  readonly account_id: string;
+  readonly normalized_description: string;
+  readonly interval: Recurrence["interval"];
+  readonly expected_amount: number;
+  readonly currency: string;
+  readonly next_date: string;
+  readonly last_date?: string;
+  readonly status: Recurrence["status"];
+  readonly matched_count: number;
+}
+
+export interface GoalInput {
+  readonly name: string;
+  readonly target_amount: number;
+  readonly currency: string;
+  readonly target_date?: string;
+  readonly account_id?: string;
 }
 
 export interface RuleInput {
@@ -246,6 +268,100 @@ export class HouseholdWrites {
     this.#context.noteLocalWrite();
     await document.incrementalPatch({ updated_at: this.#context.now() });
     await document.incrementalRemove();
+  }
+
+  /** Confirm a detected recurrence, or record that it was dismissed. */
+  async saveRecurrence(input: RecurrenceInput): Promise<Recurrence> {
+    if (input.account_id === "") throw new ValidationError("choose an account");
+    if (input.normalized_description === "") {
+      throw new ValidationError("a recurrence needs a description");
+    }
+    if (!isIsoDate(input.next_date)) throw new ValidationError("next date must be YYYY-MM-DD");
+    const id = randomId("rec");
+    return this.#insert(
+      "recurrences",
+      this.#stamp<Recurrence>(id, {
+        account_id: input.account_id,
+        normalized_description: input.normalized_description,
+        interval: input.interval,
+        expected_amount: input.expected_amount,
+        currency: input.currency,
+        next_date: input.next_date,
+        ...(input.last_date === undefined ? {} : { last_date: input.last_date }),
+        status: input.status,
+        matched_count: input.matched_count,
+      }),
+    );
+  }
+
+  async updateRecurrence(id: string, patch: Patch<Recurrence>): Promise<Recurrence> {
+    return this.#patch("recurrences", id, patch);
+  }
+
+  async createGoal(input: GoalInput): Promise<Goal> {
+    if (input.name.trim() === "") throw new ValidationError("a goal needs a name");
+    if (!Number.isSafeInteger(input.target_amount) || input.target_amount <= 0) {
+      throw new ValidationError("a goal needs a target above zero");
+    }
+    if (!isCurrencyCode(input.currency)) {
+      throw new ValidationError("currency must be an ISO 4217 code such as USD");
+    }
+    if (input.target_date !== undefined && !isIsoDate(input.target_date)) {
+      throw new ValidationError("target date must be YYYY-MM-DD");
+    }
+    return this.#insert(
+      "goals",
+      this.#stamp<Goal>(randomId("goa"), {
+        name: input.name.trim(),
+        target_amount: input.target_amount,
+        currency: input.currency,
+        ...(input.target_date === undefined ? {} : { target_date: input.target_date }),
+        ...(input.account_id === undefined || input.account_id === ""
+          ? {}
+          : { account_id: input.account_id }),
+        status: "active",
+        contributions: [],
+      }),
+    );
+  }
+
+  /**
+   * A contribution is appended to the goal's own list rather than derived
+   * from an account balance: one account holds several goals, and a goal may
+   * be saved for across accounts.
+   */
+  async contributeToGoal(
+    goalId: string,
+    contribution: { date: string; amount: number; note?: string },
+  ): Promise<Goal> {
+    if (!isIsoDate(contribution.date)) throw new ValidationError("date must be YYYY-MM-DD");
+    if (!Number.isSafeInteger(contribution.amount) || contribution.amount === 0) {
+      throw new ValidationError("a contribution needs an amount");
+    }
+    const current = await this.#require("goals", goalId);
+    const goal = current.toJSON() as Goal;
+    const contributions = [
+      ...goal.contributions,
+      {
+        id: randomId("gct"),
+        date: contribution.date,
+        amount: contribution.amount,
+        ...(contribution.note === undefined || contribution.note.trim() === ""
+          ? {}
+          : { note: contribution.note.trim() }),
+      },
+    ];
+    const saved = contributions.reduce((total, entry) => total + entry.amount, 0);
+    return this.#patch("goals", goalId, {
+      contributions,
+      ...(saved >= goal.target_amount && goal.status === "active"
+        ? { status: "completed" as const }
+        : {}),
+    } as Patch<Goal>);
+  }
+
+  async updateGoal(id: string, patch: Patch<Goal>): Promise<Goal> {
+    return this.#patch("goals", id, patch);
   }
 
   /**

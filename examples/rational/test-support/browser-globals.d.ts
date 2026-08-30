@@ -68,6 +68,13 @@ interface RationalWritesWire {
   createRule(input: Record<string, unknown>): Promise<RationalDocumentWire>;
   updateRule(id: string, patch: Record<string, unknown>): Promise<RationalDocumentWire>;
   importTransactions(input: Record<string, unknown>): Promise<Record<string, unknown>>;
+  setBudget(input: Record<string, unknown>): Promise<RationalDocumentWire>;
+  saveRecurrence(input: Record<string, unknown>): Promise<RationalDocumentWire>;
+  createGoal(input: Record<string, unknown>): Promise<RationalDocumentWire>;
+  contributeToGoal(
+    id: string,
+    contribution: Record<string, unknown>,
+  ): Promise<RationalDocumentWire>;
 }
 
 /** The household's receipts, as a browser test reaches them. */
