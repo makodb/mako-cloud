@@ -1586,7 +1586,23 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Read a user's administrator-controlled app metadata using an explicit scoped service credential
+         * @description Lets an application's own trusted code read the app metadata that
+         *     becomes a user's verified token claims, so it can compose the next
+         *     value out of the current one: the update is a one-level merge patch,
+         *     so adding one member of a claim map without reading it first means
+         *     reconstructing every other member from whatever the application
+         *     happens to keep elsewhere. The service credential must be scoped to
+         *     the reserved `users` target with the `read` operation, the audited
+         *     bypass reason travels in `X-Mako-Bypass-Reason`, and the read is
+         *     recorded as a privileged bypass like the write. The response carries
+         *     the user's authorization epoch, which the write that follows may name
+         *     as `expectedAuthorizationEpoch`. Application bearer tokens and public
+         *     project keys are refused on this route, as is any request that arrived
+         *     on a custom domain.
+         */
+        get: operations["getUserAppMetadataAsService"];
         put?: never;
         /**
          * Set a user's administrator-controlled app metadata using an explicit scoped service credential
@@ -5014,6 +5030,11 @@ export interface components {
             appMetadata: {
                 [key: string]: unknown;
             };
+            /**
+             * Format: int64
+             * @description The user authorization epoch this patch was composed against, usually the one a preceding read returned. The write is refused with 409 if the user's epoch has moved since, so two concurrent changes to one claim map cannot silently keep whichever wrote last. Omitted means no precondition.
+             */
+            expectedAuthorizationEpoch?: number;
         };
         ServiceAppMetadataResult: {
             userId: components["schemas"]["ApplicationUserId"];
@@ -9172,6 +9193,34 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DocumentQueryPage"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    getUserAppMetadataAsService: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Mako-Request-Id": components["parameters"]["ServiceRequestId"];
+                "X-Mako-Bypass-Reason": components["parameters"]["ServiceBypassReason"];
+            };
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                environmentId: components["parameters"]["EnvironmentId"];
+                userId: components["parameters"]["ApplicationUserId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The user's app metadata and current authorization epoch */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServiceAppMetadataResult"];
                 };
             };
             default: components["responses"]["ApiError"];

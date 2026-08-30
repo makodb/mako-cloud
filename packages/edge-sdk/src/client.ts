@@ -98,7 +98,29 @@ export interface FunctionClient {
   documents<T extends JsonObject = JsonObject>(collectionId: string): FunctionDocumentClient<T>;
 }
 
+/** What a write may require of the value it is replacing. */
+export interface SetAppMetadataOptions {
+  /** Audited bypass reason; the client's configured one when omitted. */
+  readonly reason?: string;
+  /**
+   * The user authorization epoch this patch was composed against -- the one
+   * `getAppMetadata` returned. The write is refused with `conflict` if the
+   * user's epoch has moved since, so two concurrent changes to one claim map
+   * cannot silently keep whichever wrote last.
+   */
+  readonly expectedAuthorizationEpoch?: number;
+}
+
 export interface ServiceUserClient {
+  /**
+   * Reads a user's administrator-controlled app metadata through the audited
+   * service route, with the authorization epoch it was read at. The patch a
+   * write carries replaces a key whole, so a function that manages one member
+   * of a claim map composes the next value out of this one and hands the
+   * epoch back to `setAppMetadata`. The service credential must be scoped to
+   * the reserved `users` target with the `read` operation.
+   */
+  getAppMetadata(userId: string, reason?: string): Promise<FunctionAppMetadataResult>;
   /**
    * Sets a user's administrator-controlled app metadata -- the claims the
    * user's next token carries and policies trust -- through the audited
@@ -109,7 +131,7 @@ export interface ServiceUserClient {
   setAppMetadata(
     userId: string,
     patch: FunctionAppMetadataPatch,
-    reason?: string,
+    options?: string | SetAppMetadataOptions,
   ): Promise<FunctionAppMetadataResult>;
 }
 
@@ -198,11 +220,32 @@ export function createServiceClient(options: ServiceFunctionClientOptions): Serv
     documents: <T extends JsonObject = JsonObject>(collectionId: string) =>
       new DocumentClient<T>(transport, "service/collections", validateCollectionId(collectionId)),
     users: {
-      setAppMetadata: async (userId, patch, reason) => {
+      getAppMetadata: async (userId, reason) => {
+        validateApplicationUserId(userId);
+        const bypassReason = reason === undefined ? configuredReason : validateBypassReason(reason);
+        return transport.request<FunctionAppMetadataResult>(
+          `service/users/${encodeURIComponent(userId)}/app-metadata`,
+          "GET",
+          undefined,
+          { "X-Mako-Bypass-Reason": bypassReason },
+        );
+      },
+      setAppMetadata: async (userId, patch, options) => {
         validateApplicationUserId(userId);
         validateAppMetadataPatch(patch);
-        const bypassReason = reason === undefined ? configuredReason : validateBypassReason(reason);
-        const body: WireAppMetadataUpdate = { reason: bypassReason, appMetadata: patch };
+        const settings: SetAppMetadataOptions =
+          typeof options === "string" ? { reason: options } : (options ?? {});
+        const bypassReason =
+          settings.reason === undefined ? configuredReason : validateBypassReason(settings.reason);
+        const expected = settings.expectedAuthorizationEpoch;
+        if (expected !== undefined && (!Number.isSafeInteger(expected) || expected < 0)) {
+          throw new MakoEdgeSdkError("expected authorization epoch must be a non-negative integer");
+        }
+        const body: WireAppMetadataUpdate = {
+          reason: bypassReason,
+          appMetadata: patch,
+          ...(expected === undefined ? {} : { expectedAuthorizationEpoch: expected }),
+        };
         return transport.request<FunctionAppMetadataResult>(
           `service/users/${encodeURIComponent(userId)}/app-metadata`,
           "POST",

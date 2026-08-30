@@ -3111,6 +3111,41 @@ paths:
         default:
           $ref: "#/components/responses/ApiError"
   /v1/projects/{projectId}/environments/{environmentId}/service/users/{userId}/app-metadata:
+    get:
+      tags: [Auth]
+      operationId: getUserAppMetadataAsService
+      summary: Read a user's administrator-controlled app metadata using an explicit scoped service credential
+      description: |
+        Lets an application's own trusted code read the app metadata that
+        becomes a user's verified token claims, so it can compose the next
+        value out of the current one: the update is a one-level merge patch,
+        so adding one member of a claim map without reading it first means
+        reconstructing every other member from whatever the application
+        happens to keep elsewhere. The service credential must be scoped to
+        the reserved `users` target with the `read` operation, the audited
+        bypass reason travels in `X-Mako-Bypass-Reason`, and the read is
+        recorded as a privileged bypass like the write. The response carries
+        the user's authorization epoch, which the write that follows may name
+        as `expectedAuthorizationEpoch`. Application bearer tokens and public
+        project keys are refused on this route, as is any request that arrived
+        on a custom domain.
+      security:
+        - serviceProjectKey: []
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/EnvironmentId"
+        - $ref: "#/components/parameters/ApplicationUserId"
+        - $ref: "#/components/parameters/ServiceRequestId"
+        - $ref: "#/components/parameters/ServiceBypassReason"
+      responses:
+        "200":
+          description: The user's app metadata and current authorization epoch
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServiceAppMetadataResult"
+        default:
+          $ref: "#/components/responses/ApiError"
     post:
       tags: [Auth]
       operationId: setUserAppMetadataAsService
@@ -9666,6 +9701,16 @@ components:
             app metadata. A key set to null is removed; any other key replaces
             the stored value whole. The patch and the merged result are bounded
             like trusted metadata (64 KiB, nesting depth 16).
+        expectedAuthorizationEpoch:
+          type: integer
+          format: int64
+          minimum: 0
+          description: >-
+            The user authorization epoch this patch was composed against,
+            usually the one a preceding read returned. The write is refused
+            with 409 if the user's epoch has moved since, so two concurrent
+            changes to one claim map cannot silently keep whichever wrote
+            last. Omitted means no precondition.
     ServiceAppMetadataResult:
       type: object
       additionalProperties: false

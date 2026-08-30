@@ -88,17 +88,26 @@ const service = createServiceClient({
   requestId,
 });
 
-// Replaces the user's `households` claim whole; other keys are untouched.
+// A patch replaces a key whole, so the next claim is composed out of the
+// current one -- and the write names the epoch that read returned, so a
+// concurrent change to the same claim map is refused rather than dropped.
+const current = await service.users.getAppMetadata(invitee.userId);
+const households = { ...(current.appMetadata.households ?? {}), [householdId]: "editor" };
 const { authorizationEpoch } = await service.users.setAppMetadata(
   invitee.userId,
-  { households: { ...invitee.households, [householdId]: "editor" } },
-  `invitation ${invitationId} accepted`,
+  { households },
+  {
+    reason: `invitation ${invitationId} accepted`,
+    expectedAuthorizationEpoch: current.authorizationEpoch,
+  },
 );
 ```
 
 The write advances the user's authorization epoch, so the app should refresh
 its session afterwards; the new `households` claim is on the refreshed token.
-See [project authentication](project-auth.md) for the refusal and audit rules.
+A `conflict` means somebody else changed this user's claims first: read again
+and recompose, rather than retrying the same patch. See
+[project authentication](project-auth.md) for the refusal and audit rules.
 
 ### Giving a function a credential you already hold
 

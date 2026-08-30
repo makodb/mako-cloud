@@ -75,11 +75,25 @@ export function createServiceClient(options) {
     return {
         documents: (collectionId) => new DocumentClient(transport, "service/collections", validateCollectionId(collectionId)),
         users: {
-            setAppMetadata: async (userId, patch, reason) => {
+            getAppMetadata: async (userId, reason) => {
+                validateApplicationUserId(userId);
+                const bypassReason = reason === undefined ? configuredReason : validateBypassReason(reason);
+                return transport.request(\`service/users/\${encodeURIComponent(userId)}/app-metadata\`, "GET", undefined, { "X-Mako-Bypass-Reason": bypassReason });
+            },
+            setAppMetadata: async (userId, patch, options) => {
                 validateApplicationUserId(userId);
                 validateAppMetadataPatch(patch);
-                const bypassReason = reason === undefined ? configuredReason : validateBypassReason(reason);
-                const body = { reason: bypassReason, appMetadata: patch };
+                const settings = typeof options === "string" ? { reason: options } : (options ?? {});
+                const bypassReason = settings.reason === undefined ? configuredReason : validateBypassReason(settings.reason);
+                const expected = settings.expectedAuthorizationEpoch;
+                if (expected !== undefined && (!Number.isSafeInteger(expected) || expected < 0)) {
+                    throw new MakoEdgeSdkError("expected authorization epoch must be a non-negative integer");
+                }
+                const body = {
+                    reason: bypassReason,
+                    appMetadata: patch,
+                    ...(expected === undefined ? {} : { expectedAuthorizationEpoch: expected }),
+                };
                 return transport.request(\`service/users/\${encodeURIComponent(userId)}/app-metadata\`, "POST", body, { "X-Mako-Bypass-Reason": bypassReason });
             },
         },

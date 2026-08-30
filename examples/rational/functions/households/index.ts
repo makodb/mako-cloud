@@ -163,7 +163,7 @@ async function create(caller: Caller, body: JsonObject): Promise<Response> {
     owner_id: caller.userId,
   });
   await putMembership(reason, householdId, caller.userId, caller.email, "owner");
-  await grant(reason, caller.userId, { ...caller.households, [householdId]: "owner" });
+  await changeHousehold(reason, caller.userId, householdId, "owner");
   return success({ householdId, role: "owner" });
 }
 
@@ -205,7 +205,7 @@ async function accept(caller: Caller, body: JsonObject): Promise<Response> {
   }
   const role = isRole(invitation.body.role) ? invitation.body.role : "viewer";
   await putMembership(reason, householdId, caller.userId, caller.email, role);
-  await grant(reason, caller.userId, { ...caller.households, [householdId]: role });
+  await changeHousehold(reason, caller.userId, householdId, role);
   // The invitation is marked rather than deleted: the credential this
   // function holds may create, read, and update, and a projection that keeps
   // its history is the better record anyway.
@@ -224,14 +224,13 @@ async function setRole(caller: Caller, body: JsonObject): Promise<Response> {
   const userId = text(body.userId, "userId", 128);
   const role = requireRole(body.role);
   const reason = `set the role of ${userId} in household ${householdId} to ${role}`;
-  const held = await heldHouseholds(reason, userId);
-  if (held[householdId] === undefined) {
+  const membership = await read(reason, MEMBERSHIPS, membershipId(householdId, userId));
+  if (membership === null || membership._deleted || membership.body.status !== "active") {
     throw new RouteError(404, "not_found", "that person is not a member of this household");
   }
-  const membership = await read(reason, MEMBERSHIPS, membershipId(householdId, userId));
-  const email = typeof membership?.body.email === "string" ? membership.body.email : "";
+  const email = typeof membership.body.email === "string" ? membership.body.email : "";
   await putMembership(reason, householdId, userId, email, role);
-  await grant(reason, userId, { ...held, [householdId]: role });
+  await changeHousehold(reason, userId, householdId, role);
   return success({ householdId, userId, role });
 }
 
@@ -244,26 +243,21 @@ async function removeMember(caller: Caller, body: JsonObject): Promise<Response>
   if (household !== null && household.body.owner_id === userId) {
     throw new RouteError(400, "invalid_request", "the household's owner cannot be removed");
   }
-  const held = await heldHouseholds(reason, userId);
-  if (held[householdId] === undefined) {
+  const id = membershipId(householdId, userId);
+  const existing = await read(reason, MEMBERSHIPS, id);
+  if (existing === null || existing._deleted || existing.body.status !== "active") {
     throw new RouteError(404, "not_found", "that person is not a member of this household");
   }
-  const remaining = { ...held };
-  delete remaining[householdId];
   // The claim goes first: it is what the policies read, so from here the
   // person is refused by the data plane whatever else happens below, and
   // their next token — the app refreshes on the epoch change — no longer
   // carries the household.
-  await grant(reason, userId, remaining);
-  const id = membershipId(householdId, userId);
-  const membership = await read(reason, MEMBERSHIPS, id);
-  if (membership !== null) {
-    await put(reason, MEMBERSHIPS, id, {
-      ...membership.body,
-      status: "removed",
-      updated_at: Date.now(),
-    });
-  }
+  await changeHousehold(reason, userId, householdId, null);
+  await put(reason, MEMBERSHIPS, id, {
+    ...existing.body,
+    status: "removed",
+    updated_at: Date.now(),
+  });
   return success({ householdId, userId });
 }
 
@@ -333,37 +327,48 @@ async function putMembership(
   });
 }
 
-/** Write the whole `households` claim; other app metadata keys are untouched. */
-async function grant(
+/**
+ * Change one household in a person's claim, leaving the rest of it — and the
+ * rest of their app metadata — alone.
+ *
+ * `setAppMetadata` replaces a key whole, so the next value is composed out of
+ * the current one, read through the service route. The epoch that read
+ * returns goes back with the write: two invitations accepted at once would
+ * otherwise each write the map they read and the later one would drop the
+ * other's household. A conflict means somebody else changed this person's
+ * claim first, so the whole read-compose-write is retried against what they
+ * left.
+ */
+async function changeHousehold(
   reason: string,
   userId: string,
-  households: Record<string, Role>,
+  householdId: string,
+  role: Role | null,
 ): Promise<void> {
-  await service(reason).users.setAppMetadata(userId, { households }, reason);
-}
-
-/**
- * Which households a person belongs to, from the projection this function
- * owns. The claim is replaced whole by `setAppMetadata`, so a change to one
- * household must carry the others with it — and the app metadata of another
- * user is not readable from here, while the projection is.
- */
-async function heldHouseholds(reason: string, userId: string): Promise<Record<string, Role>> {
-  const page = await service(reason)
-    .documents(MEMBERSHIPS)
-    .query({
-      predicates: [{ field: "user_id", operator: "eq", value: userId }],
-      sort: [],
-      cursor: null,
-      limit: 200,
-    });
-  const held: Record<string, Role> = {};
-  for (const document of page.documents) {
-    const body = document.body;
-    if (document._deleted || body.status !== "active" || !isRole(body.role)) continue;
-    if (typeof body.household_id === "string") held[body.household_id] = body.role;
+  const users = service(reason).users;
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const current = await users.getAppMetadata(userId, reason);
+    const households: Record<string, Role> = {};
+    const held = current.appMetadata.households;
+    if (typeof held === "object" && held !== null && !Array.isArray(held)) {
+      for (const [id, value] of Object.entries(held)) {
+        if (isRole(value)) households[id] = value;
+      }
+    }
+    if (role === null) delete households[householdId];
+    else households[householdId] = role;
+    try {
+      await users.setAppMetadata(
+        userId,
+        { households },
+        { reason, expectedAuthorizationEpoch: current.authorizationEpoch },
+      );
+      return;
+    } catch (error) {
+      if ((error as { code?: string }).code !== "conflict") throw error;
+    }
   }
-  return held;
+  throw new RouteError(409, "conflict", "this member's access is being changed; try again");
 }
 
 // --- identifiers and helpers --------------------------------------------

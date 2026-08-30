@@ -49,6 +49,9 @@ pub(crate) const USERS_SCOPE_TARGET: &str = "users";
 
 /// The audited action of a verified bypass on this route.
 pub(crate) const AUDIT_ACTION: &str = "service_user_app_metadata_update";
+/// The audited action of a read. Reading another user's trusted claims is a
+/// privileged bypass like writing them, and is recorded as one.
+pub(crate) const READ_AUDIT_ACTION: &str = "service_user_app_metadata_read";
 
 const SERVICE_KEY_HEADER: &str = "x-mako-service-key";
 const AUTHORIZATION_HEADER: &str = "authorization";
@@ -58,8 +61,77 @@ pub fn add_service_user_routes(
     router: &mut HttpRouter,
     graph: Arc<DataPlaneGraph>,
 ) -> Result<(), RouteRegistrationError> {
+    let reader = Arc::clone(&graph);
+    router.add_route(HttpMethod::Get, APP_METADATA_ROUTE, move |request| {
+        handle_get_app_metadata(&reader, &request)
+    })?;
     router.add_route(HttpMethod::Post, APP_METADATA_ROUTE, move |request| {
         handle_set_app_metadata(&graph, &request)
+    })
+}
+
+/// Reads a user's administrator-controlled metadata under a service
+/// credential.
+///
+/// A function that manages membership has to compose the claim it writes out
+/// of the one that is there -- the patch replaces a key whole, so adding one
+/// household without this means reconstructing every other from whatever
+/// projection the application happens to keep. The epoch comes back with the
+/// metadata so the write that follows can say which version it read.
+fn handle_get_app_metadata(
+    graph: &Arc<DataPlaneGraph>,
+    request: &HttpRequest,
+) -> Result<HttpResponse, HttpApiError> {
+    refuse_application_credentials(request)?;
+    refuse_public_hostname(request)?;
+    let tenant = tenant_for(graph, request)?;
+    let user_id = user_id(request)?;
+    let now = now_unix_seconds(request.request_id())?;
+    block_on(async {
+        let reason = PrivilegedBypassReason::parse(
+            request
+                .header("x-mako-bypass-reason")
+                .ok_or_else(|| invalid(request, "service bypass reason is required"))?
+                .to_owned(),
+        )
+        .map_err(|_| invalid(request, "service bypass reason is invalid"))?;
+        let _bypass = establish_bypass(
+            graph,
+            request,
+            &tenant,
+            &user_id,
+            reason,
+            DocumentOperation::Read,
+            READ_AUDIT_ACTION,
+            now,
+        )
+        .await?;
+        charge_auth(graph, &tenant, request, now).await?;
+        let store = graph
+            .identity_store(&tenant, &tenant)
+            .map_err(|_| unavailable(request, "identity authority is unavailable"))?;
+        let user = store
+            .user_by_id(&user_id)
+            .await
+            .map_err(|error| map_store_error(request, &error))?
+            .ok_or_else(|| not_found(request, "application user was not found"))?;
+        let subject = SubjectId::parse(user_id.as_str())
+            .map_err(|_| invalid(request, "application user id is invalid"))?;
+        let snapshot = graph
+            .authorization_epoch_store(&tenant, &tenant)
+            .map_err(|_| unavailable(request, "authorization epoch store is unavailable"))?
+            .epochs_for(&subject)
+            .await
+            .map_err(|_| unavailable(request, "authorization epoch store is unavailable"))?;
+        json(
+            request,
+            200,
+            &AppMetadataResultWire {
+                user_id: user.id().as_str().to_owned(),
+                app_metadata: user.trusted_metadata().values().clone(),
+                authorization_epoch: snapshot.user().get(),
+            },
+        )
     })
 }
 
@@ -89,7 +161,17 @@ fn handle_set_app_metadata(
         // audit record; nothing below runs unless both succeeded. The
         // authorizer itself guards a document scope, and this route writes
         // no document, so it is evidence rather than an input.
-        let _bypass = establish_bypass(graph, request, &tenant, &user_id, reason, now).await?;
+        let _bypass = establish_bypass(
+            graph,
+            request,
+            &tenant,
+            &user_id,
+            reason,
+            DocumentOperation::Update,
+            AUDIT_ACTION,
+            now,
+        )
+        .await?;
         charge_auth(graph, &tenant, request, now).await?;
         let store = graph
             .identity_store(&tenant, &tenant)
@@ -98,6 +180,22 @@ fn handle_set_app_metadata(
             .begin_user_metadata_update(&user_id)
             .await
             .map_err(|error| map_store_error(request, &error))?;
+        if let Some(expected) = body.expected_authorization_epoch {
+            let subject = SubjectId::parse(user_id.as_str())
+                .map_err(|_| invalid(request, "application user id is invalid"))?;
+            let current = graph
+                .authorization_epoch_store(&tenant, &tenant)
+                .map_err(|_| unavailable(request, "authorization epoch store is unavailable"))?
+                .epochs_for(&subject)
+                .await
+                .map_err(|_| unavailable(request, "authorization epoch store is unavailable"))?;
+            if current.user().get() != expected {
+                return Err(conflict(
+                    request,
+                    "app metadata changed since the expected authorization epoch",
+                ));
+            }
+        }
         let merged = update
             .user()
             .trusted_metadata()
@@ -178,12 +276,15 @@ fn refuse_public_hostname(request: &HttpRequest) -> Result<(), HttpApiError> {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn establish_bypass(
     graph: &Arc<DataPlaneGraph>,
     request: &HttpRequest,
     tenant: &TenantScope,
     user_id: &AppUserId,
     reason: PrivilegedBypassReason,
+    operation: DocumentOperation,
+    audit_action: &'static str,
     now: u64,
 ) -> Result<PrivilegedBypassAuthorizer, HttpApiError> {
     require_presented_request_id(request)?;
@@ -195,6 +296,7 @@ async fn establish_bypass(
     let audit = AppMetadataBypassAudit {
         graph: Arc::clone(graph),
         user_id: user_id.clone(),
+        action: audit_action,
     };
     ServiceBypassGateway
         .authorize(
@@ -202,7 +304,7 @@ async fn establish_bypass(
                 tenant: tenant.clone(),
                 collection_id: CollectionId::parse(USERS_SCOPE_TARGET)
                     .expect("the reserved identity scope target is a collection identifier"),
-                operation: DocumentOperation::Update,
+                operation,
                 credential: PresentedServiceCredential::parse(credential.to_owned())
                     .map_err(|_| unauthenticated(request, "service project key is invalid"))?,
                 request_id,
@@ -234,6 +336,7 @@ async fn establish_bypass(
 struct AppMetadataBypassAudit {
     graph: Arc<DataPlaneGraph>,
     user_id: AppUserId,
+    action: &'static str,
 }
 
 impl PrivilegedBypassAuditSink for AppMetadataBypassAudit {
@@ -260,7 +363,7 @@ impl PrivilegedBypassAuditSink for AppMetadataBypassAudit {
                         },
                         "application_user",
                         self.user_id.as_str(),
-                        AUDIT_ACTION,
+                        self.action,
                         AuditOutcome::Allowed,
                         "service_bypass_verified",
                         event.request_id().as_str(),
@@ -300,6 +403,12 @@ fn map_store_error(request: &HttpRequest, error: &IdentityStoreError) -> HttpApi
 struct AppMetadataUpdateWire {
     reason: String,
     app_metadata: Value,
+    /// The user authorization epoch the caller composed this patch against.
+    /// A read-modify-write over a claim map is only correct if it can say
+    /// which version it read; without it two concurrent membership changes
+    /// silently keep whichever wrote last.
+    #[serde(default)]
+    expected_authorization_epoch: Option<u64>,
 }
 
 #[derive(Serialize)]
@@ -331,6 +440,7 @@ mod tests {
     use crate::{
         DataPlaneGraph, DataPlaneRefreshOutcome,
         graph::test_support::{DeploymentEnvironment, config_for, local_tempdir, tenant},
+        service_user_http::READ_AUDIT_ACTION,
     };
 
     /// What `HttpRequest::for_test` stamps on every request; the route
@@ -473,6 +583,22 @@ mod tests {
                 .expect("the app-metadata route is registered")
         }
 
+        fn read(
+            &self,
+            user_id: &str,
+            headers: Vec<(String, String)>,
+        ) -> Result<HttpResponse, HttpApiError> {
+            self.router
+                .dispatch_for_test(HttpRequest::for_test(
+                    HttpMethod::Get,
+                    self.path(user_id),
+                    headers,
+                    Vec::new(),
+                    None,
+                ))
+                .expect("the app-metadata route is registered")
+        }
+
         fn stored_user(&self) -> AppUserRecord {
             block_on(
                 self.graph
@@ -485,12 +611,16 @@ mod tests {
         }
 
         fn bypass_audit_records(&self) -> Vec<mako_audit::AuditRecord> {
+            self.bypass_audit_records_for(AUDIT_ACTION)
+        }
+
+        fn bypass_audit_records_for(&self, action: &str) -> Vec<mako_audit::AuditRecord> {
             let now_ms = crate::auth_http::now_unix_seconds(REQUEST_ID).expect("clock") * 1_000;
             block_on(self.graph.audit_store().query(
                 &self.tenant,
                 &AuditFilter {
                     categories: BTreeSet::from([AuditCategory::ServiceBypass]),
-                    action: Some(AUDIT_ACTION.to_owned()),
+                    action: Some(action.to_owned()),
                     ..AuditFilter::default()
                 },
                 now_ms.saturating_sub(3_600_000),
@@ -506,6 +636,10 @@ mod tests {
 
     fn body(reason: &str, patch: Value) -> Value {
         json!({ "reason": reason, "appMetadata": patch })
+    }
+
+    fn body_expecting(reason: &str, patch: Value, epoch: u64) -> Value {
+        json!({ "reason": reason, "appMetadata": patch, "expectedAuthorizationEpoch": epoch })
     }
 
     fn code(result: Result<HttpResponse, HttpApiError>) -> ErrorCode {
@@ -526,7 +660,7 @@ mod tests {
     }
 
     #[test]
-    fn the_route_is_registered_only_as_a_service_post() {
+    fn the_route_is_registered_only_for_a_service_read_and_write() {
         let directory = local_tempdir("data-plane-app-metadata-route");
         let config = config_for(directory.path(), DeploymentEnvironment::Local);
         let graph = Arc::new(DataPlaneGraph::open(&config).expect("graph"));
@@ -536,15 +670,17 @@ mod tests {
             .replace("{environmentId}", "env_example00")
             .replace("{userId}", USER_ID);
         assert!(router.permits(HttpMethod::Post, &path));
-        assert!(!router.permits(HttpMethod::Get, &path));
+        // A function composes the claim it writes out of the one that is
+        // there, so the read is part of the same surface.
+        assert!(router.permits(HttpMethod::Get, &path));
         assert!(!router.permits(HttpMethod::Patch, &path));
-        assert!(
-            !router.permits(
-                HttpMethod::Post,
-                &path.replace("/service/users/", "/users/")
-            ),
-            "app metadata has no application-credential route"
-        );
+        assert!(!router.permits(HttpMethod::Delete, &path));
+        for method in [HttpMethod::Get, HttpMethod::Post] {
+            assert!(
+                !router.permits(method, &path.replace("/service/users/", "/users/")),
+                "app metadata has no application-credential route"
+            );
+        }
         drop(router);
         let graph = Arc::try_unwrap(graph).unwrap_or_else(|_| panic!("route owners dropped"));
         block_on(graph.shutdown()).expect("shutdown");
@@ -804,6 +940,102 @@ mod tests {
             event.details.get("bypass_reason"),
             Some(&AttributeValue::Text("invitation accepted".to_owned()))
         );
+        fixture.close();
+    }
+
+    /// A function that manages one member of a claim map has to compose the
+    /// next value out of the current one, because the patch replaces a key
+    /// whole. Reading it is that first half; naming the epoch it read is what
+    /// keeps two concurrent changes from silently keeping whichever wrote
+    /// last, which is the failure this pair exists to prevent.
+    #[test]
+    fn a_read_composes_the_next_claim_and_the_epoch_it_read_guards_the_write() {
+        let fixture = Fixture::open(
+            "data-plane-app-metadata-read",
+            json!({"households": {"hh_one": "owner"}}),
+        );
+        let mut reading = fixture.service_headers(&fixture.service_key);
+        reading.push((
+            "X-Mako-Bypass-Reason".to_owned(),
+            "compose the next households claim".to_owned(),
+        ));
+        let read = fixture
+            .read(USER_ID, reading.clone())
+            .expect("metadata read");
+        assert_eq!(
+            response_json(read),
+            json!({
+                "userId": USER_ID,
+                "appMetadata": {"households": {"hh_one": "owner"}},
+                "authorizationEpoch": 0
+            })
+        );
+        // Reading somebody's trusted claims is a privileged bypass, and is
+        // recorded as one under its own action.
+        assert_eq!(fixture.bypass_audit_records_for(READ_AUDIT_ACTION).len(), 1);
+        assert!(fixture.bypass_audit_records().is_empty());
+        // The reason is required: a read of somebody's claims is not a thing
+        // the audit trail should have to describe as "unspecified".
+        assert_eq!(
+            code(fixture.read(USER_ID, fixture.service_headers(&fixture.service_key))),
+            ErrorCode::InvalidRequest
+        );
+
+        // The write names what it read, and adds a household without
+        // disturbing the one that was there.
+        let response = fixture
+            .send(
+                USER_ID,
+                fixture.service_headers(&fixture.service_key),
+                &body_expecting(
+                    "accepted an invitation",
+                    json!({"households": {"hh_one": "owner", "hh_two": "editor"}}),
+                    0,
+                ),
+            )
+            .expect("metadata written");
+        assert_eq!(
+            response_json(response),
+            json!({
+                "userId": USER_ID,
+                "appMetadata": {"households": {"hh_one": "owner", "hh_two": "editor"}},
+                "authorizationEpoch": 1
+            })
+        );
+
+        fixture.close();
+    }
+
+    /// The other half: a write still holding an epoch somebody else has
+    /// already moved past is refused, rather than writing the map it composed
+    /// from what it read and dropping whatever they added.
+    #[test]
+    fn a_write_naming_a_stale_epoch_is_refused_and_changes_nothing() {
+        let fixture = Fixture::open(
+            "data-plane-app-metadata-stale",
+            json!({"households": {"hh_one": "owner", "hh_two": "editor"}}),
+        );
+        let stale = fixture.send(
+            USER_ID,
+            fixture.service_headers(&fixture.service_key),
+            &body_expecting(
+                "accepted an invitation",
+                json!({"households": {"hh_one": "owner", "hh_three": "viewer"}}),
+                4,
+            ),
+        );
+        assert_eq!(code(stale), ErrorCode::Conflict);
+        assert_eq!(
+            fixture.stored_user().trusted_metadata().values(),
+            json!({"households": {"hh_one": "owner", "hh_two": "editor"}})
+                .as_object()
+                .expect("object"),
+            "the refused write changed nothing"
+        );
+        // The bypass is established and audited before the precondition is
+        // read, so the refusal is on the record like any other privileged
+        // attempt.
+        assert_eq!(fixture.bypass_audit_records().len(), 1);
         fixture.close();
     }
 

@@ -67,7 +67,17 @@ Content-Type: application/json
   replaces the stored value whole. The patch and the merged result are bounded
   like trusted metadata (64 KiB, nesting depth 16); a patch that would exceed
   them is refused before anything is written. User-editable profile metadata
-  is never read or changed by this route.
+  is never read or changed by this route. `expectedAuthorizationEpoch` is
+  optional and names the epoch the patch was composed against; the write is
+  refused with `conflict` if the user's epoch has moved since.
+- **Reading it back.** `GET` on the same path, with the reason in
+  `X-Mako-Bypass-Reason` and the credential scoped to `users` with `read`,
+  returns the user's app metadata and current authorization epoch. Because a
+  patch replaces a key whole, a function that manages one member of a claim
+  map composes the next value out of this one; naming the epoch it read on the
+  write that follows is what keeps two concurrent changes from silently
+  keeping whichever wrote last. The read is a privileged bypass like the
+  write and is audited as `service_user_app_metadata_read`.
 - **Audit.** Before the metadata is written, a `service_bypass` audit record
   is appended with the credential as the actor
   (`service_user_app_metadata_update` on resource `application_user/{userId}`,
