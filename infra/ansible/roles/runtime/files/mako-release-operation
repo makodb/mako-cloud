@@ -14,6 +14,9 @@ configuration_snapshot_root=/etc/mako/release-configs
 control_database=/srv/mako-data/sqlite/control-plane/live/control.sqlite3
 control_lock=/srv/mako-data/sqlite/control-plane/lock/control.lock
 control_identity=mako-control-plane-us-east-1-beta
+runtime_account=mako-runtime
+runtime_main_root=/home/mako-runtime/.config/mako-cloud/edge-runtime/main
+runtime_unit=mako-edge-runtime.service
 
 usage() {
   echo "usage: mako-release-operation inspect | snapshot-current | upgrade DIGEST --confirm=UPGRADE_RELEASE:DIGEST | rollback DIGEST --confirm=ROLLBACK_RELEASE:DIGEST" >&2
@@ -225,6 +228,43 @@ restore_release_configuration() {
   done
 }
 
+# The edge runtime's main worker travels with the release. It is the
+# supervisor: it authenticates deployments, supplies the SDK module to every
+# user worker, and sets each worker's permissions -- so a release that did not
+# carry it left the runtime running whatever had been copied to the host last,
+# and a release digest said nothing about how tenant code would actually be
+# run. A release that predates this (a rollback target, say) carries no
+# `runtime-main`; the provisioned worker is then left exactly as it is.
+install_release_runtime_worker() {
+  local release=$1 source uid changed=0 worker
+  source=$release_root/releases/$release/runtime-main
+  if [[ ! -d "$source" ]]; then
+    printf 'release %s carries no runtime worker; the provisioned one is unchanged\n' "$release"
+    return 0
+  fi
+  /usr/bin/install -d -o "$runtime_account" -g "$runtime_account" -m 0700 "$runtime_main_root"
+  for worker in "$source"/*; do
+    [[ -f "$worker" ]] || continue
+    if ! /usr/bin/cmp --silent "$worker" "$runtime_main_root/$(basename "$worker")"; then
+      changed=1
+    fi
+    /usr/bin/install -o "$runtime_account" -g "$runtime_account" -m 0644 \
+      "$worker" "$runtime_main_root/$(basename "$worker")"
+  done
+  if (( changed == 0 )); then
+    printf 'runtime worker already matches release %s\n' "$release"
+    return 0
+  fi
+  # The worker is a read-only mount into a container that reads it once at
+  # start, so installing it is only half the operation.
+  uid=$(/usr/bin/id --user "$runtime_account")
+  /usr/sbin/runuser --user "$runtime_account" -- \
+    /usr/bin/env "XDG_RUNTIME_DIR=/run/user/$uid" /usr/bin/systemctl --user daemon-reload
+  /usr/sbin/runuser --user "$runtime_account" -- \
+    /usr/bin/env "XDG_RUNTIME_DIR=/run/user/$uid" /usr/bin/systemctl --user restart "$runtime_unit"
+  printf 'runtime worker installed from release %s and the runtime restarted\n' "$release"
+}
+
 record_operation() {
   local kind=$1 from=$2 to=$3 started=$4 completed=$5 record temporary operator
   operator=${SUDO_USER:-root}
@@ -331,6 +371,7 @@ switch_release() {
     restore_release_configuration "$target"
   fi
   /usr/local/sbin/mako-release select "$target"
+  install_release_runtime_worker "$target"
   transition_storage "$activation_binary" activate ACTIVATE
   /usr/bin/flock --unlock 8
   /usr/bin/systemctl reset-failed "${services[@]/%/.service}" || true

@@ -94,6 +94,41 @@ assert(
   "a Mako service is inactive",
 );
 
+// What the runtime is actually running. The main worker authenticates
+// deployments, supplies the SDK module to every user worker, and decides each
+// worker's permissions -- so a host whose worker is not the release's is a
+// host running tenant code under rules no digest describes. It used to reach
+// the host only through the provisioning role, and the beta consequently ran a
+// worker four releases old without anything noticing.
+const runtimeWorkers = manifest.artifacts.files.filter((artifact) =>
+  artifact.path.startsWith("runtime-main/"),
+);
+assert(runtimeWorkers.length > 0, "the release carries no edge runtime worker");
+const installedWorkers = ssh(
+  `sudo sha256sum ${runtimeWorkers
+    .map(
+      (artifact) =>
+        `/home/mako-runtime/.config/mako-cloud/edge-runtime/main/${artifact.path.slice("runtime-main/".length)}`,
+    )
+    .join(" ")}`,
+)
+  .split("\n")
+  .filter(Boolean)
+  .map((line) => line.split(/\s+/u)[0]);
+assert(
+  installedWorkers.length === runtimeWorkers.length &&
+    runtimeWorkers.every((artifact, index) => artifact.sha256 === installedWorkers[index]),
+  "the installed edge runtime worker is not the release's",
+);
+const runtimeContainer = ssh(
+  "sudo -u mako-runtime sh -c 'cd /home/mako-runtime && XDG_RUNTIME_DIR=/run/user/$(id -u mako-runtime)" +
+    " systemctl --user is-active mako-edge-runtime.service'",
+).trim();
+assert(
+  runtimeContainer === "active",
+  `the edge runtime is not running the release's worker (unit is ${runtimeContainer})`,
+);
+
 const evidence = {
   schemaVersion: 1,
   startedAt,

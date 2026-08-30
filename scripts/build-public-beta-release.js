@@ -186,6 +186,18 @@ async function collectArtifacts() {
       throw new Error(`candidate binary is not executable: ${sourcePath}`);
     files.push(await describeFile(sourcePath, `bin/${binary}`, 0o755));
   }
+  // The edge runtime's main worker. It is the supervisor: it authenticates
+  // deployments, supplies the SDK module to every user worker, and sets each
+  // worker's permissions -- behaviour that is as much a part of a release as
+  // any binary. It used to reach the host only through the Ansible role, so
+  // upgrading a release left the runtime running whatever worker had been
+  // copied there last: two fixes shipped in a release were absent from the
+  // host that release was deployed to, and the manifest could not say so.
+  for (const worker of ["index.ts", "supervisor.ts", "edge-sdk-source.ts"]) {
+    files.push(
+      await describeFile(`packages/cli/runtime/main/${worker}`, `runtime-main/${worker}`, 0o644),
+    );
+  }
   const consoleRoot = resolve(repositoryRoot, "apps/console/web-dist");
   const consoleFiles = [];
   await walkArtifact(consoleRoot, consoleFiles);

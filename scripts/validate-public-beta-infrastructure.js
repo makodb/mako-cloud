@@ -396,6 +396,18 @@ function validateReleaseManifest(manifest, planHash) {
     artifactPaths.includes("console/index.html"),
     "release manifest omits the console entry point",
   );
+  // The edge runtime's main worker is part of the release for the same reason
+  // the binaries are: it authenticates deployments, supplies the SDK module to
+  // every user worker, and sets each worker's permissions. Reaching the host
+  // only through the provisioning role meant a release could be deployed and
+  // the runtime keep running whatever worker had been copied there last --
+  // two fixes shipped in a release were absent from the host it went to, and
+  // no digest could say so.
+  for (const worker of ["index.ts", "supervisor.ts", "edge-sdk-source.ts"])
+    assert(
+      artifactPaths.includes(`runtime-main/${worker}`),
+      `release manifest omits the edge runtime worker ${worker}`,
+    );
 }
 
 function validateHostedConsole(index, bundle) {

@@ -128,6 +128,11 @@
       destination: /home/mako-runtime/.config/mako-cloud/grafana-provisioning/
     - source: "{{ playbook_dir }}/../../../infra/local/grafana/dashboards/"
       destination: /home/mako-runtime/.config/mako-cloud/grafana-dashboards/
+    # First provisioning only. From the first release operation onward the
+    # release owns this directory -- `mako-release-operation` installs the
+    # worker the release carries and restarts the runtime -- so that what the
+    # runtime runs is named by the release digest rather than by whenever this
+    # role last ran.
     - source: "{{ playbook_dir }}/../../../packages/cli/runtime/main/"
       destination: /home/mako-runtime/.config/mako-cloud/edge-runtime/main/
     - source: "{{ playbook_dir }}/../../../infra/public-beta/edge-runtime/canary/"
