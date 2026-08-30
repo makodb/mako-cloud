@@ -23,13 +23,13 @@ import {
 } from "@mako-cloud/edge-sdk";
 
 import { serviceCredential } from "./credential.ts";
-import { RUN_KEY_HEADER, runKeyMatches } from "./shared/run-key.ts";
+import { RUN_KEY_HEADER, runKeyMatches } from "../shared/run-key.ts";
 import {
   type AlertSettingLike,
   type AlertTransaction,
   type FiredAlert,
   firedAlerts,
-} from "./shared/alerts.ts";
+} from "../shared/alerts.ts";
 import { statement } from "./institution.ts";
 
 declare const Deno: { readonly env: { get(name: string): string | undefined } };

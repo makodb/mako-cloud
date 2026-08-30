@@ -3,10 +3,11 @@
  *
  * A function bundle is a directory: nothing outside it is uploaded, so a
  * module both sides use has to be copied into each function's bundle at
- * deploy time (`scripts/bootstrap.mjs` does that). To survive the copy it
- * must import nothing at all -- the browser build wants `.js` specifiers and
- * Deno wants `.ts`, and no single import satisfies both. So the types it
- * needs are structural and declared here.
+ * deploy time (`scripts/bootstrap.mjs` does that, rewriting the function's
+ * `../shared/` import to `./shared/` as it goes). To survive the copy this
+ * module must import nothing at all -- the browser build wants `.js`
+ * specifiers and Deno wants `.ts`, and no single import satisfies both. So
+ * the types it needs are structural and declared here.
  */
 
 /** What a rule reads of a transaction. */

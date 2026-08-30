@@ -67,15 +67,16 @@ household's endpoint for the `alerts` collection and writes the signing secret
 to a file of its own. `npm run dev -w @mako-cloud/example-rational` then serves the app
 against it.
 
-The two scheduled functions share their engines with the application: rules
-and recurrence detection live in `examples/rational/functions/shared/`, and
-the same code files a transaction whether the person clicked or the job ran at
-two in the morning. A function bundle is a directory and nothing outside it is
-uploaded, so the bundle carries its own copy: `functions/nightly/shared` is a
-symlink for the repository, `tsc`, and the tests, and the bootstrap stages real
-files in its place. That is also why the shared modules import nothing at all
--- the browser build resolves `.js` specifiers and Deno resolves `.ts`, and no
-single import satisfies both.
+The two scheduled functions share their engines with the application: rules,
+recurrence detection, the budget math, and the alert rules live in
+`examples/rational/functions/shared/`, and the same code files a transaction
+whether the person clicked or the job ran at two in the morning. A function
+bundle is a directory and nothing outside it is uploaded, so the bundle
+carries its own copy: a function imports `../shared/rules.ts`, where the
+module really is, and the bootstrap copies `shared/` into the staged bundle
+and rewrites that one specifier. That seam is why the shared modules import
+nothing themselves -- the browser build resolves `.js` specifiers and Deno
+resolves `.ts`, and no single import satisfies both.
 
 A build with no `mako.env.json` — a fresh clone — runs against an in-browser
 fake of the same protocol and says so in a banner. That is what a fork gets

@@ -25,8 +25,8 @@ import {
 } from "@mako-cloud/edge-sdk";
 
 import { serviceCredential } from "./credential.ts";
-import { RUN_KEY_HEADER, runKeyMatches } from "./shared/run-key.ts";
-import { applyRules, type RuleLike } from "./shared/rules.ts";
+import { RUN_KEY_HEADER, runKeyMatches } from "../shared/run-key.ts";
+import { applyRules, type RuleLike } from "../shared/rules.ts";
 import {
   type AlertAccount,
   type AlertBudget,
@@ -34,14 +34,14 @@ import {
   type AlertTransaction,
   type FiredAlert,
   firedAlerts,
-} from "./shared/alerts.ts";
-import { budgetStatus, type BudgetLike } from "./shared/budgets.ts";
+} from "../shared/alerts.ts";
+import { budgetStatus, type BudgetLike } from "../shared/budgets.ts";
 import {
   type DetectedRecurrence,
   detectionId,
   detectRecurrences,
   normalizeDescription,
-} from "./shared/recurrences.ts";
+} from "../shared/recurrences.ts";
 
 declare const Deno: { readonly env: { get(name: string): string | undefined } };
 

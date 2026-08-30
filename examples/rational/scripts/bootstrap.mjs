@@ -23,9 +23,17 @@
  */
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -532,14 +540,7 @@ function deploySyncFunction() {
       ...tenant,
     ]);
   }
-  // See `deployNightlyFunction`: `shared` is a symlink in the repository and
-  // real files in the bundle, because nothing outside a bundle is uploaded.
-  const source = join(scratch, "sync-function");
-  cpSync(join(exampleRoot, "functions", "institution-sync"), source, {
-    recursive: true,
-    filter: (from) => basename(from) !== "shared",
-  });
-  cpSync(join(exampleRoot, "functions", "shared"), join(source, "shared"), { recursive: true });
+  const source = stageFunctionBundle("institution-sync", "sync-function");
   const deployed = mako([
     "functions",
     "deploy",
@@ -666,15 +667,7 @@ function deployNightlyFunction() {
       ...tenant,
     ]);
   }
-  // `functions/nightly/shared` is a symlink, so the repo, `tsc`, `node --test`,
-  // and Deno all resolve `./shared/rules.ts`. An uploaded bundle cannot carry a
-  // link out of itself, so the staged copy skips it and puts real files there.
-  const source = join(scratch, "nightly-function");
-  cpSync(join(exampleRoot, "functions", "nightly"), source, {
-    recursive: true,
-    filter: (from) => basename(from) !== "shared",
-  });
-  cpSync(join(exampleRoot, "functions", "shared"), join(source, "shared"), { recursive: true });
+  const source = stageFunctionBundle("nightly", "nightly-function");
   const deployed = mako([
     "functions",
     "deploy",
@@ -821,6 +814,35 @@ function registerAlertsWebhook() {
     ...tenant,
   ]);
   log(`the signing secret is in ${secretFile}`);
+}
+
+/**
+ * Copy a function into a directory that can be uploaded.
+ *
+ * A bundle is a directory and nothing outside it is uploaded, so a module the
+ * application and a function share cannot be imported from beside them: the
+ * copy has to travel with the function. In the repository the function says
+ * `../shared/rules.ts`, which is where the module really is -- `tsc`,
+ * `node --test`, and an editor all resolve it -- and in the bundle the module
+ * sits at `shared/`, so the staged copy says `./shared/rules.ts`.
+ *
+ * The rewrite is one specifier, and it is what makes the shared modules
+ * possible at all: the browser build wants `.js` specifiers and Deno wants
+ * `.ts`, so those modules import nothing themselves, and this is the only
+ * seam between the two worlds.
+ */
+function stageFunctionBundle(functionDirectory, scratchName) {
+  const source = join(scratch, scratchName);
+  rmSync(source, { recursive: true, force: true });
+  cpSync(join(exampleRoot, "functions", functionDirectory), source, { recursive: true });
+  cpSync(join(exampleRoot, "functions", "shared"), join(source, "shared"), { recursive: true });
+  for (const entry of readdirSync(source, { withFileTypes: true })) {
+    if (!entry.isFile() || !entry.name.endsWith(".ts")) continue;
+    const file = join(source, entry.name);
+    const rewritten = readFileSync(file, "utf8").replaceAll('from "../shared/', 'from "./shared/');
+    writeFileSync(file, rewritten);
+  }
+  return source;
 }
 
 const signIn = readSignInSettings();

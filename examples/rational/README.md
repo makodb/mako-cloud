@@ -280,13 +280,15 @@ channel. Settings live in the same collection as fired alerts (the
 thirteen-collection limit again), so an endpoint subscribed to `alerts:insert`
 sees setting documents too and tells them apart by reading the document.
 
-It shares its engines with the application. `functions/shared/rules.ts` and
-`functions/shared/recurrences.ts` are the same code the browser runs, so a charge is filed the
-same way whether somebody clicked or the job woke up. A bundle is a directory and nothing
-outside it is uploaded, so `functions/nightly/shared` is a symlink — for the repository, `tsc`,
-and `node --test` — and the bootstrap stages real files in its place. Those modules therefore
-import nothing at all: the browser build wants `.js` specifiers, Deno wants `.ts`, and no
-single import satisfies both.
+They share their engines with the application. `functions/shared/` holds the rules engine,
+recurrence detection, the budget math, and the alert rules, and it is the same code the browser
+runs — so a charge is filed the same way whether somebody clicked or the job woke up.
+
+A bundle is a directory and nothing outside it is uploaded, so the copy has to travel with the
+function. In the repository a function imports `../shared/rules.ts`, which is where the module
+really is; the bootstrap copies `shared/` into the staged bundle and rewrites that one specifier
+to `./shared/rules.ts`. That seam is why those modules import nothing themselves: the browser
+build wants `.js` specifiers, Deno wants `.ts`, and no single import satisfies both.
 
 ## What maps to what
 
