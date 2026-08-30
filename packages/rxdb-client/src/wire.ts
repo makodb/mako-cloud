@@ -220,6 +220,12 @@ export interface MakoStorageObjectRecord {
   readonly storedDigest: string;
   readonly createdAtUnixSeconds: number;
   readonly updatedAtUnixSeconds: number;
+  /**
+   * What the application attached when the object was stored. The bucket's
+   * rules read these -- `old.attributes.household_id` -- which is how an
+   * object belongs to something other than its uploader.
+   */
+  readonly attributes: Record<string, string>;
 }
 
 /** One page of a bucket listing; `nextCursor` is `null` on the last page. */

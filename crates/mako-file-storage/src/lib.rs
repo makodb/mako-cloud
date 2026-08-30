@@ -16,7 +16,7 @@ pub use crypto::{ObjectCipher, ObjectKeyRoot};
 pub use model::{
     BucketAccess, BucketConfig, BucketRecord, BucketRule, BucketTotals, FileStorageError,
     MAX_APPLICATION_OBJECT_BYTES, MAX_OBJECT_PATH_BYTES, ObjectOperation, ObjectRecord, RuleEffect,
-    content_type_allowed, object_schema, validate_object_path,
+    content_type_allowed, object_schema, validate_object_attributes, validate_object_path,
 };
 pub use service::{
     FileStorageService, ObjectPage, ObjectPrecondition, ObjectPrincipal, ObjectRequest,

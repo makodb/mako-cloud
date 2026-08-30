@@ -1,4 +1,8 @@
-use std::{collections::BTreeMap, error::Error, fmt};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    error::Error,
+    fmt,
+};
 
 use serde_json::Value;
 
@@ -277,6 +281,12 @@ enum ValueType {
 #[derive(Debug)]
 struct PolicySchema {
     fields: BTreeMap<String, ValueType>,
+    /// Object fields whose members the schema does not name -- no
+    /// `properties`, or `additionalProperties` left open. What lives under
+    /// one is decided by the application, not the schema, so the compiler
+    /// cannot call a path beneath it unknown; it types it dynamic, exactly as
+    /// it types a trusted claim.
+    open_objects: BTreeSet<String>,
 }
 
 impl PolicySchema {
@@ -288,8 +298,29 @@ impl PolicySchema {
             PolicyCompileError::InvalidSchema("collection schema must declare object properties"),
         )?;
         let mut fields = BTreeMap::new();
-        collect_schema_fields("", properties, &mut fields)?;
-        Ok(Self { fields })
+        let mut open_objects = BTreeSet::new();
+        collect_schema_fields("", properties, &mut fields, &mut open_objects)?;
+        Ok(Self {
+            fields,
+            open_objects,
+        })
+    }
+
+    /// The type of a document path: the declared field, or dynamic when it
+    /// lives under an open object, or `None` when the schema says it does not
+    /// exist.
+    fn field_type(&self, field: &str) -> Option<ValueType> {
+        if let Some(value_type) = self.fields.get(field).copied() {
+            return Some(value_type);
+        }
+        let mut prefix = field;
+        while let Some((parent, _)) = prefix.rsplit_once('.') {
+            if self.open_objects.contains(parent) {
+                return Some(ValueType::Dynamic);
+            }
+            prefix = parent;
+        }
+        None
     }
 }
 
@@ -297,6 +328,7 @@ fn collect_schema_fields(
     prefix: &str,
     properties: &serde_json::Map<String, Value>,
     output: &mut BTreeMap<String, ValueType>,
+    open_objects: &mut BTreeSet<String>,
 ) -> Result<(), PolicyCompileError> {
     for (name, schema) in properties {
         let path = if prefix.is_empty() {
@@ -318,13 +350,26 @@ fn collect_schema_fields(
                 _ => ValueType::Dynamic,
             });
         output.insert(path.clone(), value_type);
-        if value_type == ValueType::Object
-            && let Some(nested) = schema
+        if value_type == ValueType::Object {
+            let nested = schema
                 .as_object()
                 .and_then(|schema| schema.get("properties"))
-                .and_then(Value::as_object)
-        {
-            collect_schema_fields(&path, nested, output)?;
+                .and_then(Value::as_object);
+            let additional_open = schema
+                .as_object()
+                .and_then(|schema| schema.get("additionalProperties"))
+                .is_none_or(|value| value != &Value::Bool(false));
+            match nested {
+                Some(nested) => {
+                    collect_schema_fields(&path, nested, output, open_objects)?;
+                    if additional_open {
+                        open_objects.insert(path.clone());
+                    }
+                }
+                None => {
+                    open_objects.insert(path.clone());
+                }
+            }
         }
     }
     Ok(())
@@ -468,7 +513,7 @@ fn resolve_path(
                 )?);
             }
             let field = path[1..].join(".");
-            match schema.fields.get(&field).copied() {
+            match schema.field_type(&field) {
                 Some(value_type) => Ok(value_type),
                 None => {
                     diagnostics.push(diagnostic(

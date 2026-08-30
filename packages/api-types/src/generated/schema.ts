@@ -1721,6 +1721,8 @@ export interface paths {
         /**
          * Store an object under a bucket
          * @description The request body is the object; its `Content-Type` is recorded. A new path is a create and an existing one an update under the bucket's rules. Objects above the bucket's size, of a content type it does not allow, or beyond the plan's stored-bytes ceiling are refused.
+         *
+         *     `X-Mako-Object-Attributes` attaches application-chosen strings to the object, which the bucket's rules read as `new.attributes.<name>` and, once stored, as `old.attributes.<name>`. This is how an object belongs to something other than its uploader -- a rule verifies the attribute against the caller's trusted claims (`claims.households[new.attributes.household_id] != null`), so naming a household the caller is not in grants nothing.
          */
         put: operations["putBucketObject"];
         post?: never;
@@ -5138,6 +5140,10 @@ export interface components {
             createdAtUnixSeconds: number;
             /** Format: int64 */
             updatedAtUnixSeconds: number;
+            /** @description What the application attached when the object was stored, readable by the bucket's rules as `new.attributes.<name>` on the write and `old.attributes.<name>` on every later operation. At most 8 pairs; names are `[A-Za-z_][A-Za-z0-9_]*` and values at most 128 bytes. */
+            attributes: {
+                [key: string]: string;
+            };
         };
         ApplicationObjectPage: {
             items: components["schemas"]["ApplicationObject"][];
@@ -5659,6 +5665,8 @@ export interface components {
         CollectionId: components["schemas"]["CollectionId"];
         DocumentId: components["schemas"]["DocumentId"];
         DataJobId: string;
+        /** @description `name=value` pairs, comma separated, attached to the object being written and readable by the bucket's rules. At most 8; names are `[A-Za-z_][A-Za-z0-9_]*`, values at most 128 bytes and free of control characters. A malformed header is refused rather than ignored, because a rule that expected an attribute and did not see one would deny. */
+        ObjectAttributes: string;
         ServiceBypassReason: string;
         ServiceRequestId: string;
         MigrationId: components["schemas"]["SchemaMigrationId"];
@@ -9406,7 +9414,10 @@ export interface operations {
     putBucketObject: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description `name=value` pairs, comma separated, attached to the object being written and readable by the bucket's rules. At most 8; names are `[A-Za-z_][A-Za-z0-9_]*`, values at most 128 bytes and free of control characters. A malformed header is refused rather than ignored, because a rule that expected an attribute and did not see one would deny. */
+                "X-Mako-Object-Attributes"?: components["parameters"]["ObjectAttributes"];
+            };
             path: {
                 projectId: components["parameters"]["ProjectId"];
                 environmentId: components["parameters"]["EnvironmentId"];

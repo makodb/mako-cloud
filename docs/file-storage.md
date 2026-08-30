@@ -18,11 +18,35 @@ A bucket declares:
   means any.
 - `rules`: the document-policy language over the **object document** —
   `path`, `bucket`, `owner_id`, `content_type`, `size_bytes`, `created_at`,
-  `updated_at` — with `new.*` on `create`/`update`, `old.*` on `read`,
-  `update`, `delete`, and `identity.*`, `claims.*`, `request.*` as for
+  `updated_at`, `attributes` — with `new.*` on `create`/`update`, `old.*` on
+  `read`, `update`, `delete`, and `identity.*`, `claims.*`, `request.*` as for
   collections. A bucket with no rules refuses every policy-governed request;
   rules that do not compile are refused at configuration time, so a bucket is
   never installed with a policy that cannot run.
+
+## An object that belongs to more than its uploader
+
+The object document names who wrote the object and nothing else about what it
+is for, so a rule written over it alone can reach exactly one person. That is
+enough for an avatar and not enough for a receipt a household shares.
+
+`X-Mako-Object-Attributes` attaches application-chosen strings to the object
+being written — `name=value` pairs, comma separated, at most 8, names
+`[A-Za-z_][A-Za-z0-9_]*`, values at most 128 bytes. They are stored with the
+object, so the bucket's rules read them as `new.attributes.<name>` on the
+write and `old.attributes.<name>` on every operation afterwards:
+
+```
+create, update:  claims.households[new.attributes.household_id] != null
+read, delete:    claims.households[old.attributes.household_id] != null
+```
+
+The attribute names the household; the **claim** decides. Anyone may attach
+any household id, and attaching one they are not a member of matches no claim
+and grants nothing — the same shape as a document carrying a `household_id`
+the policy checks against the caller's claims. A malformed header is refused
+rather than dropped, because a rule that expected an attribute and did not see
+one would deny and the cause would be invisible.
 
 Developers manage buckets through the management API
 (`/v1/projects/{p}/environments/{e}/storage-buckets…`), the console's Storage

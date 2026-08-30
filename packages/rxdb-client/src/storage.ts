@@ -28,6 +28,16 @@ export interface MakoStoragePutOptions {
   readonly contentType: string;
   /** Sent verbatim as `If-None-Match` (for example `*` to refuse overwriting). */
   readonly ifNoneMatch?: string;
+  /**
+   * Attached to the object and read by the bucket's rules as
+   * `new.attributes.<name>` on this write and `old.attributes.<name>` on
+   * every later operation -- how an object comes to belong to a household
+   * rather than to whoever uploaded it. At most 8 pairs; names are
+   * `[A-Za-z_][A-Za-z0-9_]*` and values at most 128 bytes. The rule verifies
+   * the attribute against the caller's claims, so naming a household the
+   * caller is not in grants nothing.
+   */
+  readonly attributes?: Readonly<Record<string, string>>;
 }
 
 export interface MakoStoragePutResult {
@@ -126,6 +136,10 @@ export class MakoStorageClient {
     };
     if (options.ifNoneMatch !== undefined) {
       headers["If-None-Match"] = options.ifNoneMatch;
+    }
+    const attributes = encodeObjectAttributes(options.attributes);
+    if (attributes !== null) {
+      headers["X-Mako-Object-Attributes"] = attributes;
     }
     const response = await this.#send(url, { method: "PUT", headers, body: bodyInit(body) });
     if (!response.ok) {
@@ -287,6 +301,34 @@ export function encodeObjectPath(path: string): string {
     throw clientError("invalid_request", "object path segments must be non-empty and not . or ..");
   }
   return segments.map((segment) => encodeURIComponent(segment)).join("/");
+}
+
+/**
+ * The attributes header, or `null` when there are none. Refused here rather
+ * than sent and refused by the platform, because the bounds are the same and
+ * the message is better with the value in hand. A `,` or `=` in a name or
+ * value would change what the platform parses, so they are refused outright.
+ */
+function encodeObjectAttributes(
+  attributes: Readonly<Record<string, string>> | undefined,
+): string | null {
+  if (attributes === undefined) return null;
+  const names = Object.keys(attributes).sort();
+  if (names.length === 0) return null;
+  if (names.length > 8) {
+    throw clientError("invalid_request", "at most 8 object attributes may be attached");
+  }
+  const pairs = names.map((name) => {
+    const value = attributes[name] ?? "";
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/u.test(name) || name.length > 128) {
+      throw clientError("invalid_request", `object attribute name ${name} is invalid`);
+    }
+    if (value.length > 128 || hasControlCharacters(value) || /[,=]/u.test(value)) {
+      throw clientError("invalid_request", `object attribute ${name} has an invalid value`);
+    }
+    return `${name}=${value}`;
+  });
+  return pairs.join(",");
 }
 
 function bodyInit(body: MakoStorageBody): BodyInit {

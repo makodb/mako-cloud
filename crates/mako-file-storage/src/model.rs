@@ -1,4 +1,8 @@
-use std::{collections::BTreeSet, error::Error, fmt};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    error::Error,
+    fmt,
+};
 
 use mako_object_store::valid_bucket_name;
 use serde::{Deserialize, Serialize};
@@ -7,6 +11,11 @@ use serde_json::{Value, json};
 /// The platform ceiling on one object; a bucket may lower it, never raise it.
 pub const MAX_APPLICATION_OBJECT_BYTES: u64 = 16 * 1024 * 1024;
 pub const MAX_OBJECT_PATH_BYTES: usize = 512;
+/// How many attributes an object may carry, and how long each part may be.
+/// Bounded because a rule reads them on every request and they travel in a
+/// header.
+pub const MAX_OBJECT_ATTRIBUTES: usize = 8;
+pub const MAX_OBJECT_ATTRIBUTE_BYTES: usize = 128;
 const MAX_ALLOWED_CONTENT_TYPES: usize = 64;
 const MAX_RULES: usize = 64;
 
@@ -195,6 +204,12 @@ pub struct ObjectRecord {
     pub stored_digest: String,
     pub created_at_unix_seconds: u64,
     pub updated_at_unix_seconds: u64,
+    /// Application-chosen strings a bucket rule may read, set when the object
+    /// was stored. A rule verifies one against the caller's trusted claims --
+    /// `claims.households[new.attributes.household_id] != null` -- so a false
+    /// attribute names a household the caller is not in and grants nothing.
+    #[serde(default)]
+    pub attributes: BTreeMap<String, String>,
 }
 
 impl ObjectRecord {
@@ -209,6 +224,7 @@ impl ObjectRecord {
             "size_bytes": self.size_bytes,
             "created_at": self.created_at_unix_seconds,
             "updated_at": self.updated_at_unix_seconds,
+            "attributes": self.attributes,
         })
     }
 }
@@ -227,10 +243,40 @@ pub fn object_schema() -> Value {
             "size_bytes": { "type": "integer" },
             "created_at": { "type": "integer" },
             "updated_at": { "type": "integer" },
+            // Open on purpose: what an application attaches is its own, so a
+            // rule reads `new.attributes.<name>` as a dynamic value rather
+            // than the compiler calling it an unknown field.
+            "attributes": { "type": "object", "additionalProperties": true },
         },
-        "required": ["path", "bucket", "owner_id", "content_type", "size_bytes", "created_at", "updated_at"],
+        "required": ["path", "bucket", "owner_id", "content_type", "size_bytes", "created_at", "updated_at", "attributes"],
         "additionalProperties": false,
     })
+}
+
+/// The attributes an object may carry: bounded in count and in the length of
+/// each name and value, names shaped like identifiers so a rule can address
+/// one, and no control characters, because they travel in a header.
+pub fn validate_object_attributes(
+    attributes: &BTreeMap<String, String>,
+) -> Result<(), FileStorageError> {
+    if attributes.len() > MAX_OBJECT_ATTRIBUTES {
+        return Err(FileStorageError::InvalidAttributes("too many attributes"));
+    }
+    for (name, value) in attributes {
+        if name.is_empty()
+            || name.len() > MAX_OBJECT_ATTRIBUTE_BYTES
+            || !name
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+            || name.as_bytes()[0].is_ascii_digit()
+        {
+            return Err(FileStorageError::InvalidAttributes("attribute name"));
+        }
+        if value.len() > MAX_OBJECT_ATTRIBUTE_BYTES || value.chars().any(char::is_control) {
+            return Err(FileStorageError::InvalidAttributes("attribute value"));
+        }
+    }
+    Ok(())
 }
 
 /// An object path is a relative, `/`-separated name that cannot leave its bucket.
@@ -268,6 +314,8 @@ pub fn validate_object_path(path: &str) -> Result<(), FileStorageError> {
 pub enum FileStorageError {
     InvalidBucket(&'static str),
     InvalidPath(&'static str),
+    /// The attributes offered with a write are out of bounds or malformed.
+    InvalidAttributes(&'static str),
     /// The bucket's rules do not compile against the object document.
     InvalidPolicy(String),
     BucketNotFound,
@@ -300,6 +348,9 @@ impl fmt::Display for FileStorageError {
                 write!(formatter, "bucket configuration is invalid: {reason}")
             }
             Self::InvalidPath(reason) => write!(formatter, "object path is invalid: {reason}"),
+            Self::InvalidAttributes(reason) => {
+                write!(formatter, "object attributes are invalid: {reason}")
+            }
             Self::InvalidPolicy(reason) => write!(formatter, "bucket policy is invalid: {reason}"),
             Self::BucketNotFound => formatter.write_str("bucket was not found"),
             Self::BucketNotEmpty => formatter.write_str("bucket still holds objects"),

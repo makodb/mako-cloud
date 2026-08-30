@@ -5,7 +5,7 @@
 //! one too unless the bucket is public. Every request is charged like the
 //! document API, downloads are metered as egress, and stored bytes are
 //! sampled as a level from the totals the storage service keeps.
-use std::{num::NonZeroU64, sync::Arc};
+use std::{collections::BTreeMap, num::NonZeroU64, sync::Arc};
 
 use futures::executor::block_on;
 use mako_api::{
@@ -15,7 +15,7 @@ use mako_api::{
 use mako_audit::{ActorIdentity, AuditCategory, AuditOutcome};
 use mako_file_storage::{
     BucketConfig, FileStorageError, FileStorageService, MAX_APPLICATION_OBJECT_BYTES,
-    ObjectPrecondition, ObjectPrincipal, ObjectRequest,
+    ObjectPrecondition, ObjectPrincipal, ObjectRequest, validate_object_attributes,
 };
 use mako_gateway::{
     GatewayQuotaCharge, GatewayQuotaDecision, GatewayQuotaPolicySource, GatewayQuotaResource,
@@ -110,7 +110,13 @@ fn handle_put(
                 &path,
                 &content_type,
                 request.body(),
-                &object_request(principal, request, now, ceiling),
+                &object_request(
+                    principal,
+                    request,
+                    now,
+                    ceiling,
+                    object_attributes(request)?,
+                ),
                 &preconditions,
             )
             .await;
@@ -158,7 +164,7 @@ fn handle_get(
             .get_object(
                 &bucket_id,
                 &path,
-                &object_request(principal, request, now, None),
+                &object_request(principal, request, now, None, BTreeMap::new()),
             )
             .await;
         audit(
@@ -232,7 +238,7 @@ fn handle_delete(
             .delete_object(
                 &bucket_id,
                 &path,
-                &object_request(principal, request, now, None),
+                &object_request(principal, request, now, None, BTreeMap::new()),
             )
             .await;
         audit(
@@ -290,7 +296,7 @@ fn handle_list(
                 prefix.as_deref(),
                 limit,
                 cursor.as_deref(),
-                &object_request(principal, request, now, None),
+                &object_request(principal, request, now, None, BTreeMap::new()),
             )
             .await;
         audit(
@@ -436,6 +442,7 @@ pub(crate) async fn execute_bucket_operation(
                         request_metadata: Vec::new(),
                         now_unix_seconds: now,
                         storage_ceiling_bytes: None,
+                        attributes: BTreeMap::new(),
                     },
                 )
                 .await
@@ -456,6 +463,7 @@ pub(crate) async fn execute_bucket_operation(
                         request_metadata: Vec::new(),
                         now_unix_seconds: now,
                         storage_ceiling_bytes: None,
+                        attributes: BTreeMap::new(),
                     },
                 )
                 .await;
@@ -596,11 +604,46 @@ fn entity_tag(request: &HttpRequest, value: &str) -> Result<String, HttpApiError
     Ok(digest.to_owned())
 }
 
+/// What an application attaches to the object it is writing, from
+/// `X-Mako-Object-Attributes`: `name=value` pairs, comma separated. The
+/// bucket's rules read them as `new.attributes.<name>`, and they are stored
+/// with the object so `old.attributes.<name>` decides later reads. The header
+/// is parsed on every request and ignored where the service ignores it; a
+/// malformed one is refused rather than dropped, because a rule that was
+/// meant to see an attribute and does not would silently deny.
+/// Where an application names what it is attaching to an object.
+const OBJECT_ATTRIBUTES_HEADER: &str = "x-mako-object-attributes";
+
+fn object_attributes(request: &HttpRequest) -> Result<BTreeMap<String, String>, HttpApiError> {
+    let Some(header) = request.header(OBJECT_ATTRIBUTES_HEADER) else {
+        return Ok(BTreeMap::new());
+    };
+    let mut attributes = BTreeMap::new();
+    for pair in header.split(',') {
+        let pair = pair.trim();
+        if pair.is_empty() {
+            continue;
+        }
+        let (name, value) = pair
+            .split_once('=')
+            .ok_or_else(|| invalid(request, "object attributes header is malformed"))?;
+        if attributes
+            .insert(name.trim().to_owned(), value.trim().to_owned())
+            .is_some()
+        {
+            return Err(invalid(request, "object attributes header repeats a name"));
+        }
+    }
+    validate_object_attributes(&attributes).map_err(|error| storage_error(request, error))?;
+    Ok(attributes)
+}
+
 fn object_request(
     principal: ObjectPrincipal,
     request: &HttpRequest,
     now: u64,
     storage_ceiling_bytes: Option<u64>,
+    attributes: BTreeMap<String, String>,
 ) -> ObjectRequest {
     ObjectRequest {
         principal,
@@ -613,6 +656,7 @@ fn object_request(
         ],
         now_unix_seconds: now,
         storage_ceiling_bytes,
+        attributes,
     }
 }
 
@@ -803,6 +847,7 @@ fn storage_error(request: &HttpRequest, error: FileStorageError) -> HttpApiError
     let (status, code, retry) = match error {
         FileStorageError::InvalidBucket(_)
         | FileStorageError::InvalidPath(_)
+        | FileStorageError::InvalidAttributes(_)
         | FileStorageError::InvalidPolicy(_)
         | FileStorageError::ContentTypeNotAllowed => {
             (400, ErrorCode::InvalidRequest, RetryAdvice::Never)

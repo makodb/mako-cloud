@@ -536,6 +536,94 @@ fn applications_store_files_under_policy_and_developers_govern_the_buckets() {
     assert_eq!(inventory["objectCount"], 2);
     assert_eq!(inventory["totalBytes"], 16);
 
+    // --- An object that belongs to more than its uploader. ----------------------
+    //
+    // The object document names who wrote the object and nothing else about
+    // what it is for, so a rule over it alone reaches exactly one person --
+    // enough for an avatar, not for a receipt a household shares. An
+    // attribute attached at the write is stored with the object and read by
+    // the rules afterwards, which is what a shared file needs. This proves
+    // the wire carries it: header, store, and a later read decided by it.
+    let shared_rules = json!([
+        { "id": "anyone-writes-shared", "effect": "allow", "operations": ["create", "update"], "expression": "new.attributes.visibility == \"shared\"" },
+        { "id": "anyone-reads-shared", "effect": "allow", "operations": ["read"], "expression": "old.attributes.visibility == \"shared\"" },
+        { "id": "owner-writes-private", "effect": "allow", "operations": ["create", "update"], "expression": "new.owner_id == identity.user_id" },
+        { "id": "owner-reads-private", "effect": "allow", "operations": ["read"], "expression": "old.owner_id == identity.user_id" }
+    ]);
+    let (status, body) = request(
+        control_port,
+        "POST",
+        &format!("{scope}/storage-buckets"),
+        &manage("shared-bucket"),
+        Some(&json!({
+            "id": "shared",
+            "access": "policy",
+            "maxObjectBytes": 4096,
+            "allowedContentTypes": ["text/*"],
+            "rules": shared_rules
+        })),
+    );
+    assert_eq!(status, 201, "shared bucket creation failed: {body}");
+
+    let shared_object = format!("{scope}/storage/shared/objects/receipt.txt");
+    let mut attaching = app(&alice, Some("text/plain"));
+    attaching.insert(
+        "x-mako-object-attributes".to_owned(),
+        "visibility=shared".to_owned(),
+    );
+    let (status, body, _) = raw_request(data_port, "PUT", &shared_object, &attaching, b"RECEIPT");
+    assert_eq!(
+        status,
+        200,
+        "an attribute the rule requires admits the write: {}",
+        String::from_utf8_lossy(&body)
+    );
+    let stored: Value =
+        serde_json::from_slice(&body).expect("the write answers with the object record");
+    assert_eq!(
+        stored["attributes"]["visibility"], "shared",
+        "the attribute is stored with the object: {stored}"
+    );
+
+    // Bob did not write it and is not its owner; the attribute is what lets
+    // him read it.
+    let (status, body, _) = raw_request(data_port, "GET", &shared_object, &app(&bob, None), b"");
+    assert_eq!(status, 200, "the attribute decides a later read");
+    assert_eq!(body, b"RECEIPT");
+
+    // The same upload without it is private to alice, so the rule that
+    // admitted bob is the attribute and not something else about the bucket.
+    let private_object = format!("{scope}/storage/shared/objects/private.txt");
+    let (status, _, _) = raw_request(
+        data_port,
+        "PUT",
+        &private_object,
+        &app(&alice, Some("text/plain")),
+        b"PRIVATE",
+    );
+    assert_eq!(status, 200);
+    let (status, _, _) = raw_request(data_port, "GET", &private_object, &app(&bob, None), b"");
+    assert_eq!(
+        status, 403,
+        "without the attribute the object stays alice's"
+    );
+
+    // A malformed header is refused rather than dropped: a rule that expected
+    // an attribute and did not see one would deny, and nothing would say why.
+    let mut malformed = app(&alice, Some("text/plain"));
+    malformed.insert(
+        "x-mako-object-attributes".to_owned(),
+        "visibility".to_owned(),
+    );
+    let (status, _, _) = raw_request(
+        data_port,
+        "PUT",
+        &format!("{scope}/storage/shared/objects/malformed.txt"),
+        &malformed,
+        b"X",
+    );
+    assert_eq!(status, 400, "a malformed attributes header is refused");
+
     // --- A public bucket serves reads to anyone, writes only under policy. -------
     let (status, body) = request(
         control_port,

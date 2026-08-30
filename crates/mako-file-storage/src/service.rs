@@ -1,4 +1,4 @@
-use std::{num::NonZeroUsize, sync::Arc};
+use std::{collections::BTreeMap, num::NonZeroUsize, sync::Arc};
 
 use mako_api::{CollectionId, CollectionScope, TenantScope};
 use mako_object_store::{ObjectAddress, ObjectStore, ObjectStoreError};
@@ -14,7 +14,7 @@ use sha2::{Digest, Sha256};
 use crate::{
     BucketAccess, BucketConfig, BucketRecord, BucketStore, BucketTotals, FileStorageError,
     ObjectCipher, ObjectKeyRoot, ObjectOperation, ObjectRecord, RuleEffect, content_type_allowed,
-    object_schema, validate_object_path,
+    object_schema, validate_object_attributes, validate_object_path,
 };
 
 const MAX_LIST_LIMIT: usize = 1_000;
@@ -48,6 +48,11 @@ pub struct ObjectRequest {
     pub now_unix_seconds: u64,
     /// The plan's ceiling on stored object bytes for the environment, if capped.
     pub storage_ceiling_bytes: Option<u64>,
+    /// What the application attaches to the object it is writing, readable by
+    /// the bucket's rules as `new.attributes.<name>` and stored with the
+    /// object so `old.attributes.<name>` decides later reads. Ignored on
+    /// every operation but a write.
+    pub attributes: BTreeMap<String, String>,
 }
 
 /// A condition a write holds against the object currently at the path,
@@ -284,6 +289,7 @@ impl FileStorageService {
                 previous.as_ref().and_then(|record| record.owner_id.clone())
             }
         };
+        validate_object_attributes(&request.attributes)?;
         let plaintext_digest = digest_of(bytes);
         let sealed = self.cipher.seal(&aad(bucket_id, path), bytes)?;
         let stored_digest = digest_of(&sealed);
@@ -301,6 +307,7 @@ impl FileStorageService {
                     record.created_at_unix_seconds
                 }),
             updated_at_unix_seconds: request.now_unix_seconds,
+            attributes: request.attributes.clone(),
         };
         let operation = if previous.is_some() {
             ObjectOperation::Update
@@ -704,7 +711,24 @@ mod tests {
             request_metadata: vec![("method".to_owned(), "PUT".to_owned())],
             now_unix_seconds: 1_000,
             storage_ceiling_bytes: None,
+            attributes: BTreeMap::new(),
         }
+    }
+
+    /// A caller who is also attaching something the bucket's rules read.
+    fn user_attaching(id: &str, claims: Value, attributes: &[(&str, &str)]) -> ObjectRequest {
+        let mut request = user(id);
+        request.principal = ObjectPrincipal::User {
+            user_id: id.to_owned(),
+            role: "user".to_owned(),
+            email: None,
+            trusted_claims: claims,
+        };
+        request.attributes = attributes
+            .iter()
+            .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+            .collect();
+        request
     }
 
     fn owner_bucket(id: &str, access: BucketAccess) -> BucketConfig {
@@ -736,6 +760,130 @@ mod tests {
                 },
             ],
         }
+    }
+
+    /// A receipt belongs to a household, not to whoever uploaded it. Before
+    /// attributes, the object document named the uploader and nothing else,
+    /// so a bucket rule could reach exactly one person and shared files were
+    /// unbuildable. The attribute names the household; the rule verifies that
+    /// name against the caller's trusted claims, so attaching a household
+    /// somebody is not in grants nothing.
+    #[test]
+    fn an_object_attribute_lets_a_rule_reach_a_household_and_no_further() {
+        futures::executor::block_on(async {
+            let adapter: Arc<dyn KvAdapter> = Arc::new(MemoryAdapter::new());
+            let objects = Arc::new(MemoryObjectStore::default());
+            let service = service_on(adapter.clone(), objects.clone(), tenant());
+            let mut config = owner_bucket("receipts", BucketAccess::Policy);
+            config.rules = vec![
+                BucketRule {
+                    id: "member-writes".to_owned(),
+                    effect: RuleEffect::Allow,
+                    operations: vec![ObjectOperation::Create, ObjectOperation::Update],
+                    expression: "claims.households[new.attributes.household_id] != null".to_owned(),
+                },
+                BucketRule {
+                    id: "member-reads".to_owned(),
+                    effect: RuleEffect::Allow,
+                    operations: vec![ObjectOperation::Read, ObjectOperation::Delete],
+                    expression: "claims.households[old.attributes.household_id] != null".to_owned(),
+                },
+            ];
+            service.install_bucket(config, 500).await.expect("bucket");
+
+            let in_household = json!({"households": {"hh_one": "owner"}});
+            let uploader = user_attaching(
+                "user_alice",
+                in_household.clone(),
+                &[("household_id", "hh_one")],
+            );
+            let record = service
+                .put_object(
+                    "receipts",
+                    "households/hh_one/transactions/txn_1/receipt.png",
+                    "image/png",
+                    b"PNG BYTES",
+                    &uploader,
+                )
+                .await
+                .expect("upload");
+            assert_eq!(
+                record.attributes.get("household_id").map(String::as_str),
+                Some("hh_one")
+            );
+
+            // Another member of the same household reads it, though they did
+            // not upload it -- which is the whole point.
+            let other_member = user_attaching("user_bob", in_household, &[]);
+            let read = service
+                .get_object(
+                    "receipts",
+                    "households/hh_one/transactions/txn_1/receipt.png",
+                    &other_member,
+                )
+                .await
+                .expect("member reads");
+            assert_eq!(read.bytes, b"PNG BYTES");
+
+            // Somebody in a different household does not.
+            let outsider =
+                user_attaching("user_eve", json!({"households": {"hh_two": "owner"}}), &[]);
+            assert!(matches!(
+                service
+                    .get_object(
+                        "receipts",
+                        "households/hh_one/transactions/txn_1/receipt.png",
+                        &outsider,
+                    )
+                    .await,
+                Err(FileStorageError::Denied(_))
+            ));
+
+            // And naming a household they are not in buys the outsider
+            // nothing: the rule reads the claim, not the attribute.
+            let forging = user_attaching(
+                "user_eve",
+                json!({"households": {"hh_two": "owner"}}),
+                &[("household_id", "hh_one")],
+            );
+            assert!(matches!(
+                service
+                    .put_object(
+                        "receipts",
+                        "households/hh_one/forged.png",
+                        "image/png",
+                        b"X",
+                        &forging
+                    )
+                    .await,
+                Err(FileStorageError::Denied(_))
+            ));
+
+            // Attributes are bounded; an unbounded bag would be a policy input
+            // an application could grow without limit.
+            let mut too_many = user_attaching(
+                "user_alice",
+                json!({"households": {"hh_one": "owner"}}),
+                &[],
+            );
+            for index in 0..9 {
+                too_many
+                    .attributes
+                    .insert(format!("name_{index}"), "value".to_owned());
+            }
+            assert!(matches!(
+                service
+                    .put_object(
+                        "receipts",
+                        "households/hh_one/many.png",
+                        "image/png",
+                        b"X",
+                        &too_many
+                    )
+                    .await,
+                Err(FileStorageError::InvalidAttributes(_))
+            ));
+        });
     }
 
     #[test]
