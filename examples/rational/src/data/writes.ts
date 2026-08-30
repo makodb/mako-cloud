@@ -5,6 +5,7 @@ import type {
   Account,
   AccountType,
   BaseDocument,
+  Budget,
   Category,
   CategoryKind,
   ConnectionDocument,
@@ -83,6 +84,14 @@ export interface ImportOutcome {
   readonly duplicates: number;
   readonly rowCount: number;
   readonly finishedAt: number;
+}
+
+export interface BudgetInput {
+  readonly category_id: string;
+  readonly month: string;
+  readonly amount: number;
+  readonly currency: string;
+  readonly rollover: boolean;
 }
 
 export interface RuleInput {
@@ -234,6 +243,49 @@ export class HouseholdWrites {
 
   async deleteTransaction(id: string): Promise<void> {
     const document = await this.#require("transactions", id);
+    this.#context.noteLocalWrite();
+    await document.incrementalPatch({ updated_at: this.#context.now() });
+    await document.incrementalRemove();
+  }
+
+  /**
+   * A budget is one category in one month, so its id is derived from both:
+   * two devices budgeting the same category in the same month write the same
+   * document and the conflict handler settles it, rather than creating two
+   * budgets nobody asked for.
+   */
+  async setBudget(input: BudgetInput): Promise<Budget> {
+    if (input.category_id === "") throw new ValidationError("choose a category");
+    if (!/^\d{4}-\d{2}$/u.test(input.month)) throw new ValidationError("month must be YYYY-MM");
+    if (!Number.isSafeInteger(input.amount) || input.amount < 0) {
+      throw new ValidationError("a budget is a whole, non-negative amount");
+    }
+    if (!isCurrencyCode(input.currency)) {
+      throw new ValidationError("currency must be an ISO 4217 code such as USD");
+    }
+    const id = budgetId(input.category_id, input.month);
+    const existing = await this.#collection("budgets").findOne(id).exec();
+    if (existing !== null) {
+      return this.#patch("budgets", id, {
+        amount: input.amount,
+        currency: input.currency,
+        rollover: input.rollover,
+      } as Patch<Budget>);
+    }
+    return this.#insert(
+      "budgets",
+      this.#stamp<Budget>(id, {
+        category_id: input.category_id,
+        month: input.month,
+        amount: input.amount,
+        currency: input.currency,
+        rollover: input.rollover,
+      }),
+    );
+  }
+
+  async deleteBudget(categoryId: string, month: string): Promise<void> {
+    const document = await this.#require("budgets", budgetId(categoryId, month));
     this.#context.noteLocalWrite();
     await document.incrementalPatch({ updated_at: this.#context.now() });
     await document.incrementalRemove();
@@ -410,6 +462,16 @@ function validateAccount(input: AccountInput): void {
 }
 
 /** The fields of a transaction, validated, with derived fields filled in. */
+/**
+ * `.` rather than `:` on purpose, as with membership ids: a document id
+ * containing a character `encodeURIComponent` escapes cannot be written from
+ * an edge function (findings log #7c and #12), and the nightly job of Phase 3
+ * writes budgets.
+ */
+export function budgetId(categoryId: string, month: string): string {
+  return `bud_${categoryId}.${month}`;
+}
+
 function validateTransaction(
   input: TransactionInput | Transaction,
 ): Omit<Transaction, keyof BaseDocument> {

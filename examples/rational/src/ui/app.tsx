@@ -3,6 +3,7 @@ import { Component, type ReactNode } from "react";
 import type { RationalApp } from "../data/rational.js";
 import { AccountsScreen } from "./accounts.js";
 import { CategoriesScreen } from "./categories.js";
+import { BudgetsScreen } from "./budgets.js";
 import { ImportScreen } from "./import.js";
 import { ReportsScreen } from "./reports.js";
 import { RulesScreen } from "./rules.js";
@@ -86,6 +87,14 @@ function Screens({ app }: { app: RationalApp }) {
           ) : route.name === "transactions" ? (
             <TransactionsScreen
               key={`${state.generation}:transactions`}
+              app={app}
+              session={session}
+              route={route}
+              currency={currency}
+            />
+          ) : route.name === "budgets" ? (
+            <BudgetsScreen
+              key={`${state.generation}:budgets`}
               app={app}
               session={session}
               route={route}
