@@ -188,14 +188,18 @@ impl CrossOriginPolicy for FunctionRouteOrigins {
     }
 }
 
-/// The function a custom domain's invocation path names.
+/// The function a custom domain's invocation path names. A function owns
+/// every path under its name, so what follows the name is the function's own
+/// route and says nothing about which origins may call it.
 fn custom_domain_function_name(path: &str) -> Option<&str> {
-    let name = path.strip_prefix("/functions/v1/")?;
-    (!name.is_empty() && !name.contains('/')).then_some(name)
+    let rest = path.strip_prefix("/functions/v1/")?;
+    let name = rest.split('/').next()?;
+    (!name.is_empty()).then_some(name)
 }
 
 /// The project reference and function a platform-hostname invocation path
-/// names: `/{projectRef}/functions/v1/{name}`.
+/// names: `/{projectRef}/functions/v1/{name}`, with or without the
+/// function's own path after it.
 fn platform_function_path(path: &str) -> Option<(&str, &str)> {
     let mut segments = path.strip_prefix('/')?.split('/');
     let project_ref = segments.next().filter(|value| !value.is_empty())?;
@@ -203,10 +207,7 @@ fn platform_function_path(path: &str) -> Option<(&str, &str)> {
         return None;
     }
     let function_name = segments.next().filter(|value| !value.is_empty())?;
-    segments
-        .next()
-        .is_none()
-        .then_some((project_ref, function_name))
+    Some((project_ref, function_name))
 }
 
 /// The `X-Mako-Custom-Domain` value as the control plane stores hostnames:
@@ -501,30 +502,43 @@ mod tests {
 
     /// Cross-origin access is scoped to the function the path names, in
     /// both shapes: the custom domain's, where the hostname names the
-    /// environment, and the platform's, where the path does.
+    /// environment, and the platform's, where the path does. A function owns
+    /// the paths under its name, so its own route is part of the same
+    /// function and answers the same origins -- a browser app whose function
+    /// has more than one route is otherwise unable to call any of them.
     #[test]
     fn only_a_function_invocation_path_names_a_function() {
-        assert_eq!(
-            custom_domain_function_name("/functions/v1/hello"),
-            Some("hello")
-        );
+        for path in [
+            "/functions/v1/hello",
+            "/functions/v1/hello/",
+            "/functions/v1/hello/create",
+            "/functions/v1/hello/orders/42",
+        ] {
+            assert_eq!(custom_domain_function_name(path), Some("hello"), "{path:?}");
+        }
         for path in [
             "/functions/v1/",
             "/functions/v1",
-            "/functions/v1/hello/world",
             "/prj_example00--env_example00/functions/v1/hello",
             "/v1/functions/hello",
             "/",
         ] {
             assert_eq!(custom_domain_function_name(path), None, "{path:?}");
         }
-        assert_eq!(
-            platform_function_path("/prj_example00--env_example00/functions/v1/hello"),
-            Some(("prj_example00--env_example00", "hello"))
-        );
+        for path in [
+            "/prj_example00--env_example00/functions/v1/hello",
+            "/prj_example00--env_example00/functions/v1/hello/",
+            "/prj_example00--env_example00/functions/v1/hello/create",
+            "/prj_example00--env_example00/functions/v1/hello/orders/42",
+        ] {
+            assert_eq!(
+                platform_function_path(path),
+                Some(("prj_example00--env_example00", "hello")),
+                "{path:?}"
+            );
+        }
         for path in [
             "/functions/v1/hello",
-            "/prj_example00/functions/v1/hello/world",
             "/prj_example00/functions/v2/hello",
             "/prj_example00/functions/v1/",
             "//functions/v1/hello",

@@ -96,10 +96,11 @@ const NEVER = new Set([
 ]);
 /**
  * The application repository's own files: its prose, its licence, the workflow
- * that publishes it, and the lock file its own `npm install` resolved -- which
- * the export must not delete, because the published build runs `npm ci`. They
- * are reviewed and edited there, so the export neither writes nor deletes
- * them; everything else it replaces.
+ * that publishes it, the lock file its own `npm install` resolved -- which the
+ * export must not delete, because the published build runs `npm ci` -- and the
+ * configuration naming the project the published site talks to. They are
+ * reviewed and edited there, so the export neither writes nor deletes them;
+ * everything else it replaces.
  */
 const PRESERVED = new Set([
   ".git",
@@ -108,6 +109,7 @@ const PRESERVED = new Set([
   "LICENSE",
   "README.md",
   "package-lock.json",
+  "rational.config.json",
   "rational.config.example.json",
 ]);
 
@@ -315,10 +317,11 @@ import { defineConfig, type ProxyOptions } from "vite";
 /**
  * Rational is a static site, so the project it talks to is compiled into the
  * bundle. \`rational.config.json\` names that project -- endpoint, ids, and the
- * public project key, all of them public values. Without one, the example file
- * stands in; its ids are placeholders, which \`src/config.ts\` reads as "no
- * project", and the app then runs entirely against its in-browser fake
- * backend. That is what the published demo is.
+ * public project key, all of them public values, and this repository commits
+ * the one the published site uses. A checkout without it falls back to the
+ * example file, whose ids are placeholders; \`src/config.ts\` reads those as "no
+ * project" and runs the app entirely against its in-browser fake backend, so a
+ * fork builds and runs before it has a project of its own.
  *
  * \`base\` is \`${pagesBase}\` because GitHub Pages serves a project page from a
  * subpath, and every asset the built \`index.html\` names has to be under it.
@@ -427,9 +430,9 @@ function verify(root, files) {
     }
   }
 
-  // The published demo is built from the example configuration. If it ever
-  // named a real project, the site would stop being a demo and start being a
-  // broken client for somebody's data.
+  // The example configuration is what a checkout with no project of its own
+  // builds against, and it must keep pointing nowhere. If it ever named a real
+  // project, every fork would come up as a client for somebody else's data.
   const example = JSON.parse(readFileSync(join(root, "rational.config.example.json"), "utf8"));
   for (const field of ["projectId", "environmentId", "publicProjectKey"]) {
     if (!PLACEHOLDER.test(example[field])) {

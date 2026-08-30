@@ -391,6 +391,114 @@ fn deployed_function_is_served_through_the_edge_gateway() {
         "the function read back what it wrote: {body}"
     );
 
+    // --- The caller a function is told about. ------------------------------
+    //
+    // `createFunctionClientFromRequest` is the documented -- and only -- way a
+    // function learns who called it, so every application that shares data
+    // between users rests on it. The gateway verifies the bearer token and the
+    // runtime hands the worker the credential on the reserved header; nothing
+    // downstream reads the request's own `authorization`, which for a function
+    // that does not require a token would be whatever the client typed.
+    //
+    // The gateway carried the verified token and no adapter ever sent it, so
+    // in the hosted shape every function saw an anonymous caller. Locally
+    // `mako serve` sets the header itself, which is why only a real gateway
+    // and a real runtime, as here, can tell the two apart.
+    let public_key = bootstrap["publicProjectKey"]
+        .as_str()
+        .unwrap_or_else(|| panic!("bootstrap did not report the public project key: {bootstrap}"));
+    let application_email = "caller@application.test";
+    let application_password = "Correct-Horse-Battery-42!";
+    let auth_headers = BTreeMap::from([("x-mako-key".to_owned(), public_key.to_owned())]);
+    let credentials = serde_json::json!({
+        "email": application_email,
+        "password": application_password,
+    });
+    let signup_path =
+        format!("/v1/projects/{PROJECT_ID}/environments/{ENVIRONMENT_ID}/auth/signup");
+    let (status, body) = request(
+        DATA_PLANE_PORT,
+        "POST",
+        &signup_path,
+        &auth_headers,
+        Some(&credentials),
+    );
+    assert!(
+        (200..300).contains(&status),
+        "signing up an application user failed: {status} {body}"
+    );
+    let signin_path =
+        format!("/v1/projects/{PROJECT_ID}/environments/{ENVIRONMENT_ID}/auth/signin");
+    let (status, body) = request(
+        DATA_PLANE_PORT,
+        "POST",
+        &signin_path,
+        &auth_headers,
+        Some(&credentials),
+    );
+    assert_eq!(
+        status, 200,
+        "signing in the application user failed: {body}"
+    );
+    let session: serde_json::Value = serde_json::from_str(&body).expect("session json");
+    let application_token = session["accessToken"]
+        .as_str()
+        .unwrap_or_else(|| panic!("no access token in the session: {body}"))
+        .to_owned();
+    let application_user_id = session["user"]["id"]
+        .as_str()
+        .unwrap_or_else(|| panic!("no user id in the session: {body}"))
+        .to_owned();
+
+    let caller_route = format!("{service_route}/caller");
+    let (status, body) = request(
+        GATEWAY_PORT,
+        "GET",
+        &caller_route,
+        &BTreeMap::from([(
+            "authorization".to_owned(),
+            format!("Bearer {application_token}"),
+        )]),
+        None,
+    );
+    assert_eq!(
+        status,
+        200,
+        "the function could not identify its caller: {body}\n--- container output ---\n{}",
+        container.logs()
+    );
+    let identified: serde_json::Value = serde_json::from_str(&body)
+        .unwrap_or_else(|_| panic!("the caller route returned non-json: {body}"));
+    assert_eq!(
+        identified["userId"], application_user_id,
+        "the function is told which application user called it: {body}"
+    );
+    assert_eq!(identified["email"], application_email);
+
+    // No token, no identity: a function that admits anonymous callers is told
+    // there is nobody rather than handed one it cannot vouch for.
+    let (status, body) = request(GATEWAY_PORT, "GET", &caller_route, &BTreeMap::new(), None);
+    assert_eq!(
+        status, 401,
+        "an anonymous call must reach the function with no caller: {body}"
+    );
+
+    // A bearer token nobody issued never reaches the function at all.
+    let (status, _) = request(
+        GATEWAY_PORT,
+        "GET",
+        &caller_route,
+        &BTreeMap::from([(
+            "authorization".to_owned(),
+            "Bearer forged.not-a-token.at-all".to_owned(),
+        )]),
+        None,
+    );
+    assert_eq!(
+        status, 401,
+        "an unverifiable token is refused by the gateway"
+    );
+
     // And the document is really there, read directly rather than through the
     // function: the id is percent-encoded in the path exactly as the SDK sends
     // it, which is what the data-plane route has to decode before comparing it
@@ -806,10 +914,30 @@ fn runtime_network(engine: &[String]) -> Option<String> {
     if let Ok(value) = std::env::var("MAKO_EDGE_TEST_NETWORK") {
         return (!value.is_empty()).then_some(value);
     }
-    engine
+    // Asked, not assumed from the binary's name: where `podman-docker` is
+    // installed, `docker` *is* podman, and on podman's default network a
+    // worker's fetch to the data plane is refused -- the services listen on
+    // the host's loopback, which only `--map-host-loopback` reaches. Guessing
+    // by name left the suite red with a connection refused from inside the
+    // function and nothing pointing at the network.
+    engine_is_podman(engine).then(|| "pasta:--map-host-loopback,169.254.1.2".to_owned())
+}
+
+fn engine_is_podman(engine: &[String]) -> bool {
+    if engine
         .first()
         .is_some_and(|binary| binary.ends_with("podman"))
-        .then(|| "pasta:--map-host-loopback,169.254.1.2".to_owned())
+    {
+        return true;
+    }
+    engine_command(engine)
+        .arg("--version")
+        .output()
+        .is_ok_and(|output| {
+            String::from_utf8_lossy(&output.stdout)
+                .to_ascii_lowercase()
+                .contains("podman")
+        })
 }
 
 /// Start the pinned runtime on the same contract a deployment uses. The parts

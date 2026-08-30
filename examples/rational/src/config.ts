@@ -3,8 +3,8 @@
  * (the test suites inject one), the `mako.env.json` the bootstrap wrote
  * (compiled in by Vite), and finally the in-browser fake backend so the app
  * runs with no server at all. A compiled-in file whose ids are placeholders
- * counts as no file: that is what the published demo is built from, and it
- * runs on the fake backend until someone points it at a real project.
+ * counts as no file: a checkout that has not been pointed at a project yet
+ * runs on the fake backend rather than failing every request.
  */
 export type RationalMode = "live" | "fake";
 

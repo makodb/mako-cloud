@@ -9,7 +9,7 @@ use mako_edge_gateway::{
     FunctionRuntimeInvoker, RuntimeFunctionInvocation, RuntimeFunctionResponse,
     RuntimeInvocationError,
 };
-use mako_edge_runtime_protocol::RuntimeErrorCode;
+use mako_edge_runtime_protocol::{CALLER_AUTHORIZATION_HEADER, RuntimeErrorCode};
 
 const MAX_RESPONSE_HEADER_BYTES: usize = 32 * 1024;
 const STREAM_CHUNK_BYTES: usize = 16 * 1024;
@@ -60,6 +60,18 @@ impl FunctionRuntimeInvoker for LoopbackRuntimeInvoker {
             request.version,
         )
         .map_err(|_| runtime_unavailable())?;
+        // The credential of the caller this gateway verified, on the header
+        // the protocol reserves for it and the SDK inside the worker reads.
+        // A request that carried no verified caller sends nothing: a public
+        // function is told there is no one rather than handed a token.
+        if let Some(token) = &request.caller_token {
+            write!(
+                stream,
+                "{CALLER_AUTHORIZATION_HEADER}: {}\r\n",
+                token.expose_to_runtime_adapter()
+            )
+            .map_err(|_| runtime_unavailable())?;
+        }
         for (name, value) in &request.headers {
             write!(stream, "{name}: {value}\r\n").map_err(|_| runtime_unavailable())?;
         }

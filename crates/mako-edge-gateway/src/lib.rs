@@ -1070,10 +1070,22 @@ fn headers_are_valid(headers: &[(String, String)]) -> bool {
         })
 }
 
+/// What the runtime is given of the request's own headers.
+///
+/// `authorization` is not among them. The caller's credential reaches the
+/// worker as `caller_token`, which the adapter presents as the sensitive
+/// `x-mako-caller-authorization` header only after this gateway has verified
+/// it -- so a function reads an identity the platform stands behind, and a
+/// public function that was called with a bearer token nobody verified reads
+/// no identity at all rather than an unchecked one.
 fn forwarded_headers(headers: Vec<(String, String)>) -> Vec<(String, String)> {
     headers
         .into_iter()
-        .filter(|(name, _)| !is_hop_by_hop(name) && !is_internal_header(name))
+        .filter(|(name, _)| {
+            !is_hop_by_hop(name)
+                && !is_internal_header(name)
+                && !name.eq_ignore_ascii_case("authorization")
+        })
         .collect()
 }
 
@@ -1570,6 +1582,23 @@ mod tests {
                 token
             );
             assert!(!format!("{:?}", invocation.caller_token).contains(&token));
+            // The credential travels as the caller token and only as the
+            // caller token: a worker that read `authorization` would be
+            // reading whatever the client sent, verified or not.
+            assert!(
+                !invocation
+                    .headers
+                    .iter()
+                    .any(|(name, _)| name.eq_ignore_ascii_case("authorization")),
+                "the raw authorization header must not reach the runtime"
+            );
+            assert!(
+                invocation
+                    .headers
+                    .iter()
+                    .any(|(name, _)| name.eq_ignore_ascii_case("traceparent")),
+                "the request's own headers still reach the runtime"
+            );
             assert!(matches!(
                 invocation.audit_context.actor,
                 FunctionInvocationActor::ApplicationUser { .. }

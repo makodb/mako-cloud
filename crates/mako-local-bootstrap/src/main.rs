@@ -109,7 +109,10 @@ const FUNCTION_SOURCE: &str = r#"export default {
 /// secret, and the document id contains a character the SDK escapes in the
 /// path. Each data-plane call gets its own request id, because a quota
 /// reservation is keyed by it and reusing one is refused as a conflict.
-const SERVICE_FUNCTION_SOURCE: &str = r#"import { createServiceClient } from "@mako-cloud/edge-sdk";
+const SERVICE_FUNCTION_SOURCE: &str = r#"import {
+  createFunctionClientFromRequest,
+  createServiceClient,
+} from "@mako-cloud/edge-sdk";
 
 const DOCUMENT_ID = "hh_local:groceries:2026-08";
 
@@ -124,9 +127,32 @@ function documents(requestId: string, step: string) {
   }).documents("todos");
 }
 
+// Who the platform says is calling. This is the documented way a function
+// learns its caller -- the identity the gateway verified, forwarded to the
+// worker -- and every application that shares data between users depends on
+// it. A caller the platform did not verify is reported as nobody.
+async function caller(request: Request): Promise<Response> {
+  const client = createFunctionClientFromRequest({
+    request,
+    endpoint: Deno.env.get("MAKO_API_URL"),
+    projectId: Deno.env.get("MAKO_PROJECT_ID"),
+    environmentId: Deno.env.get("MAKO_ENVIRONMENT_ID"),
+  });
+  try {
+    const user = await client.auth.getUser();
+    return Response.json({ ok: true, function: "budget", userId: user.id, email: user.email });
+  } catch (error) {
+    return Response.json(
+      { ok: false, function: "budget", userId: null, message: String(error).slice(0, 200) },
+      { status: 401 },
+    );
+  }
+}
+
 export default {
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
+    if (url.pathname.endsWith("/caller")) return await caller(request);
     const requestId = request.headers.get("x-mako-request-id") ?? "req_budgetlocal0";
     const documentId = url.searchParams.get("id") ?? DOCUMENT_ID;
     try {
