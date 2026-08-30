@@ -4368,6 +4368,10 @@ export interface components {
             identity: {
                 userId?: string;
                 role: string;
+                /** @description The address the simulated caller's session authenticated as, as `identity.email` reads it. Omitted means no address, which no comparison matches. */
+                email?: string;
+                /** @description Whether the environment has confirmed that caller controls the address, as `identity.email_verified` reads it. */
+                emailVerified?: boolean;
                 trustedClaims: {
                     [key: string]: unknown;
                 };

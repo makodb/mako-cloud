@@ -439,6 +439,12 @@ fn resolve_path(
         "identity" if path.len() == 2 && matches!(path[1].as_str(), "user_id" | "role") => {
             Ok(ValueType::String)
         }
+        // The address the caller's account authenticated as, and whether the
+        // environment has confirmed the caller controls it. A rule that hands
+        // a document to an address must test both: without the second, an
+        // attacker registers the address they want to read.
+        "identity" if path.len() == 2 && path[1] == "email" => Ok(ValueType::String),
+        "identity" if path.len() == 2 && path[1] == "email_verified" => Ok(ValueType::Bool),
         "claims" if path.len() >= 2 => Ok(ValueType::Dynamic),
         "request" if path.len() == 2 => Ok(ValueType::String),
         "operation" | "project_id" | "environment_id" | "collection_id" if path.len() == 1 => {

@@ -48,6 +48,11 @@ pub struct AccessTokenInput {
     pub tenant: TenantScope,
     pub user_id: AppUserId,
     pub role: String,
+    /// The address the account authenticated as, and whether the environment
+    /// has confirmed the holder controls it. Policies read both, and read
+    /// them separately: the address alone says only what somebody typed.
+    pub email: String,
+    pub email_verified: bool,
     pub session_id: SessionId,
     pub authorization_epochs: AccessAuthorizationEpochs,
     pub trusted_claims: Map<String, Value>,
@@ -89,6 +94,10 @@ pub struct AccessTokenClaims {
     pub session_id: String,
     pub environment_authorization_epoch: u64,
     pub user_authorization_epoch: u64,
+    #[serde(default)]
+    pub email: String,
+    #[serde(default)]
+    pub email_verified: bool,
     pub trusted_claims: Map<String, Value>,
 }
 
@@ -123,6 +132,7 @@ impl<'a> AccessTokenIssuer<'a> {
             .first()
             .is_some_and(|record| record.tenant() != &input.tenant)
             || !valid_role(&input.role)
+            || !valid_email(&input.email)
         {
             return Err(AccessTokenError::InvalidInput);
         }
@@ -150,6 +160,8 @@ impl<'a> AccessTokenIssuer<'a> {
             session_id: input.session_id.as_str().to_owned(),
             environment_authorization_epoch: input.authorization_epochs.environment,
             user_authorization_epoch: input.authorization_epochs.user,
+            email: input.email,
+            email_verified: input.email_verified,
             trusted_claims: input.trusted_claims,
         };
         let encoded_header = URL_SAFE_NO_PAD.encode(serde_json::to_vec(&header)?);
@@ -161,6 +173,13 @@ impl<'a> AccessTokenIssuer<'a> {
             URL_SAFE_NO_PAD.encode(signature.to_bytes())
         )))
     }
+}
+
+/// The address a token may carry. An empty one is allowed and means the
+/// environment did not supply one, which policies read as no address at all.
+fn valid_email(email: &str) -> bool {
+    email.is_empty()
+        || (email.len() <= 256 && email.contains('@') && !email.chars().any(char::is_control))
 }
 
 fn valid_role(role: &str) -> bool {
@@ -227,6 +246,8 @@ mod tests {
                     tenant: tenant.clone(),
                     user_id: AppUserId::parse("usr_abcdefgh").expect("user"),
                     role: "member".to_owned(),
+                    email: "Member@Example.test".to_owned(),
+                    email_verified: true,
                     session_id: SessionId::parse("ses_abcdefgh").expect("session"),
                     authorization_epochs: AccessAuthorizationEpochs {
                         environment: 7,
@@ -249,6 +270,11 @@ mod tests {
         assert_eq!(claims.project_id, tenant.project_id().as_str());
         assert_eq!(claims.environment_id, tenant.environment_id().as_str());
         assert_eq!(claims.session_id, "ses_abcdefgh");
+        // The address the session authenticated as, and its confirmation,
+        // travel as separate claims: a policy that hands a document to an
+        // address has to be able to require both.
+        assert_eq!(claims.email, "Member@Example.test");
+        assert!(claims.email_verified);
         assert_eq!(claims.environment_authorization_epoch, 7);
         assert_eq!(claims.user_authorization_epoch, 3);
         assert_eq!(claims.iat, 100);

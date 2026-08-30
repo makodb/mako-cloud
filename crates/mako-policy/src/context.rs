@@ -5,6 +5,10 @@ use serde_json::{Map, Value};
 
 use crate::DocumentOperation;
 
+/// The longest address a policy will carry. RFC 5321 bounds a path at 256
+/// octets; anything longer is not an address this platform issued a token for.
+const MAX_EMAIL_BYTES: usize = 256;
+
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct SubjectId(String);
 
@@ -37,31 +41,80 @@ impl VerifiedRole {
     }
 }
 
+/// The address a caller's account is registered under, and whether the
+/// environment has confirmed that the caller controls it.
+///
+/// The two are separate because they answer different questions. The address
+/// is always the one the account authenticated as; confirmation is what says
+/// somebody proved they can receive mail there. A rule that hands a document
+/// to an address -- an invitation, say -- must require both, or an attacker
+/// registers the address they want to read and is handed it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct VerifiedEmail {
+    address: String,
+    confirmed: bool,
+}
+
+impl VerifiedEmail {
+    pub fn parse(address: impl Into<String>, confirmed: bool) -> Result<Self, PolicyContextError> {
+        let address = address.into();
+        if address.is_empty()
+            || address.len() > MAX_EMAIL_BYTES
+            || address.chars().any(char::is_control)
+            || !address.contains('@')
+        {
+            return Err(PolicyContextError::InvalidToken("identity.email"));
+        }
+        Ok(Self {
+            address: address.to_lowercase(),
+            confirmed,
+        })
+    }
+
+    #[must_use]
+    pub fn address(&self) -> &str {
+        &self.address
+    }
+
+    #[must_use]
+    pub const fn confirmed(&self) -> bool {
+        self.confirmed
+    }
+}
+
 /// Identity data supplied only after gateway/session verification. There is no
 /// field for user-editable profile metadata by design.
 #[derive(Clone, Debug, PartialEq)]
 pub struct VerifiedIdentity {
     user_id: Option<SubjectId>,
     role: VerifiedRole,
+    email: Option<VerifiedEmail>,
     trusted_claims: Map<String, Value>,
 }
 
 impl VerifiedIdentity {
     pub fn anonymous(trusted_claims: Value) -> Result<Self, PolicyContextError> {
-        Self::new(None, VerifiedRole::parse("anonymous")?, trusted_claims)
+        Self::new(
+            None,
+            VerifiedRole::parse("anonymous")?,
+            None,
+            trusted_claims,
+        )
     }
 
     pub fn user(
         user_id: SubjectId,
         role: VerifiedRole,
+        email: Option<VerifiedEmail>,
         trusted_claims: Value,
     ) -> Result<Self, PolicyContextError> {
-        Self::new(Some(user_id), role, trusted_claims)
+        Self::new(Some(user_id), role, email, trusted_claims)
     }
 
     fn new(
         user_id: Option<SubjectId>,
         role: VerifiedRole,
+        email: Option<VerifiedEmail>,
         trusted_claims: Value,
     ) -> Result<Self, PolicyContextError> {
         let Value::Object(trusted_claims) = trusted_claims else {
@@ -71,6 +124,7 @@ impl VerifiedIdentity {
         Ok(Self {
             user_id,
             role,
+            email,
             trusted_claims,
         })
     }
@@ -83,6 +137,11 @@ impl VerifiedIdentity {
     #[must_use]
     pub fn role(&self) -> &VerifiedRole {
         &self.role
+    }
+
+    #[must_use]
+    pub fn email(&self) -> Option<&VerifiedEmail> {
+        self.email.as_ref()
     }
 
     #[must_use]
@@ -316,6 +375,7 @@ mod tests {
         let identity = VerifiedIdentity::user(
             SubjectId::parse("user-1").expect("subject"),
             VerifiedRole::parse("member").expect("role"),
+            None,
             json!({"team_ids": ["blue"]}),
         )
         .expect("identity");

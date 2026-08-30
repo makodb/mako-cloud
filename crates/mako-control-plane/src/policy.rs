@@ -691,6 +691,7 @@ mod tests {
             VerifiedIdentity::user(
                 SubjectId::parse("user-a").expect("subject"),
                 VerifiedRole::parse("authenticated").expect("role"),
+                None,
                 json!({}),
             )
             .expect("identity"),

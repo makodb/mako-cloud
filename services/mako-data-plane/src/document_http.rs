@@ -795,6 +795,7 @@ fn policy_identity(
             .map_err(|_| unauthenticated(request, "application access token is invalid"))?,
         VerifiedRole::parse(access.role())
             .map_err(|_| unauthenticated(request, "application access token is invalid"))?,
+        access.policy_email(),
         Value::Object(access.trusted_claims().clone()),
     )
     .map_err(|_| unauthenticated(request, "application access token is invalid"))

@@ -687,6 +687,14 @@ pub enum IdentityVerificationResponse {
         session_id: String,
         environment_authorization_epoch: u64,
         user_authorization_epoch: u64,
+        /// The address the token carries and whether the environment has
+        /// confirmed it -- policy inputs, so the gateway that verifies a
+        /// token elsewhere sees exactly what the data plane does. Empty and
+        /// false when the token carries no address.
+        #[serde(default)]
+        email: String,
+        #[serde(default)]
+        email_verified: bool,
         trusted_claims: Map<String, Value>,
     },
     ProjectCredential {

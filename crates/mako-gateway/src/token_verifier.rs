@@ -6,6 +6,7 @@ use mako_api::TenantScope;
 use mako_identity::{
     AccessAuthorizationEpochs, AccessTokenClaims, AppUserId, JsonWebKeySet, SessionId,
 };
+use mako_policy::VerifiedEmail;
 use serde::Deserialize;
 use serde_json::{Map, Value};
 
@@ -58,6 +59,10 @@ pub struct VerifiedAccessIdentity {
     tenant: TenantScope,
     user_id: AppUserId,
     role: String,
+    /// The address the token was issued for and whether the environment has
+    /// confirmed its holder, in the form a policy reads. `None` when the
+    /// token carries no address.
+    email: Option<VerifiedEmail>,
     session_id: SessionId,
     authorization_epochs: AccessAuthorizationEpochs,
     trusted_claims: Map<String, Value>,
@@ -68,6 +73,7 @@ impl VerifiedAccessIdentity {
         tenant: TenantScope,
         user_id: AppUserId,
         role: String,
+        email: Option<VerifiedEmail>,
         session_id: SessionId,
         authorization_epochs: AccessAuthorizationEpochs,
         trusted_claims: Map<String, Value>,
@@ -83,6 +89,7 @@ impl VerifiedAccessIdentity {
             tenant,
             user_id,
             role,
+            email,
             session_id,
             authorization_epochs,
             trusted_claims,
@@ -102,6 +109,25 @@ impl VerifiedAccessIdentity {
     #[must_use]
     pub fn role(&self) -> &str {
         &self.role
+    }
+
+    /// The address the token carries, or `None` when it carries none.
+    #[must_use]
+    pub fn email(&self) -> Option<&str> {
+        self.email.as_ref().map(VerifiedEmail::address)
+    }
+
+    #[must_use]
+    pub fn email_verified(&self) -> bool {
+        self.email.as_ref().is_some_and(VerifiedEmail::confirmed)
+    }
+
+    /// The address as a policy input. Every caller that builds a policy
+    /// context from a verified token goes through this, so a rule reading
+    /// `identity.email` sees the same thing everywhere.
+    #[must_use]
+    pub fn policy_email(&self) -> Option<VerifiedEmail> {
+        self.email.clone()
     }
 
     #[must_use]
@@ -238,6 +264,7 @@ impl<'a> GatewayAccessTokenVerifier<'a> {
             tenant: target_tenant.clone(),
             user_id,
             role: claims.role,
+            email: VerifiedEmail::parse(claims.email, claims.email_verified).ok(),
             session_id,
             authorization_epochs: token_epochs,
             trusted_claims: claims.trusted_claims,
@@ -338,6 +365,8 @@ mod tests {
                 tenant: target_tenant.clone(),
                 user_id: AppUserId::parse("usr_abcdefgh").expect("user"),
                 role: "member".to_owned(),
+                email: "policy@example.test".to_owned(),
+                email_verified: true,
                 session_id: SessionId::parse("ses_abcdefgh").expect("session"),
                 authorization_epochs: AccessAuthorizationEpochs {
                     environment: 2,

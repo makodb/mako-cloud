@@ -8,6 +8,10 @@ mod revocation_cache;
 mod service_bypass;
 mod token_verifier;
 
+/// A verified identity carries the caller's address as a policy input, so a
+/// service that builds one from an authority's answer needs the type without
+/// depending on the policy crate for anything else.
+pub use mako_policy::VerifiedEmail;
 pub use quota::{
     GatewayQuotaCharge, GatewayQuotaDecision, GatewayQuotaEngine, GatewayQuotaEngineConfig,
     GatewayQuotaError, GatewayQuotaLimit, GatewayQuotaPolicy, GatewayQuotaPolicyError,

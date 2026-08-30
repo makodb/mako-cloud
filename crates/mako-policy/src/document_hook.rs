@@ -234,6 +234,7 @@ mod tests {
             let identity = VerifiedIdentity::user(
                 SubjectId::parse("user-1").expect("subject"),
                 VerifiedRole::parse("member").expect("role"),
+                None,
                 json!({}),
             )
             .expect("identity");
@@ -307,6 +308,7 @@ mod tests {
             let other_identity = VerifiedIdentity::user(
                 SubjectId::parse("user-2").expect("subject"),
                 VerifiedRole::parse("member").expect("role"),
+                None,
                 json!({}),
             )
             .expect("identity");
@@ -510,6 +512,7 @@ mod tests {
         VerifiedIdentity::user(
             SubjectId::parse(user_id).expect("subject"),
             VerifiedRole::parse("member").expect("role"),
+            None,
             trusted_claims,
         )
         .expect("identity")

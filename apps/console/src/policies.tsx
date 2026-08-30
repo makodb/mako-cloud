@@ -466,7 +466,9 @@ function parsePolicyExamples(raw: string): PolicyExample[] {
       !["create", "read", "update", "delete"].includes(String(example.operation)) ||
       typeof identity.role !== "string" ||
       identity.role === "" ||
-      (identity.userId !== undefined && typeof identity.userId !== "string")
+      (identity.userId !== undefined && typeof identity.userId !== "string") ||
+      (identity.email !== undefined && typeof identity.email !== "string") ||
+      (identity.emailVerified !== undefined && typeof identity.emailVerified !== "boolean")
     ) {
       throw new FormInputError(`Example ${index + 1} has an invalid operation or identity.`);
     }
@@ -477,6 +479,13 @@ function parsePolicyExamples(raw: string): PolicyExample[] {
         role: identity.role,
         trustedClaims,
         ...(typeof identity.userId === "string" ? { userId: identity.userId } : {}),
+        // What `identity.email` and `identity.email_verified` read for this
+        // caller, so a rule that scopes a document to an address can be
+        // simulated rather than only deployed and hoped for.
+        ...(typeof identity.email === "string" ? { email: identity.email } : {}),
+        ...(typeof identity.emailVerified === "boolean"
+          ? { emailVerified: identity.emailVerified }
+          : {}),
       },
       ...(example.oldDocument === undefined
         ? {}

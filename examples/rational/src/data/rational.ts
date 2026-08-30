@@ -613,7 +613,11 @@ export class RationalApp {
         this.#reconcileSelection(memberships);
       });
     // An invitation is a membership document that names an address rather
-    // than a user; the person it names is the one who may accept it.
+    // than a user; the person it names is the one who may accept it. The
+    // policy scopes the row to that address -- `old.email == identity.email
+    // && identity.email_verified` -- so replication delivers only this
+    // user's, and the filter here is the client agreeing with the server
+    // rather than the thing that keeps other people's addresses private.
     subscription.add(
       session.collections.memberships
         .find({ selector: { status: "invited" } })

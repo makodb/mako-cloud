@@ -129,6 +129,8 @@ fn handle_identity_verify(
                     session_id: identity.session_id().as_str().to_owned(),
                     environment_authorization_epoch: epochs.environment,
                     user_authorization_epoch: epochs.user,
+                    email: identity.email().unwrap_or_default().to_owned(),
+                    email_verified: identity.email_verified(),
                     trusted_claims: identity.trusted_claims().clone(),
                 }
             }

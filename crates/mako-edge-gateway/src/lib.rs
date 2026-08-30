@@ -2132,6 +2132,8 @@ mod tests {
                 tenant: tenant.clone(),
                 user_id: AppUserId::parse("usr_abcdefgh").expect("user"),
                 role: "member".to_owned(),
+                email: "policy@example.test".to_owned(),
+                email_verified: true,
                 session_id: SessionId::parse("ses_abcdefgh").expect("session"),
                 authorization_epochs: AccessAuthorizationEpochs {
                     environment: 2,

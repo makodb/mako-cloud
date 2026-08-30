@@ -8194,6 +8194,17 @@ components:
               type: string
             role:
               type: string
+            email:
+              type: string
+              description: >-
+                The address the simulated caller's session authenticated as, as
+                `identity.email` reads it. Omitted means no address, which no
+                comparison matches.
+            emailVerified:
+              type: boolean
+              description: >-
+                Whether the environment has confirmed that caller controls the
+                address, as `identity.email_verified` reads it.
             trustedClaims:
               type: object
               additionalProperties: true

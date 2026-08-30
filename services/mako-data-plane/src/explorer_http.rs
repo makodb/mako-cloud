@@ -29,7 +29,7 @@ use mako_policy::{
     DocumentPolicyAuthorizer, DocumentPolicyReadAuthorizer, OperatorActorId, OperatorGrantId,
     PrivilegedAuditWriteError, PrivilegedBypassAuditContext, PrivilegedBypassAuditEvent,
     PrivilegedBypassAuditSink, PrivilegedBypassAuthorizer, PrivilegedBypassReason,
-    PrivilegedBypassRequest, SafeRequestMetadata, SubjectId, VerifiedIdentity,
+    PrivilegedBypassRequest, SafeRequestMetadata, SubjectId, VerifiedEmail, VerifiedIdentity,
     VerifiedOperatorGrant, VerifiedPrivilegedPrincipal, VerifiedRole,
 };
 use mako_service_runtime::{
@@ -1116,11 +1116,22 @@ async fn preview_context(
         .get("role")
         .and_then(Value::as_str)
         .unwrap_or("authenticated");
+    let preview_email = graph
+        .identity_store(tenant, tenant)
+        .map_err(|_| unavailable(request, "application-user authority is unavailable"))?
+        .email_for_user(&user_id)
+        .await
+        .map_err(|_| unavailable(request, "application-user authority is unavailable"))?
+        .and_then(|email| VerifiedEmail::parse(email.as_str(), true).ok());
     let identity = VerifiedIdentity::user(
         SubjectId::parse(user_id.as_str())
             .map_err(|_| unauthenticated(request, "preview application user is invalid"))?,
         VerifiedRole::parse(role)
             .map_err(|_| unauthenticated(request, "preview application user is invalid"))?,
+        // The explorer previews a policy as a chosen user, so it must supply
+        // the same identity inputs a real request would: the address that
+        // user's session would carry, confirmed exactly when their account is.
+        preview_email.clone(),
         Value::Object(user.trusted_metadata().values().clone()),
     )
     .map_err(|_| unauthenticated(request, "preview application user is invalid"))?;

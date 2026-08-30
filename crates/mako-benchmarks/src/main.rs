@@ -52,7 +52,7 @@ use mako_identity::{
 use mako_policy::{
     DocumentOperation, PolicyEffect, PolicyEvaluationContext, PolicyEvaluator, PolicyRule,
     PolicyRuleId, PolicySet, PolicyState, PolicyVersion, SafeRequestMetadata, SubjectId,
-    VerifiedIdentity, VerifiedRole,
+    VerifiedEmail, VerifiedIdentity, VerifiedRole,
 };
 use mako_storage::{Durability, KvAdapter, RocksDbAdapter, RocksDbConfig};
 use mako_sync::{
@@ -580,6 +580,8 @@ fn benchmark_auth(config: &BenchmarkConfig) -> AnyResult<BenchmarkResult> {
             role: "member".to_owned(),
             session_id: SessionId::parse("ses_benchmark0")?,
             authorization_epochs: benchmark_epochs(),
+            email: "benchmark@example.test".to_owned(),
+            email_verified: true,
             trusted_claims: Map::new(),
         },
         100,
@@ -648,6 +650,7 @@ fn benchmark_policy(config: &BenchmarkConfig) -> AnyResult<BenchmarkResult> {
         VerifiedIdentity::user(
             SubjectId::parse("usr_benchmark0")?,
             VerifiedRole::parse("member")?,
+            Some(VerifiedEmail::parse("benchmark@example.test", true)?),
             json!({"plan": "beta"}),
         )?,
         Some(json!({

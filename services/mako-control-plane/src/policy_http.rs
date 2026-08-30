@@ -8,8 +8,8 @@ use mako_control_plane::{
 use mako_internal_rpc::IdentityAdminOperation;
 use mako_policy::{
     DiagnosticSeverity, DocumentOperation, PolicyEffect, PolicyEvaluationContext, PolicyRule,
-    PolicyRuleId, PolicySet, PolicyStoreError, SafeRequestMetadata, SubjectId, VerifiedIdentity,
-    VerifiedRole,
+    PolicyRuleId, PolicySet, PolicyStoreError, SafeRequestMetadata, SubjectId, VerifiedEmail,
+    VerifiedIdentity, VerifiedRole,
 };
 use mako_service_runtime::{
     HttpApiError, HttpMethod, HttpRequest, HttpResponse, HttpRouter, RouteRegistrationError,
@@ -340,6 +340,10 @@ fn policy_example(
         Some(user_id) => VerifiedIdentity::user(
             SubjectId::parse(user_id)?,
             VerifiedRole::parse(wire.identity.role)?,
+            wire.identity
+                .email
+                .map(|address| VerifiedEmail::parse(address, wire.identity.email_verified))
+                .transpose()?,
             wire.identity.trusted_claims,
         )?,
         None if wire.identity.role == "anonymous" => {
@@ -475,6 +479,13 @@ struct PolicyExampleWire {
 struct PolicyIdentityWire {
     user_id: Option<String>,
     role: String,
+    /// What `identity.email` and `identity.email_verified` read for the
+    /// simulated caller. A simulation that omitted them could not exercise a
+    /// rule that scopes a document to an address.
+    #[serde(default)]
+    email: Option<String>,
+    #[serde(default)]
+    email_verified: bool,
     trusted_claims: Value,
 }
 
@@ -562,6 +573,8 @@ mod tests {
                 identity: PolicyIdentityWire {
                     user_id: Some("user-1".to_owned()),
                     role: "member".to_owned(),
+                    email: None,
+                    email_verified: false,
                     trusted_claims: json!({"team": "blue"}),
                 },
                 old_document: None,
@@ -578,6 +591,8 @@ mod tests {
                 identity: PolicyIdentityWire {
                     user_id: None,
                     role: "anonymous".to_owned(),
+                    email: None,
+                    email_verified: false,
                     trusted_claims: json!({}),
                 },
                 old_document: None,

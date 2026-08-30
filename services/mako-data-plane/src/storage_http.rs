@@ -663,6 +663,7 @@ async fn principal(
         ObjectPrincipal::User {
             user_id: access.user_id().as_str().to_owned(),
             role: access.role().to_owned(),
+            email: access.policy_email(),
             trusted_claims: Value::Object(access.trusted_claims().clone()),
         },
         ActorIdentity::ApplicationUser {

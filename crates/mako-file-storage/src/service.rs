@@ -5,7 +5,7 @@ use mako_object_store::{ObjectAddress, ObjectStore, ObjectStoreError};
 use mako_policy::{
     DiagnosticSeverity, PolicyCompiler, PolicyEffect, PolicyEvaluationContext, PolicyEvaluator,
     PolicyEvaluatorState, PolicyRule, PolicyRuleId, PolicySet, PolicyState, PolicyVersion,
-    SafeRequestMetadata, SubjectId, VerifiedIdentity, VerifiedRole,
+    SafeRequestMetadata, SubjectId, VerifiedEmail, VerifiedIdentity, VerifiedRole,
 };
 use mako_storage::{Durability, KvAdapter};
 use serde_json::Value;
@@ -31,6 +31,10 @@ pub enum ObjectPrincipal {
     User {
         user_id: String,
         role: String,
+        /// The address the session's token carries, if any, as a bucket rule
+        /// reads it: a rule that hands an object to an address needs the
+        /// same input a document policy has.
+        email: Option<VerifiedEmail>,
         trusted_claims: Value,
     },
 }
@@ -477,6 +481,7 @@ impl FileStorageService {
             ObjectPrincipal::User {
                 user_id,
                 role,
+                email,
                 trusted_claims,
             } => {
                 if bucket.config.access == BucketAccess::Public
@@ -488,7 +493,7 @@ impl FileStorageService {
                     .map_err(|_| FileStorageError::Denied("identity_invalid".to_owned()))?;
                 let role = VerifiedRole::parse(role.as_str())
                     .map_err(|_| FileStorageError::Denied("identity_invalid".to_owned()))?;
-                VerifiedIdentity::user(subject, role, trusted_claims.clone())
+                VerifiedIdentity::user(subject, role, email.clone(), trusted_claims.clone())
                     .map_err(|_| FileStorageError::Denied("identity_invalid".to_owned()))?
             }
         };
@@ -693,6 +698,7 @@ mod tests {
             principal: ObjectPrincipal::User {
                 user_id: id.to_owned(),
                 role: "user".to_owned(),
+                email: None,
                 trusted_claims: json!({}),
             },
             request_metadata: vec![("method".to_owned(), "PUT".to_owned())],

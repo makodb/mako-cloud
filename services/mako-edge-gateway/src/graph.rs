@@ -29,6 +29,7 @@ use mako_edge_gateway::{
 use mako_gateway::{
     AccessTokenVerificationError, GatewayQuotaEngine, GatewayQuotaEngineConfig, GatewayQuotaLimit,
     GatewayQuotaPolicy, GatewayQuotaResource, GatewayQuotaWindow, VerifiedAccessIdentity,
+    VerifiedEmail,
 };
 use mako_identity::{AccessAuthorizationEpochs, AppUserId, SessionId};
 use mako_internal_rpc::{
@@ -37,6 +38,7 @@ use mako_internal_rpc::{
     IdentityVerificationResponse, InternalCaller, InternalHttpClient, InternalHttpClientConfig,
     InternalRequestAuthenticator, RocksInternalReplayGuard,
 };
+
 use mako_service_runtime::{ReadinessProbe, ReadinessSnapshot};
 use mako_storage::{
     Durability, KvAdapter, ProductionRocksDb, ProductionRocksDbConfig, ProductionVolumeIdentity,
@@ -451,6 +453,8 @@ impl FunctionAccessTokenVerifier for PrivateTokenVerifier {
             session_id,
             environment_authorization_epoch,
             user_authorization_epoch,
+            email,
+            email_verified,
             trusted_claims,
         } = response
         else {
@@ -460,6 +464,7 @@ impl FunctionAccessTokenVerifier for PrivateTokenVerifier {
             tenant.clone(),
             AppUserId::parse(user_id).map_err(|_| AccessTokenVerificationError::Malformed)?,
             role,
+            VerifiedEmail::parse(email, email_verified).ok(),
             SessionId::parse(session_id).map_err(|_| AccessTokenVerificationError::Malformed)?,
             AccessAuthorizationEpochs {
                 environment: environment_authorization_epoch,

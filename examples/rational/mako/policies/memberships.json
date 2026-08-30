@@ -11,7 +11,7 @@
       "id": "invited-read",
       "effect": "allow",
       "operations": ["read"],
-      "expression": "identity.user_id != null && old.status == \"invited\""
+      "expression": "old.status == \"invited\" && old.email == identity.email && identity.email_verified"
     }
   ]
 }

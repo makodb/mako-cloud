@@ -23,8 +23,8 @@ pub use compiler::{
 };
 
 pub use context::{
-    PolicyContextError, PolicyEvaluationContext, SafeRequestMetadata, SubjectId, VerifiedIdentity,
-    VerifiedRole,
+    PolicyContextError, PolicyEvaluationContext, SafeRequestMetadata, SubjectId, VerifiedEmail,
+    VerifiedIdentity, VerifiedRole,
 };
 pub use document_hook::{DocumentPolicyAuthorizer, DocumentPolicyReadAuthorizer};
 pub use evaluator::{

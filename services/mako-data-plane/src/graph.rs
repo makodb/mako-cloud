@@ -25,12 +25,13 @@ use mako_gateway::{
 };
 use mako_identity::{
     AccessAuthorizationEpochs, AccessToken, AccessTokenConfig, AccessTokenError, AccessTokenInput,
-    AccessTokenIssuer, AppUserId, AppUserRecord, ApplicationSessionGrant, ApplicationSessionStore,
-    ApplicationSessionStoreError, Argon2idParameters, FixedWindowRateLimitConfig, IdentityStore,
-    IdentityStoreError, KeyEncryptionKey, NormalizedEmail, PasswordPolicy, PasswordService,
-    PersistentSignInThrottle, ProjectSigningKeyRecord, ProjectSigningKeyRing,
-    ProjectSigningKeyStore, ProjectSigningKeyStoreError, RateLimitError, RefreshCredential,
-    RefreshSessionOutcome, SessionId,
+    AccessTokenIssuer, AppUserId, AppUserRecord, AppUserStatus, ApplicationSessionGrant,
+    ApplicationSessionStore, ApplicationSessionStoreError, Argon2idParameters,
+    FixedWindowRateLimitConfig, IdentityStore, IdentityStoreError, KeyEncryptionKey,
+    NormalizedEmail, PasswordPolicy, PasswordService, PersistentSignInThrottle,
+    ProjectSigningKeyRecord, ProjectSigningKeyRing, ProjectSigningKeyStore,
+    ProjectSigningKeyStoreError, RateLimitError, RefreshCredential, RefreshSessionOutcome,
+    SessionId,
 };
 use mako_internal_rpc::{
     DeploymentKey, EncryptedResponseJournal, InternalAuthError, InternalCaller,
@@ -1146,6 +1147,16 @@ impl DataPlaneGraph {
                         environment: epochs.environment().get(),
                         user: epochs.user().get(),
                     },
+                    // A token carries the address its session authenticated
+                    // as, and says separately whether the environment has
+                    // confirmed it -- a policy that hands a document to an
+                    // address has to be able to require both.
+                    email: grant
+                        .email
+                        .as_ref()
+                        .map(|email| email.as_str().to_owned())
+                        .unwrap_or_default(),
+                    email_verified: grant.user.status() == AppUserStatus::Active,
                     trusted_claims: grant.user.trusted_metadata().values().clone(),
                 },
                 now_unix_seconds,

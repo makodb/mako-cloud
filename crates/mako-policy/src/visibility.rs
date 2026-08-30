@@ -89,6 +89,7 @@ mod tests {
         let identity = VerifiedIdentity::user(
             SubjectId::parse("user-1").expect("subject"),
             VerifiedRole::parse("member").expect("role"),
+            None,
             json!({"team": "blue"}),
         )
         .expect("identity");

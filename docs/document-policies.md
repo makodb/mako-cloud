@@ -25,14 +25,33 @@ conflicts, logs, counts, or index diagnostics.
 ## Expression language
 
 A rule is one boolean expression over the evaluation context. Paths name
-context values: `identity.user_id`, `identity.role`, `claims.<name>`,
-`request.<name>`, `operation`, `project_id`, `environment_id`,
-`collection_id`, `old.<field>`, and `new.<field>`. Literals are JSON strings,
+context values: `identity.user_id`, `identity.role`, `identity.email`,
+`identity.email_verified`, `claims.<name>`, `request.<name>`, `operation`,
+`project_id`, `environment_id`, `collection_id`, `old.<field>`, and
+`new.<field>`. Literals are JSON strings,
 numbers, `true`, `false`, and `null`. Operators are `==`, `!=`, `<`, `<=`,
 `>`, `>=`, `&&`, `||`, `!`, and parentheses. Document fields take their type
 from the collection schema and an unknown field is a compile error; trusted
 claims are dynamic because the schema does not describe them, so a claim
 compares with any operand and resolves to `null` when absent.
+
+### Scoping a document to an address
+
+`identity.email` is the address the caller's session authenticated as,
+lower-cased, and `null` for a caller that has none. `identity.email_verified`
+says whether the environment has confirmed that caller controls it.
+
+They are separate because they answer different questions, and a rule that
+hands a document to an address needs both:
+
+```
+old.invitee_email == identity.email && identity.email_verified
+```
+
+Without the second term the rule hands the document to whoever registered the
+address first, which anyone may do in an environment that does not require
+verification. Both are verified token claims, set when the session was issued
+and not editable by the user; profile metadata still cannot reach them.
 
 ### Indexing trusted claims
 

@@ -302,6 +302,18 @@ fn resolve_value(path: &[String], context: &PolicyEvaluationContext) -> Value {
                 Value::String(value.as_str().to_owned())
             }),
             Some("role") => Value::String(context.identity().role().as_str().to_owned()),
+            // A caller with no address reads as null, which no comparison
+            // matches -- an anonymous caller is never handed a document
+            // addressed to somebody.
+            Some("email") => context.identity().email().map_or(Value::Null, |email| {
+                Value::String(email.address().to_owned())
+            }),
+            Some("email_verified") => Value::Bool(
+                context
+                    .identity()
+                    .email()
+                    .is_some_and(crate::VerifiedEmail::confirmed),
+            ),
             _ => Value::Null,
         },
         Some("claims") => nested_value(
@@ -410,6 +422,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+    use crate::VerifiedEmail;
     use crate::{
         PolicyCompiler, PolicyRule, PolicySet, PolicyState, PolicyVersion, SafeRequestMetadata,
         SubjectId, VerifiedIdentity, VerifiedRole,
@@ -799,6 +812,64 @@ mod tests {
         .expect("rule")
     }
 
+    /// An invitation names an address; only the person the platform says
+    /// controls it may read the row. Both halves are load-bearing: the
+    /// address alone is what somebody typed at sign-up, so a rule that omits
+    /// the confirmation hands the invitation to whoever registered the
+    /// address first -- which is the disclosure this input exists to close.
+    #[test]
+    fn an_invitation_is_read_only_by_the_confirmed_holder_of_its_address() {
+        let policy = compile_with_schema(
+            [rule(
+                "invitee-reads",
+                PolicyEffect::Allow,
+                "old.invitee_email == identity.email && identity.email_verified",
+            )],
+            &json!({
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string"},
+                    "invitee_email": {"type": "string"}
+                }
+            }),
+        );
+        let evaluator = PolicyEvaluator;
+        let document = json!({"id": "inv-1", "invitee_email": "invitee@example.test"});
+        let decide = |email: Option<VerifiedEmail>| {
+            evaluator.evaluate(
+                &policy,
+                &PolicyEvaluationContext::new(
+                    scope(),
+                    DocumentOperation::Read,
+                    VerifiedIdentity::user(
+                        SubjectId::parse("user-1").expect("subject"),
+                        VerifiedRole::parse("member").expect("role"),
+                        email,
+                        json!({}),
+                    )
+                    .expect("identity"),
+                    Some(document.clone()),
+                    None,
+                    SafeRequestMetadata::empty(),
+                )
+                .expect("context"),
+            )
+        };
+
+        // The address the platform confirmed: allowed, and case does not
+        // decide who reads somebody's invitation.
+        let confirmed = VerifiedEmail::parse("Invitee@Example.test", true).expect("email");
+        assert_eq!(decide(Some(confirmed)).outcome(), PolicyOutcome::Allow);
+        // The same address, unconfirmed: registering it is not proof of
+        // holding it.
+        let claimed = VerifiedEmail::parse("invitee@example.test", false).expect("email");
+        assert_eq!(decide(Some(claimed)).outcome(), PolicyOutcome::Deny);
+        // Somebody else, and a caller with no address at all.
+        let other = VerifiedEmail::parse("stranger@example.test", true).expect("email");
+        assert_eq!(decide(Some(other)).outcome(), PolicyOutcome::Deny);
+        assert_eq!(decide(None).outcome(), PolicyOutcome::Deny);
+    }
+
     fn household_context(
         operation: DocumentOperation,
         claims: Value,
@@ -811,6 +882,7 @@ mod tests {
             VerifiedIdentity::user(
                 SubjectId::parse("user-1").expect("subject"),
                 VerifiedRole::parse("member").expect("role"),
+                None,
                 claims,
             )
             .expect("identity"),
@@ -822,6 +894,23 @@ mod tests {
     }
 
     fn compile(rules: impl IntoIterator<Item = PolicyRule>) -> CompiledPolicySet {
+        compile_with_schema(
+            rules,
+            &json!({
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string"},
+                    "owner_id": {"type": "string"},
+                    "blocked": {"type": "boolean"}
+                }
+            }),
+        )
+    }
+
+    fn compile_with_schema(
+        rules: impl IntoIterator<Item = PolicyRule>,
+        schema: &Value,
+    ) -> CompiledPolicySet {
         let policy = PolicySet::new(
             scope(),
             PolicyVersion::new(1).expect("version"),
@@ -831,17 +920,7 @@ mod tests {
         )
         .expect("policy");
         PolicyCompiler::default()
-            .compile(
-                &policy,
-                &json!({
-                    "type": "object",
-                    "properties": {
-                        "id": {"type": "string"},
-                        "owner_id": {"type": "string"},
-                        "blocked": {"type": "boolean"}
-                    }
-                }),
-            )
+            .compile(&policy, schema)
             .expect("compile")
             .into_compiled()
             .expect("compiled")
@@ -864,6 +943,7 @@ mod tests {
             VerifiedIdentity::user(
                 SubjectId::parse(user_id).expect("subject"),
                 VerifiedRole::parse("member").expect("role"),
+                None,
                 json!({}),
             )
             .expect("identity"),
