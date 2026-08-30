@@ -24,7 +24,7 @@
 import { spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -69,6 +69,8 @@ const DEFAULTS = {
   "function-name": "households",
   "sync-function-name": "institution-sync",
   "sync-cron": "*/15 * * * *",
+  "nightly-function-name": "nightly",
+  "nightly-cron": "0 2 * * *",
   "config-dir": process.env.MAKO_CONFIG_DIR,
 };
 
@@ -577,9 +579,124 @@ function deploySyncFunction() {
   }
 }
 
+/**
+ * Deploy `functions/nightly` and put it on a 02:00 UTC schedule.
+ *
+ * The nightly job shares its rules engine with the application, and a bundle
+ * is a directory: nothing outside it is uploaded. So the shared module is
+ * copied into the uploaded copy as `shared/`, which is what the function
+ * imports. That copy is why `functions/shared/*` imports nothing at all --
+ * the browser build wants `.js` specifiers and Deno wants `.ts`.
+ */
+function deployNightlyFunction() {
+  const functionName = options["nightly-function-name"];
+  const credentialId = `sk_rational_nightly_${Date.now().toString(36)}`;
+  log(`issuing the ${functionName} service credential ${credentialId}`);
+  const issued = makoJson([
+    "keys",
+    "service",
+    "create",
+    "--id",
+    credentialId,
+    "--collection",
+    "households",
+    "--collection",
+    "transactions",
+    "--collection",
+    "rules",
+    "--collection",
+    "accounts",
+    "--collection",
+    "net_worth_snapshots",
+    "--collection",
+    "recurrences",
+    "--operation",
+    "read",
+    "--operation",
+    "create",
+    "--operation",
+    "update",
+    ...tenant,
+  ]);
+  const secretName = "NIGHTLY_SERVICE_KEY";
+  const existing = makoJson(["functions", "secrets", "get", secretName, ...tenant], [4]);
+  if (existing === null) {
+    log(`installing ${secretName} with the credential's value`);
+    makoJson(["functions", "secrets", "create", secretName, "--value", issued.secret, ...tenant]);
+  } else {
+    log(`rotating ${secretName} to the new credential`);
+    makoJson([
+      "functions",
+      "secrets",
+      "rotate",
+      secretName,
+      "--value",
+      issued.secret,
+      "--yes",
+      ...tenant,
+    ]);
+  }
+  // `functions/nightly/shared` is a symlink, so the repo, `tsc`, `node --test`,
+  // and Deno all resolve `./shared/rules.ts`. An uploaded bundle cannot carry a
+  // link out of itself, so the staged copy skips it and puts real files there.
+  const source = join(scratch, "nightly-function");
+  cpSync(join(exampleRoot, "functions", "nightly"), source, {
+    recursive: true,
+    filter: (from) => basename(from) !== "shared",
+  });
+  cpSync(join(exampleRoot, "functions", "shared"), join(source, "shared"), { recursive: true });
+  const deployed = mako([
+    "functions",
+    "deploy",
+    source,
+    "--name",
+    functionName,
+    "--create",
+    "--region",
+    options.region,
+    "--secret",
+    secretName,
+    "--yes",
+    ...tenant,
+    "--json",
+  ]);
+  if (deployed.status !== 0) {
+    log(
+      `the ${functionName} function was not deployed (exit ${deployed.status}): ` +
+        `${deployed.stderr.trim().split("\n").slice(-3).join(" ")}`,
+    );
+    return;
+  }
+  const schedules = makoJson(["schedules", "list", "--function", functionName, ...tenant], [4]);
+  const existingSchedule = (schedules?.items ?? []).find((schedule) => schedule.name === "nightly");
+  if (existingSchedule === undefined) {
+    log(`scheduling ${functionName} at ${options["nightly-cron"]}`);
+    makoJson([
+      "schedules",
+      "create",
+      "--function",
+      functionName,
+      "--name",
+      "nightly",
+      "--cron",
+      options["nightly-cron"],
+      "--method",
+      "POST",
+      "--path",
+      "/",
+      ...tenant,
+    ]);
+  } else {
+    log(`${functionName} is already scheduled (${existingSchedule.cron})`);
+  }
+}
+
 const signIn = readSignInSettings();
 const functionsEndpoint = options.functions ? deployHouseholdsFunction() : null;
-if (options.functions && functionsEndpoint !== null) deploySyncFunction();
+if (options.functions && functionsEndpoint !== null) {
+  deploySyncFunction();
+  deployNightlyFunction();
+}
 
 const envFile = {
   endpoint: options["data-endpoint"],

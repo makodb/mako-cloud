@@ -5,7 +5,12 @@ import type { ScopeSession } from "../data/scope.js";
 import type { HouseholdCollectionId } from "../model/types.js";
 import { goalsByUrgency } from "../selectors/goals.js";
 import { amountToText, formatMinorUnits, parseAmount } from "../selectors/money.js";
-import { detectRecurrences, upcomingBills } from "../selectors/recurrences.js";
+import {
+  type DetectedRecurrence,
+  detectRecurrences,
+  storedDetection,
+  upcomingBills,
+} from "../selectors/recurrences.js";
 import { useQuery } from "./hooks.js";
 
 /**
@@ -32,17 +37,37 @@ export function PlanScreen({
   );
   const [problem, setProblem] = useState<string | null>(null);
   const today = new Date().toISOString().slice(0, 10);
-  const detected = detectRecurrences(transactions, recurrences);
+  // The nightly job notices repeating charges too, and writes down what it
+  // finds. Its detections come first: they were noticed before this device
+  // opened the app, and a household that has not visited in a month should
+  // find them waiting rather than have them re-derived only while it looks.
+  const stored = recurrences.filter((recurrence) => recurrence.status === "detected");
+  const detected: ReadonlyArray<{ detection: DetectedRecurrence; storedId: string | null }> = [
+    ...stored.map((recurrence) => ({
+      detection: storedDetection(recurrence),
+      storedId: recurrence.id,
+    })),
+    ...detectRecurrences(transactions, recurrences).map((detection) => ({
+      detection,
+      storedId: null,
+    })),
+  ];
   const bills = upcomingBills(recurrences, today);
   const progress = goalsByUrgency(goals, today);
   const accountName = (id: string | undefined) =>
     id === undefined ? "—" : (accounts.find((account) => account.id === id)?.name ?? id);
 
   const decide = async (
-    detection: (typeof detected)[number],
+    suggestion: (typeof detected)[number],
     status: "confirmed" | "dismissed",
   ) => {
+    const { detection, storedId } = suggestion;
     try {
+      if (storedId !== null) {
+        await app.writes?.updateRecurrence(storedId, { status });
+        setProblem(null);
+        return;
+      }
       await app.writes?.saveRecurrence({
         account_id: detection.accountId,
         normalized_description: detection.normalizedDescription,
@@ -123,10 +148,11 @@ export function PlanScreen({
             </tr>
           </thead>
           <tbody>
-            {detected.map((detection) => (
+            {detected.map(({ detection, storedId }) => (
               <tr
-                key={`${detection.accountId}:${detection.normalizedDescription}`}
+                key={storedId ?? `${detection.accountId}:${detection.normalizedDescription}`}
                 data-testid={`detected-${detection.normalizedDescription.replaceAll(" ", "-")}`}
+                data-noticed-by={storedId === null ? "this device" : "the nightly job"}
               >
                 <th scope="row">{detection.description}</th>
                 <td>{accountName(detection.accountId)}</td>
@@ -137,14 +163,14 @@ export function PlanScreen({
                   <button
                     type="button"
                     className="link"
-                    onClick={() => void decide(detection, "confirmed")}
+                    onClick={() => void decide({ detection, storedId }, "confirmed")}
                   >
                     Confirm
                   </button>
                   <button
                     type="button"
                     className="link"
-                    onClick={() => void decide(detection, "dismissed")}
+                    onClick={() => void decide({ detection, storedId }, "dismissed")}
                   >
                     Dismiss
                   </button>

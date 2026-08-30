@@ -4,7 +4,9 @@ import type { HouseholdCollectionId } from "../model/types.js";
 import { accountBalances, netWorthByCurrency } from "../selectors/balances.js";
 import { formatMinorUnits } from "../selectors/money.js";
 import {
+  netWorthPath,
   selectCashFlow,
+  selectNetWorthHistories,
   selectSpendingByAccount,
   selectSpendingByCategory,
   selectSpendingByMonth,
@@ -30,6 +32,7 @@ export function ReportsScreen({
   route: Extract<Route, { name: "reports" }>;
 }) {
   const transactions = useQuery(session.collection("transactions")?.find() ?? null);
+  const snapshots = useQuery(session.collection("net_worth_snapshots")?.find() ?? null);
   const accounts = useQuery(
     session.collection("accounts")?.find({ sort: [{ name: "asc" }] }) ?? null,
   );
@@ -44,6 +47,7 @@ export function ReportsScreen({
   const byCategory = selectSpendingByCategory(transactions, month);
   const byAccount = selectSpendingByAccount(transactions, month);
   const byMonth = selectSpendingByMonth(transactions);
+  const histories = selectNetWorthHistories(snapshots);
   const categoryName = (id: string) =>
     id === "" ? "uncategorized" : (categories.find((entry) => entry.id === id)?.name ?? id);
   const accountName = (id: string) => accounts.find((account) => account.id === id)?.name ?? id;
@@ -104,6 +108,42 @@ export function ReportsScreen({
             ))}
           </tbody>
         </table>
+      )}
+
+      <h3>Net worth over time</h3>
+      {histories.length === 0 ? (
+        <p className="muted" data-testid="net-worth-history-empty">
+          No snapshots yet. The nightly job records one a night, so this fills in from tomorrow.
+        </p>
+      ) : (
+        histories.map((history) => (
+          <div key={history.currency} data-testid={`net-worth-history-${history.currency}`}>
+            <svg
+              className="sparkline"
+              viewBox="0 0 100 100"
+              preserveAspectRatio="none"
+              role="img"
+              aria-label={`Net worth from ${history.points[0]?.date} to ${
+                history.points[history.points.length - 1]?.date
+              }, ${formatMinorUnits(history.low, history.currency)} to ${formatMinorUnits(
+                history.high,
+                history.currency,
+              )}`}
+            >
+              <polyline points={netWorthPath(history)} fill="none" strokeWidth="2" />
+            </svg>
+            <p className="muted" data-testid="net-worth-change">
+              {history.points.length === 1
+                ? `One snapshot, ${formatMinorUnits(history.points[0]?.netWorth ?? 0, history.currency)}.`
+                : `${history.points.length} snapshots, ${history.points[0]?.date} to ${
+                    history.points[history.points.length - 1]?.date
+                  }: ${history.change >= 0 ? "up" : "down"} ${formatMinorUnits(
+                    Math.abs(history.change),
+                    history.currency,
+                  )}.`}
+            </p>
+          </div>
+        ))
       )}
 
       <h3>Cash flow</h3>

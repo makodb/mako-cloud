@@ -42,6 +42,8 @@ application asking for them:
 | Receipts attached to a transaction | [File storage](file-storage.md) with object attributes a bucket rule reads |
 | Invitations only the invitee may read | `identity.email` and `identity.email_verified` in [policies](document-policies.md#scoping-a-document-to-an-address) |
 | Membership changes | The `households` [edge function](edge-functions.md) under a service credential |
+| A bank connection that syncs itself | The `institution-sync` function on a [schedule](edge-functions.md), writing under a service credential without doubling a transaction |
+| Filing, duplicate-checking, and net worth overnight | The `nightly` function on a 02:00 UTC schedule |
 | Working offline | Dexie storage, durable checkpoints, and the authorization-epoch [security reset](rxdb-client.md#authorization-epoch-security-reset) |
 | Calling the API from a static host | [Allowed origins](allowed-origins.md) |
 
@@ -57,8 +59,19 @@ Against a real stack, `examples/rational/scripts/bootstrap.mjs` creates the
 project, environment, collections, indexes, policies, bucket, and public key
 through the CLI, writes `mako.env.json`, and with `--functions` issues the
 service credential, installs it as a function secret, and deploys the
-`households` function. `npm run dev -w @mako-cloud/example-rational` then
-serves the app against it.
+`households`, `institution-sync`, and `nightly` functions -- the last two on
+schedules. `npm run dev -w @mako-cloud/example-rational` then serves the app
+against it.
+
+The two scheduled functions share their engines with the application: rules
+and recurrence detection live in `examples/rational/functions/shared/`, and
+the same code files a transaction whether the person clicked or the job ran at
+two in the morning. A function bundle is a directory and nothing outside it is
+uploaded, so the bundle carries its own copy: `functions/nightly/shared` is a
+symlink for the repository, `tsc`, and the tests, and the bootstrap stages real
+files in its place. That is also why the shared modules import nothing at all
+-- the browser build resolves `.js` specifiers and Deno resolves `.ts`, and no
+single import satisfies both.
 
 A build with no `mako.env.json` — a fresh clone — runs against an in-browser
 fake of the same protocol and says so in a banner. That is what a fork gets

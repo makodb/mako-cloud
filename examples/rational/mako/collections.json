@@ -888,7 +888,7 @@
     {
       "id": "net_worth_snapshots",
       "scope": "household",
-      "description": "One per day; id is <household_id>:<yyyy-mm-dd>.",
+      "description": "One per day, written by the nightly function; id is nws_<household_id>.<yyyy-mm-dd>.",
       "jsonSchema": {
         "type": "object",
         "additionalProperties": false,

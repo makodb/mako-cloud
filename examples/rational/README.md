@@ -222,18 +222,40 @@ Three things about the deployment are worth knowing, and all three are in the fi
 - Membership ids use `.` rather than `:` because the service document route compares the raw
   path segment with the body's id while the edge SDK percent-encodes the path, so an id holding
   any character `encodeURIComponent` escapes cannot be written from a function at all.
-- A deployed function cannot import `@mako-cloud/edge-sdk` yet. The bundle validator and the
-  runtime supervisor both pass the specifier through untouched, and Deno inside the user worker
-  then refuses it — `Relative import path "@mako-cloud/edge-sdk" not prefixed with / or ./ or
-  ../` — so the worker never boots and the deployment is not promoted. Nothing provides the
-  module to the worker (no import map, no vendored copy), and the only function the platform
-  deploys today imports nothing. Until that is fixed, `--functions` reports the refusal and
-  carries on, the live households spec skips, and the wire-mocked suite is what covers these
-  five routes.
+- A deployed function could not import `@mako-cloud/edge-sdk` at all (#10): the validator and
+  the supervisor passed the bare specifier through and Deno refused it, so the pattern the
+  documentation describes was unimplementable. The SDK now travels in the main worker's module
+  graph and is mapped per user worker by an inline import map. Nor did a release carry the main
+  worker (#23), so a host kept whichever supervisor Ansible had copied there; the release now
+  carries `runtime-main/` and the upgrade installs it.
 
 After every membership write the app refreshes its session — the new claim only arrives on a
 new token — and tells each replicated scope the epoch it now holds, so the person who just
 joined opens the household and the person who was removed has their local copy of it erased.
+
+## The scheduled functions
+
+Two functions run on their own, under their own service credentials, on schedules the
+bootstrap creates with `mako schedules`:
+
+| function | schedule | what it does |
+| -------- | -------- | ------------ |
+| `institution-sync` | every 15 minutes | asks a deterministic simulated institution for each connected account's statement and writes what is new, keyed by `(account, external_id)` so an overlapping window never doubles a transaction |
+| `nightly` | 02:00 UTC | files uncategorized transactions with the household's own rules, marks a synced transaction that repeats a manual one, proposes repeating charges it has not proposed before, and records the day's net worth |
+
+Everything the nightly job does is idempotent, and everything it does is reversible by the
+person: a category it chose records the `rule_id` that chose it and the transactions screen
+says *by &lt;rule&gt;*; a duplicate is annotated, never deleted; a detected recurrence is a
+`detected` document the household still confirms or dismisses; a snapshot is one document per
+household per day. A filing the person made is never overruled.
+
+It shares its engines with the application. `functions/shared/rules.ts` and
+`functions/shared/recurrences.ts` are the same code the browser runs, so a charge is filed the
+same way whether somebody clicked or the job woke up. A bundle is a directory and nothing
+outside it is uploaded, so `functions/nightly/shared` is a symlink — for the repository, `tsc`,
+and `node --test` — and the bootstrap stages real files in its place. Those modules therefore
+import nothing at all: the browser build wants `.js` specifiers, Deno wants `.ts`, and no
+single import satisfies both.
 
 ## What maps to what
 
@@ -259,6 +281,8 @@ joined opens the household and the person who was removed has their local copy o
 
 - `mako/` — the model, policies, and bucket the bootstrap publishes
 - `functions/households` — the edge function that owns membership
+- `functions/institution-sync`, `functions/nightly` — the scheduled functions
+- `functions/shared` — rules and recurrence detection, shared with the app, importing nothing
 - `scripts/` — `bootstrap.mjs`, `seed.mjs`, and the deterministic `demo-data.mjs`
 - `src/model` — document types and the RxDB schemas derived from `mako/collections.json`
 - `src/data` — transport, conflict handler, database, replication wiring, replicated scopes with

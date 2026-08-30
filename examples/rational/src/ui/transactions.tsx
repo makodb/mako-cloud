@@ -38,6 +38,7 @@ export function TransactionsScreen({
     session.collection("taxonomy")?.find({ selector: { kind: "tag" }, sort: [{ name: "asc" }] }) ??
       null,
   );
+  const rules = useQuery(session.collection("rules")?.find() ?? null);
   const all = useQuery(session.collection("transactions")?.find() ?? null);
   const [attaching, setAttaching] = useState<Transaction | null>(null);
   // A receipt outlives its transaction unless something removes it: the
@@ -55,6 +56,14 @@ export function TransactionsScreen({
   const [editing, setEditing] = useState<Transaction | "new" | null>(null);
   const categoryName = (id: string | undefined) =>
     id === undefined ? "" : (categories.find((category) => category.id === id)?.name ?? id);
+  /**
+   * Which rule filed a transaction. A category that appeared without anybody
+   * choosing it should say where it came from -- otherwise the household
+   * cannot tell an automatic filing from its own, and cannot find the rule to
+   * change when the filing is wrong.
+   */
+  const ruleName = (id: string | undefined) =>
+    id === undefined ? null : (rules.find((rule) => rule.id === id)?.name ?? "a deleted rule");
   const tagName = (id: string) => tags.find((tag) => tag.id === id)?.name ?? id;
   const accountName = (id: string) => accounts.find((account) => account.id === id)?.name ?? id;
   const total = sumAmounts(transactions);
@@ -184,6 +193,12 @@ export function TransactionsScreen({
               <td>{accountName(transaction.account_id)}</td>
               <td>
                 {transaction.splits.length > 0 ? "split" : categoryName(transaction.category_id)}
+                {transaction.splits.length > 0 || ruleName(transaction.rule_id) === null ? null : (
+                  <small className="muted" data-testid="filed-by">
+                    {" "}
+                    by {ruleName(transaction.rule_id)}
+                  </small>
+                )}
               </td>
               <td>
                 {transaction.tags.map((tagId) => (

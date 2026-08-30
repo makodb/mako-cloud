@@ -65,6 +65,10 @@ export function RulesScreen({
   const apply = async (rule: Rule) => {
     const pending = pendingRecategorization(rule, transactions);
     for (const transaction of pending) {
+      // Only stored transactions reach here, so each one has an id; the
+      // shared shape leaves it optional because a rule can also be tried
+      // against a row an import has not written yet.
+      if (transaction.id === undefined) continue;
       await app.writes?.updateTransaction(transaction.id, {
         category_id: rule.set_category_id ?? null,
         rule_id: rule.id,
@@ -118,34 +122,37 @@ export function RulesScreen({
               </td>
             </tr>
           ) : null}
-          {sortRules(rules).map((rule) => (
-            <tr key={rule.id} data-testid={`rule-${rule.id}`} data-name={rule.name}>
-              <td>{rule.priority}</td>
-              <th scope="row">{rule.name}</th>
-              <td data-testid="match-count">{countMatches(rule, transactions)}</td>
-              <td>{categoryName(rule.set_category_id)}</td>
-              <td data-testid="pending">{pendingRecategorization(rule, transactions).length}</td>
-              <td className="actions">
-                <button type="button" className="link" onClick={() => void apply(rule)}>
-                  Apply
-                </button>
-                <button
-                  type="button"
-                  className="link"
-                  onClick={() => void app.writes?.updateRule(rule.id, { enabled: !rule.enabled })}
-                >
-                  {rule.enabled ? "Disable" : "Enable"}
-                </button>
-                <button
-                  type="button"
-                  className="link"
-                  onClick={() => void app.writes?.deleteRule(rule.id)}
-                >
-                  Delete
-                </button>
-              </td>
-            </tr>
-          ))}
+          {sortRules(rules)
+            .map((sorted) => rules.find((rule) => rule.id === sorted.id))
+            .filter((rule): rule is Rule => rule !== undefined)
+            .map((rule) => (
+              <tr key={rule.id} data-testid={`rule-${rule.id}`} data-name={rule.name}>
+                <td>{rule.priority}</td>
+                <th scope="row">{rule.name}</th>
+                <td data-testid="match-count">{countMatches(rule, transactions)}</td>
+                <td>{categoryName(rule.set_category_id)}</td>
+                <td data-testid="pending">{pendingRecategorization(rule, transactions).length}</td>
+                <td className="actions">
+                  <button type="button" className="link" onClick={() => void apply(rule)}>
+                    Apply
+                  </button>
+                  <button
+                    type="button"
+                    className="link"
+                    onClick={() => void app.writes?.updateRule(rule.id, { enabled: !rule.enabled })}
+                  >
+                    {rule.enabled ? "Disable" : "Enable"}
+                  </button>
+                  <button
+                    type="button"
+                    className="link"
+                    onClick={() => void app.writes?.deleteRule(rule.id)}
+                  >
+                    Delete
+                  </button>
+                </td>
+              </tr>
+            ))}
         </tbody>
       </table>
 

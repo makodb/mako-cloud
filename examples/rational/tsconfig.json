@@ -14,5 +14,11 @@
       "path": "../../packages/rxdb-client/tsconfig.browser.json"
     }
   ],
-  "include": ["src/**/*.ts", "src/**/*.tsx", "mako/collections.json", "scripts/*.d.mts"]
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "functions/shared/*.ts",
+    "mako/collections.json",
+    "scripts/*.d.mts"
+  ]
 }

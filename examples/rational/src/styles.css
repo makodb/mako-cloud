@@ -422,3 +422,20 @@ ul.chips input {
   margin-left: auto;
   color: #5a6d65;
 }
+
+/* The net-worth history. A line with no axes: the numbers that matter are
+   spelled out underneath it, and the shape is what a glance is for. */
+.sparkline {
+  display: block;
+  width: 100%;
+  height: 4.5rem;
+  margin-bottom: 0.25rem;
+  background: #ffffff;
+  border: 1px solid #d8e0dc;
+  border-radius: 6px;
+}
+
+.sparkline polyline {
+  stroke: #2f7d5f;
+  vector-effect: non-scaling-stroke;
+}

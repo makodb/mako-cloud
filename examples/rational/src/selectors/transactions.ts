@@ -63,11 +63,4 @@ export function sumAmounts(transactions: readonly Transaction[]): number {
 }
 
 /** Description normalization shared by rules, dedupe, and recurrence detection. */
-export function normalizeDescription(description: string): string {
-  return description
-    .toLowerCase()
-    .replaceAll(/[0-9#*]+/gu, " ")
-    .replaceAll(/[^a-z ]+/gu, " ")
-    .replaceAll(/\s+/gu, " ")
-    .trim();
-}
+export { normalizeDescription } from "../../functions/shared/recurrences.js";
