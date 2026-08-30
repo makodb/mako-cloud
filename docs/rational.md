@@ -13,8 +13,8 @@ The first is to show that the platform is enough to build a product on. The
 second is to find out where it is not. Every gap Rational hits is recorded in
 [`examples/rational/PLATFORM-FINDINGS.md`](../examples/rational/PLATFORM-FINDINGS.md)
 as symptom → platform change → regression test, and is fixed **in the
-platform**, never worked around in the application. Thirty findings so far,
-all closed. Several were things no test could have found without a real
+platform**, never worked around in the application. Thirty-five findings so
+far, all closed. Several were things no test could have found without a real
 application asking for them:
 
 - A project's ordinary API URL emitted no CORS at all, so a browser
@@ -29,6 +29,12 @@ application asking for them:
 - A collection with more than one index could not be listed (#20), a function
   secret's value could never be corrected (#22), and a function could only
   ever be called at its bare name (#24).
+- A collection could not be walked at all (#33): a query with no predicate is
+  refused by design, and the one shape that can enumerate — a range over an
+  index's leading field — was refused too, so a scheduled job could read only
+  documents whose ids it already knew.
+- The scheduler's headers identified a run but authenticated nothing (#32),
+  while the documentation told a function to act on them.
 
 ## What Rational maps onto
 
