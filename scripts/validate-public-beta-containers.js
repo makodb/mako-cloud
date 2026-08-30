@@ -48,6 +48,27 @@ for (const pin of pins.images) {
       source.includes("--web.listen-address=127.0.0.1:9090\n"),
       "host-networked Prometheus is not bound to loopback",
     );
+  } else if (pin.component === "edge-runtime") {
+    // The runtime is the one container that has to reach the host's loopback:
+    // the platform API it hands every worker as MAKO_API_URL binds there. On
+    // the private bridge `host.containers.internal` is the bridge gateway,
+    // where nothing listens, so every SDK call a deployed function made was
+    // refused -- and this assertion, requiring the bridge, is what held that
+    // in place. What replaces it must still reach nothing beyond the machine.
+    assert(
+      source.includes(
+        "Network=slirp4netns:allow_host_loopback=true,outbound_addr=127.0.0.1,enable_ipv6=false\n",
+      ),
+      "the edge runtime cannot reach the platform API, or is not confined to this machine",
+    );
+    assert(
+      source.includes("--add-host=host.containers.internal:10.0.2.2"),
+      "the edge runtime's API hostname does not name the host of its own network",
+    );
+    assert(
+      source.includes("Environment=MAKO_API_URL=http://host.containers.internal:8080\n"),
+      "the edge runtime is given an API origin its workers' SDK would refuse",
+    );
   } else {
     assert(
       source.includes("Network=mako-cloud.network\n"),
