@@ -365,6 +365,37 @@ filter: resuming one under a different filter is refused rather than silently sk
 change the other filter passed over. Changing an open database's filter therefore means a new
 replication identifier and a fresh local store, the same as changing its collection.
 
+## One stream for many collections
+
+A browser opens six connections to one host. An application with a dozen collections therefore
+cannot have a live stream each: the later streams queue behind the earlier ones, and the pulls and
+pushes queue behind those, so the application looks connected and syncs nothing.
+`MakoLiveStreamGroup` opens one connection for every collection it is given:
+
+```ts
+const group = createMakoLiveStreamGroup(configs, auth, { onResyncReason });
+for (const config of configs) {
+  await replicateRxCollection({
+    collection: collections[config.collectionId],
+    replicationIdentifier,
+    pull: { ...createMakoPullOptions(config, auth), stream$: group.stream$(config.collectionId) },
+    push: createMakoPushOptions(config, auth),
+  });
+}
+```
+
+Every collection on one connection must belong to one environment, because the connection is
+authenticated and routed as that environment's — the group refuses a configuration that mixes
+them. Each collection still keeps its own policy, checkpoint, cursor, and filter; sharing a
+connection changes nothing about what a collection receives. Every event names the collection it
+belongs to, and a reconnect sends each collection's own cursor back: one `Last-Event-ID` could
+only speak for whichever event happened to be last, leaving every other collection resuming from a
+position it never reached.
+
+A collection whose events outrun the buffer resyncs on its own, and the connection stays up for
+the rest. A frame the client cannot make sense of — unparseable, or naming no collection — is the
+connection itself being untrustworthy, so every collection resyncs and it reconnects.
+
 ## Conflict handling
 
 Mako follows RxDB's assumed-master-state protocol and returns readable master states as conflicts.

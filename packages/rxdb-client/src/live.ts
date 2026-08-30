@@ -296,11 +296,11 @@ function streamUrl(
 }
 
 /** A failure the service refused to have repeated: reconnecting cannot fix it. */
-function isTerminalError(error: unknown): boolean {
+export function isTerminalError(error: unknown): boolean {
   return error instanceof MakoReplicationError && !error.retryable;
 }
 
-function isLiveEvent(value: unknown): value is MakoLiveStreamEvent {
+export function isLiveEvent(value: unknown): value is MakoLiveStreamEvent {
   if (typeof value !== "object" || value === null) {
     return false;
   }
@@ -347,17 +347,17 @@ function isDeletedDocument(value: unknown): boolean {
   );
 }
 
-function boundedInteger(value: number, minimum: number, maximum: number): number {
+export function boundedInteger(value: number, minimum: number, maximum: number): number {
   if (!Number.isSafeInteger(value) || value < minimum || value > maximum) {
     throw new TypeError(`value must be an integer between ${minimum} and ${maximum}`);
   }
   return value;
 }
 
-function wait(milliseconds: number): Promise<void> {
+export function wait(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
-function ignore(): void {
+export function ignore(): void {
   // Intentionally empty: see MakoLivePullStream.#advance.
 }

@@ -15,7 +15,10 @@ export const EXCLUDED_PATH_PATTERNS: readonly RegExp[] = [
   /\/environments\/\{environmentId\}\/auth\//u,
   /\/collections\/\{collectionId\}\/documents(?:\/|$)/u,
   /\/environments\/\{environmentId\}\/service\//u,
+  // Replication, per collection and for a whole environment at once: what an
+  // RxDB client calls with a session, never something a developer runs.
   /\/collections\/\{collectionId\}\/replication\//u,
+  /\/environments\/\{environmentId\}\/replication\//u,
   // Object upload, download, and listing: what an application does with a session.
   /\/environments\/\{environmentId\}\/storage\//u,
 ];

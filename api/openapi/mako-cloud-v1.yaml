@@ -3239,6 +3239,46 @@ paths:
                 $ref: "#/components/schemas/PushResponse"
         default:
           $ref: "#/components/responses/ApiError"
+  /v1/projects/{projectId}/environments/{environmentId}/replication/stream:
+    post:
+      tags: [Replication]
+      operationId: streamEnvironmentReplication
+      summary: One live replication stream carrying several collections
+      description: |
+        A browser opens six connections to one host, so an application with a
+        dozen collections cannot have a stream each: the later streams queue
+        behind the earlier ones and the pulls and pushes queue behind those,
+        which looks like a connected client that never syncs. This carries
+        between 1 and 24 collections on one connection.
+
+        Every collection is authorized, metered, and audited on its own, keeps
+        its own policy, checkpoint, and cursor, and every event carries a
+        `collection` field naming which one it belongs to. A reconnect sends
+        each collection's own cursor back: one `Last-Event-ID` could only ever
+        speak for whichever event happened to be last, leaving every other
+        collection resuming from a position it never reached.
+      security:
+        - applicationBearer: []
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/EnvironmentId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EnvironmentStreamRequest"
+      responses:
+        "200":
+          description: SSE stream of document batches, heartbeats, and resync events, each naming its collection
+          content:
+            text/event-stream:
+              schema:
+                type: string
+              x-sse-event-schema:
+                $ref: "#/components/schemas/LiveStreamEvent"
+        default:
+          $ref: "#/components/responses/ApiError"
   /v1/projects/{projectId}/environments/{environmentId}/collections/{collectionId}/replication/stream:
     get:
       tags: [Replication]
@@ -9789,6 +9829,38 @@ components:
           oneOf:
             - $ref: "#/components/schemas/ReplicationFilter"
             - type: "null"
+    EnvironmentStreamRequest:
+      type: object
+      additionalProperties: false
+      required: [collections]
+      properties:
+        collections:
+          type: array
+          minItems: 1
+          maxItems: 24
+          items:
+            type: object
+            additionalProperties: false
+            required: [collectionId, schemaVersion]
+            properties:
+              collectionId:
+                $ref: "#/components/schemas/CollectionId"
+              schemaVersion:
+                type: integer
+                minimum: 1
+              checkpoint:
+                oneOf:
+                  - $ref: "#/components/schemas/Checkpoint"
+                  - type: "null"
+              cursor:
+                oneOf:
+                  - $ref: "#/components/schemas/StreamCursor"
+                  - type: "null"
+                description: This collection's resume cursor; mutually exclusive with its checkpoint.
+              filter:
+                oneOf:
+                  - $ref: "#/components/schemas/ReplicationFilter"
+                  - type: "null"
     ReplicationFilter:
       type: object
       additionalProperties: false

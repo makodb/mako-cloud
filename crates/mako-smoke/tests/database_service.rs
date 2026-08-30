@@ -10,14 +10,14 @@
 //! application user holding nothing but a public project key and a session.
 
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     thread::sleep,
     time::{Duration, Instant},
 };
 
 use mako_smoke::{
-    ServiceProcess, await_readiness, binary_directory, free_ports, mint_developer_session, request,
-    run_bootstrap, scratch_root, service_environment, start_service,
+    ServiceProcess, await_readiness, binary_directory, free_ports, mint_developer_session,
+    read_sse_frames, request, run_bootstrap, scratch_root, service_environment, start_service,
 };
 use serde_json::{Value, json};
 
@@ -25,6 +25,7 @@ const DEVELOPER_ID: &str = "dev_localboot";
 const DEVELOPER_EMAIL: &str = "developer@local.test";
 const ORGANIZATION_ID: &str = "org_localboot";
 const COLLECTION_ID: &str = "notes";
+const SECOND_COLLECTION_ID: &str = "reminders";
 const ALICE: &str = "alice@local.test";
 const BOB: &str = "bob@local.test";
 const PASSWORD: &str = "ApplicationUserPass1!";
@@ -325,6 +326,78 @@ fn an_application_user_authenticates_reads_writes_and_queries_their_own_data() {
         !(200..300).contains(&status),
         "a deleted document is still readable"
     );
+
+    // --- One live stream carries every collection --------------------------
+    //
+    // A browser opens six connections to one host, so an application with a
+    // dozen collections cannot have a stream each: the later streams queue
+    // behind the earlier ones and the pulls and pushes queue behind those,
+    // which looks like a connected client that never syncs. One connection
+    // carries them all, each event naming the collection it belongs to.
+    let stream_path = format!("{scope}/replication/stream");
+    let mut streaming = alice_auth.clone();
+    streaming.insert("content-type".to_owned(), "application/json".to_owned());
+    let (status, frames) = read_sse_frames(
+        data,
+        "POST",
+        &stream_path,
+        &streaming,
+        Some(&json!({
+            "collections": [
+                { "collectionId": COLLECTION_ID, "schemaVersion": 1 },
+                { "collectionId": SECOND_COLLECTION_ID, "schemaVersion": 1 },
+            ]
+        })),
+        2,
+        Duration::from_secs(20),
+    )
+    .expect("the multiplexed stream answers");
+    assert_eq!(
+        status, 200,
+        "the multiplexed stream was refused: {frames:?}"
+    );
+    let named: BTreeSet<String> = frames
+        .iter()
+        .filter_map(|frame| {
+            let data = frame
+                .lines()
+                .find_map(|line| line.strip_prefix("data:"))?
+                .trim();
+            let value: Value = serde_json::from_str(data).ok()?;
+            value["collection"].as_str().map(str::to_owned)
+        })
+        .collect();
+    assert!(
+        named.contains(COLLECTION_ID) && named.contains(SECOND_COLLECTION_ID),
+        "one connection carries both collections, each event naming its own: {frames:?}"
+    );
+
+    // The request contract is checked before anything streams: a collection
+    // this caller cannot reach, or one named twice, is refused rather than
+    // quietly dropped from a stream the client believes is complete.
+    for body in [
+        json!({ "collections": [] }),
+        json!({ "collections": [
+            { "collectionId": COLLECTION_ID, "schemaVersion": 1 },
+            { "collectionId": COLLECTION_ID, "schemaVersion": 1 },
+        ] }),
+        json!({ "collections": [{ "collectionId": "absent", "schemaVersion": 1 }] }),
+    ] {
+        let (status, _) = read_sse_frames(
+            data,
+            "POST",
+            &stream_path,
+            &streaming,
+            Some(&body),
+            1,
+            Duration::from_secs(5),
+        )
+        .expect("the stream answers");
+        assert!(
+            !(200..300).contains(&status),
+            "an invalid stream request must be refused, got {status} for {body}"
+        );
+    }
 
     // --- Signing out ends the session -------------------------------------
 
@@ -637,6 +710,65 @@ fn provision(services: &Services) -> (String, String) {
         None,
     );
     assert_eq!(status, 200, "activating the policy failed: {body}");
+
+    // A second collection, because one stream per collection is what a
+    // browser cannot afford: six connections to a host, and an application
+    // has a dozen collections. Two is enough to prove one connection carries
+    // them and every event says which it belongs to.
+    created(
+        control,
+        &format!("{scope}/collections"),
+        &manage("second-collection"),
+        Some(&json!({
+            "id": SECOND_COLLECTION_ID,
+            "schemaVersion": 1,
+            "jsonSchema": {
+                "type": "object",
+                "required": ["id", "owner_id", "title", "updated_at"],
+                "properties": {
+                    "id": { "type": "string" },
+                    "owner_id": { "type": "string" },
+                    "title": { "type": "string" },
+                    "updated_at": { "type": "integer" },
+                },
+                "additionalProperties": true,
+            },
+            "primaryKey": { "kind": "field", "field": "id" },
+        })),
+    );
+    created(
+        control,
+        &format!("{scope}/collections/{SECOND_COLLECTION_ID}/policies"),
+        &manage("second-policy"),
+        Some(&json!({
+            "version": 1,
+            "rules": [
+                {
+                    "id": "owner-creates",
+                    "effect": "allow",
+                    "operations": ["create"],
+                    "expression": "new.owner_id == identity.user_id",
+                },
+                {
+                    "id": "owner-uses",
+                    "effect": "allow",
+                    "operations": ["read", "update", "delete"],
+                    "expression": "old.owner_id == identity.user_id",
+                },
+            ],
+        })),
+    );
+    let (status, body) = request(
+        control,
+        "POST",
+        &format!("{scope}/collections/{SECOND_COLLECTION_ID}/policies/1/actions/activate"),
+        &manage("second-activate"),
+        None,
+    );
+    assert_eq!(
+        status, 200,
+        "activating the second collection's policy failed: {body}"
+    );
 
     (scope, key)
 }

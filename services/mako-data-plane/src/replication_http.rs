@@ -29,6 +29,7 @@ use mako_sync::{
     PushRequest, PushService, ReplicationFilter, ReplicationTokenCodec, ReplicationTokenKey,
     ResyncReason, SseFrame,
 };
+use serde::Deserialize;
 
 use crate::{
     DataPlaneGraph,
@@ -71,8 +72,15 @@ pub fn add_replication_routes(
         router,
         HttpMethod::Get,
         "/v1/projects/{projectId}/environments/{environmentId}/collections/{collectionId}/replication/stream",
-        graph,
+        Arc::clone(&graph),
         handle_stream,
+    )?;
+    add_route(
+        router,
+        HttpMethod::Post,
+        "/v1/projects/{projectId}/environments/{environmentId}/replication/stream",
+        graph,
+        handle_multi_stream,
     )?;
     Ok(())
 }
@@ -288,6 +296,314 @@ fn handle_stream(
                 internal_from_id(request.request_id(), "replication stream is unavailable")
             })
     })
+}
+
+/// How many collections one connection may carry. A browser opens six
+/// connections to one host, so the limit that matters is not this one -- it
+/// is that without a multiplexed stream an application with a dozen
+/// collections cannot stream even half of them, and its pulls and pushes
+/// queue behind the streams it did open.
+const MAX_STREAMED_COLLECTIONS: usize = 24;
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct MultiStreamRequestWire {
+    collections: Vec<MultiStreamCollectionWire>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct MultiStreamCollectionWire {
+    collection_id: String,
+    schema_version: u64,
+    #[serde(default)]
+    checkpoint: Option<OpaqueCheckpoint>,
+    #[serde(default)]
+    cursor: Option<OpaqueStreamCursor>,
+    #[serde(default)]
+    filter: Option<ReplicationFilter>,
+}
+
+/// One live stream over several collections.
+///
+/// Each collection keeps its own session, its own policy, and its own cursor
+/// -- nothing about the multiplexing changes what a collection is allowed to
+/// send. Every event names its collection, and a reconnect sends each
+/// collection's own cursor back, because one `Last-Event-ID` could only ever
+/// speak for whichever event happened to be last.
+fn handle_multi_stream(
+    graph: &Arc<DataPlaneGraph>,
+    request: &HttpRequest,
+) -> Result<HttpResponse, HttpApiError> {
+    require_json(request)?;
+    let tenant = tenant_for(graph, request)?;
+    let wire: MultiStreamRequestWire = parse_json(request)?;
+    if wire.collections.is_empty() || wire.collections.len() > MAX_STREAMED_COLLECTIONS {
+        return Err(invalid(
+            request,
+            "a replication stream carries between 1 and 24 collections",
+        ));
+    }
+    let mut seen = std::collections::BTreeSet::new();
+    let mut requested = Vec::with_capacity(wire.collections.len());
+    for entry in wire.collections {
+        let collection_id = CollectionId::parse(&entry.collection_id)
+            .map_err(|_| invalid(request, "collection id is invalid"))?;
+        if !seen.insert(collection_id.as_str().to_owned()) {
+            return Err(invalid(request, "a collection is named twice"));
+        }
+        let live = LiveStreamRequest {
+            schema_version: entry.schema_version,
+            checkpoint: entry.checkpoint,
+            cursor: entry.cursor,
+            filter: entry.filter,
+        };
+        live.validate()
+            .map_err(|_| invalid(request, "replication stream request is invalid"))?;
+        requested.push((CollectionScope::new(tenant.clone(), collection_id), live));
+    }
+    let now = now_unix_seconds(request.request_id())?;
+    block_on(async {
+        let mut opened = Vec::with_capacity(requested.len());
+        for (scope, live) in requested {
+            // Every collection is authorized, metered, and audited on its
+            // own: sharing a connection shares nothing else.
+            let authorized = authorize(
+                graph,
+                request,
+                &tenant,
+                scope.collection_id(),
+                ReplicationOperation::Live,
+                stream_usage_bytes(request),
+                now,
+            )
+            .await?;
+            let scoped = graph
+                .document_engine()
+                .scope_collection(&tenant, scope.clone())
+                .map_err(|_| invalid(request, "collection scope is invalid"))?;
+            let metadata = active_collection_metadata(request, &scoped).await?;
+            let policy = active_policy(graph, request, &tenant, &scope, &scoped).await?;
+            {
+                let authorizer = authorized.policy_read_authorizer(policy.as_ref());
+                LiveStreamSession::open(
+                    &scoped,
+                    ReplicationTokenCodec::new(graph.replication_token_key()),
+                    authorized.sync_context().clone(),
+                    &authorizer,
+                    metadata.schema_version(),
+                    &live,
+                    live_limits(),
+                )
+                .await
+                .map_err(|error| map_live_error(request, error))?;
+            }
+            append_replication_audit(
+                graph,
+                &tenant,
+                &authorized,
+                scope.collection_id(),
+                "replication_stream_open",
+                "policy_filtered_stream",
+                request,
+                now,
+            )
+            .await?;
+            opened.push(StreamedCollection {
+                collection_id: scope.collection_id().as_str().to_owned(),
+                scoped,
+                authorized,
+                policy,
+                required_schema_version: metadata.schema_version(),
+                request: live,
+            });
+        }
+
+        let identity = graph
+            .identity_store(&tenant, &tenant)
+            .map_err(|_| unavailable(request, "identity authority is unavailable"))?;
+        let epochs = graph
+            .authorization_epoch_store(&tenant, &tenant)
+            .map_err(|_| unavailable(request, "authorization authority is unavailable"))?;
+        let subject = SubjectId::parse(
+            opened
+                .first()
+                .expect("at least one collection was requested")
+                .authorized
+                .sync_context()
+                .user_id()
+                .as_str(),
+        )
+        .map_err(|_| unavailable(request, "authorization context is unavailable"))?;
+        let token_key = graph.replication_token_key().clone();
+        let body = spawn_streaming_body(LIVE_TRANSPORT_BUFFER_CHUNKS, move |sender| {
+            run_multi_live_stream(
+                sender,
+                opened,
+                token_key,
+                identity,
+                epochs,
+                subject,
+                live_limits(),
+            );
+        })
+        .map_err(|_| internal_from_id(request.request_id(), "replication stream is unavailable"))?;
+        HttpResponse::stream(200, "text/event-stream; charset=utf-8", body)
+            .with_header("X-Accel-Buffering", "no")
+            .map_err(|_| {
+                internal_from_id(request.request_id(), "replication stream is unavailable")
+            })
+    })
+}
+
+/// One collection's share of a multiplexed stream, before its session exists.
+struct StreamedCollection {
+    collection_id: String,
+    scoped: ScopedCollectionEngine,
+    authorized: AuthorizedReplicationRequest,
+    policy: Option<CompiledPolicySet>,
+    required_schema_version: SchemaVersion,
+    request: LiveStreamRequest,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn run_multi_live_stream(
+    sender: StreamSender,
+    opened: Vec<StreamedCollection>,
+    token_key: ReplicationTokenKey,
+    identity: IdentityStore,
+    epochs: mako_policy::AuthorizationEpochStore,
+    subject: SubjectId,
+    limits: LiveStreamLimits,
+) {
+    // The authorizers borrow the policies, and the sessions borrow the
+    // authorizers and the scoped engines, so each layer is built whole before
+    // the next one and none of them moves afterwards.
+    let authorizers: Vec<_> = opened
+        .iter()
+        .map(|collection| {
+            collection
+                .authorized
+                .policy_read_authorizer(collection.policy.as_ref())
+        })
+        .collect();
+    let mut sessions = Vec::with_capacity(opened.len());
+    for (collection, authorizer) in opened.iter().zip(authorizers.iter()) {
+        let Ok(session) = block_on(LiveStreamSession::open(
+            &collection.scoped,
+            ReplicationTokenCodec::new(&token_key),
+            collection.authorized.sync_context().clone(),
+            authorizer,
+            collection.required_schema_version,
+            &collection.request,
+            limits,
+        )) else {
+            return;
+        };
+        sessions.push(session);
+    }
+    let context = opened
+        .first()
+        .expect("at least one collection was requested")
+        .authorized
+        .sync_context();
+    let user_id = session_user_id(context.user_id());
+    let session_id = context.session_id().clone();
+
+    let mut pending: VecDeque<PendingFrame> = VecDeque::new();
+    for (collection, session) in opened.iter().zip(sessions.iter_mut()) {
+        if block_on(session.heartbeat()).is_err() {
+            return;
+        }
+        pending.extend(collection_frames(
+            &collection.collection_id,
+            session.drain_events(),
+        ));
+    }
+    let mut last_heartbeat = Instant::now();
+
+    loop {
+        if sender.is_disconnected() {
+            return;
+        }
+        if let Some(frame) = pending.front().cloned() {
+            match sender.try_send(frame.bytes) {
+                Ok(()) => {
+                    pending.pop_front();
+                    // A resync ends the whole connection: the collection that
+                    // asked for it cannot continue, and a client that has to
+                    // resync one collection reopens the stream anyway.
+                    if frame.terminal {
+                        return;
+                    }
+                }
+                Err(StreamSendError::Closed) => return,
+                Err(StreamSendError::Full) => {
+                    if !pending.iter().any(|queued| queued.terminal) {
+                        pending.clear();
+                        pending.push_back(resync_frame(ResyncReason::StreamGap));
+                    }
+                    thread::sleep(LIVE_POLL_INTERVAL);
+                }
+            }
+            continue;
+        }
+
+        let Ok(now) = system_now() else {
+            return;
+        };
+        if !matches!(
+            block_on(identity.session_is_active(&user_id, &session_id, now)),
+            Ok(true)
+        ) {
+            return;
+        }
+        let Ok(current) = block_on(epochs.epochs_for(&subject)) else {
+            return;
+        };
+        let observed = AccessAuthorizationEpochs {
+            environment: current.environment().get(),
+            user: current.user().get(),
+        };
+        let heartbeat_due = last_heartbeat.elapsed() >= LIVE_HEARTBEAT_INTERVAL;
+        for (collection, session) in opened.iter().zip(sessions.iter_mut()) {
+            session.observe_authorization_epochs(observed);
+            if block_on(session.poll()).is_err() {
+                return;
+            }
+            if heartbeat_due && block_on(session.heartbeat()).is_err() {
+                return;
+            }
+            pending.extend(collection_frames(
+                &collection.collection_id,
+                session.drain_events(),
+            ));
+        }
+        if heartbeat_due {
+            last_heartbeat = Instant::now();
+        }
+        if pending.is_empty() {
+            thread::sleep(LIVE_POLL_INTERVAL);
+        }
+    }
+}
+
+fn collection_frames(
+    collection_id: &str,
+    events: impl IntoIterator<Item = LiveStreamEvent>,
+) -> VecDeque<PendingFrame> {
+    events
+        .into_iter()
+        .filter_map(|event| {
+            let terminal = matches!(event, LiveStreamEvent::Resync { .. });
+            SseFrame::from_collection_event(collection_id, &event)
+                .ok()
+                .map(|frame| PendingFrame {
+                    bytes: frame.as_str().as_bytes().to_vec(),
+                    terminal,
+                })
+        })
+        .collect()
 }
 
 #[allow(clippy::too_many_arguments)]

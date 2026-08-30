@@ -1659,6 +1659,37 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/projects/{projectId}/environments/{environmentId}/replication/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * One live replication stream carrying several collections
+         * @description A browser opens six connections to one host, so an application with a
+         *     dozen collections cannot have a stream each: the later streams queue
+         *     behind the earlier ones and the pulls and pushes queue behind those,
+         *     which looks like a connected client that never syncs. This carries
+         *     between 1 and 24 collections on one connection.
+         *
+         *     Every collection is authorized, metered, and audited on its own, keeps
+         *     its own policy, checkpoint, and cursor, and every event carries a
+         *     `collection` field naming which one it belongs to. A reconnect sends
+         *     each collection's own cursor back: one `Last-Event-ID` could only ever
+         *     speak for whichever event happened to be last, leaving every other
+         *     collection resuming from a position it never reached.
+         */
+        post: operations["streamEnvironmentReplication"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/projects/{projectId}/environments/{environmentId}/collections/{collectionId}/replication/stream": {
         parameters: {
             query?: never;
@@ -5054,6 +5085,16 @@ export interface components {
             schemaVersion: number;
             batchSize: number;
             filter?: components["schemas"]["ReplicationFilter"] | null;
+        };
+        EnvironmentStreamRequest: {
+            collections: {
+                collectionId: components["schemas"]["CollectionId"];
+                schemaVersion: number;
+                checkpoint?: components["schemas"]["Checkpoint"] | null;
+                /** @description This collection's resume cursor; mutually exclusive with its checkpoint. */
+                cursor?: components["schemas"]["StreamCursor"] | null;
+                filter?: components["schemas"]["ReplicationFilter"] | null;
+            }[];
         };
         /** @description Narrows a replication scope to the documents whose field holds one value, applied **after** the policy: it can only narrow what the caller was already allowed to read, and nothing about it is trusted. A document that leaves the filter is delivered as a tombstone, exactly as one that leaves the policy's reach is, so the local database it left does not keep it. The checkpoint and stream cursor are bound to the filter: resuming one under a different filter is refused rather than silently skipping the changes the other filter passed over. */
         ReplicationFilter: {
@@ -9328,6 +9369,34 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PushResponse"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    streamEnvironmentReplication: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                environmentId: components["parameters"]["EnvironmentId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EnvironmentStreamRequest"];
+            };
+        };
+        responses: {
+            /** @description SSE stream of document batches, heartbeats, and resync events, each naming its collection */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
                 };
             };
             default: components["responses"]["ApiError"];

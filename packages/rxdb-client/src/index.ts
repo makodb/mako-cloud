@@ -86,6 +86,11 @@ export {
 } from "./config.js";
 
 export {
+  MakoLiveStreamGroup,
+  createMakoLiveStreamGroup,
+} from "./live-group.js";
+
+export {
   createMakoPullHandler,
   createMakoPullOptions,
   type MakoCheckpoint,

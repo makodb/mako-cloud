@@ -568,6 +568,142 @@ pub fn try_request_full(
     Ok((status, response_headers, response))
 }
 
+/// Read a server-sent-event stream until `wanted` frames have arrived or the
+/// deadline passes, then hang up.
+///
+/// The ordinary client reads a body to its end; an SSE body has no end, so a
+/// caller that wants to see what a stream sends needs to stop reading on its
+/// own terms. Returns the status and the frames, each the text between two
+/// blank lines.
+pub fn read_sse_frames(
+    port: u16,
+    method: &str,
+    path: &str,
+    headers: &BTreeMap<String, String>,
+    body: Option<&Value>,
+    wanted: usize,
+    deadline: Duration,
+) -> Result<(u16, Vec<String>), String> {
+    let mut stream = TcpStream::connect(("127.0.0.1", port)).map_err(|error| error.to_string())?;
+    stream
+        .set_read_timeout(Some(Duration::from_millis(500)))
+        .map_err(|error| error.to_string())?;
+    let payload = body
+        .map(std::string::ToString::to_string)
+        .unwrap_or_default();
+    let mut request = format!("{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n");
+    for (name, value) in headers {
+        request.push_str(&format!("{name}: {value}\r\n"));
+    }
+    request.push_str(&format!("content-length: {}\r\n", payload.len()));
+    request.push_str("connection: close\r\n\r\n");
+    request.push_str(&payload);
+    stream
+        .write_all(request.as_bytes())
+        .and_then(|()| stream.flush())
+        .map_err(|error| error.to_string())?;
+
+    let mut reader = BufReader::new(stream);
+    let mut status_line = String::new();
+    reader
+        .read_line(&mut status_line)
+        .map_err(|error| error.to_string())?;
+    let status: u16 = status_line
+        .split_whitespace()
+        .nth(1)
+        .and_then(|code| code.parse().ok())
+        .ok_or_else(|| format!("malformed status line: {status_line:?}"))?;
+    let mut chunked = false;
+    loop {
+        let mut header = String::new();
+        if reader
+            .read_line(&mut header)
+            .map_err(|error| error.to_string())?
+            == 0
+        {
+            break;
+        }
+        if header.trim().is_empty() {
+            break;
+        }
+        if let Some((name, value)) = header.split_once(':')
+            && name.trim().eq_ignore_ascii_case("transfer-encoding")
+            && value.trim().eq_ignore_ascii_case("chunked")
+        {
+            chunked = true;
+        }
+    }
+    if status != 200 {
+        // A refusal has an ordinary body, and the caller wants to see it: a
+        // stream that would not open is exactly the case where the message
+        // is the whole diagnosis.
+        let mut body = String::new();
+        if chunked {
+            while let Ok(Some(text)) = read_one_chunk(&mut reader) {
+                body.push_str(&text);
+            }
+        } else {
+            let _ = reader.read_to_string(&mut body);
+        }
+        return Ok((status, vec![body]));
+    }
+
+    let started = Instant::now();
+    let mut pending = String::new();
+    let mut frames = Vec::new();
+    while frames.len() < wanted && started.elapsed() < deadline {
+        let text = if chunked {
+            match read_one_chunk(&mut reader) {
+                Ok(Some(text)) => text,
+                Ok(None) => break,
+                Err(_) => continue,
+            }
+        } else {
+            let mut buffer = [0_u8; 4096];
+            match reader.read(&mut buffer) {
+                Ok(0) => break,
+                Ok(read) => String::from_utf8_lossy(&buffer[..read]).into_owned(),
+                Err(_) => continue,
+            }
+        };
+        pending.push_str(&text.replace("\r\n", "\n"));
+        while let Some(boundary) = pending.find("\n\n") {
+            let frame = pending[..boundary].to_owned();
+            pending = pending[boundary + 2..].to_owned();
+            if !frame.trim().is_empty() {
+                frames.push(frame);
+            }
+        }
+    }
+    Ok((status, frames))
+}
+
+/// One chunk of a chunked body, or `None` at the terminating zero chunk.
+fn read_one_chunk(reader: &mut BufReader<TcpStream>) -> Result<Option<String>, String> {
+    let mut header = String::new();
+    reader
+        .read_line(&mut header)
+        .map_err(|error| error.to_string())?;
+    let size_text = header.trim_end().split(';').next().unwrap_or("").trim();
+    if size_text.is_empty() {
+        return Err(format!("malformed chunk header: {header:?}"));
+    }
+    let size = usize::from_str_radix(size_text, 16)
+        .map_err(|_| format!("malformed chunk size: {size_text:?}"))?;
+    if size == 0 {
+        return Ok(None);
+    }
+    let mut chunk = vec![0_u8; size];
+    reader
+        .read_exact(&mut chunk)
+        .map_err(|error| error.to_string())?;
+    let mut terminator = [0_u8; 2];
+    reader
+        .read_exact(&mut terminator)
+        .map_err(|error| error.to_string())?;
+    Ok(Some(String::from_utf8_lossy(&chunk).into_owned()))
+}
+
 /// Decode a chunked body into its payload.
 fn read_chunked(reader: &mut BufReader<TcpStream>) -> Result<String, String> {
     let mut body = Vec::new();

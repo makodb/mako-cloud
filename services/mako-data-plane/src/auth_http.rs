@@ -585,7 +585,7 @@ pub(crate) async fn append_audit_with_details(
         .map_err(|_| internal_from_id(request_id, "audit context is invalid"))?;
     let correlation = CorrelationId::parse(request_id)
         .map_err(|_| internal_from_id(request_id, "audit context is invalid"))?;
-    let event_id = audit_event_id(action, request_id);
+    let event_id = audit_event_id(action, resource_kind, resource_id, request_id);
     let application_user_id = match &actor {
         ActorIdentity::ApplicationUser { actor_id, .. } => Some(actor_id.clone()),
         _ => None,
@@ -656,11 +656,27 @@ fn authority_organization_id(tenant: &TenantScope) -> String {
     )
 }
 
-fn audit_event_id(action: &str, request_id: &str) -> String {
+/// The identity of one audited event.
+///
+/// The resource is part of it because one request may audit more than one:
+/// a live stream carrying several collections opens each of them, and each
+/// opening is its own event about its own collection. Deriving the id from
+/// the action and the request alone made the second look to the audit store
+/// like the first being written again with a different body, which it
+/// refused -- correctly -- and the stream failed with `audit write is
+/// unavailable`. A genuine retry of the same action on the same resource
+/// under the same request id still coalesces, which is what the id is for.
+fn audit_event_id(
+    action: &str,
+    resource_kind: &str,
+    resource_id: &str,
+    request_id: &str,
+) -> String {
     let mut hasher = blake3::Hasher::new();
-    hasher.update(action.as_bytes());
-    hasher.update(&[0]);
-    hasher.update(request_id.as_bytes());
+    for part in [action, resource_kind, resource_id, request_id] {
+        hasher.update(part.as_bytes());
+        hasher.update(&[0]);
+    }
     format!("evt_{}", &hasher.finalize().to_hex()[..32])
 }
 

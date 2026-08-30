@@ -1,5 +1,7 @@
 use std::{collections::VecDeque, error::Error, fmt, num::NonZeroUsize};
 
+use serde_json::Value;
+
 use mako_documents::{
     ChangeLogError, CheckpointStatus, DocumentReadAuthorizer, ReadAuthorizationPath,
     RetentionError, SchemaVersion, ScopedCollectionEngine,
@@ -251,13 +253,49 @@ pub struct SseFrame(String);
 
 impl SseFrame {
     pub fn from_event(event: &LiveStreamEvent) -> Result<Self, LiveStreamError> {
+        Self::encode(event, None)
+    }
+
+    /// The same frame, naming which collection it belongs to.
+    ///
+    /// A browser opens six connections to one host, so a page with a dozen
+    /// collections cannot have a stream each -- the later ones queue behind
+    /// the earlier, and the pulls and pushes queue behind those. One stream
+    /// carries them all, and every event says which collection it is for.
+    /// The `id` stays that collection's own cursor: a multiplexed stream is
+    /// resumed by sending each collection's cursor back, not by one
+    /// `Last-Event-ID` that could only speak for whichever event came last.
+    pub fn from_collection_event(
+        collection_id: &str,
+        event: &LiveStreamEvent,
+    ) -> Result<Self, LiveStreamError> {
+        Self::encode(event, Some(collection_id))
+    }
+
+    fn encode(
+        event: &LiveStreamEvent,
+        collection_id: Option<&str>,
+    ) -> Result<Self, LiveStreamError> {
         let (name, id) = match event {
             LiveStreamEvent::Documents { cursor, .. } => ("documents", Some(cursor.as_str())),
             LiveStreamEvent::Checkpoint { cursor, .. } => ("checkpoint", Some(cursor.as_str())),
             LiveStreamEvent::Heartbeat { cursor } => ("heartbeat", Some(cursor.as_str())),
             LiveStreamEvent::Resync { .. } => ("resync", None),
         };
-        let data = serde_json::to_string(event)?;
+        let data = match collection_id {
+            None => serde_json::to_string(event)?,
+            Some(collection_id) => {
+                let mut value = serde_json::to_value(event)?;
+                let object = value
+                    .as_object_mut()
+                    .ok_or(LiveStreamError::InvalidLimits)?;
+                object.insert(
+                    "collection".to_owned(),
+                    Value::String(collection_id.to_owned()),
+                );
+                serde_json::to_string(&value)?
+            }
+        };
         let id = id.map_or_else(String::new, |id| format!("id: {id}\n"));
         Ok(Self(format!("event: {name}\n{id}data: {data}\n\n")))
     }
