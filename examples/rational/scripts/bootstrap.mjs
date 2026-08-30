@@ -67,6 +67,8 @@ const DEFAULTS = {
   functions: false,
   "functions-endpoint": process.env.MAKO_FUNCTIONS_ENDPOINT ?? "http://127.0.0.1:8082",
   "function-name": "households",
+  "sync-function-name": "institution-sync",
+  "sync-cron": "*/15 * * * *",
   "config-dir": process.env.MAKO_CONFIG_DIR,
 };
 
@@ -119,7 +121,7 @@ const cliEnvironment = {
 };
 
 /** Run `mako …` and return {status, stdout, stderr}; never throws. */
-function mako(args) {
+function mako(args, input) {
   const executable = options.cli;
   const command = executable.endsWith(".js") ? "node" : executable;
   const commandArgs = executable.endsWith(".js") ? [executable, ...args] : args;
@@ -127,14 +129,15 @@ function mako(args) {
     env: cliEnvironment,
     encoding: "utf8",
     maxBuffer: 64 * 1024 * 1024,
+    ...(input === undefined ? {} : { input }),
   });
   if (result.error) fail(`could not run ${executable}: ${result.error.message}`);
   return { status: result.status ?? -1, stdout: result.stdout ?? "", stderr: result.stderr ?? "" };
 }
 
 /** Run a command with --json and parse its output; exit codes in `allow` return null. */
-function makoJson(args, allow = []) {
-  const run = mako([...args, "--json"]);
+function makoJson(args, allow = [], input) {
+  const run = mako([...args, "--json"], input);
   if (run.status !== 0) {
     if (allow.includes(run.status)) return null;
     fail(`mako ${args.join(" ")} failed (exit ${run.status}): ${run.stderr.trim()}`);
@@ -474,8 +477,109 @@ function deployHouseholdsFunction() {
   return options["functions-endpoint"];
 }
 
+/**
+ * Deploy `functions/institution-sync` and put it on a schedule.
+ *
+ * The credential is scoped to what a sync writes and nothing else: it reads
+ * and updates connections, and creates and updates transactions. It never
+ * touches `users`, because a sync has no business changing anybody's claims.
+ */
+function deploySyncFunction() {
+  const functionName = options["sync-function-name"];
+  const credentialId = `sk_rational_sync_${Date.now().toString(36)}`;
+  log(`issuing the ${functionName} service credential ${credentialId}`);
+  const issued = makoJson([
+    "keys",
+    "service",
+    "create",
+    "--id",
+    credentialId,
+    "--collection",
+    "connections",
+    "--collection",
+    "transactions",
+    "--operation",
+    "read",
+    "--operation",
+    "create",
+    "--operation",
+    "update",
+    ...tenant,
+  ]);
+  const secretName = "SYNC_SERVICE_KEY";
+  const existing = makoJson(["functions", "secrets", "get", secretName, ...tenant], [4]);
+  if (existing === null) {
+    log(`installing ${secretName} with the credential's value`);
+    makoJson(["functions", "secrets", "create", secretName, "--value", issued.secret, ...tenant]);
+  } else {
+    log(`rotating ${secretName} to the new credential`);
+    makoJson([
+      "functions",
+      "secrets",
+      "rotate",
+      secretName,
+      "--value",
+      issued.secret,
+      "--yes",
+      ...tenant,
+    ]);
+  }
+  const source = join(scratch, "sync-function");
+  cpSync(join(exampleRoot, "functions", "institution-sync"), source, { recursive: true });
+  const deployed = mako([
+    "functions",
+    "deploy",
+    source,
+    "--name",
+    functionName,
+    "--create",
+    "--region",
+    options.region,
+    "--secret",
+    secretName,
+    "--yes",
+    ...tenant,
+    "--json",
+  ]);
+  if (deployed.status !== 0) {
+    log(
+      `the ${functionName} function was not deployed (exit ${deployed.status}): ` +
+        `${deployed.stderr.trim().split("\n").slice(-3).join(" ")}`,
+    );
+    return;
+  }
+  // The schedule is what makes it a sync rather than a button. It is created
+  // once and left alone afterwards: a re-run that recreated it would lose the
+  // run history the developer is looking at.
+  const schedules = makoJson(["schedules", "list", "--function", functionName, ...tenant], [4]);
+  const existingSchedule = (schedules?.items ?? []).find(
+    (schedule) => schedule.name === "every-fifteen-minutes",
+  );
+  if (existingSchedule === undefined) {
+    log(`scheduling ${functionName} at ${options["sync-cron"]}`);
+    makoJson([
+      "schedules",
+      "create",
+      "--function",
+      functionName,
+      "--name",
+      "every-fifteen-minutes",
+      "--cron",
+      options["sync-cron"],
+      "--method",
+      "POST",
+      "--path",
+      "/sync",
+      ...tenant,
+    ]);
+  } else {
+    log(`${functionName} is already scheduled (${existingSchedule.cron})`);
+  }
+}
+
 const signIn = readSignInSettings();
 const functionsEndpoint = options.functions ? deployHouseholdsFunction() : null;
+if (options.functions && functionsEndpoint !== null) deploySyncFunction();
 
 const envFile = {
   endpoint: options["data-endpoint"],

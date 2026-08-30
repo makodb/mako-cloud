@@ -96,6 +96,13 @@ export interface BudgetInput {
   readonly rollover: boolean;
 }
 
+export interface ConnectionInput {
+  readonly account_id: string;
+  readonly institution: string;
+  /** The institution's own id for the account; the sync asks it by this. */
+  readonly external_id: string;
+}
+
 export interface RecurrenceInput {
   readonly account_id: string;
   readonly normalized_description: string;
@@ -268,6 +275,41 @@ export class HouseholdWrites {
     this.#context.noteLocalWrite();
     await document.incrementalPatch({ updated_at: this.#context.now() });
     await document.incrementalRemove();
+  }
+
+  /**
+   * Connect an account to the simulated institution.
+   *
+   * The connection is what the scheduled sync reads: it names the account to
+   * write into and the institution's own id for it. Rational writes it from
+   * the browser; from then on the function owns its `last_sync_at` and
+   * outcome, which is why those are not set here.
+   */
+  async connectInstitution(input: ConnectionInput): Promise<ConnectionDocument> {
+    if (input.account_id === "") throw new ValidationError("choose an account");
+    if (input.institution.trim() === "") throw new ValidationError("name the institution");
+    const externalId = input.external_id.trim();
+    if (!/^[A-Za-z0-9_.-]{1,64}$/u.test(externalId)) {
+      throw new ValidationError("the institution's account id may hold letters, digits, . _ and -");
+    }
+    return this.#insert(
+      "connections",
+      this.#stamp<ConnectionDocument>(randomId("con"), {
+        kind: "institution",
+        institution: input.institution.trim(),
+        external_id: externalId,
+        account_id: input.account_id,
+        account_ids: [input.account_id],
+        status: "connected",
+      }),
+    );
+  }
+
+  async setConnectionStatus(
+    id: string,
+    status: NonNullable<ConnectionDocument["status"]>,
+  ): Promise<ConnectionDocument> {
+    return this.#patch("connections", id, { status } as Patch<ConnectionDocument>);
   }
 
   /** Confirm a detected recurrence, or record that it was dismissed. */

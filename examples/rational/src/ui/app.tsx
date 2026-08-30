@@ -4,6 +4,7 @@ import type { RationalApp } from "../data/rational.js";
 import { AccountsScreen } from "./accounts.js";
 import { CategoriesScreen } from "./categories.js";
 import { BudgetsScreen } from "./budgets.js";
+import { ConnectionsScreen } from "./connections.js";
 import { ImportScreen } from "./import.js";
 import { PlanScreen } from "./plan.js";
 import { ReportsScreen } from "./reports.js";
@@ -107,6 +108,12 @@ function Screens({ app }: { app: RationalApp }) {
               app={app}
               session={session}
               currency={currency}
+            />
+          ) : route.name === "connections" ? (
+            <ConnectionsScreen
+              key={`${state.generation}:connections`}
+              app={app}
+              session={session}
             />
           ) : route.name === "import" ? (
             <ImportScreen
