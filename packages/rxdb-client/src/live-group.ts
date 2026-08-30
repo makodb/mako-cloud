@@ -265,8 +265,11 @@ export class MakoLiveStreamGroup {
       return;
     }
     // An event that does not say which collection it is for cannot be routed,
-    // and guessing would deliver one collection's documents to another.
-    const named = (event.data as { collection?: unknown }).collection;
+    // and guessing would deliver one collection's documents to another. The
+    // tag sits beside `event` and `data` rather than inside the payload: the
+    // payloads are exactly the single-collection stream's, so the code that
+    // reads them is the same either way.
+    const named = (event as { collection?: unknown }).collection;
     if (typeof named !== "string") {
       this.#overflowAll();
       return;

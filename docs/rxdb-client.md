@@ -388,7 +388,8 @@ Every collection on one connection must belong to one environment, because the c
 authenticated and routed as that environment's — the group refuses a configuration that mixes
 them. Each collection still keeps its own policy, checkpoint, cursor, and filter; sharing a
 connection changes nothing about what a collection receives. Every event names the collection it
-belongs to, and a reconnect sends each collection's own cursor back: one `Last-Event-ID` could
+belongs to — beside `event` and `data`, not inside the payload, so the payloads are exactly the
+single-collection stream's — and a reconnect sends each collection's own cursor back: one `Last-Event-ID` could
 only speak for whichever event happened to be last, leaving every other collection resuming from a
 position it never reached.
 

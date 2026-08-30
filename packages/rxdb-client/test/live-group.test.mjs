@@ -20,8 +20,8 @@ test("one connection routes each collection's events to its own stream", async (
     return new Response(
       sse({
         event: "documents",
+        collection: "transactions",
         data: {
-          collection: "transactions",
           documents: [{ id: "txn-1", _deleted: false }],
           checkpoint: "mcp1.txn",
           cursor: "msc1.txn",
@@ -29,8 +29,8 @@ test("one connection routes each collection's events to its own stream", async (
       }) +
         sse({
           event: "documents",
+          collection: "accounts",
           data: {
-            collection: "accounts",
             documents: [{ id: "acc-1", _deleted: false }],
             checkpoint: "mcp1.acc",
             cursor: "msc1.acc",
@@ -94,7 +94,8 @@ test("a reconnect sends every collection's own cursor", async () => {
       return new Response(
         sse({
           event: "checkpoint",
-          data: { collection: "transactions", checkpoint: "mcp1.txn", cursor: "msc1.txn" },
+          collection: "transactions",
+          data: { checkpoint: "mcp1.txn", cursor: "msc1.txn" },
         }),
         { headers: { "content-type": "text/event-stream" } },
       );
@@ -102,7 +103,8 @@ test("a reconnect sends every collection's own cursor", async () => {
     return new Response(
       sse({
         event: "checkpoint",
-        data: { collection: "accounts", checkpoint: "mcp1.acc", cursor: "msc1.acc" },
+        collection: "accounts",
+        data: { checkpoint: "mcp1.acc", cursor: "msc1.acc" },
       }),
       { headers: { "content-type": "text/event-stream" } },
     );

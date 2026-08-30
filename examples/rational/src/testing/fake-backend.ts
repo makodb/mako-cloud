@@ -674,9 +674,8 @@ export class FakeMakoBackend {
             encoder.encode(
               frame({
                 event: "heartbeat",
-                data: part.tagged
-                  ? { cursor: cursor(0), collection: part.collectionId }
-                  : { cursor: cursor(0) },
+                ...(part.tagged ? { collection: part.collectionId } : {}),
+                data: { cursor: cursor(0) },
               }),
             ),
           );
@@ -714,7 +713,8 @@ export class FakeMakoBackend {
           new TextEncoder().encode(
             frame({
               event: "resync",
-              data: stream.tagged ? { reason, collection: stream.collectionId } : { reason },
+              ...(stream.tagged ? { collection: stream.collectionId } : {}),
+              data: { reason },
             }),
           ),
         );
@@ -746,11 +746,11 @@ export class FakeMakoBackend {
         new TextEncoder().encode(
           frame({
             event: "documents",
+            ...(stream.tagged ? { collection: collectionId } : {}),
             data: {
               documents: [visible],
               checkpoint: checkpoint(this.#sequence),
               cursor: cursor(this.#sequence),
-              ...(stream.tagged ? { collection: collectionId } : {}),
             },
           }),
         ),

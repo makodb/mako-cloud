@@ -3253,7 +3253,10 @@ paths:
 
         Every collection is authorized, metered, and audited on its own, keeps
         its own policy, checkpoint, and cursor, and every event carries a
-        `collection` field naming which one it belongs to. A reconnect sends
+        `collection` field naming which one it belongs to. That field sits
+        beside `event` and `data` rather than inside the payload, so the
+        payloads are exactly the single-collection stream's and the code that
+        reads them is the same either way. A reconnect sends
         each collection's own cursor back: one `Last-Event-ID` could only ever
         speak for whichever event happened to be last, leaving every other
         collection resuming from a position it never reached.
