@@ -617,15 +617,20 @@ impl CredentialAdminService {
     ) -> Result<FunctionSecretMetadata, CredentialAdminError> {
         let organization = self.authorize(actor, tenant, now_unix_seconds).await?;
         let previous = self.stored_secret(tenant, name).await?;
-        if previous.metadata.state != FunctionSecretState::Active {
-            return Err(CredentialAdminError::InvalidSecretState);
-        }
+        // A retired secret may be rotated back into service. Retiring stops the
+        // *value* it held from authorizing anything, which a new version does
+        // too; the name is only what a function reads its secret by. Refusing
+        // here left a name that could never hold a correct value again --
+        // creation refuses a name that exists, so the environment was stuck
+        // with whatever the first attempt put there.
         let mut metadata = previous.metadata.clone();
         metadata.version = metadata
             .version
             .checked_add(1)
             .ok_or(CredentialAdminError::VersionExhausted)?;
         metadata.rotated_at_unix_seconds = Some(now_unix_seconds);
+        metadata.state = FunctionSecretState::Active;
+        metadata.retired_at_unix_seconds = None;
         let next = self.encrypt_secret(metadata.clone(), value)?;
         self.rotate_secret(&previous, &next).await?;
         self.audit(
@@ -1284,6 +1289,28 @@ mod tests {
                     .value
                     .expose_for_runtime(),
                 second.value.expose_once()
+            );
+
+            // A retired name can be put back into service with a new value.
+            // Without this the name was dead: creation refuses a name that
+            // exists, so an environment kept whatever its first attempt stored.
+            let revived = FunctionSecretValue::parse(
+                "mako_sk.revived_after_retirement.cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+                    .to_owned(),
+            )
+            .expect("value");
+            let restored = service
+                .rotate_function_secret_with_value(&actor, &tenant, &name, revived.clone(), 13)
+                .await
+                .expect("a retired secret rotates back into service");
+            assert_eq!(restored.version(), 3);
+            assert_eq!(
+                service
+                    .resolve_function_secret(&tenant, &name)
+                    .await
+                    .expect("the name resolves again")
+                    .expose_for_runtime(),
+                revived.expose_once()
             );
 
             let service_key_name = FunctionSecretName::parse("MAKO_SERVICE_KEY").expect("name");
