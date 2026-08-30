@@ -7,6 +7,8 @@ export type Route =
   | { readonly name: "categories" }
   | { readonly name: "tags" }
   | { readonly name: "reports"; readonly month?: string }
+  | { readonly name: "import" }
+  | { readonly name: "rules" }
   | { readonly name: "household" };
 
 export function parseRoute(hash: string): Route {
@@ -26,6 +28,10 @@ export function parseRoute(hash: string): Route {
       const month = parameters.get("month");
       return { name: "reports", ...(month === null || month === "" ? {} : { month }) };
     }
+    case "import":
+      return { name: "import" };
+    case "rules":
+      return { name: "rules" };
     case "categories":
       return { name: "categories" };
     case "tags":

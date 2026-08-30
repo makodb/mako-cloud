@@ -7,8 +7,10 @@ import type {
   BaseDocument,
   Category,
   CategoryKind,
+  ConnectionDocument,
   HouseholdCollectionId,
   RationalDocuments,
+  Rule,
   Split,
   Tag,
   TaxonomyEntry,
@@ -55,6 +57,47 @@ export interface AccountInput {
   readonly institution?: string;
 }
 
+/** One row an import is about to write. */
+export interface ImportRow {
+  readonly date: string;
+  readonly description: string;
+  readonly amount: number;
+  readonly categoryId?: string;
+  readonly ruleId?: string;
+  readonly tags?: readonly string[];
+}
+
+export interface ImportInput {
+  readonly accountId: string;
+  readonly currency: string;
+  readonly filename: string;
+  readonly rows: readonly ImportRow[];
+  readonly rowCount: number;
+  readonly duplicateCount: number;
+}
+
+/** What an import did, for the screen that ran it. */
+export interface ImportOutcome {
+  readonly batchId: string;
+  readonly created: number;
+  readonly duplicates: number;
+  readonly rowCount: number;
+  readonly finishedAt: number;
+}
+
+export interface RuleInput {
+  readonly name: string;
+  readonly match: {
+    readonly description_contains?: string;
+    readonly amount_min?: number;
+    readonly amount_max?: number;
+    readonly account_id?: string;
+  };
+  readonly set_category_id?: string;
+  readonly add_tags?: readonly string[];
+  readonly priority: number;
+}
+
 export interface TransactionInput {
   readonly account_id: string;
   readonly date: string;
@@ -65,6 +108,10 @@ export interface TransactionInput {
   readonly tags?: readonly string[];
   readonly notes?: string;
   readonly splits?: readonly Split[];
+  /** Set by an import, so a transaction can say where it came from. */
+  readonly import_batch_id?: string;
+  /** Set when a rule categorized it, so the screen can say which rule. */
+  readonly rule_id?: string;
 }
 
 export class HouseholdWrites {
@@ -118,6 +165,54 @@ export class HouseholdWrites {
   }
 
   /**
+   * Import a batch of parsed rows, with the record of what was imported.
+   *
+   * The batch document is written first and every transaction names it, so a
+   * person can see where a transaction came from and an import that fails
+   * part-way leaves a batch whose count says how far it got rather than a
+   * pile of unexplained rows.
+   */
+  async importTransactions(input: ImportInput): Promise<ImportOutcome> {
+    const batchId = randomId("imp");
+    const batch = this.#stamp<ConnectionDocument>(batchId, {
+      kind: "import",
+      account_id: input.accountId,
+      filename: input.filename.slice(0, 200),
+      imported_at: this.#context.now(),
+      row_count: input.rowCount,
+      created_count: 0,
+      duplicate_count: input.duplicateCount,
+    });
+    await this.#insert("connections", batch);
+    let created = 0;
+    for (const row of input.rows) {
+      await this.createTransaction({
+        account_id: input.accountId,
+        date: row.date,
+        amount: row.amount,
+        currency: input.currency,
+        description: row.description,
+        tags: [...(row.tags ?? [])],
+        splits: [],
+        import_batch_id: batchId,
+        ...(row.categoryId === undefined ? {} : { category_id: row.categoryId }),
+        ...(row.ruleId === undefined ? {} : { rule_id: row.ruleId }),
+      });
+      created += 1;
+    }
+    const finished = await this.#patch("connections", batchId, {
+      created_count: created,
+    } as Patch<ConnectionDocument>);
+    return {
+      batchId,
+      created,
+      duplicates: input.duplicateCount,
+      rowCount: input.rowCount,
+      finishedAt: finished.updated_at,
+    };
+  }
+
+  /**
    * `updatedAt` may be supplied by a test to stage a conflict deterministically;
    * the application always stamps the current time.
    */
@@ -139,6 +234,54 @@ export class HouseholdWrites {
 
   async deleteTransaction(id: string): Promise<void> {
     const document = await this.#require("transactions", id);
+    this.#context.noteLocalWrite();
+    await document.incrementalPatch({ updated_at: this.#context.now() });
+    await document.incrementalRemove();
+  }
+
+  async createRule(input: RuleInput): Promise<Rule> {
+    if (input.name.trim() === "") throw new ValidationError("a rule needs a name");
+    const match = {
+      ...(input.match.description_contains === undefined ||
+      input.match.description_contains.trim() === ""
+        ? {}
+        : { description_contains: input.match.description_contains.trim() }),
+      ...(input.match.amount_min === undefined ? {} : { amount_min: input.match.amount_min }),
+      ...(input.match.amount_max === undefined ? {} : { amount_max: input.match.amount_max }),
+      ...(input.match.account_id === undefined || input.match.account_id === ""
+        ? {}
+        : { account_id: input.match.account_id }),
+    };
+    if (Object.keys(match).length === 0) {
+      throw new ValidationError("a rule needs at least one condition");
+    }
+    if (
+      match.amount_min !== undefined &&
+      match.amount_max !== undefined &&
+      match.amount_min > match.amount_max
+    ) {
+      throw new ValidationError("the smallest amount must not be above the largest");
+    }
+    const document = this.#stamp<Rule>(randomId("rul"), {
+      name: input.name.trim(),
+      match,
+      ...(input.set_category_id === undefined || input.set_category_id === ""
+        ? {}
+        : { set_category_id: input.set_category_id }),
+      add_tags: [...(input.add_tags ?? [])],
+      priority: Number.isSafeInteger(input.priority) ? input.priority : 10,
+      match_count: 0,
+      enabled: true,
+    });
+    return this.#insert("rules", document);
+  }
+
+  async updateRule(id: string, patch: Patch<Rule>): Promise<Rule> {
+    return this.#patch("rules", id, patch);
+  }
+
+  async deleteRule(id: string): Promise<void> {
+    const document = await this.#require("rules", id);
     this.#context.noteLocalWrite();
     await document.incrementalPatch({ updated_at: this.#context.now() });
     await document.incrementalRemove();
@@ -303,10 +446,22 @@ function validateTransaction(
     tags: [...new Set(input.tags ?? [])],
     splits,
   };
-  const optional: { category_id?: string; notes?: string } = {};
+  const optional: {
+    category_id?: string;
+    notes?: string;
+    import_batch_id?: string;
+    rule_id?: string;
+  } = {};
   if (input.category_id !== undefined && input.category_id !== "") {
     optional.category_id = input.category_id;
   }
   if (input.notes !== undefined && input.notes.trim() !== "") optional.notes = input.notes.trim();
+  // Where the transaction came from and what filed it. A transaction that
+  // says neither is one somebody typed, which is also worth being able to
+  // tell apart.
+  if (input.import_batch_id !== undefined && input.import_batch_id !== "") {
+    optional.import_batch_id = input.import_batch_id;
+  }
+  if (input.rule_id !== undefined && input.rule_id !== "") optional.rule_id = input.rule_id;
   return { ...fields, ...optional };
 }
