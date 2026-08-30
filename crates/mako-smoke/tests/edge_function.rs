@@ -323,6 +323,19 @@ fn deployed_function_is_served_through_the_edge_gateway() {
         "another function answered: {body}"
     );
 
+    // A function owns the path under its name: the gateway forwards it and the
+    // runtime hands it over, so a function with more than one route works.
+    // Requiring the bare name made every REST-shaped function unreachable.
+    let owned = format!("/{PROJECT_ID}--{ENVIRONMENT_ID}/functions/v1/{FUNCTION_NAME}/orders/42");
+    let (status, body) = request(GATEWAY_PORT, "GET", &owned, &BTreeMap::new(), None);
+    assert_eq!(status, 200, "a function's own path was not routed: {body}");
+    let answered: serde_json::Value = serde_json::from_str(&body)
+        .unwrap_or_else(|_| panic!("function returned non-json: {body}"));
+    assert_eq!(
+        answered["path"], "/orders/42",
+        "the function is handed the path under its name: {body}"
+    );
+
     // A function that was never deployed must not resolve.
     let missing = format!("/{PROJECT_ID}--{ENVIRONMENT_ID}/functions/v1/absent");
     let (status, _) = request(GATEWAY_PORT, "GET", &missing, &BTreeMap::new(), None);

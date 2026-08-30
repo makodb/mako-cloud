@@ -14,10 +14,16 @@ use mako_service_runtime::{
 
 use crate::{EdgeGatewayGraph, graph::CustomDomainLookupError};
 
-const INVOCATION_ROUTE: &str = "/{project_ref}/functions/v1/{function_name}";
+/// A function owns the path under its name, so the route binds the rest of
+/// it: `parse_stable_function_path` has always understood `/create` after a
+/// function name, and the gateway forwards it, but the router matched only
+/// the bare name -- so a function with more than one route was unreachable.
+const INVOCATION_ROUTE: &str = "/{project_ref}/functions/v1/{function_name}/{function_path...}";
+const INVOCATION_ROOT_ROUTE: &str = "/{project_ref}/functions/v1/{function_name}";
 /// The shape a function request has on a custom domain: the hostname names
 /// the environment, so there is no project reference in the path.
-const CUSTOM_DOMAIN_ROUTE: &str = "/functions/v1/{function_name}";
+const CUSTOM_DOMAIN_ROUTE: &str = "/functions/v1/{function_name}/{function_path...}";
+const CUSTOM_DOMAIN_ROOT_ROUTE: &str = "/functions/v1/{function_name}";
 /// Set by the reverse proxy on the custom-domain listener only, and
 /// stripped on the platform's own hostname.
 pub(crate) const CUSTOM_DOMAIN_HEADER: &str = "x-mako-custom-domain";
@@ -35,14 +41,18 @@ pub(crate) fn add_routes(
         HttpMethod::Delete,
         HttpMethod::Options,
     ] {
-        let public_graph = Arc::clone(&graph);
-        router.add_route(method, INVOCATION_ROUTE, move |request| {
-            handle_invocation(&public_graph, &request)
-        })?;
-        let graph = Arc::clone(&graph);
-        router.add_route(method, CUSTOM_DOMAIN_ROUTE, move |request| {
-            handle_custom_domain_invocation(&graph, &request)
-        })?;
+        for route in [INVOCATION_ROUTE, INVOCATION_ROOT_ROUTE] {
+            let public_graph = Arc::clone(&graph);
+            router.add_route(method, route, move |request| {
+                handle_invocation(&public_graph, &request)
+            })?;
+        }
+        for route in [CUSTOM_DOMAIN_ROUTE, CUSTOM_DOMAIN_ROOT_ROUTE] {
+            let domain_graph = Arc::clone(&graph);
+            router.add_route(method, route, move |request| {
+                handle_custom_domain_invocation(&domain_graph, &request)
+            })?;
+        }
     }
     Ok(())
 }
@@ -63,7 +73,15 @@ fn handle_invocation(
     let function_name = request
         .path_parameter("function_name")
         .ok_or_else(|| invalid(request, "function route is invalid"))?;
-    invoke(graph, request, project_ref, function_name, &graph.routes)
+    let function_path = request.path_parameter("function_path").unwrap_or_default();
+    invoke(
+        graph,
+        request,
+        project_ref,
+        function_name,
+        function_path,
+        &graph.routes,
+    )
 }
 
 /// `/functions/v1/{name}` on a verified custom domain: the hostname's
@@ -93,7 +111,15 @@ fn handle_custom_domain_invocation(
         hostname: &hostname,
         tenant: &tenant,
     };
-    invoke(graph, request, &project_ref, function_name, &routes)
+    let function_path = request.path_parameter("function_path").unwrap_or_default();
+    invoke(
+        graph,
+        request,
+        &project_ref,
+        function_name,
+        function_path,
+        &routes,
+    )
 }
 
 /// Which browser origins may call a function: the allowlist the function's
@@ -238,6 +264,7 @@ fn invoke(
     request: &HttpRequest,
     project_ref: &str,
     function_name: &str,
+    function_path: &str,
     routes: &dyn FunctionRouteResolver,
 ) -> Result<HttpResponse, HttpApiError> {
     let query = (!request.query().is_empty()).then(|| {
@@ -251,7 +278,11 @@ fn invoke(
     let input = FunctionGatewayRequest {
         request_id: request.request_id().to_owned(),
         method: function_method(request.method()),
-        path: format!("/{project_ref}/functions/v1/{function_name}"),
+        path: if function_path.is_empty() {
+            format!("/{project_ref}/functions/v1/{function_name}")
+        } else {
+            format!("/{project_ref}/functions/v1/{function_name}/{function_path}")
+        },
         query,
         headers: forwarded_request_headers(request),
         body: request.body().to_vec(),

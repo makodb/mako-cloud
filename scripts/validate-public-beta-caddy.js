@@ -133,7 +133,6 @@ for (const path of [
   "/healthz",
   "/v1/projects/prj_example0001/environments/env_example0001/service/collections/documents/doc_example0001",
   "/v1/projects/prj_example0001/not-documented",
-  "/prj_example0001/functions/v1/health/private",
 ]) {
   assert(
     serviceCredential.test(path) ||
@@ -225,10 +224,20 @@ const customDomainFunction = new RegExp(customDomainMatcher("custom_domain_funct
 assert(
   customDomainFunction.test("/functions/v1/health") &&
     !customDomainFunction.test("/prj_example0001/functions/v1/health") &&
-    !customDomainFunction.test("/functions/v1/health/private") &&
     !customDomainFunction.test("/functions/v1/") &&
     !edge.test("/functions/v1/health"),
   "custom-domain function shape is not exactly /functions/v1/{name}",
+);
+// A function owns the path under its name: the gateway parses it and the
+// runtime hands it to the function, so a function with more than one route is
+// only reachable if the allowlist admits it. Requiring the bare name made
+// every REST-shaped function unreachable in production.
+assert(
+  edge.test("/prj_example0001/functions/v1/health/private") &&
+    customDomainFunction.test("/functions/v1/health/private") &&
+    !edge.test("/prj_example0001/functions/v1/") &&
+    !edge.test("/prj_example0001/functions/v1"),
+  "a function's own paths are not admitted",
 );
 for (const template of openapiPaths) {
   const path = samplePath(template);

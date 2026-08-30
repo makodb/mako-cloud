@@ -685,9 +685,12 @@ fn request_id() -> String {
     value
 }
 
-fn backend_error(_error: RuntimeClientError) -> FunctionBackendError {
-    FunctionBackendError::new("runtime supervisor is unavailable")
-        .expect("static safe backend error is valid")
+fn backend_error(error: RuntimeClientError) -> FunctionBackendError {
+    // Every fault reported itself as "unavailable", so a misconfigured client,
+    // a rejected request, and a supervisor that is genuinely down were one
+    // message -- and an operator checking whether the supervisor was up found
+    // it up. The variants are already safe, bounded text.
+    FunctionBackendError::new(error.to_string()).expect("static safe backend error is valid")
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -704,9 +707,9 @@ pub enum RuntimeClientError {
 impl fmt::Display for RuntimeClientError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(match self {
-            Self::InvalidConfiguration => "runtime client configuration is invalid",
-            Self::InvalidRequest => "runtime client request is invalid",
-            Self::Unavailable => "runtime supervisor is unavailable",
+            Self::InvalidConfiguration => "the runtime client is misconfigured",
+            Self::InvalidRequest => "the runtime client built an invalid request",
+            Self::Unavailable => "the runtime supervisor could not be reached",
             Self::ResponseTooLarge => "runtime supervisor response exceeded its bound",
             Self::InvalidResponse => "runtime supervisor response is invalid",
             Self::CorrelationFailed => "runtime supervisor response correlation failed",
