@@ -78,14 +78,6 @@ export interface RationalAppOptions {
 
 const HOUSEHOLD_KEY = "rational.household";
 /**
- * Only a couple of collections keep a live stream open: every stream is one
- * HTTP/1.1 connection, and a browser allows six per host, so fifteen streams
- * would starve the pulls and pushes themselves. The rest poll.
- */
-const STREAMED_HOUSEHOLD_COLLECTIONS: readonly HouseholdCollectionId[] = ["transactions"];
-const STREAMED_DIRECTORY_COLLECTIONS: readonly DirectoryCollectionId[] = ["memberships"];
-
-/**
  * The application object: authentication, the user's directory of households,
  * the household currently open, connectivity, and the test hooks. The UI
  * renders `state$`; the browser tests drive the same object as `window.rational`.
@@ -368,7 +360,6 @@ export class RationalApp {
         databaseName: databaseName("rational", householdId),
         collectionIds: HOUSEHOLD_COLLECTIONS,
         householdId,
-        streamedCollections: STREAMED_HOUSEHOLD_COLLECTIONS,
         pollIntervalMs: this.config.mode === "fake" ? 1_000 : 10_000,
       },
       dependencies: { config: this.config, auth: this.auth, transport: this.transport },
@@ -563,7 +554,6 @@ export class RationalApp {
         name: `directory-${user.id}`,
         databaseName: databaseName("rational-directory", user.id),
         collectionIds: DIRECTORY_COLLECTIONS,
-        streamedCollections: STREAMED_DIRECTORY_COLLECTIONS,
         pollIntervalMs: this.config.mode === "fake" ? 1_000 : 10_000,
       },
       dependencies: { config: this.config, auth: this.auth, transport: this.transport },

@@ -30,13 +30,31 @@ interface Change {
   readonly document: WireDocument;
 }
 
+/** One open connection. Several collections may share it. */
+interface StreamHandle {
+  readonly controller: ReadableStreamDefaultController<Uint8Array>;
+  readonly userId: string;
+  closed: boolean;
+}
+
+/** One collection's share of a connection. */
+interface StreamRegistration {
+  readonly handle: StreamHandle;
+  readonly collectionId: CollectionId;
+  /** Events name their collection when the connection carries more than one. */
+  readonly tagged: boolean;
+  readonly filter: ReplicationFilter | null;
+}
+
+interface ReplicationFilter {
+  readonly field: string;
+  readonly value: string;
+}
+
 interface CollectionStore {
   readonly documents: Map<string, WireDocument>;
   readonly changes: Change[];
-  readonly streams: Set<{
-    controller: ReadableStreamDefaultController<Uint8Array>;
-    userId: string;
-  }>;
+  readonly streams: Set<StreamRegistration>;
 }
 
 /**
@@ -94,6 +112,11 @@ export class FakeMakoBackend {
     const provider = /\/auth\/providers\/([a-z0-9-]+)\/start$/u.exec(path);
     if (provider !== null) return this.#startProviderSignIn(provider[1] as string, init);
 
+    if (/\/environments\/[^/]+\/replication\/stream$/u.test(path)) {
+      const streaming = this.#authorize(init);
+      if (streaming === null) return apiError(401, "unauthenticated", "the session is not valid");
+      return this.#multiStream(streaming, init);
+    }
     const match = /\/collections\/([a-z_]+)\/replication\/(pull|push|stream)$/u.exec(path);
     if (match === null) return apiError(404, "not_found", "route not found");
     const collectionId = match[1] as CollectionId;
@@ -105,7 +128,7 @@ export class FakeMakoBackend {
       case "push":
         return this.#push(collectionId, user, init);
       default:
-        return this.#stream(collectionId, user, init.signal ?? undefined, url);
+        return this.#stream(collectionId, user, url, init.signal ?? undefined);
     }
   };
 
@@ -164,7 +187,11 @@ export class FakeMakoBackend {
   disconnectStreams(): void {
     for (const store of this.#collections.values()) {
       for (const stream of store.streams) {
-        stream.controller.error(new TypeError("simulated stream disconnect"));
+        // A connection carrying several collections appears once per
+        // collection; erroring it twice is an error of its own.
+        if (stream.handle.closed) continue;
+        stream.handle.closed = true;
+        stream.handle.controller.error(new TypeError("simulated stream disconnect"));
       }
       store.streams.clear();
     }
@@ -495,9 +522,14 @@ export class FakeMakoBackend {
   }
 
   async #pull(collectionId: CollectionId, user: FakeUser, init: RequestInit): Promise<Response> {
-    const body = await jsonBody<{ checkpoint?: string | null; batchSize?: number }>(init);
+    const body = await jsonBody<{
+      checkpoint?: string | null;
+      batchSize?: number;
+      filter?: ReplicationFilter | null;
+    }>(init);
     const after = parseCheckpoint(body.checkpoint ?? null);
     const limit = body.batchSize ?? 100;
+    const filter = body.filter ?? null;
     const store = this.#store(collectionId);
     const documents: WireDocument[] = [];
     let last = after;
@@ -505,7 +537,13 @@ export class FakeMakoBackend {
       if (change.sequence <= after) continue;
       last = change.sequence;
       const visible = this.#visibleState(user, collectionId, change.document);
-      if (visible !== null) documents.push(visible);
+      // The filter narrows what the policy already allowed. A document that
+      // does not match is not sent at all here, because a pull carries a
+      // state rather than a transition -- the stream is what tells a
+      // database that a document it holds has left.
+      if (visible !== null && (filter === null || matchesFilter(change.document, filter))) {
+        documents.push(visible);
+      }
       if (documents.length >= limit) break;
     }
     return jsonResponse({ documents, checkpoint: checkpoint(last) });
@@ -564,45 +602,121 @@ export class FakeMakoBackend {
     return jsonResponse({ outcomes });
   }
 
-  #stream(
-    collectionId: CollectionId,
+  #stream(collectionId: CollectionId, user: FakeUser, url: URL, signal?: AbortSignal): Response {
+    const field = url.searchParams.get("filterField");
+    const value = url.searchParams.get("filterValue");
+    return this.#openStream(
+      user,
+      [
+        {
+          collectionId,
+          tagged: false,
+          filter: field === null || value === null ? null : { field, value },
+        },
+      ],
+      signal,
+    );
+  }
+
+  /**
+   * One connection over several collections, as the environment-scoped route
+   * serves it: a browser has six connections to a host, so an application
+   * with a dozen collections cannot have a stream each.
+   */
+  async #multiStream(user: FakeUser, init: RequestInit): Promise<Response> {
+    const body = await jsonBody<{
+      collections?: Array<{ collectionId: CollectionId; filter?: ReplicationFilter | null }>;
+    }>(init);
+    const requested = body.collections ?? [];
+    if (requested.length === 0 || requested.length > 24) {
+      return apiError(400, "invalid_request", "a stream carries between 1 and 24 collections");
+    }
+    const seen = new Set<string>();
+    for (const entry of requested) {
+      if (seen.has(entry.collectionId)) {
+        return apiError(400, "invalid_request", "a collection is named twice");
+      }
+      seen.add(entry.collectionId);
+    }
+    return this.#openStream(
+      user,
+      requested.map((entry) => ({
+        collectionId: entry.collectionId,
+        tagged: true,
+        filter: entry.filter ?? null,
+      })),
+      init.signal ?? undefined,
+    );
+  }
+
+  #openStream(
     user: FakeUser,
+    parts: ReadonlyArray<{
+      collectionId: CollectionId;
+      tagged: boolean;
+      filter: ReplicationFilter | null;
+    }>,
     signal: AbortSignal | undefined,
-    _url: URL,
   ): Response {
-    const store = this.#store(collectionId);
+    const stores = parts.map((part) => ({ part, store: this.#store(part.collectionId) }));
     const encoder = new TextEncoder();
-    let entry: { controller: ReadableStreamDefaultController<Uint8Array>; userId: string };
+    let registrations: StreamRegistration[] = [];
     const body = new ReadableStream<Uint8Array>({
-      start(controller) {
-        entry = { controller, userId: user.id };
-        store.streams.add(entry);
-        controller.enqueue(
-          encoder.encode(frame({ event: "heartbeat", data: { cursor: cursor(0) } })),
-        );
+      start: (controller) => {
+        const handle: StreamHandle = { controller, userId: user.id, closed: false };
+        registrations = stores.map(({ part, store }) => {
+          const registration: StreamRegistration = { handle, ...part };
+          store.streams.add(registration);
+          return registration;
+        });
+        for (const { part } of stores) {
+          controller.enqueue(
+            encoder.encode(
+              frame({
+                event: "heartbeat",
+                data: part.tagged
+                  ? { cursor: cursor(0), collection: part.collectionId }
+                  : { cursor: cursor(0) },
+              }),
+            ),
+          );
+        }
         signal?.addEventListener(
           "abort",
           () => {
-            if (store.streams.delete(entry)) {
+            const open = registrations.some(
+              (registration, index) => stores[index]?.store.streams.delete(registration) ?? false,
+            );
+            if (open && !handle.closed) {
+              handle.closed = true;
               controller.error(new DOMException("stream aborted", "AbortError"));
             }
           },
           { once: true },
         );
       },
-      cancel() {
-        store.streams.delete(entry);
+      cancel: () => {
+        registrations.forEach((registration, index) => {
+          stores[index]?.store.streams.delete(registration);
+        });
       },
     });
     return new Response(body, { status: 200, headers: { "Content-Type": "text/event-stream" } });
   }
 
   #broadcastResync(userId: string, reason: string): void {
+    const told = new Set<StreamHandle>();
     for (const store of this.#collections.values()) {
       for (const stream of [...store.streams]) {
-        if (stream.userId !== userId) continue;
-        stream.controller.enqueue(
-          new TextEncoder().encode(frame({ event: "resync", data: { reason } })),
+        if (stream.handle.userId !== userId || told.has(stream.handle)) continue;
+        told.add(stream.handle);
+        stream.handle.controller.enqueue(
+          new TextEncoder().encode(
+            frame({
+              event: "resync",
+              data: stream.tagged ? { reason, collection: stream.collectionId } : { reason },
+            }),
+          ),
         );
       }
     }
@@ -611,14 +725,24 @@ export class FakeMakoBackend {
   #record(collectionId: CollectionId, document: WireDocument): void {
     this.#sequence += 1;
     const store = this.#store(collectionId);
+    const previous = store.documents.get(document.id);
     const snapshot = structuredClone(document);
     store.documents.set(snapshot.id, snapshot);
     store.changes.push({ sequence: this.#sequence, document: snapshot });
     for (const stream of store.streams) {
-      const user = [...this.#users.values()].find((candidate) => candidate.id === stream.userId);
-      const visible = user === undefined ? null : this.#visibleState(user, collectionId, snapshot);
-      if (visible === null) continue;
-      stream.controller.enqueue(
+      const user = [...this.#users.values()].find(
+        (candidate) => candidate.id === stream.handle.userId,
+      );
+      let visible = user === undefined ? null : this.#visibleState(user, collectionId, snapshot);
+      if (visible !== null && stream.filter !== null) {
+        // A filter narrows the way a policy does: a document that leaves it
+        // comes back as a tombstone, or the database it left keeps it.
+        const matches = matchesFilter(snapshot, stream.filter);
+        const matched = previous !== undefined && matchesFilter(previous, stream.filter);
+        if (!matches) visible = matched ? { ...visible, _deleted: true } : null;
+      }
+      if (visible === null || stream.handle.closed) continue;
+      stream.handle.controller.enqueue(
         new TextEncoder().encode(
           frame({
             event: "documents",
@@ -626,6 +750,7 @@ export class FakeMakoBackend {
               documents: [visible],
               checkpoint: checkpoint(this.#sequence),
               cursor: cursor(this.#sequence),
+              ...(stream.tagged ? { collection: collectionId } : {}),
             },
           }),
         ),
@@ -711,4 +836,14 @@ function strip(document: WireDocument): Record<string, unknown> {
   delete copy._meta;
   delete copy._attachments;
   return copy;
+}
+
+/** Whether a document's dotted field holds the filter's value. */
+function matchesFilter(document: WireDocument, filter: ReplicationFilter): boolean {
+  let value: unknown = document;
+  for (const segment of filter.field.split(".")) {
+    if (typeof value !== "object" || value === null) return false;
+    value = (value as Record<string, unknown>)[segment];
+  }
+  return value === filter.value;
 }
