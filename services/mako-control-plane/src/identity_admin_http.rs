@@ -530,15 +530,58 @@ pub(crate) async fn administer(
         permissions,
         input,
     };
-    let idempotency = if idempotent {
+    // The caller's key when there is one, so a client's retry is still the
+    // same request; otherwise this request's own id.
+    let caller_key = if idempotent {
         require_idempotency(request)?
     } else {
         request.request_id()
     };
+    let key = internal_key(caller_key, &command);
     graph
         .data_plane_identity_admin()
-        .administer(tenant, request.request_id(), idempotency, &command)
+        .administer(
+            tenant,
+            &internal_request_id(request.request_id(), &command),
+            &key,
+            &command,
+        )
         .map_err(|error| rpc_error(request, error))
+}
+
+/// The idempotency key one identity-admin command travels under.
+///
+/// The data plane journals a response per `(caller, idempotency key)` so that
+/// a retry returns the first answer rather than acting twice. One HTTP request
+/// can issue several commands, though -- listing indexes inspects every index
+/// it lists -- and they all carried the same key, so the second command looked
+/// like the first one being replayed with a different body. The journal
+/// refused it, correctly, and listing indexes failed with a conflict for any
+/// collection holding more than one: the console's index view, `mako indexes
+/// list`, and every setup script. Deriving the key from the caller's key *and
+/// the command* keeps both properties -- distinct commands are distinct
+/// requests, and a retry of the same command under the same caller key is
+/// still the same request.
+fn internal_key(caller: &str, command: &IdentityAdminCommand) -> String {
+    format!("idem_{}", &digest(caller, command)[..32])
+}
+
+/// The request id that command travels under, distinct for the same reason.
+fn internal_request_id(caller: &str, command: &IdentityAdminCommand) -> String {
+    format!("req_{}", &digest(caller, command)[..32])
+}
+
+fn digest(caller: &str, command: &IdentityAdminCommand) -> String {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"mako/identity-admin/command/v1");
+    hasher.update(caller.as_bytes());
+    hasher.update(&[0]);
+    hasher.update(format!("{:?}", command.operation).as_bytes());
+    hasher.update(&[0]);
+    hasher.update(command.actor_id.as_bytes());
+    hasher.update(&[0]);
+    hasher.update(command.input.to_string().as_bytes());
+    hasher.finalize().to_hex().to_string()
 }
 
 pub(crate) async fn identity_permissions(

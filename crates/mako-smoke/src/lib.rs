@@ -113,7 +113,19 @@ fn workspace_root() -> PathBuf {
 /// exercise. Silently testing a stale build is worse than not testing: it
 /// reports on code nobody wrote and hides the code somebody did.
 fn assert_binaries_are_current(binaries: &Path, name: &str) {
-    let Ok(built) = std::fs::metadata(binaries.join(name)).and_then(|meta| meta.modified()) else {
+    // The newest binary in the directory, not this one: cargo relinks only
+    // what a change actually reached, so a data-plane binary is legitimately
+    // older than a control-plane edit. What is never legitimate is every
+    // binary predating the newest source -- that is a tree nobody rebuilt.
+    let Ok(entries) = std::fs::read_dir(binaries) else {
+        return;
+    };
+    let built = entries
+        .flatten()
+        .filter(|entry| entry.path().is_file())
+        .filter_map(|entry| entry.metadata().and_then(|meta| meta.modified()).ok())
+        .max();
+    let Some(built) = built else {
         return;
     };
     let root = workspace_root();
@@ -127,7 +139,16 @@ fn assert_binaries_are_current(binaries: &Path, name: &str) {
             for entry in entries.flatten() {
                 let path = entry.path();
                 if path.is_dir() {
-                    if path.file_name().is_some_and(|name| name != "target") {
+                    // Only what compiles into a service counts. A test, a
+                    // benchmark, or this harness itself can change without
+                    // making a built binary stale, and a guard that fires on
+                    // those is one people learn to ignore.
+                    let name = path.file_name().unwrap_or_default();
+                    let skip = matches!(
+                        name.to_str(),
+                        Some("target" | "tests" | "benches" | "examples" | "mako-smoke")
+                    );
+                    if !skip {
                         pending.push(path);
                     }
                 } else if path.extension().is_some_and(|extension| extension == "rs")
@@ -146,7 +167,8 @@ fn assert_binaries_are_current(binaries: &Path, name: &str) {
     {
         let relative = path.strip_prefix(&root).unwrap_or(&path).display();
         panic!(
-            "{} in {} is older than {relative}; rebuild before running the smoke suite \
+            "every binary in {1} is older than {relative} (checked for {0}); rebuild before \
+             running the smoke suite \
              (`cargo build --workspace --bins`, and set MAKO_SMOKE_BINARY_DIR when \
              CARGO_TARGET_DIR points elsewhere)",
             name,

@@ -546,6 +546,50 @@ fn provision(services: &Services) -> (String, String) {
         session,
         &format!("{scope}/collections/{COLLECTION_ID}/indexes/owner_updated/1"),
     );
+    // A second index, because one HTTP listing inspects every index it lists
+    // and each inspection is its own internal request. Sending them all under
+    // the caller's request id made the second look like a replay of the first,
+    // so listing a collection with more than one index answered `conflict` --
+    // in the console, the CLI, and every setup script. One index could never
+    // have shown it.
+    created(
+        control,
+        &format!("{scope}/collections/{COLLECTION_ID}/indexes"),
+        &manage("index-second"),
+        Some(&json!({
+            "name": "title_updated",
+            "version": 1,
+            "kind": "non_unique",
+            "fields": [
+                { "path": "title", "direction": "ascending" },
+                { "path": "updated_at", "direction": "descending" },
+            ],
+        })),
+    );
+    await_index(
+        control,
+        session,
+        &format!("{scope}/collections/{COLLECTION_ID}/indexes/title_updated/1"),
+    );
+    let (status, body) = request(
+        control,
+        "GET",
+        &format!("{scope}/collections/{COLLECTION_ID}/indexes"),
+        &BTreeMap::from([("authorization".to_owned(), format!("Bearer {session}"))]),
+        None,
+    );
+    assert_eq!(status, 200, "listing two indexes failed: {body}");
+    let listed: Value = serde_json::from_str(&body).expect("index listing json");
+    let names: Vec<&str> = listed["items"]
+        .as_array()
+        .expect("index items")
+        .iter()
+        .filter_map(|item| item["name"].as_str())
+        .collect();
+    assert!(
+        names.contains(&"owner_updated") && names.contains(&"title_updated"),
+        "both indexes are listed with their state: {body}"
+    );
 
     created(
         control,
