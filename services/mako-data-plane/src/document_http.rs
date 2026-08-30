@@ -985,7 +985,38 @@ fn map_query_error(
         | mako_documents::TrustedQueryError::CorruptIndexEntry => {
             unavailable(request, "document query is unavailable")
         }
-        _ => invalid(request, "document query is invalid"),
+        // Every remaining refusal is the caller's to fix, so each one says
+        // what to fix. One message for a dozen different mistakes left a
+        // caller with nothing to act on but the word "invalid".
+        mako_documents::TrustedQueryError::InvalidField(_) => {
+            invalid(request, "document query names a field it cannot index")
+        }
+        mako_documents::TrustedQueryError::DuplicatePredicateField(_) => {
+            invalid(request, "document query names one field in two predicates")
+        }
+        mako_documents::TrustedQueryError::MultipleRangePredicates => {
+            invalid(request, "document query has more than one range predicate")
+        }
+        mako_documents::TrustedQueryError::InvalidRangeBounds => {
+            invalid(request, "document query range bounds exclude every value")
+        }
+        mako_documents::TrustedQueryError::InvalidCursor => {
+            invalid(request, "document query cursor is invalid")
+        }
+        mako_documents::TrustedQueryError::LimitTooLarge { .. } => {
+            invalid(request, "document query limit is above the maximum")
+        }
+        mako_documents::TrustedQueryError::Index(_)
+        | mako_documents::TrustedQueryError::KeyCodec(_) => invalid(
+            request,
+            "document query cannot be planned against its index",
+        ),
+        mako_documents::TrustedQueryError::Scope(_) => {
+            invalid(request, "document query is outside the collection's scope")
+        }
+        mako_documents::TrustedQueryError::Json(_) => {
+            invalid(request, "document query could not be encoded")
+        }
     }
 }
 

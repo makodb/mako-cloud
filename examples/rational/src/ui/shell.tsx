@@ -11,6 +11,7 @@ const NAV: ReadonlyArray<{ readonly route: Route; readonly label: string }> = [
   { route: { name: "import" }, label: "Import" },
   { route: { name: "connections" }, label: "Connections" },
   { route: { name: "rules" }, label: "Rules" },
+  { route: { name: "alerts" }, label: "Alerts" },
   { route: { name: "reports" }, label: "Reports" },
   { route: { name: "categories" }, label: "Categories" },
   { route: { name: "tags" }, label: "Tags" },

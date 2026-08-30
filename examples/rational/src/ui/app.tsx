@@ -8,6 +8,7 @@ import { ConnectionsScreen } from "./connections.js";
 import { ImportScreen } from "./import.js";
 import { PlanScreen } from "./plan.js";
 import { ReportsScreen } from "./reports.js";
+import { AlertsScreen } from "./alerts.js";
 import { RulesScreen } from "./rules.js";
 import { useBehavior } from "./hooks.js";
 import { HouseholdScreen } from "./household.js";
@@ -125,6 +126,13 @@ function Screens({ app }: { app: RationalApp }) {
           ) : route.name === "rules" ? (
             <RulesScreen
               key={`${state.generation}:rules`}
+              app={app}
+              session={session}
+              currency={currency}
+            />
+          ) : route.name === "alerts" ? (
+            <AlertsScreen
+              key={`${state.generation}:alerts`}
               app={app}
               session={session}
               currency={currency}

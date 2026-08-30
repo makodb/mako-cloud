@@ -26,8 +26,8 @@
 
 - [x] 3.1 `institution-sync` edge function: deterministic simulated institution (its own routes on the function), connections collection, scheduled sync every 15 minutes through `mako schedules`, idempotent transaction writes by `(account, external_id)` with a service client, last sync time and outcome on the connection; Rational screens to connect and view sync status.
 - [x] 3.2 `nightly` edge function on a 02:00 UTC schedule: applies rules to uncategorized transactions, server-side duplicate check for synced transactions, recurrence detection, and net-worth snapshots per household; Rational shows the net-worth history chart and the rule that categorized each transaction.
-- [ ] 3.3 Alerts: `alert_settings` (large transaction, budget exceeded, low balance) evaluated in `nightly` and after each institution sync, `alerts` documents written, a webhook endpoint registered for the `alerts` collection delivering signed events to the household's endpoint; Rational alert settings and history screens; the live suite proves one signed delivery per fired alert and never a document a member could not read.
-- [ ] 3.4 Phase 3 findings recorded and fixed in the platform with regression tests.
+- [x] 3.3 Alerts: `alert_settings` (large transaction, budget exceeded, low balance) evaluated in `nightly` and after each institution sync, `alerts` documents written, a webhook endpoint registered for the `alerts` collection delivering signed events to the household's endpoint; Rational alert settings and history screens; the live suite proves one signed delivery per fired alert and never a document a member could not read.
+- [x] 3.4 Phase 3 findings recorded and fixed in the platform with regression tests (#32 the scheduler's headers authenticated nothing, #33 a collection could not be walked, #34 two layers refused without saying why, #35 the live suite's function path had never worked).
 
 ## 4. Phase 4 — hardening (CORS on custom domains, suites, beta, docs)
 

@@ -193,17 +193,34 @@ test("an invitation is accepted, replicates, and a removal clears the member's c
     timeout: 60_000,
   });
   const accepted = (await diagnostics(member.page)).acceptedWrites;
-  await member.page.evaluate(async () => {
-    const accounts = window.rational.household?.session?.collections.accounts;
-    const documents = accounts === undefined ? [] : await accounts.find().exec();
-    await window.rational.writes?.createTransaction({
-      account_id: documents[0]?.toJSON().id ?? "",
-      date: "2026-08-21",
-      amount: -2_500,
-      currency: "USD",
-      description: "An editor may write this",
-    });
-  });
+  // Booking against the owner's account, once it is there to book against.
+  // The role change advanced the authorization epoch, so this device is being
+  // reset and re-synced underneath: the account appears, disappears with the
+  // old generation, and appears again. Retrying the whole write is the honest
+  // way to wait for that -- there is no moment to look for, only a state that
+  // settles.
+  await expect
+    .poll(
+      async () =>
+        member.page
+          .evaluate(async () => {
+            const accounts = window.rational.household?.session?.collections.accounts;
+            const documents = accounts === undefined ? [] : await accounts.find().exec();
+            const accountId = documents[0]?.toJSON().id;
+            if (accountId === undefined) return false;
+            await window.rational.writes?.createTransaction({
+              account_id: accountId,
+              date: "2026-08-21",
+              amount: -2_500,
+              currency: "USD",
+              description: "An editor may write this",
+            });
+            return true;
+          })
+          .catch(() => false),
+      { timeout: 60_000, message: "the editor never got a chance to write" },
+    )
+    .toBe(true);
   await expect
     .poll(async () => (await diagnostics(member.page)).acceptedWrites, { timeout: 60_000 })
     .toBeGreaterThan(accepted);

@@ -22,6 +22,7 @@
  * Without --token / MAKO_TOKEN the CLI's stored profile session is used.
  */
 import { spawnSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
@@ -71,6 +72,9 @@ const DEFAULTS = {
   "sync-cron": "*/15 * * * *",
   "nightly-function-name": "nightly",
   "nightly-cron": "0 2 * * *",
+  "run-key": process.env.MAKO_RATIONAL_RUN_KEY,
+  "alerts-webhook": process.env.MAKO_ALERTS_WEBHOOK,
+  "webhook-secret-file": undefined,
   "config-dir": process.env.MAKO_CONFIG_DIR,
 };
 
@@ -500,6 +504,8 @@ function deploySyncFunction() {
     "connections",
     "--collection",
     "transactions",
+    "--collection",
+    "alerts",
     "--operation",
     "read",
     "--operation",
@@ -526,8 +532,14 @@ function deploySyncFunction() {
       ...tenant,
     ]);
   }
+  // See `deployNightlyFunction`: `shared` is a symlink in the repository and
+  // real files in the bundle, because nothing outside a bundle is uploaded.
   const source = join(scratch, "sync-function");
-  cpSync(join(exampleRoot, "functions", "institution-sync"), source, { recursive: true });
+  cpSync(join(exampleRoot, "functions", "institution-sync"), source, {
+    recursive: true,
+    filter: (from) => basename(from) !== "shared",
+  });
+  cpSync(join(exampleRoot, "functions", "shared"), join(source, "shared"), { recursive: true });
   const deployed = mako([
     "functions",
     "deploy",
@@ -539,6 +551,8 @@ function deploySyncFunction() {
     options.region,
     "--secret",
     secretName,
+    "--secret",
+    RUN_KEY_SECRET,
     "--yes",
     ...tenant,
     "--json",
@@ -554,7 +568,7 @@ function deploySyncFunction() {
   // once and left alone afterwards: a re-run that recreated it would lose the
   // run history the developer is looking at.
   const schedules = makoJson(["schedules", "list", "--function", functionName, ...tenant], [4]);
-  const existingSchedule = (schedules?.items ?? []).find(
+  const existingSchedule = items(schedules).find(
     (schedule) => schedule.name === "every-fifteen-minutes",
   );
   if (existingSchedule === undefined) {
@@ -572,10 +586,22 @@ function deploySyncFunction() {
       "POST",
       "--path",
       "/sync",
+      "--header",
+      `${RUN_KEY_HEADER}=${runKey}`,
       ...tenant,
     ]);
   } else {
-    log(`${functionName} is already scheduled (${existingSchedule.cron})`);
+    log(`${functionName} is already scheduled (${existingSchedule.cron}); refreshing its run key`);
+    makoJson([
+      "schedules",
+      "update",
+      existingSchedule.id,
+      "--function",
+      functionName,
+      "--header",
+      `${RUN_KEY_HEADER}=${runKey}`,
+      ...tenant,
+    ]);
   }
 }
 
@@ -610,6 +636,10 @@ function deployNightlyFunction() {
     "net_worth_snapshots",
     "--collection",
     "recurrences",
+    "--collection",
+    "budgets",
+    "--collection",
+    "alerts",
     "--operation",
     "read",
     "--operation",
@@ -656,6 +686,8 @@ function deployNightlyFunction() {
     options.region,
     "--secret",
     secretName,
+    "--secret",
+    RUN_KEY_SECRET,
     "--yes",
     ...tenant,
     "--json",
@@ -668,7 +700,7 @@ function deployNightlyFunction() {
     return;
   }
   const schedules = makoJson(["schedules", "list", "--function", functionName, ...tenant], [4]);
-  const existingSchedule = (schedules?.items ?? []).find((schedule) => schedule.name === "nightly");
+  const existingSchedule = items(schedules).find((schedule) => schedule.name === "nightly");
   if (existingSchedule === undefined) {
     log(`scheduling ${functionName} at ${options["nightly-cron"]}`);
     makoJson([
@@ -684,19 +716,123 @@ function deployNightlyFunction() {
       "POST",
       "--path",
       "/",
+      "--header",
+      `${RUN_KEY_HEADER}=${runKey}`,
       ...tenant,
     ]);
   } else {
-    log(`${functionName} is already scheduled (${existingSchedule.cron})`);
+    log(`${functionName} is already scheduled (${existingSchedule.cron}); refreshing its run key`);
+    makoJson([
+      "schedules",
+      "update",
+      existingSchedule.id,
+      "--function",
+      functionName,
+      "--header",
+      `${RUN_KEY_HEADER}=${runKey}`,
+      ...tenant,
+    ]);
   }
+}
+
+const RUN_KEY_SECRET = "RATIONAL_RUN_KEY";
+const RUN_KEY_HEADER = "x-rational-run-key";
+
+/**
+ * The key that says an invocation of a scheduled function is the schedule.
+ *
+ * A scheduled invocation is anonymous -- `x-mako-schedule-id` is a header a
+ * stranger can send too -- so without this, `POST /functions/v1/nightly` would
+ * be an open button that runs every household's night. The function holds the
+ * key as a secret and the schedule carries it in a header of its own.
+ *
+ * The key is chosen once and reused: it is read back from the schedule that
+ * already carries it, so re-running the bootstrap does not leave a schedule
+ * calling with a key the function no longer knows.
+ */
+function establishRunKey() {
+  if (options["run-key"] !== undefined && options["run-key"] !== "") return options["run-key"];
+  for (const functionName of [options["sync-function-name"], options["nightly-function-name"]]) {
+    const schedules = makoJson(["schedules", "list", "--function", functionName, ...tenant], [4]);
+    for (const schedule of items(schedules)) {
+      const carried = schedule.request?.headers?.[RUN_KEY_HEADER];
+      if (typeof carried === "string" && carried !== "") return carried;
+    }
+  }
+  return randomUUID().replaceAll("-", "") + randomUUID().replaceAll("-", "");
+}
+
+/** Install (or correct) a function secret with a value we choose. */
+function putFunctionSecret(name, value) {
+  const existing = makoJson(["functions", "secrets", "get", name, ...tenant], [4]);
+  if (existing === null) {
+    makoJson(["functions", "secrets", "create", name, "--value", value, ...tenant]);
+    return;
+  }
+  makoJson(["functions", "secrets", "rotate", name, "--value", value, "--yes", ...tenant]);
+}
+
+/**
+ * Register the household's webhook endpoint for the `alerts` collection.
+ *
+ * An alert is a document, and a document a household should hear about
+ * somewhere other than the app -- a phone, a chat room, an inbox. That is what
+ * the endpoint is for, and the platform signs each delivery so the receiver
+ * can tell one from anybody else's POST.
+ *
+ * The signing secret is shown once, so it is written to a file of its own and
+ * never to `mako.env.json`: that file is served to the browser. Re-running the
+ * bootstrap rotates the secret of the endpoint already registered for the same
+ * URL rather than registering a second one.
+ */
+function registerAlertsWebhook() {
+  const url = options["alerts-webhook"];
+  if (url === undefined || url === "") return;
+  const secretFile =
+    options["webhook-secret-file"] ?? join(dirname(resolve(options.output)), "webhook-secret");
+  const existing = items(makoJson(["webhooks", "list", ...tenant], [4])).find(
+    (endpoint) => endpoint.url === url,
+  );
+  if (existing !== undefined) {
+    log(`rotating the signing secret of ${existing.id} for ${url}`);
+    makoJson([
+      "webhooks",
+      "rotate-secret",
+      existing.id,
+      "--secret-file",
+      secretFile,
+      "--yes",
+      ...tenant,
+    ]);
+    return;
+  }
+  log(`registering ${url} for alerts`);
+  makoJson([
+    "webhooks",
+    "create",
+    "--url",
+    url,
+    "--subscribe",
+    "alerts:insert",
+    "--description",
+    "Rational alerts",
+    "--secret-file",
+    secretFile,
+    ...tenant,
+  ]);
+  log(`the signing secret is in ${secretFile}`);
 }
 
 const signIn = readSignInSettings();
 const functionsEndpoint = options.functions ? deployHouseholdsFunction() : null;
+let runKey = "";
 if (options.functions && functionsEndpoint !== null) {
+  runKey = establishRunKey();
+  putFunctionSecret(RUN_KEY_SECRET, runKey);
   deploySyncFunction();
   deployNightlyFunction();
 }
+registerAlertsWebhook();
 
 const envFile = {
   endpoint: options["data-endpoint"],

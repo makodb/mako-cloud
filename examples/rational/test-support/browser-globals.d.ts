@@ -70,6 +70,9 @@ interface RationalWritesWire {
   importTransactions(input: Record<string, unknown>): Promise<Record<string, unknown>>;
   setBudget(input: Record<string, unknown>): Promise<RationalDocumentWire>;
   saveRecurrence(input: Record<string, unknown>): Promise<RationalDocumentWire>;
+  updateRecurrence(id: string, patch: Record<string, unknown>): Promise<RationalDocumentWire>;
+  saveAlertSetting(input: Record<string, unknown>): Promise<RationalDocumentWire>;
+  markAlertRead(id: string, read?: boolean): Promise<RationalDocumentWire>;
   createGoal(input: Record<string, unknown>): Promise<RationalDocumentWire>;
   contributeToGoal(
     id: string,

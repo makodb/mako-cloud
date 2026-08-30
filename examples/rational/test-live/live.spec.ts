@@ -56,7 +56,25 @@ async function openDevice(
   return device;
 }
 
+/**
+ * Open the seeded household, and say so rather than assuming.
+ *
+ * The owner belongs to more than one household by the time this file runs --
+ * the households spec creates another under the same person -- and which one
+ * a fresh device opens first is the application's choice, not this suite's.
+ * Naming it is both more honest and what a person does.
+ */
 async function waitForHousehold(page: Page): Promise<void> {
+  await page.waitForFunction(
+    (householdId) =>
+      window.rational.state.memberships.some((entry) => entry.household_id === householdId),
+    tenant.householdId,
+    { timeout: 60_000 },
+  );
+  await page.evaluate(
+    (householdId) => window.rational.selectHousehold(householdId),
+    tenant.householdId,
+  );
   await page.waitForFunction(
     (householdId) =>
       window.rational.state.currentHouseholdId === householdId &&

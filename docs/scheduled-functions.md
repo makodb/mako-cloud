@@ -150,6 +150,20 @@ function's point of view, and the gateway audits it with the actor
 A function that must behave differently when scheduled should check
 `x-mako-schedule-id`.
 
+**Those three headers are the scheduler's alone.** The gateway sets them on
+the internal hop the scheduler invokes over, and strips them from every
+public request before the function sees them — so a caller who sends
+`x-mako-schedule-id` does not become a schedule, and the check above means
+what it says.
+
+What it does not mean is that a scheduled function's route is private: the
+route is public like any other, and a stranger can still invoke it *without*
+the header. A function whose work only the schedule should start must
+therefore refuse an invocation that carries no `x-mako-schedule-id` — or,
+when the developer also wants to start a run by hand, hold a secret of its
+own and require it in a header the schedule is created with (`--header`).
+`examples/rational/functions/nightly` does the second.
+
 ## When runs happen
 
 The worker runs every five seconds. Each pass:

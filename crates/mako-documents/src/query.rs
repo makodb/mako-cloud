@@ -529,11 +529,22 @@ impl ScopedCollectionEngine {
             .zip(plan.definition.fields())
             .map(|(value, field)| value.encode(field.direction()))
             .collect();
-        let equality_prefix = self.keyspace.index_components_prefix(
-            collection,
-            &physical_name,
-            &equality_components,
-        )?;
+        // With no equality predicate there is no component to stand on, and an
+        // index entry always has at least one -- so the prefix every entry of
+        // this index shares is what a pure range starts from. Asking for a
+        // components prefix of nothing was refused by the key codec, which
+        // made "walk this collection over an index" impossible: the only
+        // shape that can do it is exactly this one.
+        let equality_prefix = if equality_components.is_empty() {
+            self.keyspace
+                .index_entries_prefix(collection, &physical_name)?
+        } else {
+            self.keyspace.index_components_prefix(
+                collection,
+                &physical_name,
+                &equality_components,
+            )?
+        };
         let equality_range = mako_storage::TenantKeyspace::prefixed_range(&equality_prefix)?;
         let Some((range_index, lower, upper)) = &plan.range else {
             return Ok(equality_range);
@@ -1188,6 +1199,77 @@ mod tests {
                 crate::MutationAuthorizationDecision::deny("test_hidden")
             }
         }
+    }
+
+    /// Walking a whole collection.
+    ///
+    /// There is no query for "everything" -- one with no predicate names no
+    /// index -- so a job that must visit every document says "everything
+    /// written since the epoch" over an index on one field. That is one
+    /// one-sided range, no equality, and no sort, which is the shape nothing
+    /// else in this file exercised.
+    #[test]
+    fn a_one_sided_range_over_a_single_field_index_walks_the_collection() {
+        block_on(async {
+            let (scoped, sequencer, validator) = setup();
+            let name = IndexName::parse("by-score").expect("name");
+            let version = IndexVersion::new(1).expect("version");
+            scoped
+                .create_index(
+                    IndexDefinition::new_building(
+                        CollectionId::parse("todos").expect("collection"),
+                        name.clone(),
+                        version,
+                        IndexKind::NonUnique,
+                        [IndexField::ascending("score").expect("field")],
+                    )
+                    .expect("index"),
+                    Durability::Memory,
+                )
+                .await
+                .expect("create index");
+            scoped
+                .update_index_catalog(&name, version, Durability::Memory, |definition| {
+                    definition.activate()
+                })
+                .await
+                .expect("activate");
+
+            let mut lease = sequencer
+                .lease(NonZeroU64::new(3).expect("non-zero"))
+                .await
+                .expect("lease");
+            for (id, score) in [("one", 1), ("two", 2), ("three", 3)] {
+                let position = lease.issue().expect("position");
+                scoped
+                    .create_document(MutationInput {
+                        mutation_id: MutationId::parse(format!("create-{id}")).expect("mutation"),
+                        commit_position: CommitPosition::new(position).expect("position"),
+                        document: validator
+                            .validate_create(json!({"id": id, "team": "blue", "score": score}))
+                            .expect("document"),
+                        durability: Durability::Memory,
+                    })
+                    .await
+                    .expect("create");
+            }
+
+            let query = IndexedQuery::new(
+                [QueryPredicate::greater_than_or_equal(
+                    "score",
+                    IndexValue::number("0").expect("number"),
+                )
+                .expect("range")],
+                [],
+                NonZeroUsize::new(10).expect("non-zero"),
+            )
+            .expect("query");
+            let page = scoped
+                .trusted_query(&TrustedQuery::indexed(query))
+                .await
+                .expect("a one-sided range over a single-field index");
+            assert_eq!(page.documents().len(), 3, "every document is visited");
+        });
     }
 
     fn setup() -> (

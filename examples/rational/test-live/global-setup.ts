@@ -8,7 +8,10 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
+import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
+import { createServer as createHttpServer, type Server } from "node:http";
 import { createServer } from "node:net";
+import { appendFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -36,6 +39,14 @@ export interface LiveTenant {
   readonly editor: { readonly email: string; readonly password: string; readonly userId: string };
   /** The edge gateway serving the `households` function, or null when none runs. */
   readonly functionsEndpoint: string | null;
+  /** One JSON object per line, appended by the webhook receiver below. */
+  readonly webhookDeliveriesFile: string;
+  readonly webhookUrl: string;
+  /** What a scheduled function's own schedule sends to prove it is the schedule. */
+  readonly runKey: string;
+  /** For driving the management API the way the developer's tooling does. */
+  readonly developerToken: string;
+  readonly cliConfigDir: string;
 }
 
 /**
@@ -86,6 +97,7 @@ async function waitFor(probe: () => Promise<boolean>, what: string, timeoutMs = 
 const processes: ChildProcess[] = [];
 let workspace: string | undefined;
 let runtimeContainer: string | null = null;
+let webhookReceiver: Server | null = null;
 let objectStoreContainer: string | null = null;
 
 /** The pinned edge-runtime image the platform deploys functions onto. */
@@ -103,6 +115,36 @@ function containerEngine(): string[] {
 }
 
 /**
+ * The `--network` the runtime container needs, if any -- the same value
+ * `crates/mako-smoke/tests/edge_function.rs` uses, and for the same reason.
+ *
+ * Every service here binds loopback and a function reaches the data plane at
+ * `host.containers.internal`. Rootless Podman's default pasta networking
+ * forwards that name to the host's *external* addresses only, so a
+ * loopback-bound data plane answers `connection refused` -- which arrives as
+ * a function that cannot identify its caller, not as a network error.
+ * `MAKO_EDGE_TEST_NETWORK` replaces the value (Docker usually wants `host`);
+ * an empty value leaves the engine's default alone.
+ */
+function runtimeNetwork(engine: readonly string[]): string | null {
+  const override = process.env.MAKO_EDGE_TEST_NETWORK;
+  if (override !== undefined) return override === "" ? null : override;
+  return engineIsPodman(engine) ? "pasta:--map-host-loopback,169.254.1.2" : null;
+}
+
+/**
+ * Asked, not assumed from the binary's name: where `podman-docker` is
+ * installed, `docker` *is* podman (findings log #27).
+ */
+function engineIsPodman(engine: readonly string[]): boolean {
+  if (engine[0]?.endsWith("podman") === true) return true;
+  const version = spawnSync(engine[0] as string, [...engine.slice(1), "--version"], {
+    encoding: "utf8",
+  });
+  return (version.stdout ?? "").toLowerCase().includes("podman");
+}
+
+/**
  * Start the runtime supervisor the control plane registers deployments with.
  * This is the same contract the deployed quadlet uses: the internal auth
  * secret the services share, the region they agree on, and the CLI's `main`
@@ -110,6 +152,7 @@ function containerEngine(): string[] {
  */
 async function startRuntimeContainer(state: string, canary: string): Promise<boolean> {
   const engine = containerEngine();
+  const network = runtimeNetwork(engine);
   mkdirSync(state, { recursive: true });
   // The main worker serves both the supervisor and `mako functions serve`, so
   // it insists on a function to serve even when only the supervisor is used.
@@ -153,6 +196,7 @@ async function startRuntimeContainer(state: string, canary: string): Promise<boo
       CONTAINER_NAME,
       "--init",
       "--read-only",
+      ...(network === null ? [] : ["--network", network]),
       "--publish",
       `127.0.0.1:${SUPERVISOR_PORT}:${SUPERVISOR_PORT}`,
       "--mount",
@@ -446,6 +490,18 @@ export default async function globalSetup(): Promise<void> {
   const dataEndpoint = `http://127.0.0.1:${dataPort}`;
   const managementEndpoint = `http://127.0.0.1:${controlPort}`;
   const envFile = path("mako.env.json");
+  // The household's webhook endpoint, listening before the bootstrap registers
+  // it: registration records a cursor at the environment's current position,
+  // so only alerts written afterwards are delivered.
+  const webhookPort = await freePort();
+  const webhookUrl = `http://127.0.0.1:${webhookPort}/alerts`;
+  const webhookSecretFile = path("webhook-secret");
+  const webhookDeliveriesFile = path("webhook-deliveries.jsonl");
+  writeFileSync(webhookDeliveriesFile, "");
+  webhookReceiver = startWebhookReceiver(webhookPort, webhookSecretFile, webhookDeliveriesFile);
+  // The suite chooses the run key rather than reading one back, so it never
+  // has to go anywhere the browser can see it -- `mako.env.json` is served.
+  const runKey = randomUUID().replaceAll("-", "");
   const rationalBootstrap = spawnSync(
     "node",
     [
@@ -460,11 +516,24 @@ export default async function globalSetup(): Promise<void> {
       envFile,
       "--config-dir",
       path("cli-config"),
+      "--run-key",
+      runKey,
+      "--alerts-webhook",
+      webhookUrl,
+      "--webhook-secret-file",
+      webhookSecretFile,
       ...(functionsEndpoint === null
         ? []
         : ["--functions", "--functions-endpoint", functionsEndpoint]),
     ],
     { env: { ...process.env, MAKO_WAIT_INTERVAL_MS: "250" }, encoding: "utf8" },
+  );
+  // Always kept: the bootstrap deploys the functions and creates the
+  // schedules, and when one of those quietly does not happen its output is
+  // the only thing that says why.
+  writeFileSync(
+    path("bootstrap.log"),
+    `${rationalBootstrap.stdout ?? ""}\n${rationalBootstrap.stderr ?? ""}`,
   );
   if (rationalBootstrap.status !== 0) {
     throw new Error(
@@ -554,8 +623,88 @@ export default async function globalSetup(): Promise<void> {
     // not start leaves this null and the households spec skips.
     functionsEndpoint:
       (bootstrapped as { functionsEndpoint?: string | null }).functionsEndpoint ?? null,
+    webhookDeliveriesFile,
+    webhookUrl,
+    runKey,
+    developerToken,
+    cliConfigDir: path("cli-config"),
   };
   writeFileSync(tenantFile, JSON.stringify(live, null, 2));
+}
+
+/**
+ * The household's webhook receiver.
+ *
+ * A real one is somebody's phone or chat room; this one writes each delivery
+ * to a file, having checked the signature the way the documentation tells a
+ * receiver to -- HMAC-SHA256 over `<t>.<body>` with the secret exactly as it
+ * was shown, compared in constant time. The spec then reads the file, so what
+ * it asserts is what actually arrived over HTTP and not a mock of it.
+ */
+function startWebhookReceiver(port: number, secretFile: string, deliveriesFile: string): Server {
+  const server = createHttpServer((request, response) => {
+    const chunks: Buffer[] = [];
+    request.on("data", (chunk: Buffer) => chunks.push(chunk));
+    request.on("end", () => {
+      const body = Buffer.concat(chunks).toString("utf8");
+      let secret = "";
+      try {
+        secret = readFileSync(secretFile, "utf8").trim();
+      } catch {
+        secret = "";
+      }
+      appendFileSync(
+        deliveriesFile,
+        `${JSON.stringify({
+          receivedAt: Date.now(),
+          event: request.headers["x-mako-event"] ?? null,
+          webhookId: request.headers["x-mako-webhook-id"] ?? null,
+          deliveryId: request.headers["x-mako-delivery-id"] ?? null,
+          secretVersion: request.headers["x-mako-secret-version"] ?? null,
+          userAgent: request.headers["user-agent"] ?? null,
+          signatureValid: verifySignature(
+            String(request.headers["x-mako-signature"] ?? ""),
+            body,
+            secret,
+          ),
+          body: safeJson(body),
+        })}\n`,
+      );
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end("{}");
+    });
+  });
+  server.listen(port, "127.0.0.1");
+  return server;
+}
+
+function verifySignature(header: string, body: string, secret: string): boolean {
+  if (secret === "") return false;
+  const parts = new Map(
+    header.split(",").map((part) => {
+      const [key = "", value = ""] = part.split("=");
+      return [key.trim(), value.trim()] as const;
+    }),
+  );
+  const timestamp = parts.get("t");
+  const signature = parts.get("v1");
+  if (timestamp === undefined || signature === undefined) return false;
+  const expected = createHmac("sha256", secret).update(`${timestamp}.${body}`).digest();
+  let received: Buffer;
+  try {
+    received = Buffer.from(signature, "hex");
+  } catch {
+    return false;
+  }
+  return received.length === expected.length && timingSafeEqual(received, expected);
+}
+
+function safeJson(body: string): unknown {
+  try {
+    return JSON.parse(body);
+  } catch {
+    return null;
+  }
 }
 
 function tail(file: string, lines = 40): string {
@@ -578,10 +727,24 @@ async function freePorts(): Promise<boolean> {
 }
 
 export async function globalTeardown(): Promise<void> {
+  webhookReceiver?.close();
+  webhookReceiver = null;
   for (const child of processes) child.kill();
   const engine = containerEngine();
   for (const container of [runtimeContainer, objectStoreContainer]) {
     if (container === null) continue;
+    // A function that failed says why in the runtime's log and nowhere else,
+    // and the container is about to be gone. Keep it beside the other logs.
+    if (workspace !== undefined) {
+      const logs = spawnSync(engine[0] as string, [...engine.slice(1), "logs", container], {
+        encoding: "utf8",
+        maxBuffer: 32 * 1024 * 1024,
+      });
+      writeFileSync(
+        join(workspace, `${container}.log`),
+        `${logs.stdout ?? ""}\n${logs.stderr ?? ""}`,
+      );
+    }
     spawnSync(engine[0] as string, [...engine.slice(1), "rm", "-f", container], {
       stdio: "ignore",
     });

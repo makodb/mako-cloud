@@ -345,14 +345,28 @@ function isApiErrorEnvelope(value) {
             error.retry.kind === "immediate" ||
             (error.retry.kind === "after_delay" && typeof error.retry.afterMs === "number")));
 }
+/**
+ * Refuse a query the API would refuse, and say which rule it broke.
+ *
+ * These are the platform's own bounds, checked here so a function fails at
+ * the call rather than on the wire. One message for six different mistakes
+ * was worse than no check at all: the commonest of them -- a query with no
+ * predicate, because every query must be served by an index and a query that
+ * names no field names no index -- is exactly the one a caller is least
+ * likely to guess from "document query is invalid".
+ */
 function validateQuery(query) {
-    if (query.predicates.length < 1 ||
-        query.predicates.length > 16 ||
-        query.sort.length > 16 ||
-        !Number.isSafeInteger(query.limit) ||
-        query.limit < 1 ||
-        query.limit > 1_000) {
-        throw new MakoEdgeSdkError("document query is invalid");
+    if (query.predicates.length < 1) {
+        throw new MakoEdgeSdkError("document query needs at least one predicate: every query is served by an index, and a query that names no field names no index");
+    }
+    if (query.predicates.length > 16) {
+        throw new MakoEdgeSdkError("document query allows at most 16 predicates");
+    }
+    if (query.sort.length > 16) {
+        throw new MakoEdgeSdkError("document query allows at most 16 sort keys");
+    }
+    if (!Number.isSafeInteger(query.limit) || query.limit < 1 || query.limit > 1_000) {
+        throw new MakoEdgeSdkError("document query limit must be a whole number from 1 to 1000");
     }
 }
 function validateMutation(mutation) {
@@ -360,15 +374,19 @@ function validateMutation(mutation) {
         (mutation.operation !== "create" &&
             typeof mutation.expectedRevision === "string" &&
             mutation.expectedRevision.length > 0);
-    if (mutation.mutationId.length < 16 ||
-        mutation.mutationId.length > 200 ||
-        !Number.isSafeInteger(mutation.schemaVersion) ||
-        mutation.schemaVersion < 1 ||
-        !revisionMatchesOperation ||
-        typeof mutation.body !== "object" ||
-        mutation.body === null ||
-        Array.isArray(mutation.body)) {
-        throw new MakoEdgeSdkError("document mutation is invalid");
+    if (mutation.mutationId.length < 16 || mutation.mutationId.length > 200) {
+        throw new MakoEdgeSdkError("document mutation id must be 16 to 200 characters");
+    }
+    if (!Number.isSafeInteger(mutation.schemaVersion) || mutation.schemaVersion < 1) {
+        throw new MakoEdgeSdkError("document mutation schema version must be a whole number above 0");
+    }
+    if (!revisionMatchesOperation) {
+        throw new MakoEdgeSdkError(mutation.operation === "create"
+            ? "a create names no expected revision: pass null"
+            : \`an \${mutation.operation} names the revision it read: pass the document's revision\`);
+    }
+    if (typeof mutation.body !== "object" || mutation.body === null || Array.isArray(mutation.body)) {
+        throw new MakoEdgeSdkError("document mutation body must be a JSON object");
     }
 }
 `;

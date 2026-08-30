@@ -576,7 +576,7 @@ impl FunctionGateway {
     #[allow(clippy::too_many_arguments)]
     pub async fn invoke(
         &self,
-        request: FunctionGatewayRequest,
+        mut request: FunctionGatewayRequest,
         routes: &dyn FunctionRouteResolver,
         tokens: &dyn FunctionAccessTokenVerifier,
         admission: &dyn FunctionInvocationAdmission,
@@ -584,6 +584,16 @@ impl FunctionGateway {
         metrics: &dyn FunctionMetricsSink,
         runtime: &dyn FunctionRuntimeInvoker,
     ) -> Result<FunctionGatewayResponse, FunctionGatewayError> {
+        // The scheduler's headers say an invocation is a schedule's, and
+        // `docs/scheduled-functions.md` tells a function it may act on that.
+        // A public caller may therefore not send them: otherwise anyone could
+        // claim to be a schedule, and the documented check would be advice to
+        // trust a stranger. They are dropped rather than refused -- a request
+        // carrying one is not necessarily hostile, and a function that reads
+        // them correctly sees the truth either way.
+        request
+            .headers
+            .retain(|(name, _)| !is_schedule_header(name));
         let prepared = Self::prepare(&request, routes).await?;
         let request_id = &prepared.request_id;
         let supplied_token = optional_bearer_token(&request.headers)
@@ -1087,6 +1097,15 @@ fn forwarded_headers(headers: Vec<(String, String)>) -> Vec<(String, String)> {
                 && !name.eq_ignore_ascii_case("authorization")
         })
         .collect()
+}
+
+/// What the scheduler alone may say. Set on the internal hop by
+/// `invoke_as`, stripped from every public request by `invoke`.
+fn is_schedule_header(name: &str) -> bool {
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        "x-mako-schedule-id" | "x-mako-schedule-run-id" | "x-mako-schedule-due-at"
+    )
 }
 
 fn is_internal_header(name: &str) -> bool {
@@ -1771,6 +1790,76 @@ mod tests {
                     .lock()
                     .expect("invocations")
                     .is_empty()
+            );
+        });
+    }
+
+    /// `docs/scheduled-functions.md` tells a function that must behave
+    /// differently when scheduled to check `x-mako-schedule-id`. That advice
+    /// is only sound if a public caller cannot send one, so the public path
+    /// drops the scheduler's headers before the function ever sees them.
+    #[test]
+    fn a_public_caller_cannot_claim_to_be_a_schedule() {
+        futures::executor::block_on(async {
+            let tenant_scope = tenant("prj_abcdefgh");
+            let (token, jwks) = access_token(&tenant_scope);
+            let state = AccessState;
+            let verifier = GatewayAccessTokenVerifier::new(
+                &jwks,
+                &state,
+                &state,
+                AccessTokenVerificationConfig::new("https://issuer.test", "mako-functions", 30)
+                    .expect("config"),
+            );
+            let runtime = Runtime::default();
+            let mut forged = request(&token, b"request".to_vec());
+            for name in [
+                "x-mako-schedule-id",
+                "X-Mako-Schedule-Run-Id",
+                "x-mako-schedule-due-at",
+            ] {
+                forged.headers.push((name.to_owned(), "forged".to_owned()));
+            }
+            FunctionGateway
+                .invoke(
+                    forged,
+                    &routes(tenant_scope, 1024),
+                    &verifier,
+                    &Admission(FunctionAdmissionDecision::Allowed),
+                    &Audit::default(),
+                    &Metrics::default(),
+                    &runtime,
+                )
+                .await
+                .expect("invocation");
+            let invocations = runtime.invocations.lock().expect("invocations");
+            let invocation = invocations.first().expect("invocation");
+            assert!(
+                !invocation
+                    .headers
+                    .iter()
+                    .any(|(name, _)| name.to_ascii_lowercase().starts_with("x-mako-schedule")),
+                "a public caller's schedule headers must not reach the function"
+            );
+            assert_eq!(
+                invocation.audit_context.actor,
+                FunctionInvocationActor::ApplicationUser {
+                    user_id: invocation
+                        .caller
+                        .as_ref()
+                        .expect("caller")
+                        .user_id()
+                        .as_str()
+                        .to_owned(),
+                    session_id: invocation
+                        .caller
+                        .as_ref()
+                        .expect("caller")
+                        .session_id()
+                        .as_str()
+                        .to_owned(),
+                },
+                "and the actor is still the application user it actually was"
             );
         });
     }

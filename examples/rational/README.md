@@ -241,13 +241,44 @@ bootstrap creates with `mako schedules`:
 | function | schedule | what it does |
 | -------- | -------- | ------------ |
 | `institution-sync` | every 15 minutes | asks a deterministic simulated institution for each connected account's statement and writes what is new, keyed by `(account, external_id)` so an overlapping window never doubles a transaction |
-| `nightly` | 02:00 UTC | files uncategorized transactions with the household's own rules, marks a synced transaction that repeats a manual one, proposes repeating charges it has not proposed before, and records the day's net worth |
+| `nightly` | 02:00 UTC | files uncategorized transactions with the household's own rules, marks a synced transaction that repeats a manual one, proposes repeating charges it has not proposed before, records the day's net worth, and decides the alerts the household asked for |
 
 Everything the nightly job does is idempotent, and everything it does is reversible by the
 person: a category it chose records the `rule_id` that chose it and the transactions screen
 says *by &lt;rule&gt;*; a duplicate is annotated, never deleted; a detected recurrence is a
 `detected` document the household still confirms or dismisses; a snapshot is one document per
 household per day. A filing the person made is never overruled.
+
+Both hold a **run key**. A scheduled invocation is anonymous — the scheduler
+sends `x-mako-schedule-id`, which the platform now strips from public requests
+(findings log #32), but the route itself stays public — so each function
+requires `x-rational-run-key` and the bootstrap creates the schedule carrying
+it. That is also how the live suite starts a night deliberately instead of
+waiting until two in the morning; without the key the same request is `401`.
+
+## Alerts
+
+The household says what it wants to be told about — a large transaction, a
+budget gone over, an account running low — and the server decides. `nightly`
+evaluates all three over the whole household; `institution-sync` evaluates the
+large-transaction one over what each pass just wrote, because a big charge
+should not have to wait until 02:00. A device that is closed would never fire
+an alert, which is the whole reason none of this happens in the browser.
+
+Each alert has a derived id (`alr_<household>.<kind>.<subject>`), so a
+condition still true tomorrow is the same alert and not a second one, and
+whichever job sees it first is the one that writes it.
+
+Alerts reach a person two ways. In the app they are documents like any other,
+replicated into the Alerts screen. Outside it, the bootstrap can register the
+household's webhook endpoint for the `alerts` collection with
+`--alerts-webhook <url>`; the platform then signs each delivery and the signing
+secret is written to a file of its own — never to `mako.env.json`, which is
+served to the browser. A delivery names what changed and never what it
+contains, so nothing a member could not read leaves the environment on that
+channel. Settings live in the same collection as fired alerts (the
+thirteen-collection limit again), so an endpoint subscribed to `alerts:insert`
+sees setting documents too and tells them apart by reading the document.
 
 It shares its engines with the application. `functions/shared/rules.ts` and
 `functions/shared/recurrences.ts` are the same code the browser runs, so a charge is filed the
@@ -282,7 +313,8 @@ single import satisfies both.
 - `mako/` — the model, policies, and bucket the bootstrap publishes
 - `functions/households` — the edge function that owns membership
 - `functions/institution-sync`, `functions/nightly` — the scheduled functions
-- `functions/shared` — rules and recurrence detection, shared with the app, importing nothing
+- `functions/shared` — rules, recurrence detection, budgets, alerts, and the run key, shared with
+  the app and importing nothing
 - `scripts/` — `bootstrap.mjs`, `seed.mjs`, and the deterministic `demo-data.mjs`
 - `src/model` — document types and the RxDB schemas derived from `mako/collections.json`
 - `src/data` — transport, conflict handler, database, replication wiring, replicated scopes with

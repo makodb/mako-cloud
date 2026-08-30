@@ -4,6 +4,9 @@ import { randomId } from "../model/ids.js";
 import type {
   Account,
   AccountType,
+  Alert,
+  AlertKind,
+  AlertSetting,
   BaseDocument,
   Budget,
   Category,
@@ -94,6 +97,12 @@ export interface BudgetInput {
   readonly amount: number;
   readonly currency: string;
   readonly rollover: boolean;
+}
+
+export interface AlertSettingInput {
+  readonly alert_kind: AlertKind;
+  readonly threshold: number;
+  readonly enabled: boolean;
 }
 
 export interface ConnectionInput {
@@ -338,6 +347,43 @@ export class HouseholdWrites {
 
   async updateRecurrence(id: string, patch: Patch<Recurrence>): Promise<Recurrence> {
     return this.#patch("recurrences", id, patch);
+  }
+
+  /**
+   * The household's standing instruction about one kind of alert. One setting
+   * per kind, by id, because two thresholds for the same question is not a
+   * thing a person means.
+   */
+  async saveAlertSetting(input: AlertSettingInput): Promise<AlertSetting> {
+    if (!Number.isSafeInteger(input.threshold) || input.threshold < 0) {
+      throw new ValidationError("a threshold is a whole, non-negative amount");
+    }
+    const id = alertSettingId(input.alert_kind);
+    const existing = await this.#collection("alerts").findOne(id).exec();
+    if (existing !== null) {
+      return (await this.#patch("alerts", id, {
+        threshold: input.threshold,
+        enabled: input.enabled,
+      } as Patch<AlertSetting>)) as AlertSetting;
+    }
+    return (await this.#insert(
+      "alerts",
+      this.#stamp<AlertSetting>(id, {
+        kind: "setting",
+        alert_kind: input.alert_kind,
+        threshold: input.threshold,
+        enabled: input.enabled,
+      }),
+    )) as AlertSetting;
+  }
+
+  /**
+   * Marking an alert read is the only thing a person does to one. Nothing
+   * deletes an alert: the history is the point, and a household that fired an
+   * alert and then lost the record of it has been told nothing.
+   */
+  async markAlertRead(id: string, read = true): Promise<Alert> {
+    return (await this.#patch("alerts", id, { read } as Patch<Alert>)) as Alert;
   }
 
   async createGoal(input: GoalInput): Promise<Goal> {
@@ -628,6 +674,11 @@ function validateAccount(input: AccountInput): void {
  */
 export function budgetId(categoryId: string, month: string): string {
   return `bud_${categoryId}.${month}`;
+}
+
+/** One setting per kind: the id is the question, not an occurrence of it. */
+export function alertSettingId(kind: AlertKind): string {
+  return `als_${kind}`;
 }
 
 function validateTransaction(

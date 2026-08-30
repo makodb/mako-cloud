@@ -12,6 +12,7 @@ export type Route =
   | { readonly name: "connections" }
   | { readonly name: "import" }
   | { readonly name: "rules" }
+  | { readonly name: "alerts" }
   | { readonly name: "household" };
 
 export function parseRoute(hash: string): Route {
@@ -43,6 +44,8 @@ export function parseRoute(hash: string): Route {
       return { name: "import" };
     case "rules":
       return { name: "rules" };
+    case "alerts":
+      return { name: "alerts" };
     case "categories":
       return { name: "categories" };
     case "tags":

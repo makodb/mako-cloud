@@ -335,3 +335,80 @@ function document() {
     body: { ownerId: "usr_abcdefgh", title: "Example" },
   };
 }
+
+/**
+ * A refusal that does not say what was wrong is a refusal a caller has to
+ * guess at. Every bound the SDK checks locally names itself -- and the one a
+ * caller is least likely to guess, that a query must name at least one
+ * predicate because every query is served by an index, says why.
+ */
+test("a query or mutation the SDK refuses says which rule it broke", async () => {
+  const client = createServiceClient({
+    endpoint: "https://api.example.test/internal",
+    projectId: "prj_abcdefgh",
+    environmentId: "env_abcdefgh",
+    serviceCredential: SERVICE_CREDENTIAL,
+    reason: "a test",
+    requestId: "req_example00",
+    fetch: async () => Response.json({ documents: [], nextCursor: null }),
+  });
+  const todos = client.documents("todos");
+  const query = (overrides) => ({
+    predicates: [{ field: "ownerId", operator: "eq", value: "usr_abcdefgh" }],
+    sort: [],
+    cursor: null,
+    limit: 25,
+    ...overrides,
+  });
+  const predicate = { field: "ownerId", operator: "eq", value: "usr_abcdefgh" };
+
+  await assert.rejects(async () => await todos.query(query({ predicates: [] })), (error) => {
+    assert.ok(error instanceof MakoEdgeSdkError);
+    assert.match(error.message, /at least one predicate/u);
+    assert.match(error.message, /served by an index/u);
+    return true;
+  });
+  await assert.rejects(
+    async () => await todos.query(query({ predicates: Array.from({ length: 17 }, () => predicate) })),
+    /at most 16 predicates/u,
+  );
+  await assert.rejects(
+    async () =>
+      await todos.query(
+        query({ sort: Array.from({ length: 17 }, () => ({ field: "ownerId", direction: "asc" })) }),
+      ),
+    /at most 16 sort keys/u,
+  );
+  await assert.rejects(async () => await todos.query(query({ limit: 0 })), /from 1 to 1000/u);
+  await assert.rejects(async () => await todos.query(query({ limit: 1_001 })), /from 1 to 1000/u);
+
+  const mutation = (overrides) => ({
+    mutationId: "mutation_example00",
+    operation: "update",
+    expectedRevision: "rev-1",
+    schemaVersion: 1,
+    body: { id: "todo/one" },
+    ...overrides,
+  });
+  await assert.rejects(
+    async () => await todos.mutate("todo/one", mutation({ mutationId: "short" })),
+    /16 to 200 characters/u,
+  );
+  await assert.rejects(
+    async () => await todos.mutate("todo/one", mutation({ schemaVersion: 0 })),
+    /schema version/u,
+  );
+  await assert.rejects(
+    async () => await todos.mutate("todo/one", mutation({ expectedRevision: null })),
+    /names the revision it read/u,
+  );
+  await assert.rejects(
+    async () =>
+      await todos.mutate(
+        "todo/one",
+        mutation({ operation: "create", expectedRevision: "rev-1" }),
+      ),
+    /a create names no expected revision/u,
+  );
+  await assert.rejects(async () => await todos.mutate("todo/one", mutation({ body: [] })), /a JSON object/u);
+});

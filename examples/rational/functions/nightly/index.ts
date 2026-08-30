@@ -25,7 +25,17 @@ import {
 } from "@mako-cloud/edge-sdk";
 
 import { serviceCredential } from "./credential.ts";
+import { RUN_KEY_HEADER, runKeyMatches } from "./shared/run-key.ts";
 import { applyRules, type RuleLike } from "./shared/rules.ts";
+import {
+  type AlertAccount,
+  type AlertBudget,
+  type AlertSettingLike,
+  type AlertTransaction,
+  type FiredAlert,
+  firedAlerts,
+} from "./shared/alerts.ts";
+import { budgetStatus, type BudgetLike } from "./shared/budgets.ts";
 import {
   type DetectedRecurrence,
   detectionId,
@@ -41,6 +51,8 @@ const RULES = "rules";
 const ACCOUNTS = "accounts";
 const SNAPSHOTS = "net_worth_snapshots";
 const RECURRENCES = "recurrences";
+const BUDGETS = "budgets";
+const ALERTS = "alerts";
 /** What a marked duplicate says, and how a second night knows it said it. */
 export const DUPLICATE_NOTE = "[duplicate]";
 const HOUSEHOLDS = "households";
@@ -53,9 +65,12 @@ export default {
       return failure(405, "invalid_request", "nightly runs on POST");
     }
     try {
+      authorizeRun(request);
       return await run(dayOf(request));
     } catch (error) {
       if (error instanceof RouteError) return failure(error.status, error.code, error.message);
+      // The caller is told nothing but "it failed"; the operator is told what.
+      console.error(error);
       return failure(500, "internal", "the nightly function failed");
     }
   },
@@ -66,11 +81,19 @@ interface HouseholdOutcome {
   readonly categorized: number;
   readonly duplicatesMarked: number;
   readonly recurrencesDetected: number;
+  readonly alertsFired: number;
   readonly snapshot: string | null;
 }
 
 async function run(day: string): Promise<Response> {
-  const households = await page("nightly maintenance", HOUSEHOLDS, []);
+  // Every household, as a range over the `updated` index. There is no way to
+  // ask for a whole collection -- a query with no predicate names no index,
+  // and the platform serves no unindexed scan -- so "everything" is spelled
+  // "everything written since the epoch", which is the same set and is a
+  // query the storage can actually plan.
+  const households = await page("nightly maintenance", HOUSEHOLDS, [
+    { field: "updated_at", operator: "gte", value: 0 },
+  ]);
   const outcomes: HouseholdOutcome[] = [];
   for (const household of households) {
     if (household._deleted) continue;
@@ -86,6 +109,7 @@ async function run(day: string): Promise<Response> {
         categorized: 0,
         duplicatesMarked: 0,
         recurrencesDetected: 0,
+        alertsFired: 0,
         snapshot: `error: ${detail}`,
       });
     }
@@ -106,8 +130,19 @@ async function runHousehold(
   const categorized = await categorize(householdId, transactions, rules);
   const duplicatesMarked = await markDuplicates(householdId, transactions);
   const recurrencesDetected = await detect(householdId, transactions, scope);
+  // Alerts are decided over the documents read at the top of this household's
+  // pass. Tonight's filings are not in them, and need not be: no category
+  // changes whether a charge was large, a budget over, or an account low.
+  const alertsFired = await raiseAlerts(householdId, day, scope, accounts, transactions);
   const snapshot = await writeSnapshot(householdId, currency, day, accounts, transactions);
-  return { householdId, categorized, duplicatesMarked, recurrencesDetected, snapshot };
+  return {
+    householdId,
+    categorized,
+    duplicatesMarked,
+    recurrencesDetected,
+    alertsFired,
+    snapshot,
+  };
 }
 
 /**
@@ -356,6 +391,149 @@ async function writeSnapshot(
 }
 
 /**
+ * What the household asked to be told about.
+ *
+ * The evaluation happens here, and after each institution sync, because a
+ * device that is closed would never fire an alert -- and the charge worth
+ * telling somebody about is usually the one that arrived while nobody was
+ * looking. Each alert has a derived id, so a condition that is still true
+ * tomorrow night is the same alert rather than a second one.
+ */
+async function raiseAlerts(
+  householdId: string,
+  day: string,
+  scope: ReadonlyArray<{ field: string; operator: "eq"; value: string }>,
+  accounts: readonly FunctionDocument[],
+  transactions: readonly FunctionDocument[],
+): Promise<number> {
+  const reason = `nightly alerts for ${householdId}`;
+  const stored = await page(reason, ALERTS, scope);
+  const settings = stored
+    .filter((document) => !document._deleted && document.body.kind === "setting")
+    .map((document) => document.body as unknown as AlertSettingLike);
+  if (settings.length === 0) return 0;
+  const budgets = await page(reason, BUDGETS, scope);
+  const fired = firedAlerts(settings, {
+    householdId,
+    day,
+    transactions: alertTransactions(transactions),
+    accounts: alertAccounts(accounts, transactions),
+    budgets: alertBudgets(budgets, transactions),
+    existingIds: new Set(
+      stored.filter((document) => !document._deleted).map((document) => String(document.body.id)),
+    ),
+  });
+  for (const alert of fired) {
+    await writeAlert(reason, householdId, alert);
+  }
+  return fired.length;
+}
+
+async function writeAlert(reason: string, householdId: string, alert: FiredAlert): Promise<void> {
+  const existing = await read(reason, ALERTS, alert.id);
+  if (existing !== null && !existing._deleted) return;
+  const now = Date.now();
+  await write(
+    reason,
+    ALERTS,
+    alert.id,
+    {
+      id: alert.id,
+      household_id: householdId,
+      created_at: now,
+      updated_at: now,
+      kind: "alert",
+      alert_kind: alert.alert_kind,
+      fired_at: now,
+      message: alert.message,
+      amount: alert.amount,
+      currency: alert.currency,
+      read: false,
+      ...(alert.transaction_id === undefined ? {} : { transaction_id: alert.transaction_id }),
+      ...(alert.account_id === undefined ? {} : { account_id: alert.account_id }),
+      ...(alert.category_id === undefined ? {} : { category_id: alert.category_id }),
+      ...(alert.budget_id === undefined ? {} : { budget_id: alert.budget_id }),
+    },
+    null,
+  );
+}
+
+export function alertTransactions(
+  transactions: readonly FunctionDocument[],
+): readonly AlertTransaction[] {
+  return transactions
+    .filter((document) => !document._deleted)
+    .map((document) => ({
+      id: String(document.body.id),
+      account_id: String(document.body.account_id ?? ""),
+      date: String(document.body.date ?? ""),
+      amount: Number(document.body.amount ?? 0),
+      currency: String(document.body.currency ?? "USD"),
+      description: String(document.body.description ?? ""),
+    }));
+}
+
+export function alertAccounts(
+  accounts: readonly FunctionDocument[],
+  transactions: readonly FunctionDocument[],
+): readonly AlertAccount[] {
+  const balances = new Map<string, number>();
+  for (const document of accounts) {
+    if (document._deleted) continue;
+    balances.set(String(document.body.id), Number(document.body.opening_balance ?? 0));
+  }
+  for (const document of transactions) {
+    if (document._deleted) continue;
+    const accountId = String(document.body.account_id ?? "");
+    if (!balances.has(accountId)) continue;
+    balances.set(accountId, (balances.get(accountId) ?? 0) + Number(document.body.amount ?? 0));
+  }
+  return accounts
+    .filter((document) => !document._deleted)
+    .map((document) => ({
+      id: String(document.body.id),
+      name: String(document.body.name ?? ""),
+      type: String(document.body.type ?? ""),
+      currency: String(document.body.currency ?? "USD"),
+      balance: balances.get(String(document.body.id)) ?? 0,
+      closed: document.body.closed_at !== undefined,
+    }));
+}
+
+/** Each budget with what its month spent, allowance and rollover included. */
+export function alertBudgets(
+  budgets: readonly FunctionDocument[],
+  transactions: readonly FunctionDocument[],
+): readonly AlertBudget[] {
+  const documents = budgets
+    .filter((document) => !document._deleted)
+    .map((document) => document.body as unknown as BudgetLike);
+  const spending = transactions
+    .filter((document) => !document._deleted)
+    .map((document) => ({
+      date: String(document.body.date ?? ""),
+      amount: Number(document.body.amount ?? 0),
+      currency: String(document.body.currency ?? "USD"),
+      category_id:
+        typeof document.body.category_id === "string" ? document.body.category_id : undefined,
+      splits: Array.isArray(document.body.splits)
+        ? (document.body.splits as Array<{ category_id?: string; amount: number }>)
+        : [],
+    }));
+  return documents.map((budget) => {
+    const status = budgetStatus(budget, documents, spending);
+    return {
+      id: budget.id,
+      category_id: budget.category_id,
+      month: budget.month,
+      amount: status.allowance,
+      spent: status.spent,
+      currency: budget.currency,
+    };
+  });
+}
+
+/**
  * Assets and liabilities in one currency, from balances derived the same way
  * the application derives them: an account's opening balance plus everything
  * booked to it.
@@ -397,7 +575,7 @@ export function snapshotId(householdId: string, day: string): string {
 async function page(
   reason: string,
   collectionId: string,
-  predicates: ReadonlyArray<{ field: string; operator: "eq"; value: string }>,
+  predicates: ReadonlyArray<{ field: string; operator: "eq" | "gte"; value: string | number }>,
 ): Promise<readonly FunctionDocument[]> {
   const documents: FunctionDocument[] = [];
   let cursor: string | null = null;
@@ -473,6 +651,21 @@ class RouteError extends Error {
     super(message);
     this.status = status;
     this.code = code;
+  }
+}
+
+/**
+ * The run key this deployment was given, or "" when it has none -- in which
+ * case nothing may run it, because a function that falls open when its secret
+ * is missing has no gate at all.
+ */
+function runKey(): string {
+  return Deno.env.get("RATIONAL_RUN_KEY") ?? "";
+}
+
+function authorizeRun(request: Request): void {
+  if (!runKeyMatches(request.headers.get(RUN_KEY_HEADER), runKey())) {
+    throw new RouteError(401, "unauthenticated", "this function runs on a schedule");
   }
 }
 

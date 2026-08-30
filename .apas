@@ -17,34 +17,6 @@
       "plan_review_mode": "never",
       "manual_mode": false,
       "managed": false
-    },
-    {
-      "pane_id": 826,
-      "provider": "claude",
-      "mode": "interactive",
-      "kind": "terminal",
-      "session_id": "d89dbb48-26d4-4ed8-b83c-3b3233b391bb",
-      "is_paused": false,
-      "stop_requested": false,
-      "prompt": null,
-      "label": "Claude 2",
-      "plan_review_mode": "never",
-      "manual_mode": false,
-      "managed": false
-    },
-    {
-      "pane_id": 888,
-      "provider": "codex",
-      "mode": "interactive",
-      "kind": "terminal",
-      "session_id": "ad0eb7be-9e80-4f2a-b719-513bfb06070b",
-      "is_paused": false,
-      "stop_requested": false,
-      "prompt": null,
-      "label": "Codex TTY 2",
-      "plan_review_mode": "never",
-      "manual_mode": false,
-      "managed": false
     }
   ],
   "auto_approve_todos": false,

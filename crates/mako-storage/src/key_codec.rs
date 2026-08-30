@@ -699,6 +699,23 @@ impl TenantKeyspace {
         Ok(prefix)
     }
 
+    /// Every entry of one index, whatever its components.
+    ///
+    /// An index *entry* always has at least one component, so
+    /// `index_components_prefix` refuses an empty list. A caller that wants
+    /// the whole index -- a range over its leading field, with no equality
+    /// prefix to stand on -- needs the prefix the entries share and nothing
+    /// more, which is what this is.
+    pub fn index_entries_prefix(
+        &self,
+        collection: impl AsRef<[u8]>,
+        index: impl AsRef<[u8]>,
+    ) -> Result<Vec<u8>, KeyCodecError> {
+        let mut prefix = self.index_prefix(collection.as_ref(), Some(index.as_ref()))?;
+        prefix.push(INDEX_ENTRY);
+        Ok(prefix)
+    }
+
     pub fn prefixed_range(prefix: &[u8]) -> Result<KeyRange, KeyCodecError> {
         prefix_range(prefix)
     }

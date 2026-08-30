@@ -5,7 +5,7 @@
     {
       "id": "households",
       "scope": "directory",
-      "description": "A household groups accounts and money data; household_id equals id.",
+      "description": "A household. The `updated` index is what lets the nightly function walk every household: a query with no predicate names no index and is refused, so enumeration is a range over one.",
       "jsonSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -66,6 +66,10 @@
         {
           "name": "household_updated",
           "fields": ["household_id", "updated_at"]
+        },
+        {
+          "name": "updated",
+          "fields": ["updated_at"]
         }
       ]
     },

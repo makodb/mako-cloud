@@ -44,6 +44,7 @@ application asking for them:
 | Membership changes | The `households` [edge function](edge-functions.md) under a service credential |
 | A bank connection that syncs itself | The `institution-sync` function on a [schedule](edge-functions.md), writing under a service credential without doubling a transaction |
 | Filing, duplicate-checking, and net worth overnight | The `nightly` function on a 02:00 UTC schedule |
+| Being told about a large charge or an overrun | Alerts decided server-side, delivered in-app as documents and outward by a [signed webhook](webhooks.md) on the `alerts` collection |
 | Working offline | Dexie storage, durable checkpoints, and the authorization-epoch [security reset](rxdb-client.md#authorization-epoch-security-reset) |
 | Calling the API from a static host | [Allowed origins](allowed-origins.md) |
 
@@ -60,7 +61,10 @@ project, environment, collections, indexes, policies, bucket, and public key
 through the CLI, writes `mako.env.json`, and with `--functions` issues the
 service credential, installs it as a function secret, and deploys the
 `households`, `institution-sync`, and `nightly` functions -- the last two on
-schedules. `npm run dev -w @mako-cloud/example-rational` then serves the app
+schedules, each holding a run key its schedule carries so a public request
+cannot start one. With `--alerts-webhook <url>` it also registers the
+household's endpoint for the `alerts` collection and writes the signing secret
+to a file of its own. `npm run dev -w @mako-cloud/example-rational` then serves the app
 against it.
 
 The two scheduled functions share their engines with the application: rules
