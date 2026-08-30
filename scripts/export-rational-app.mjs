@@ -350,7 +350,14 @@ interface RationalConfigFile {
 }
 
 function readConfigFile(): RationalConfigFile | null {
-  for (const name of ["rational.config.json", "rational.config.example.json"]) {
+  // \`RATIONAL_CONFIG=example\` asks for the placeholder, which is how the
+  // wire-mocked suite gets the in-browser fake in a checkout that names a real
+  // project -- the published one does.
+  const names =
+    process.env.RATIONAL_CONFIG === "example"
+      ? ["rational.config.example.json"]
+      : ["rational.config.json", "rational.config.example.json"];
+  for (const name of names) {
     const path = fileURLToPath(new URL(\`./\${name}\`, import.meta.url));
     if (existsSync(path)) return JSON.parse(readFileSync(path, "utf8")) as RationalConfigFile;
   }
