@@ -810,7 +810,7 @@ export interface paths {
         get: operations["getFunctionSecret"];
         /**
          * Create a function secret from a value the caller supplies
-         * @description Stores a value the caller already holds -- typically a scoped service credential a function needs -- as a function secret, instead of the generated value `createFunctionSecret` returns. The value is write-once and is never returned by this or any other operation, so the response carries metadata only. A name is written once: creating a secret that already exists is a conflict, and `rotateFunctionSecret` replaces a value only with a generated one.
+         * @description Stores a value the caller already holds -- typically a scoped service credential a function needs -- as a function secret, instead of the generated value `createFunctionSecret` returns. The value is write-once and is never returned by this or any other operation, so the response carries metadata only. A name is written once: creating a secret that already exists is a conflict; `rotateFunctionSecret` replaces the value of an existing name, with a generated value or one supplied the same way.
          */
         put: operations["createFunctionSecretValue"];
         post?: never;
@@ -829,6 +829,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** @description Replaces a secret's value with a new version. Without a body the platform generates the value and returns it once. With a body the caller supplies it -- a rotated service credential, say -- and the response carries metadata only, exactly as supplied creation does. A name is written once and a function reads its secret by that name, so this is how a secret's value is ever corrected or replaced. */
         post: operations["rotateFunctionSecret"];
         delete?: never;
         options?: never;
@@ -7649,7 +7650,14 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description The value to store; never returned by this or any other operation. */
+                    value: string;
+                };
+            };
+        };
         responses: {
             /** @description Replacement function secret displayed only in this response */
             201: {

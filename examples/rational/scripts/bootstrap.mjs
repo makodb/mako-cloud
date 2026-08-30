@@ -423,14 +423,27 @@ function deployHouseholdsFunction() {
     ...tenant,
   ]);
   const secretName = "HOUSEHOLDS_SERVICE_KEY";
-  // A secret is written once. The credential is new on every run, so the
-  // secret has to be too: retire whatever is there and install this one.
-  if (makoJson(["functions", "secrets", "get", secretName, ...tenant], [4]) !== null) {
-    log(`retiring the previous ${secretName}`);
-    makoJson(["functions", "secrets", "retire", secretName, "--yes", ...tenant], [0, 4]);
+  // The credential is new on every run, so the secret has to hold the new
+  // value: create it the first time, rotate it to the new value after that. A
+  // name is written once and cannot be freed, so rotation is the only way to
+  // correct what a name holds.
+  const existing = makoJson(["functions", "secrets", "get", secretName, ...tenant], [4]);
+  if (existing === null) {
+    log(`installing ${secretName} with the credential's value`);
+    makoJson(["functions", "secrets", "create", secretName, "--value", issued.secret, ...tenant]);
+  } else {
+    log(`rotating ${secretName} to the new credential`);
+    makoJson([
+      "functions",
+      "secrets",
+      "rotate",
+      secretName,
+      "--value",
+      issued.secret,
+      "--yes",
+      ...tenant,
+    ]);
   }
-  log(`installing ${secretName} with the credential's value`);
-  makoJson(["functions", "secrets", "create", secretName, "--value", issued.secret, ...tenant]);
   // The uploaded copy is the directory as it is committed: no credential.
   const source = join(scratch, "households-function");
   cpSync(join(exampleRoot, "functions", "households"), source, { recursive: true });

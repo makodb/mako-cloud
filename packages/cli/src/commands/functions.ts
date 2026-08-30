@@ -475,25 +475,39 @@ async function putSecretValue(
   name: string,
   value: string,
 ): Promise<FunctionSecret> {
+  return await secretValueRequest(
+    context,
+    `v1/projects/${encodeURIComponent(tenant.projectId)}/environments/${encodeURIComponent(
+      tenant.environmentId,
+    )}/function-secrets/${encodeURIComponent(name)}`,
+    "PUT",
+    value,
+    context.idempotencyKey(),
+  );
+}
+
+/** One request carrying a secret value: creation puts, rotation posts. */
+async function secretValueRequest(
+  context: CommandContext,
+  path: string,
+  method: "PUT" | "POST",
+  value: string,
+  idempotencyKey: string,
+): Promise<FunctionSecret> {
   const endpoint = await context.endpoint();
   const credential = await context.credential();
   const provider = credential.accessToken;
   const token = typeof provider === "string" ? provider : await provider();
-  const url = new URL(
-    `v1/projects/${encodeURIComponent(tenant.projectId)}/environments/${encodeURIComponent(
-      tenant.environmentId,
-    )}/function-secrets/${encodeURIComponent(name)}`,
-    endpoint.endsWith("/") ? endpoint : `${endpoint}/`,
-  );
+  const url = new URL(path, endpoint.endsWith("/") ? endpoint : `${endpoint}/`);
   const fetchImpl = context.io.fetch ?? globalThis.fetch;
   const response = await fetchImpl(
     new Request(url, {
-      method: "PUT",
+      method,
       headers: {
         Authorization: `Bearer ${token}`,
         Accept: "application/json",
         "Content-Type": "application/json",
-        "Idempotency-Key": context.idempotencyKey(),
+        "Idempotency-Key": idempotencyKey,
         Origin: new URL(endpoint).origin,
       },
       body: JSON.stringify({ value }),
@@ -521,6 +535,28 @@ async function secretValueError(response: Response): Promise<Error> {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Rotate a secret to a value the caller supplies. The management SDK has no
+ * method for the body-carrying form of this route yet, so the request is made
+ * directly, as `putSecretValue` does for creation.
+ */
+async function rotateSecretValue(
+  context: CommandContext,
+  tenant: Tenant,
+  name: string,
+  value: string,
+): Promise<FunctionSecret> {
+  return await secretValueRequest(
+    context,
+    `v1/projects/${encodeURIComponent(tenant.projectId)}/environments/${encodeURIComponent(
+      tenant.environmentId,
+    )}/function-secrets/${encodeURIComponent(name)}/actions/rotate`,
+    "POST",
+    value,
+    context.idempotencyKey(),
+  );
 }
 
 async function secretsCreate(context: CommandContext, args: CommandArgs): Promise<void> {
@@ -569,6 +605,16 @@ async function secretsRetire(context: CommandContext, args: CommandArgs): Promis
 async function secretsRotate(context: CommandContext, args: CommandArgs): Promise<void> {
   const name = args.requirePositional(0, "name");
   const { projectId, environmentId } = tenantFrom(context, args);
+  const value = await suppliedValue(args);
+  if (value !== undefined) {
+    // As on creation: the caller already holds it, so nothing is displayed and
+    // --secret-file would have nothing to write.
+    if (args.string("secret-file") !== undefined) {
+      throw usageError("--secret-file has nothing to write for a supplied value");
+    }
+    context.out(await rotateSecretValue(context, { projectId, environmentId }, name, value));
+    return;
+  }
   const client = await context.management();
   const issue = await client.rotateFunctionSecret(
     projectId,
@@ -802,10 +848,10 @@ export const functionsCommands: readonly Command[] = [
   },
   {
     path: ["functions", "secrets", "rotate"],
-    summary: "Rotate a function secret and show the new value once",
+    summary: "Rotate a function secret, to a generated value or one you supply",
     operations: ["rotateFunctionSecret"],
     positionals: [{ name: "name", description: "Secret name", required: true }],
-    options: { ...TENANT_OPTIONS, ...SECRET_FILE_OPTION },
+    options: { ...TENANT_OPTIONS, ...SECRET_FILE_OPTION, ...SUPPLIED_VALUE_OPTIONS },
     destructive: {
       action: "rotate secret",
       resource: (args) => args.requirePositional(0, "name"),

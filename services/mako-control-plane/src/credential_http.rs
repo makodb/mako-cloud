@@ -144,17 +144,44 @@ fn handle_rotate_secret(
     graph: &Arc<ControlPlaneGraph>,
     request: &HttpRequest,
 ) -> Result<HttpResponse, HttpApiError> {
-    no_payload(request)?;
+    no_query(request)?;
     require_idempotency(request)?;
+    // A rotation may carry the replacement, because a name is written once and
+    // a function reads its secret by that name: without this, a secret that
+    // holds the wrong value holds it for the life of the environment, and a
+    // function whose credential must change has nowhere to put the new one.
+    let supplied = if request.body().is_empty() {
+        None
+    } else {
+        require_json(request)?;
+        let body: SecretValueWire = parse_json(request)?;
+        Some(
+            FunctionSecretValue::parse(body.value)
+                .map_err(|_| invalid(request, "function secret value is invalid"))?,
+        )
+    };
     let tenant = tenant(request)?;
     let name = secret_name(request)?;
     with_developer(graph, request, |actor, now| async move {
-        let issue = graph
-            .credential_service()
-            .rotate_function_secret(&actor, &tenant, &name, now)
-            .await
-            .map_err(|error| credential_error(request, error))?;
-        secret_issue(request, 201, issue)
+        let service = graph.credential_service();
+        // A supplied value is never echoed, so that rotation answers with the
+        // same disclosure as supplied creation: metadata only.
+        match supplied {
+            Some(value) => {
+                let metadata = service
+                    .rotate_function_secret_with_value(&actor, &tenant, &name, value, now)
+                    .await
+                    .map_err(|error| credential_error(request, error))?;
+                public_json(request, 201, &metadata)
+            }
+            None => {
+                let issue = service
+                    .rotate_function_secret(&actor, &tenant, &name, now)
+                    .await
+                    .map_err(|error| credential_error(request, error))?;
+                secret_issue(request, 201, issue)
+            }
+        }
     })
 }
 

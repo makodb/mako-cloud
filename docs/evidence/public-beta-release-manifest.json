@@ -10,7 +10,7 @@
   },
   "planHash": "d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073",
   "source": {
-    "digest": "c23317fcbe63c98ea308311f1aad976f68acfca4c0912ba1572998f1b3e6efd6",
+    "digest": "ce7cb435eb1142e3bdf13ff2915deec9bd822b9b6553876a214beffa406d3efe",
     "files": [
       {
         "path": ".env.example",
@@ -4262,8 +4262,8 @@
       },
       {
         "path": "services/mako-control-plane/src/function_http.rs",
-        "sha256": "7c1dd4db36fb3e4fdb686984037eff6ccf6bca05a9d07cde73b6a7910206103e",
-        "size": 22202,
+        "sha256": "5c2203232a7229f8d516c8ff3f5dfe7d3c3081bb8ecc8d36e9a800e2a8a4d16f",
+        "size": 23377,
         "mode": 420
       },
       {
@@ -4322,8 +4322,8 @@
       },
       {
         "path": "services/mako-control-plane/src/main.rs",
-        "sha256": "b82ad9246d49de269ba532de4fd2a6967acb38e82fea32ed00852331104c5b1e",
-        "size": 18149,
+        "sha256": "8392780a054eeca4d0ef12e889b62f8aff9c4be33c7f49f75bf091f2f0831a70",
+        "size": 18402,
         "mode": 420
       },
       {
@@ -4582,13 +4582,13 @@
     ]
   },
   "artifacts": {
-    "digest": "4f0f46042f72539dbdcc17225f548bed43f0d2328a9d44d3d1fab22dccd59532",
+    "digest": "b1aa06fc00d22a9310e615b9d18013f05d0f1060f4ab956e8d4c1ad6a0305862",
     "files": [
       {
         "path": "bin/mako-control-plane",
         "source": "target/release/mako-control-plane",
-        "sha256": "30d5b81f60a564cd4652ec7d6282658a2067db5ccb729e4a9b900bf35a68d0a6",
-        "size": 18134824,
+        "sha256": "3a9f82f4b72b44be164905c76275b1bb8631de665939a0f03e22dc6fd4838f57",
+        "size": 18154568,
         "mode": 493
       },
       {
@@ -4684,10 +4684,10 @@
       }
     ]
   },
-  "releaseDigest": "ac995b7fa1e68bdc36c3a490bf9a9953b25b1274e21ddcdaa4c4bb284df38720",
-  "generatedAt": "2026-08-30T03:18:07.602Z",
+  "releaseDigest": "cc03af1a5a43bef4c9fd0e02daa628592b86e9ef6fe54060c089ffe1448b4511",
+  "generatedAt": "2026-08-30T03:30:17.440Z",
   "candidateLayout": {
-    "root": ".local/public-beta-candidates/ac995b7fa1e68bdc36c3a490bf9a9953b25b1274e21ddcdaa4c4bb284df38720",
+    "root": ".local/public-beta-candidates/cc03af1a5a43bef4c9fd0e02daa628592b86e9ef6fe54060c089ffe1448b4511",
     "manifest": "manifest.json",
     "binaries": "bin",
     "console": "console"
