@@ -10,7 +10,7 @@
   },
   "planHash": "d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073",
   "source": {
-    "digest": "aaa96ffd643b49838f8189e16944302898c1972d66cda71dc65290a01ce1c16f",
+    "digest": "e3d6a8f8fcd537f5a07813426f54a0c64bf9812de3849004241d2eeabe1294e3",
     "files": [
       {
         "path": ".env.example",
@@ -44,8 +44,8 @@
       },
       {
         "path": "api/openapi/mako-cloud-v1.yaml",
-        "sha256": "0374b424a9822bed8cffbf1e481372294ecf17d1920a1aadd6750356be9c2383",
-        "size": 368592,
+        "sha256": "192c7f03e7d7267fff7791b1b5ac6727d536d1c5925300d3fa348b47645518e0",
+        "size": 368802,
         "mode": 420
       },
       {
@@ -992,8 +992,8 @@
       },
       {
         "path": "crates/mako-documents/src/query.rs",
-        "sha256": "f95b0aa1fcedd6ef738257cafce046d9b57e0d21647a3f876afe3881119d693d",
-        "size": 41476,
+        "sha256": "61f5aa79da43d5ea54800cfecf77af3869ea2f626a55162f1b806a0f788ce9f4",
+        "size": 45125,
         "mode": 420
       },
       {
@@ -1034,8 +1034,8 @@
       },
       {
         "path": "crates/mako-edge-gateway/src/lib.rs",
-        "sha256": "3e758dc75303c870e6011e6f927b4ea079b659777335707975bc2062d4d4d90c",
-        "size": 75338,
+        "sha256": "fd6060f0346220122ee1e47b9e16872da01d24a86d2a22a778b9d1d02d1718da",
+        "size": 79143,
         "mode": 420
       },
       {
@@ -1646,8 +1646,8 @@
       },
       {
         "path": "crates/mako-storage/src/key_codec.rs",
-        "sha256": "7782e955b85f05d2ef597ed286945cb254e334a4a365670220874624204b751d",
-        "size": 51915,
+        "sha256": "3101ebd68f69b667475958d507b89b81bf58443328b6d4b7dcaa8a676c8e8da4",
+        "size": 52621,
         "mode": 420
       },
       {
@@ -1952,26 +1952,86 @@
       },
       {
         "path": "examples/rational/PLATFORM-FINDINGS.md",
-        "sha256": "8dad44a8accbe588205802ecf09db5fe89dfffeee1fa223a63f67c0060c7f752",
-        "size": 34380,
+        "sha256": "33e23e4e192382209d838799c80192ae8114e9ee6374870c6d4c248fe84f6410",
+        "size": 41021,
         "mode": 420
       },
       {
         "path": "examples/rational/README.md",
-        "sha256": "b1a04424a11058d78781448e391eb599dc69f968a92977486777edd70e4c81f5",
-        "size": 18074,
+        "sha256": "55bbffb46d620660bf6a9a06cee1293eaa6a1de42c4dc2353866184526ec8510",
+        "size": 21947,
         "mode": 420
       },
       {
         "path": "examples/rational/functions/households/credential.ts",
-        "sha256": "c1739390c8378b9fd9e706ef7225748e1179388cdea5f5a3e6990cb6159855cd",
-        "size": 1539,
+        "sha256": "95b774058be79effb0c7683a9a630a752ccef75013d6462e9d3c7f3ac6908fb4",
+        "size": 915,
         "mode": 420
       },
       {
         "path": "examples/rational/functions/households/index.ts",
         "sha256": "2672fd48e6819e224eb78d5ae3b56febf98a1137be08a820db2e60b1f912ef1b",
         "size": 17240,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/functions/institution-sync/credential.ts",
+        "sha256": "a608cc515c275a9973749ba909277477900786d9c5e5e2a3a94c59f437c2f0d9",
+        "size": 671,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/functions/institution-sync/index.ts",
+        "sha256": "13f59edff6b4dff409a0153978d68cad4f0588a2d2064ed3229160a13b8a1f86",
+        "size": 13580,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/functions/institution-sync/institution.ts",
+        "sha256": "f85cbc8cb067e1bdd4f0e8f88b18cc06ccf2cd1d705feb71d918084c3d81a8c4",
+        "size": 3394,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/functions/nightly/credential.ts",
+        "sha256": "95bbd573dbf48c2b57f7ec814954f372c74fb8790fb48b07da6a6c151f39bc48",
+        "size": 674,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/functions/nightly/index.ts",
+        "sha256": "f245bb527a8cf33eb74b1b4f4dd0d67f1ed696c9539a530cbdb404473c6a6e11",
+        "size": 23888,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/functions/shared/alerts.ts",
+        "sha256": "e701ce5cef375801e45ce91bf45f3ff2c8da719e498ad2b1019b66f747e176ae",
+        "size": 6856,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/functions/shared/budgets.ts",
+        "sha256": "e88bfcdc5612d52ea5eb8d5a179113bb090a097705b460d31fe1036b1d5f3bae",
+        "size": 5991,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/functions/shared/recurrences.ts",
+        "sha256": "f7f0873e5faf8c1a459d59db5d98b1992a4e6b20151f07e7e8d47c1dcd3bc223",
+        "size": 7876,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/functions/shared/rules.ts",
+        "sha256": "e77a3ad8c9d939479e7badb82ea237bc615fff6eab69348f0d1da3bfae848617",
+        "size": 4321,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/functions/shared/run-key.ts",
+        "sha256": "0ea27a81ae00a0f4943efa36ddb459bff63e163a01aa317db062b1ca6e795e7e",
+        "size": 1365,
         "mode": 420
       },
       {
@@ -1982,14 +2042,14 @@
       },
       {
         "path": "examples/rational/mako/buckets/receipts.json",
-        "sha256": "5b2aacc94b6effcd480b16c69cbe8644a49433d1298fd9c1b0174db55f24aaef",
-        "size": 1435,
+        "sha256": "3617392b1910ad22db21366ea032821feb08891f5656ed09bd7e077b85a6d819",
+        "size": 1267,
         "mode": 420
       },
       {
         "path": "examples/rational/mako/collections.json",
-        "sha256": "48ad425a1acfb0e6adaef9f3a0af77a833e920a0c659d6fa415a4a99c2ec634e",
-        "size": 32156,
+        "sha256": "187cf1c0e32be2060fbb1dfbef95e1213ddc5bf36aea1e608c2637ee76514304",
+        "size": 32392,
         "mode": 420
       },
       {
@@ -2084,8 +2144,8 @@
       },
       {
         "path": "examples/rational/scripts/bootstrap.mjs",
-        "sha256": "7b246176859d4896947edfbe3728097d062f6fbd1020adedde671d875852fe31",
-        "size": 24126,
+        "sha256": "5b1cdf73bf6f20212205d74f60528daf9dcae8110266faa8c7c79848301af9f7",
+        "size": 35907,
         "mode": 493
       },
       {
@@ -2138,8 +2198,14 @@
       },
       {
         "path": "examples/rational/src/data/rational.ts",
-        "sha256": "d6311c80794c503a4eb129507938757e362177cc547efe7a150ca9cb89ea33ae",
-        "size": 28279,
+        "sha256": "bef7d0e2f5e012a7407699a5f2b1b738a22db09e212b439a5afe486bc3f1bebe",
+        "size": 28886,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/src/data/receipts.ts",
+        "sha256": "7e6647f76dd57a844dc4c70797fd754edabf0ba059a824514500ff1b19e504c8",
+        "size": 5097,
         "mode": 420
       },
       {
@@ -2168,8 +2234,8 @@
       },
       {
         "path": "examples/rational/src/data/writes.ts",
-        "sha256": "0e864e39a80933b7eafd5956a754ced1cd585336894e8f4b19882484df1b744a",
-        "size": 10642,
+        "sha256": "ecfaf512323b711acc2d91c62276cf537f2036ee5c77d39339c648256d64a401",
+        "size": 25696,
         "mode": 420
       },
       {
@@ -2197,9 +2263,33 @@
         "mode": 420
       },
       {
+        "path": "examples/rational/src/selectors/alerts.ts",
+        "sha256": "216807d025b1e9225252f2ad9951f9f9bc06516798055a99c2248c9226a83115",
+        "size": 2236,
+        "mode": 420
+      },
+      {
         "path": "examples/rational/src/selectors/balances.ts",
         "sha256": "7336bbbda62aecea0eb203ba65bf3ac189a0fba487248a7b8cf51a599c8c5e98",
         "size": 2399,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/src/selectors/budgets.ts",
+        "sha256": "02a8b07e7b8d05cc82d7eefd23ed9dd2cbe7329526f6b338283f4516aca53c5d",
+        "size": 1330,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/src/selectors/csv.ts",
+        "sha256": "fb55a7f30461c6e7c51572ce91c4be499bb64e5a4e27f43198928908962954c5",
+        "size": 10370,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/src/selectors/goals.ts",
+        "sha256": "86c59de0b8289cb054ba965f6950a0ab24fd6e6c747ca3d9631ab5f6c4c510e4",
+        "size": 3130,
         "mode": 420
       },
       {
@@ -2215,6 +2305,24 @@
         "mode": 420
       },
       {
+        "path": "examples/rational/src/selectors/recurrences.ts",
+        "sha256": "f2974536bc86d27cba3fa4f75f160da8c19da9c420288fee826d23f0f3f5ddf7",
+        "size": 2788,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/src/selectors/reports.ts",
+        "sha256": "e6f2d9bc7d018e0899e7bc27fa8ee8d7a8c20984d287995184f4247db589d441",
+        "size": 8449,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/src/selectors/rules.ts",
+        "sha256": "295be95abc8c3e36bef1ae585ca583f75dd32bfcd242726604ae45e26f23c550",
+        "size": 641,
+        "mode": 420
+      },
+      {
         "path": "examples/rational/src/selectors/splits.ts",
         "sha256": "8b95fe850b461e8b0a12ebbdd5812e9ecd89e15b9998ea120fbb7dee6ce5766b",
         "size": 1236,
@@ -2222,20 +2330,20 @@
       },
       {
         "path": "examples/rational/src/selectors/transactions.ts",
-        "sha256": "faadc1bf47b7b2227cf0848718614c83ad13a2e5ca00b3d7d3794972ea1ce88c",
-        "size": 2545,
+        "sha256": "88bde7e108d3122c2f7c0a7477ff6fdf10c380f0f6825c9ea89365f3ec165cf3",
+        "size": 2411,
         "mode": 420
       },
       {
         "path": "examples/rational/src/styles.css",
-        "sha256": "0de66d8286a731f9b02310b12ae076450fe3ef5f613dee51d1679e9fee7c1c66",
-        "size": 5981,
+        "sha256": "cc71c98f3406e2f96463ecf6773a2875d2e88e5bca342c5bf8563afe8607611d",
+        "size": 6376,
         "mode": 420
       },
       {
         "path": "examples/rational/src/testing/fake-backend.ts",
-        "sha256": "9ba001e5e74e3a0ece1fc95463ee44a0d5937e0de6dbc55d3b08d4f3aad628db",
-        "size": 33754,
+        "sha256": "35d533989f87d6b1f7ffc83aaf7e84a080d2da5a7641db23018b02118042fe52",
+        "size": 39575,
         "mode": 420
       },
       {
@@ -2245,15 +2353,33 @@
         "mode": 420
       },
       {
+        "path": "examples/rational/src/ui/alerts.tsx",
+        "sha256": "aaf568c899b6e19425f8dfd6361ae21a03f5023fba4a3a3929557ca4c27c4e60",
+        "size": 6316,
+        "mode": 420
+      },
+      {
         "path": "examples/rational/src/ui/app.tsx",
-        "sha256": "ee575d8762ff7c2444fc495a6cf6e03faec34a53995fe4499b0161f0bb47b351",
-        "size": 4460,
+        "sha256": "543f9d8e90da3c08cdf03c9312abfef0cf99d1a5e9ebe2ef6cd3493d59d0bd32",
+        "size": 6330,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/src/ui/budgets.tsx",
+        "sha256": "f1ec054e8713fc92541f0ca2803ad1c576693ef0c3b09e8543c9b468f49f6a3f",
+        "size": 7036,
         "mode": 420
       },
       {
         "path": "examples/rational/src/ui/categories.tsx",
         "sha256": "8d9120f90a4bea16c33117535037cb12ac3612fe43e6cfc3f7b197add6ab7e32",
         "size": 5007,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/src/ui/connections.tsx",
+        "sha256": "39d25e790f10cce882b1003c3f2b71908bade9bf6678b18e2d5593edc8286ab6",
+        "size": 5688,
         "mode": 420
       },
       {
@@ -2269,15 +2395,39 @@
         "mode": 420
       },
       {
+        "path": "examples/rational/src/ui/import.tsx",
+        "sha256": "de577a214fd6b881355b22ff4bd806a3cd0257e3323d0dbb3fbff7abd3d2e0c6",
+        "size": 7974,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/src/ui/plan.tsx",
+        "sha256": "3cff5c0c15dcef507cf1d966a1f025e3e92e80d5e787b4166a972545c3072625",
+        "size": 10446,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/src/ui/reports.tsx",
+        "sha256": "f0411921c4f3faee2c1d515a4507142abb86c05524c71d103f02f4c759dde908",
+        "size": 8340,
+        "mode": 420
+      },
+      {
         "path": "examples/rational/src/ui/router.ts",
-        "sha256": "e67dfa2f432fbfecd6c2a9a8bec30485f97025f97c6f6f237bea30de30b616b7",
-        "size": 2007,
+        "sha256": "d4cfd94ade2ac00fe8fa0ce4851ecf891aab68dec1f8e76b2e87efca05b350d6",
+        "size": 3051,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/src/ui/rules.tsx",
+        "sha256": "44a82e64ee13d699375ce12b2a08d042139f2a7dd5644bc18a490a8b05b4e9b0",
+        "size": 7702,
         "mode": 420
       },
       {
         "path": "examples/rational/src/ui/shell.tsx",
-        "sha256": "ea20fb1e3775744c502acba44fb2a2df2eec742d3b12967d10f3f60c0d073b4e",
-        "size": 4189,
+        "sha256": "e28046306ee8e340c95db36bf15ce020e0afd65c4dfb1323efddcfc0ce62d6d9",
+        "size": 4547,
         "mode": 420
       },
       {
@@ -2294,8 +2444,8 @@
       },
       {
         "path": "examples/rational/src/ui/transactions.tsx",
-        "sha256": "8cba0d47fa7771bf02a586bdf4f5c91c2af18c6bcdcdc330d67186c9655c712d",
-        "size": 18040,
+        "sha256": "d19629461d3fa316f9072bb7ad4d60efa626290158c0fd169c34e108bc45b77a",
+        "size": 22716,
         "mode": 420
       },
       {
@@ -2305,9 +2455,15 @@
         "mode": 420
       },
       {
+        "path": "examples/rational/test-live/alerts.spec.ts",
+        "sha256": "108ff7e920fb90c4262496a02974b2faca518e8999eb5bf9ad73c5e051ded59c",
+        "size": 10384,
+        "mode": 420
+      },
+      {
         "path": "examples/rational/test-live/global-setup.ts",
-        "sha256": "8637869cfdd68f0717db5e76f962dddbf0478d50c75b3eafcb1a97fb4db6ceb7",
-        "size": 21407,
+        "sha256": "919a17502ef333665398df8a3208c30352264e369e405998483480857cc066b4",
+        "size": 27976,
         "mode": 420
       },
       {
@@ -2318,20 +2474,32 @@
       },
       {
         "path": "examples/rational/test-live/households.spec.ts",
-        "sha256": "45557ddddb23fafbe80396b237bf6b7376802ebf14e4bec586694bbdebf5c07b",
-        "size": 8616,
+        "sha256": "8c52aff15e6b479cd8f4a9b75ec9a6d15c7416cc5b49f0553de2a3f4a9ba0fd5",
+        "size": 9402,
         "mode": 420
       },
       {
         "path": "examples/rational/test-live/live.spec.ts",
-        "sha256": "ee6c1122fea56fd17bc2084aaca817721295576cc893e1a1875a17d68795ae66",
-        "size": 9968,
+        "sha256": "29c9f19be37b467c3146b456ab3155e507c6b221fba24dec66759d0b05da0d9a",
+        "size": 10649,
         "mode": 420
       },
       {
         "path": "examples/rational/test-support/browser-globals.d.ts",
-        "sha256": "19cd813777be02d72415d7a7cda7ad64029537dd1579f9416524f3c5e026b642",
-        "size": 4345,
+        "sha256": "3db8f0a3afc09261c20b37574c467522b6a9911b8ba7ed29043720f18e32b958",
+        "size": 5640,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/test-unit/alerts.test.mjs",
+        "sha256": "44389debd35e4aebbd11f781e9b1196eaadcbedd5a9c97b0379ac074d7264139",
+        "size": 4868,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/test-unit/budgets.test.mjs",
+        "sha256": "37080e5e78525bdbbed31bd4dbf9329ebf2dc4ece59760bc850378950679a2c4",
+        "size": 5238,
         "mode": 420
       },
       {
@@ -2341,9 +2509,57 @@
         "mode": 420
       },
       {
+        "path": "examples/rational/test-unit/csv.test.mjs",
+        "sha256": "9e31ac725b28e03bd3c51fedda52470fc8f201e0cf56843c1c8c2cd320d367f7",
+        "size": 5374,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/test-unit/goals.test.mjs",
+        "sha256": "d49297f7c14fbd077bceed172b39c04a46f9296ea61d31c1b01738212b889a66",
+        "size": 2802,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/test-unit/institution.test.mjs",
+        "sha256": "b34257d23f292f3a8c05c8b543f7abf7b2c3fb7a4fb725bb41e40310a0ba10e6",
+        "size": 2647,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/test-unit/nightly.test.mjs",
+        "sha256": "0d5b7f52b63cd507d6432b08a76d47c96758feb97fbcec38bf02a770c15e35db",
+        "size": 7674,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/test-unit/recurrences.test.mjs",
+        "sha256": "b24a58d0f81f42aa69839d501f22ebe5d8034ca1774fc1ee3b1242ed4ce99eed",
+        "size": 4346,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/test-unit/reports.test.mjs",
+        "sha256": "afe9767f02cae22a9e8b48d534e136d6969cec889efcd8dfc27bf82c4cb46d22",
+        "size": 6055,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/test-unit/rules.test.mjs",
+        "sha256": "b3834af853eae7b28eae65139802c9db932a64dee07fb5927ff4b46e3d254085",
+        "size": 3831,
+        "mode": 420
+      },
+      {
         "path": "examples/rational/test-unit/selectors.test.mjs",
         "sha256": "d5a4b913d27f76a295256687d2f26eecf89a03ca5b9ec41712a1a541e053e7c0",
         "size": 5129,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/test/alerts.spec.ts",
+        "sha256": "ff20b2bf830198f86a9e68b0c41d8e18b91d52086176930a913692d196cdc48b",
+        "size": 5944,
         "mode": 420
       },
       {
@@ -2353,9 +2569,33 @@
         "mode": 420
       },
       {
+        "path": "examples/rational/test/import.spec.ts",
+        "sha256": "f6f6be5d42ce53ebf96504f08634f8e9d32c0230c623ee7c446bc23bf8269ee5",
+        "size": 5808,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/test/nightly.spec.ts",
+        "sha256": "a14b4c03a138050c0539f812b56e91af5d07546d690695916c176fbb8e308798",
+        "size": 7075,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/test/plan.spec.ts",
+        "sha256": "256d6662ad528c13bf0a675ea2b51ab9d186cc7f0fe1a1af25cc06d83c575e74",
+        "size": 5283,
+        "mode": 420
+      },
+      {
         "path": "examples/rational/test/rational.spec.ts",
         "sha256": "26537f24eb89e7090debe616408e47cf469cca8daf13d5f9673db8e09dcaf795",
         "size": 13202,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/test/receipts.spec.ts",
+        "sha256": "264c797749cecd8d04af45a412edcbdb0a2cffe54fc2c8aa2746ae6176a0b18a",
+        "size": 5236,
         "mode": 420
       },
       {
@@ -2366,8 +2606,8 @@
       },
       {
         "path": "examples/rational/tsconfig.json",
-        "sha256": "71c72af36309cb4df9f5a1e3eb12bb415f2acc7e3a41dca1ea13ecc54a608053",
-        "size": 455,
+        "sha256": "34a1926b2231567090257fc4d8f28376ee295ffad09f9cc7f36bfaa3145dc047",
+        "size": 504,
         "mode": 420
       },
       {
@@ -2708,8 +2948,8 @@
       },
       {
         "path": "infra/ansible/roles/runtime/templates/Caddyfile.j2",
-        "sha256": "5bddcda7ad5934f8189b535f47242f6851656545737c2fb6978964fa8e2e2d69",
-        "size": 18480,
+        "sha256": "315e0865a39aef054fd6ab1d7945e41eb4ad64bce33840ab2e26693ea69ad2eb",
+        "size": 18604,
         "mode": 420
       },
       {
@@ -3008,8 +3248,8 @@
       },
       {
         "path": "packages/api-types/src/generated/schema.ts",
-        "sha256": "8c0e9d215baa576c4ef05f380bab935dc639a0d8ebecf753781879785055a876",
-        "size": 429765,
+        "sha256": "1fb200d346f8cf5d5e1c8a9dcaa1233c91a90a87eaf616ae3c6112ab488809b9",
+        "size": 429996,
         "mode": 420
       },
       {
@@ -3038,8 +3278,8 @@
       },
       {
         "path": "packages/cli/runtime/main/edge-sdk-source.ts",
-        "sha256": "74e2083fc22a038ee289e411626dda888a1d623cfe42757bd646d22844595eec",
-        "size": 14721,
+        "sha256": "ab6aab196f44399669dbe9bd87aee81811901d96cfd0db767d13faaa923b4946",
+        "size": 16026,
         "mode": 420
       },
       {
@@ -3452,8 +3692,8 @@
       },
       {
         "path": "packages/edge-sdk/src/client.ts",
-        "sha256": "db1672418eb887afe435bd545ca6f6e76e96b6d73157ab842329dac1d7a7c734",
-        "size": 21217,
+        "sha256": "e0a9c4e7317b8e9cd37f9437809b1e6fc3001780eaa2c5f4def3f5c06e770fb2",
+        "size": 22521,
         "mode": 420
       },
       {
@@ -3464,8 +3704,8 @@
       },
       {
         "path": "packages/edge-sdk/test/client.test.mjs",
-        "sha256": "63a5cca542c92f13a26bc01a10a3c5a67d9fc6bfbc5d168c7ac9158be66cf8b5",
-        "size": 11300,
+        "sha256": "df4af85c81beb0b4a53dc693a5fab33f8a64c5a78e10c7f82402bbc15b308e3e",
+        "size": 14133,
         "mode": 420
       },
       {
@@ -3554,8 +3794,8 @@
       },
       {
         "path": "packages/rxdb-client/src/live-group.ts",
-        "sha256": "8100c322e88b2309571256573aa85bf533c74b4cdcd82ea85d59bb85dee2469c",
-        "size": 12991,
+        "sha256": "17ea6273e90d110250b690edba83469451b31c2d6cb4e9b7f237c901a01eb7a1",
+        "size": 13187,
         "mode": 420
       },
       {
@@ -3650,8 +3890,8 @@
       },
       {
         "path": "packages/rxdb-client/test/live-group.test.mjs",
-        "sha256": "e2374ba28cd12a1f824a6b0cd8909b0bb68d35e5ca219d956b6eeaa3155d44e4",
-        "size": 6210,
+        "sha256": "93d738c4d75a2cbccefbc9b9e64176343db24ce6f0d13772fc8a6de2570c34a1",
+        "size": 6224,
         "mode": 420
       },
       {
@@ -4424,8 +4664,8 @@
       },
       {
         "path": "services/mako-data-plane/src/document_http.rs",
-        "sha256": "a36d3340619b5766eaf8af472c202f3edb29ff33f99b24a0354f616afd304319",
-        "size": 44579,
+        "sha256": "e81cfb51825cb7e37225aea9564c96db637c7c43843ceabe16009ae71b3b33ca",
+        "size": 46162,
         "mode": 420
       },
       {
@@ -4594,7 +4834,7 @@
     ]
   },
   "artifacts": {
-    "digest": "444b2b4d2e785d90e91724b98b9593b6e216598d163204b8171bb21c3df89f4c",
+    "digest": "886f0658c8d305d6e2c4fb272ef77236303f72374bb2b6e8d12f4f21361fa220",
     "files": [
       {
         "path": "bin/mako-control-plane",
@@ -4620,15 +4860,15 @@
       {
         "path": "bin/mako-data-plane",
         "source": "target/release/mako-data-plane",
-        "sha256": "ae8a694d2c778a4a28ca7fff9c0c942c706ac3d4f3df3c56f15b8415deea4177",
-        "size": 19159840,
+        "sha256": "f1b72ae5ed276e934198e7e98b50d227d70e58f8501a1eb24a363ae4bf77ba99",
+        "size": 19164384,
         "mode": 493
       },
       {
         "path": "bin/mako-edge-gateway",
         "source": "target/release/mako-edge-gateway",
-        "sha256": "616a4f37031ee35984bc302199b1879f426f9cf333ae835b37bc70cea666b3f8",
-        "size": 10123536,
+        "sha256": "7683f23bb3b93b89667b3b9f9a6f034e44864d54badafb6b7be01c9e43e25582",
+        "size": 10124760,
         "mode": 493
       },
       {
@@ -4697,8 +4937,8 @@
       {
         "path": "runtime-main/edge-sdk-source.ts",
         "source": "packages/cli/runtime/main/edge-sdk-source.ts",
-        "sha256": "74e2083fc22a038ee289e411626dda888a1d623cfe42757bd646d22844595eec",
-        "size": 14721,
+        "sha256": "ab6aab196f44399669dbe9bd87aee81811901d96cfd0db767d13faaa923b4946",
+        "size": 16026,
         "mode": 420
       },
       {
@@ -4717,10 +4957,10 @@
       }
     ]
   },
-  "releaseDigest": "971ecc11713c3d8bcf581786390be52f0df5041f067f678afb3553741dfa9351",
-  "generatedAt": "2026-08-30T08:06:31.758Z",
+  "releaseDigest": "a26e29941d3dc49e39a45c09f6315897bebdf651d05fbbcc65154266556f6eda",
+  "generatedAt": "2026-08-30T12:36:23.913Z",
   "candidateLayout": {
-    "root": ".local/public-beta-candidates/971ecc11713c3d8bcf581786390be52f0df5041f067f678afb3553741dfa9351",
+    "root": ".local/public-beta-candidates/a26e29941d3dc49e39a45c09f6315897bebdf651d05fbbcc65154266556f6eda",
     "manifest": "manifest.json",
     "binaries": "bin",
     "console": "console"

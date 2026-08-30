@@ -575,6 +575,56 @@ pub fn try_request_full(
 /// caller that wants to see what a stream sends needs to stop reading on its
 /// own terms. Returns the status and the frames, each the text between two
 /// blank lines.
+/// One request and its raw response: bytes in, bytes out, headers lowercased.
+///
+/// `request` speaks JSON, which is most of what these suites need. Object
+/// storage does not: an upload is bytes with a content type, a download is
+/// bytes that must come back unchanged, and a refusal must be checked for not
+/// carrying them.
+pub fn raw_request(
+    port: u16,
+    method: &str,
+    path: &str,
+    headers: &BTreeMap<String, String>,
+    body: &[u8],
+) -> (u16, Vec<u8>, BTreeMap<String, String>) {
+    let mut stream = TcpStream::connect(("127.0.0.1", port)).expect("connect");
+    stream
+        .set_read_timeout(Some(Duration::from_secs(20)))
+        .expect("read timeout");
+    let mut head = format!(
+        "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\nContent-Length: {}\r\n",
+        body.len()
+    );
+    for (name, value) in headers {
+        head.push_str(&format!("{name}: {value}\r\n"));
+    }
+    head.push_str("\r\n");
+    stream.write_all(head.as_bytes()).expect("write head");
+    stream.write_all(body).expect("write body");
+    stream.flush().expect("flush");
+    let mut raw = Vec::new();
+    stream.read_to_end(&mut raw).expect("read response");
+    let split = raw
+        .windows(4)
+        .position(|window| window == b"\r\n\r\n")
+        .expect("response head");
+    let head = String::from_utf8_lossy(&raw[..split]).to_string();
+    let status: u16 = head
+        .lines()
+        .next()
+        .and_then(|line| line.split_whitespace().nth(1))
+        .and_then(|status| status.parse().ok())
+        .expect("status");
+    let response_headers = head
+        .lines()
+        .skip(1)
+        .filter_map(|line| line.split_once(':'))
+        .map(|(name, value)| (name.trim().to_ascii_lowercase(), value.trim().to_owned()))
+        .collect();
+    (status, raw[split + 4..].to_vec(), response_headers)
+}
+
 pub fn read_sse_frames(
     port: u16,
     method: &str,

@@ -46,6 +46,7 @@
     "test:public-beta-streaming": "node scripts/run-public-beta-streaming-qualification.js",
     "test:edge-security": "bash scripts/run-edge-security-qualification.sh",
     "test:e2e-smoke": "bash scripts/run-e2e-smoke-qualification.sh",
+    "test:rational-smoke": "bash scripts/run-rational-smoke-qualification.sh",
     "test:unit": "npm run test:unit --workspaces --if-present",
     "test:integration": "npm run test:integration --workspaces --if-present",
     "test:policy-security": "bash scripts/run-policy-security-qualification.sh",

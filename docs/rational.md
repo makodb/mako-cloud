@@ -54,7 +54,15 @@ application asking for them:
 npm install
 npm run test:browser -w @mako-cloud/example-rational   # every screen, against the in-browser fake
 npm run test:unit -w @mako-cloud/example-rational      # the pure functions
+npm run test:rational-smoke                            # the model itself, over HTTP, no browser
 ```
+
+The third is the one the beta runs. `crates/mako-smoke/tests/rational.rs` publishes the
+project from `examples/rational/mako/` — the same files the bootstrap publishes — and then
+walks a household's life over HTTP: three ways in, sharing by claim, an import, a rule, a
+receipt, an alert that leaves by signed webhook, and writes queued while a device was away.
+It needs no browser, so the hosted qualification runs it against the deployed source on every
+release.
 
 Against a real stack, `examples/rational/scripts/bootstrap.mjs` creates the
 project, environment, collections, indexes, policies, bucket, and public key

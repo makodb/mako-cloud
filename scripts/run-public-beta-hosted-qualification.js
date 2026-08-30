@@ -41,6 +41,7 @@ const suites = [
   ["edge-runtime", "bash", ["scripts/run-edge-security-qualification.sh"], edgeEnvironment],
   ["dependency-pins", "npm", ["run", "validate:public-beta-containers"]],
   ["production-rocksdb", "bash", ["scripts/run-production-rocksdb-qualification.sh"]],
+  ["rational", "bash", ["scripts/run-rational-smoke-qualification.sh"]],
 ];
 const results = [];
 for (const [name, command, args, environment] of suites) {

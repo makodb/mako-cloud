@@ -85,6 +85,15 @@ const coverage = [
       "packages/cli/test/compatibility.integration.mjs",
     ],
   },
+  {
+    area: "sample application",
+    guides: ["docs/rational.md"],
+    evidence: [
+      "scripts/run-rational-smoke-qualification.sh",
+      "crates/mako-smoke/tests/rational.rs",
+      "examples/rational/PLATFORM-FINDINGS.md",
+    ],
+  },
 ];
 
 const index = await readFile(resolve(root, indexPath), "utf8");

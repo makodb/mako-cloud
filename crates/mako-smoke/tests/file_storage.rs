@@ -8,14 +8,12 @@
 //! version the caller read; and the developer sees counts, lists objects, and
 //! removes the bucket only after confirming the loss of what it holds.
 use std::collections::BTreeMap;
-use std::io::{Read, Write};
-use std::net::TcpStream;
 use std::thread::sleep;
 use std::time::{Duration, Instant};
 
 use mako_smoke::{
     ObjectStoreStub, await_readiness, binary_directory, free_ports, mint_developer_session,
-    request, run_bootstrap, scratch_root, service_environment, start_service,
+    raw_request, request, run_bootstrap, scratch_root, service_environment, start_service,
 };
 use serde_json::{Value, json};
 
@@ -40,50 +38,6 @@ fn await_active(control_port: u16, headers: &BTreeMap<String, String>, path: &st
 
 /// A raw HTTP request with an arbitrary body and content type, which the
 /// harness's JSON helper cannot send.
-fn raw_request(
-    port: u16,
-    method: &str,
-    path: &str,
-    headers: &BTreeMap<String, String>,
-    body: &[u8],
-) -> (u16, Vec<u8>, BTreeMap<String, String>) {
-    let mut stream = TcpStream::connect(("127.0.0.1", port)).expect("connect");
-    stream
-        .set_read_timeout(Some(Duration::from_secs(20)))
-        .expect("read timeout");
-    let mut head = format!(
-        "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\nContent-Length: {}\r\n",
-        body.len()
-    );
-    for (name, value) in headers {
-        head.push_str(&format!("{name}: {value}\r\n"));
-    }
-    head.push_str("\r\n");
-    stream.write_all(head.as_bytes()).expect("write head");
-    stream.write_all(body).expect("write body");
-    stream.flush().expect("flush");
-    let mut raw = Vec::new();
-    stream.read_to_end(&mut raw).expect("read response");
-    let split = raw
-        .windows(4)
-        .position(|window| window == b"\r\n\r\n")
-        .expect("response head");
-    let head = String::from_utf8_lossy(&raw[..split]).to_string();
-    let status: u16 = head
-        .lines()
-        .next()
-        .and_then(|line| line.split_whitespace().nth(1))
-        .and_then(|status| status.parse().ok())
-        .expect("status");
-    let response_headers = head
-        .lines()
-        .skip(1)
-        .filter_map(|line| line.split_once(':'))
-        .map(|(name, value)| (name.trim().to_ascii_lowercase(), value.trim().to_owned()))
-        .collect();
-    (status, raw[split + 4..].to_vec(), response_headers)
-}
-
 #[test]
 fn applications_store_files_under_policy_and_developers_govern_the_buckets() {
     let binaries = binary_directory();
