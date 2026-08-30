@@ -94,3 +94,12 @@ export function statement(
   }
   return entries.sort((left, right) => left.date.localeCompare(right.date));
 }
+
+/**
+ * `.` rather than `:`: a document id holding a character
+ * `encodeURIComponent` escapes cannot be written from a function (findings
+ * log #12), and this id is written from one on every sync.
+ */
+export function transactionId(accountId: string, externalId: string): string {
+  return `txn_${accountId}.${externalId}`.replaceAll(/[^A-Za-z0-9_.-]/gu, "-").slice(0, 128);
+}

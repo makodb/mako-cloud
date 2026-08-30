@@ -1,8 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { statement } from "../functions/institution-sync/institution.ts";
-import { transactionId } from "../functions/institution-sync/index.ts";
+import { statement, transactionId } from "../functions/institution-sync/institution.ts";
 
 /**
  * The simulated institution is deterministic on purpose: what the sync has to

@@ -8,7 +8,7 @@ import {
   fingerprint,
   netWorth,
   snapshotId,
-} from "../functions/nightly/index.ts";
+} from "../functions/shared/nightly.ts";
 import {
   detectionId,
   detectRecurrences,

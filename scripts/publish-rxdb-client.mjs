@@ -11,7 +11,7 @@
 // So this script exports the built package -- dist, README, licence, and a
 // manifest with the build-time scripts and devDependencies stripped -- into a
 // public repository, commits it, and tags it with the version. Installing
-// `github:makodb/mako-rxdb#v0.1.0` then behaves exactly as installing from npm
+// `github:makodb/mako-rxdb#v0.2.0` then behaves exactly as installing from npm
 // will, which is what makes the swap later a one-line change.
 //
 // Usage:

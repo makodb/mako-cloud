@@ -1,6 +1,6 @@
 {
   "name": "@mako-cloud/rxdb",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": false,
   "description": "Supported RxDB replication and project-auth client for Mako Cloud",
   "keywords": [

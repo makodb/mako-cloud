@@ -287,8 +287,15 @@ runs — so a charge is filed the same way whether somebody clicked or the job w
 A bundle is a directory and nothing outside it is uploaded, so the copy has to travel with the
 function. In the repository a function imports `../shared/rules.ts`, which is where the module
 really is; the bootstrap copies `shared/` into the staged bundle and rewrites that one specifier
-to `./shared/rules.ts`. That seam is why those modules import nothing themselves: the browser
-build wants `.js` specifiers, Deno wants `.ts`, and no single import satisfies both.
+to `./shared/rules.ts`. That seam is why the modules the app shares import nothing themselves:
+the browser build wants `.js` specifiers, Deno wants `.ts`, and no single import satisfies both.
+
+`functions/shared/nightly.ts` is the exception that proves it: the nightly job's decisions —
+which transactions its rules would file, which synced ones repeat a manual one, what the day's
+net worth is — are pure functions of the documents the job read, and the app never imports them.
+So they live beside the other engines and speak Deno's `.ts` specifiers, and `test-unit` can
+exercise them anywhere, including in the published copy of this application where the edge SDK
+the function itself imports does not exist.
 
 ## What maps to what
 
@@ -315,8 +322,10 @@ build wants `.js` specifiers, Deno wants `.ts`, and no single import satisfies b
 - `mako/` — the model, policies, and bucket the bootstrap publishes
 - `functions/households` — the edge function that owns membership
 - `functions/institution-sync`, `functions/nightly` — the scheduled functions
-- `functions/shared` — rules, recurrence detection, budgets, alerts, and the run key, shared with
-  the app and importing nothing
+- `functions/shared` — rules, recurrence detection, budgets, alerts, the nightly job's own
+  decisions, and the run key. The four the app imports import nothing at all, so the browser build
+  and Deno can both read them; `nightly.ts` and `run-key.ts` are the functions' alone and speak
+  Deno's `.ts` specifiers
 - `scripts/` — `bootstrap.mjs`, `seed.mjs`, and the deterministic `demo-data.mjs`
 - `src/model` — document types and the RxDB schemas derived from `mako/collections.json`
 - `src/data` — transport, conflict handler, database, replication wiring, replicated scopes with

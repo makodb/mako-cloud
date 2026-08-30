@@ -51,7 +51,7 @@ const pagesBase = `/${APPLICATION.name}/`;
 /** Where `vite build` writes the site. `tsc -b` owns `dist`, and the unit tests read it. */
 const siteDirectory = "web-dist";
 /** The published, installable form of the client. See scripts/publish-rxdb-client.mjs. */
-const clientSpecifier = "github:makodb/mako-rxdb#v0.1.0";
+const clientSpecifier = "github:makodb/mako-rxdb#v0.2.0";
 
 // Copied verbatim. Directories are copied whole, minus the names below.
 const COPIED = [
@@ -409,12 +409,24 @@ export default defineConfig(({ command }) => {
  * credential, no path into this workspace, and a demo that runs.
  */
 function verify(root, files) {
-  const credential = readFileSync(join(root, "functions/households/credential.ts"), "utf8");
-  if (!credential.includes("this deployment carries no households service credential")) {
-    throw new Error(
-      "functions/households/credential.ts does not carry the fail-closed placeholder: the" +
-        " deploy-time rewrite has leaked into the sources, and a credential would be published",
-    );
+  // Every function that holds a credential reads it from the environment and
+  // refuses to run without it. The published sources must carry that shape and
+  // never a value: a credential reaches a deployment as a function secret, and
+  // the only way one could appear here is a deploy-time rewrite leaking back
+  // into the sources. Checking one function was checking the wrong thing as
+  // soon as there were three -- and checking for a sentence the file no longer
+  // contained was a gate that could only fail.
+  for (const path of files.filter((entry) => /^functions\/[^/]+\/credential\.ts$/u.test(entry))) {
+    const credential = readFileSync(join(root, path), "utf8");
+    const failsClosed =
+      credential.includes("Deno.env.get(SERVICE_CREDENTIAL_SECRET)") &&
+      credential.includes("this deployment has no ${SERVICE_CREDENTIAL_SECRET}");
+    if (!failsClosed) {
+      throw new Error(
+        `${path} does not read its credential from the environment and refuse without it;` +
+          " a credential would be published or a deployment would run without one",
+      );
+    }
   }
   for (const path of files) {
     if (!TEXT.test(path)) continue;

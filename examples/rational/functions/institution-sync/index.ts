@@ -30,7 +30,7 @@ import {
   type FiredAlert,
   firedAlerts,
 } from "../shared/alerts.ts";
-import { statement } from "./institution.ts";
+import { statement, transactionId } from "./institution.ts";
 
 declare const Deno: { readonly env: { get(name: string): string | undefined } };
 
@@ -303,15 +303,6 @@ async function recordSync(document: FunctionDocument, outcome: string): Promise<
     },
     current.revision,
   );
-}
-
-/**
- * `.` rather than `:`: a document id holding a character
- * `encodeURIComponent` escapes cannot be written from a function (findings
- * log #12), and this id is written from one on every sync.
- */
-export function transactionId(accountId: string, externalId: string): string {
-  return `txn_${accountId}.${externalId}`.replaceAll(/[^A-Za-z0-9_.-]/gu, "-").slice(0, 128);
 }
 
 function service(reason: string): ServiceFunctionClient {
