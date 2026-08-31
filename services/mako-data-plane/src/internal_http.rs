@@ -201,7 +201,7 @@ fn handle_identity_admin(
             })?;
 
         if decision == GuardDecision::Duplicate {
-            return match journal.lookup(&verified, now).await {
+            match journal.lookup(&verified, now).await {
                 Ok(ResponseJournalLookup::Replay(body)) => {
                     append_admin_audit(
                         graph,
@@ -215,25 +215,41 @@ fn handle_identity_admin(
                         now,
                     )
                     .await?;
-                    Ok(json_bytes(body))
+                    return Ok(json_bytes(body));
                 }
-                Ok(ResponseJournalLookup::Conflict) => Err(conflict(
-                    request,
-                    "idempotency key was reused for another identity operation",
-                )),
-                Ok(ResponseJournalLookup::Expired) => Err(conflict(
-                    request,
-                    "the identity operation retry result has expired",
-                )),
-                Ok(ResponseJournalLookup::Missing) => Err(auth_http::unavailable(
-                    request,
-                    "the identity operation result is not yet recoverable",
-                )),
-                Err(_) => Err(auth_http::unavailable(
-                    request,
-                    "identity response journal is unavailable",
-                )),
-            };
+                Ok(ResponseJournalLookup::Conflict) => {
+                    return Err(conflict(
+                        request,
+                        "idempotency key was reused for another identity operation",
+                    ));
+                }
+                Ok(ResponseJournalLookup::Expired) => {
+                    return Err(conflict(
+                        request,
+                        "the identity operation retry result has expired",
+                    ));
+                }
+                // A claimed key with no recorded answer means the claiming
+                // attempt died between the guard write and the journal write
+                // -- a crash or restart mid-operation -- and no caller ever
+                // received a success. Refusing here bricked the key for the
+                // guard's whole retention: the refusal said "retry", and every
+                // retry answered the same refusal. The honest recovery is to
+                // execute again. Every operation on this route bears it: the
+                // ordinary ones are idempotent by their own semantics, and the
+                // one-time credential operations journal their response
+                // atomically with their write, so a missing journal entry
+                // proves they never happened. A concurrent in-flight original
+                // is arbitrated by the journal's conditional store below --
+                // whichever result lands first is the one both callers see.
+                Ok(ResponseJournalLookup::Missing) => {}
+                Err(_) => {
+                    return Err(auth_http::unavailable(
+                        request,
+                        "identity response journal is unavailable",
+                    ));
+                }
+            }
         }
 
         if matches!(

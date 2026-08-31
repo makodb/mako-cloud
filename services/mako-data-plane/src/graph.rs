@@ -2065,6 +2065,89 @@ mod tests {
         block_on(graph.shutdown()).expect("shutdown");
     }
 
+    /// The state a crash leaves between the replay guard's claim and the
+    /// response journal's store: the key answers `Duplicate`, the journal
+    /// answers `Missing`, and no caller ever received a success. The
+    /// identity-admin route reads that pair as "execute again" -- refusing it
+    /// used to brick the key for the guard's whole retention, with a retry
+    /// hint nothing could satisfy. This pins the two facts that recovery
+    /// rests on: the poisoned pair is distinguishable from a completed
+    /// operation, and the journal's conditional store still arbitrates the
+    /// re-execution (storing once, replaying after).
+    #[test]
+    fn a_guard_claim_without_a_journaled_response_is_recoverable_not_bricked() {
+        let directory = local_tempdir("data-plane-guard-recovery");
+        let config = config_for(directory.path(), DeploymentEnvironment::Local);
+        let graph = DataPlaneGraph::open(&config).expect("graph");
+        let tenant = TenantScope::new(
+            ProjectId::parse("prj_guardrecover").expect("project"),
+            EnvironmentId::parse("env_guardrecover").expect("environment"),
+        );
+
+        let authenticator = graph.internal_authenticator(InternalCaller::ControlPlane);
+        let sign = |request_id: &str| {
+            let signed = authenticator
+                .sign(
+                    InternalRoute::IdentityAdmin,
+                    &tenant,
+                    request_id,
+                    "explorer-epoch-policy-fixed-key",
+                    100,
+                    b"{\"op\":\"advance\"}".to_vec(),
+                )
+                .expect("signed internal request");
+            authenticator
+                .verify_signed(InternalRoute::IdentityAdmin, &signed, 100)
+                .expect("verified internal request")
+        };
+
+        // The doomed first attempt: the guard claim lands, then the process
+        // dies before any response is journaled.
+        let guard = graph
+            .internal_replay_guard(&tenant, &tenant)
+            .expect("internal replay guard");
+        let first = sign("req_original");
+        assert_eq!(
+            block_on(guard.claim(&first, 100)).expect("guard claim"),
+            GuardDecision::Fresh
+        );
+
+        // The retry: same idempotency key, its own request id and nonce. The
+        // guard says the key is taken; the journal says nothing was answered.
+        let retry = sign("req_retry");
+        assert_eq!(
+            block_on(guard.claim(&retry, 100)).expect("guard claim"),
+            GuardDecision::Duplicate
+        );
+        let journal = graph
+            .internal_response_journal(&tenant, &tenant)
+            .expect("internal response journal");
+        assert!(matches!(
+            block_on(journal.lookup(&retry, 100)).expect("journal lookup"),
+            mako_internal_rpc::ResponseJournalLookup::Missing
+        ));
+
+        // Re-execution stores its answer once; a later identical retry
+        // replays it instead of executing a third time.
+        assert!(matches!(
+            block_on(journal.store(&retry, b"{\"advanced\":1}", 100)).expect("journal store"),
+            mako_internal_rpc::ResponseJournalStoreOutcome::Stored
+        ));
+        let third = sign("req_third");
+        assert_eq!(
+            block_on(guard.claim(&third, 100)).expect("guard claim"),
+            GuardDecision::Duplicate
+        );
+        match block_on(journal.lookup(&third, 100)).expect("journal lookup") {
+            mako_internal_rpc::ResponseJournalLookup::Replay(body) => {
+                assert_eq!(body, b"{\"advanced\":1}");
+            }
+            other => panic!("the journaled answer must replay, got {other:?}"),
+        }
+
+        block_on(graph.shutdown()).expect("shutdown");
+    }
+
     #[test]
     fn production_refuses_empty_unprovisioned_storage() {
         let directory = local_tempdir("data-plane-empty-production");

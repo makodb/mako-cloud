@@ -141,14 +141,30 @@ function mako(args, input) {
   const executable = options.cli;
   const command = executable.endsWith(".js") ? "node" : executable;
   const commandArgs = executable.endsWith(".js") ? [executable, ...args] : args;
-  const result = spawnSync(command, commandArgs, {
-    env: cliEnvironment,
-    encoding: "utf8",
-    maxBuffer: 64 * 1024 * 1024,
-    ...(input === undefined ? {} : { input }),
-  });
-  if (result.error) fail(`could not run ${executable}: ${result.error.message}`);
-  return { status: result.status ?? -1, stdout: result.stdout ?? "", stderr: result.stderr ?? "" };
+  // A hosted deployment takes scheduled checkpoint backups that restart a
+  // service for a few seconds, and the API answers `unavailable ... retry
+  // after 1s` through the window. A bootstrap spans minutes of calls, so one
+  // window must not abort it: an `unavailable` refusal is retried the way the
+  // advice says, a bounded number of times. Every other failure stays fatal.
+  for (let attempt = 1; ; attempt += 1) {
+    const result = spawnSync(command, commandArgs, {
+      env: cliEnvironment,
+      encoding: "utf8",
+      maxBuffer: 64 * 1024 * 1024,
+      ...(input === undefined ? {} : { input }),
+    });
+    if (result.error) fail(`could not run ${executable}: ${result.error.message}`);
+    const run = {
+      status: result.status ?? -1,
+      stdout: result.stdout ?? "",
+      stderr: result.stderr ?? "",
+    };
+    if (run.status === 0 || !run.stderr.includes("error unavailable") || attempt >= 8) {
+      return run;
+    }
+    log(`retrying after an unavailable window (attempt ${attempt}): mako ${args[0]} ${args[1] ?? ""}`);
+    spawnSync("sleep", ["3"]);
+  }
 }
 
 /** Run a command with --json and parse its output; exit codes in `allow` return null. */
@@ -607,7 +623,16 @@ function deploySyncFunction() {
     const secretNames = plaidConfigured
       ? [...new Set([...configuration.secretNames, "PLAID_CLIENT_ID", "PLAID_SECRET"])].sort()
       : configuration.secretNames;
-    const reconciled = { ...configuration, secretNames, allowedHosts: desiredHosts };
+    // Say `allowedHosts` only when there is something to say: a control plane
+    // from before the field refuses unknown keys, and a bootstrap that
+    // declares nothing must keep working against it.
+    const reconciled = {
+      ...configuration,
+      secretNames,
+      ...(desiredHosts.length === 0 && (configuration.allowedHosts ?? []).length === 0
+        ? {}
+        : { allowedHosts: desiredHosts }),
+    };
     if (JSON.stringify(reconciled) !== JSON.stringify(configuration)) {
       log(`updating ${functionName} configuration (egress: ${desiredHosts.join(", ") || "none"})`);
       makoJson([
