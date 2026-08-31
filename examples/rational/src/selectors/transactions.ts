@@ -1,6 +1,6 @@
+import { monthKey } from "../../functions/shared/budgets.js";
 import type { Transaction } from "../model/types.js";
 import { memoizeLast } from "./memo.js";
-import { monthKey } from "../../functions/shared/budgets.js";
 
 export const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/u;
 

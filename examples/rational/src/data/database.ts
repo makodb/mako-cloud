@@ -1,4 +1,4 @@
-import { createRxDatabase, removeRxDatabase, type RxCollection, type RxDatabase } from "rxdb";
+import { createRxDatabase, type RxCollection, type RxDatabase, removeRxDatabase } from "rxdb";
 import { getRxStorageDexie } from "rxdb/plugins/storage-dexie";
 
 import { rxdbSchema } from "../model/collections.js";
@@ -21,6 +21,26 @@ export async function openDatabase<Ids extends CollectionId>(
   name: string,
   collectionIds: readonly Ids[],
 ): Promise<RationalDatabase<Ids>> {
+  try {
+    return await createAndAddCollections(name, collectionIds);
+  } catch (error) {
+    // A device that stored the model under an older schema cannot open the
+    // new one -- RxDB refuses a changed schema at the same local version, and
+    // it is right to. Rational's answer is the local-first one: the device's
+    // copy is a replica of the server's, so erase it and pull it again. What
+    // is lost is only unsynced local edits from the moment of upgrade, which
+    // is the honest trade of shipping a new model to a static site without
+    // per-version migration code.
+    console.warn(`local database ${name} predates the current model; rebuilding`, error);
+    await removeRxDatabase(name, getRxStorageDexie());
+    return await createAndAddCollections(name, collectionIds);
+  }
+}
+
+async function createAndAddCollections<Ids extends CollectionId>(
+  name: string,
+  collectionIds: readonly Ids[],
+): Promise<RationalDatabase<Ids>> {
   const database = await createRxDatabase<RationalCollections<Ids>>({
     name,
     storage: getRxStorageDexie(),
@@ -32,7 +52,14 @@ export async function openDatabase<Ids extends CollectionId>(
   );
   // RxDB types the creators against every collection of the database type;
   // this database holds exactly the ids it was asked for.
-  await database.addCollections(definitions as never);
+  try {
+    await database.addCollections(definitions as never);
+  } catch (error) {
+    // Close before the caller retries with a fresh store, or Dexie holds the
+    // connection open and the erase deadlocks.
+    await database.close().catch(() => undefined);
+    throw error;
+  }
   return database;
 }
 

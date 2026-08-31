@@ -1,7 +1,12 @@
 import type { RxJsonSchema } from "rxdb";
 
 import model from "../../mako/collections.json" with { type: "json" };
-import type { CollectionId, RationalDocuments } from "./types.js";
+import {
+  type CollectionId,
+  DIRECTORY_COLLECTIONS,
+  HOUSEHOLD_COLLECTIONS,
+  type RationalDocuments,
+} from "./types.js";
 
 /**
  * One source, two derived forms. `mako/collections.json` is what the bootstrap
@@ -25,15 +30,22 @@ export interface CollectionDefinition {
 /** The platform schema version every replication request names. */
 export const SCHEMA_VERSION: number = model.schemaVersion;
 
-export const COLLECTION_DEFINITIONS: readonly CollectionDefinition[] = model.collections.map(
-  (collection) => ({
+/**
+ * The model also holds collections the app never opens -- `plaid_items` is a
+ * server-only credential store whose policy allows no application user
+ * anything -- so only the collections the app actually speaks are derived.
+ */
+const OPENED: readonly string[] = [...DIRECTORY_COLLECTIONS, ...HOUSEHOLD_COLLECTIONS];
+
+export const COLLECTION_DEFINITIONS: readonly CollectionDefinition[] = model.collections
+  .filter((collection) => OPENED.includes(collection.id))
+  .map((collection) => ({
     id: collection.id as CollectionId,
     scope: collection.scope as "directory" | "household",
     jsonSchema: collection.jsonSchema as Record<string, unknown>,
     primaryKey: collection.primaryKey as { kind: "field"; field: string },
     indexes: collection.indexes,
-  }),
-);
+  }));
 
 export function collectionDefinition(id: CollectionId): CollectionDefinition {
   const definition = COLLECTION_DEFINITIONS.find((candidate) => candidate.id === id);

@@ -33,6 +33,8 @@ export interface LocalServeConfig {
   readonly jwtAudience?: string;
   readonly envFiles: readonly string[];
   readonly secretFiles: readonly string[];
+  /** Egress hosts for the local worker; absent means deny-all, like hosted. */
+  readonly allowedHosts?: readonly string[];
   readonly containerEngine?: "docker" | "podman";
   readonly dryRun: boolean;
 }
@@ -152,9 +154,49 @@ export function parseServeArguments(args: readonly string[], cwd: string): Local
     ...(jwtAudience === undefined ? {} : { jwtAudience }),
     envFiles: manyFiles(options, "--env-file", cwd),
     secretFiles: manyFiles(options, "--secret-file", cwd),
+    allowedHosts: validateAllowedHosts(options.get("--allow-host") ?? []),
     ...(engine === undefined ? {} : { containerEngine: engine }),
     dryRun,
   };
+}
+
+/**
+ * The same bounds the hosted deployment surface applies, so a declaration that
+ * serves locally is one `mako functions deploy --allow-host` will accept: DNS
+ * names only, HTTPS implied, at most eight, never an IP literal, localhost, or
+ * a cloud metadata name.
+ */
+function validateAllowedHosts(hosts: readonly string[]): readonly string[] {
+  const sorted = [...new Set(hosts)].sort();
+  if (sorted.length > 8) {
+    throw new LocalServeConfigurationError("at most 8 allowed hosts may be declared");
+  }
+  for (const host of sorted) {
+    const labelsAreValid = host
+      .split(".")
+      .every(
+        (label) =>
+          label !== "" &&
+          label.length <= 63 &&
+          !label.startsWith("-") &&
+          !label.endsWith("-") &&
+          /^[a-z0-9-]+$/u.test(label),
+      );
+    if (
+      host.length > 253 ||
+      !labelsAreValid ||
+      /^\d+(\.\d+){3}$/u.test(host) ||
+      host.includes(":") ||
+      ["localhost", "metadata", "metadata.google.internal", "instance-data.ec2.internal"].includes(
+        host,
+      )
+    ) {
+      throw new LocalServeConfigurationError(
+        `allowed host must be a DNS name, not an address or a reserved name: ${host}`,
+      );
+    }
+  }
+  return sorted;
 }
 
 export function createRuntimeLaunchPlan(config: LocalServeConfig): RuntimeLaunchPlan {
@@ -193,6 +235,8 @@ export function createRuntimeLaunchPlan(config: LocalServeConfig): RuntimeLaunch
     MAKO_RUNTIME_STATE_KEY: randomBytes(32).toString("hex"),
     MAKO_RUNTIME_STATE_PATH: "/tmp/mako-runtime-supervisor-state",
     MAKO_RUNTIME_WORKER_PATH: "/tmp/mako-runtime-workers",
+    MAKO_ALLOWED_HOSTS:
+      (config.allowedHosts ?? []).length === 0 ? "" : JSON.stringify(config.allowedHosts),
     MAKO_USER_ENV_NAMES: JSON.stringify(exposedEnvironmentNames),
     MAKO_VERIFY_JWT: String(config.verifyJwt),
     MAKO_WALL_TIME_MS: String(config.wallTimeMilliseconds),
@@ -502,6 +546,7 @@ function validateApiUrl(value: string): string {
 
 function rejectUnknownOptions(options: ReadonlyMap<string, string[]>): void {
   const known = new Set([
+    "--allow-host",
     "--api-url",
     "--container-engine",
     "--entrypoint",

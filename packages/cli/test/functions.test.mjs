@@ -554,6 +554,27 @@ test("functions deploy --create makes a missing function first, and refuses with
   assert.match(created.stdout, /^function hello\nbundle sha256:/u);
 });
 
+test("functions deploy --allow-host sends a sorted declaration, and omits the field entirely when absent", async (t) => {
+  const state = freshState();
+  state.functions = [];
+  const { api, cli } = await setup(t, state);
+  const directory = await functionDirectory(t);
+
+  const declared = await cli([
+    "functions", "deploy", directory, "--name", "hello", ...TENANT, "--create",
+    "--region", "local", "--yes",
+    "--allow-host", "sandbox.plaid.com", "--allow-host", "api.example.com",
+  ]);
+  assert.equal(declared.code, 0, declared.stderr);
+  const created = api.find(`${BASE}/functions`, "POST")[0].body;
+  // Sorted like the control plane stores it; the API is the validator, the
+  // CLI only carries the declaration.
+  assert.deepEqual(created.configuration.allowedHosts, ["api.example.com", "sandbox.plaid.com"]);
+  // An undeclared deploy is byte-identical to one from a CLI that predates
+  // the field: no allowedHosts key at all, not an empty list.
+  assert.equal(Object.hasOwn(configuration(), "allowedHosts"), false);
+});
+
 test("functions deploy exits non-zero on a failed health check or a rejected bundle, with the resume command printed", async (t) => {
   const state = freshState();
   state.health = { state: "failed", diagnostic: "worker exited with status 1" };

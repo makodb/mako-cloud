@@ -4,8 +4,8 @@ import type { RationalApp } from "../data/rational.js";
 import type { ScopeSession } from "../data/scope.js";
 import { ValidationError } from "../data/writes.js";
 import {
-  type Account,
   ACCOUNT_TYPES,
+  type Account,
   type AccountType,
   type HouseholdCollectionId,
 } from "../model/types.js";

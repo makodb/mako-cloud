@@ -252,7 +252,17 @@ impl RuntimeDeploymentClient {
                 request_bytes: spec.configuration.limits.request_bytes,
                 response_bytes: spec.configuration.limits.response_bytes,
                 concurrency: spec.configuration.limits.concurrency,
-                outbound_network: OutboundNetworkPolicy::DenyAll,
+                // A deployment that declared nothing stays deny-all. The
+                // declared hosts were validated when the configuration was
+                // written; `manifest.validate` below checks them again against
+                // the protocol's own rules rather than trusting that.
+                outbound_network: if spec.configuration.allowed_hosts.is_empty() {
+                    OutboundNetworkPolicy::DenyAll
+                } else {
+                    OutboundNetworkPolicy::AllowList {
+                        hosts: spec.configuration.allowed_hosts.clone(),
+                    }
+                },
             },
             verify_jwt: spec.configuration.verify_jwt,
             secret_versions,
@@ -1139,6 +1149,36 @@ mod tests {
         .expect("client")
     }
 
+    #[test]
+    fn declared_egress_hosts_reach_the_manifest_verbatim_and_absent_stays_deny_all() {
+        let endpoint: SocketAddr = ([127, 0, 0, 1], 9).into();
+        let undeclared = client(endpoint)
+            .manifest(&deployment_spec())
+            .expect("manifest");
+        assert_eq!(
+            undeclared.limits.outbound_network,
+            OutboundNetworkPolicy::DenyAll
+        );
+
+        let mut spec = deployment_spec();
+        spec.configuration.allowed_hosts =
+            vec!["api.example.com".to_owned(), "sandbox.plaid.com".to_owned()];
+        let declared = client(endpoint).manifest(&spec).expect("manifest");
+        assert_eq!(
+            declared.limits.outbound_network,
+            OutboundNetworkPolicy::AllowList {
+                hosts: vec!["api.example.com".to_owned(), "sandbox.plaid.com".to_owned()],
+            }
+        );
+
+        // The manifest is validated against the protocol's own host rules, so
+        // a stored record that somehow carries a denied name never leaves this
+        // process as a grant.
+        let mut poisoned = deployment_spec();
+        poisoned.configuration.allowed_hosts = vec!["metadata.google.internal".to_owned()];
+        assert!(client(endpoint).manifest(&poisoned).is_err());
+    }
+
     fn deployment_spec() -> FunctionDeploymentSpec {
         let tenant = tenant();
         FunctionDeploymentSpec {
@@ -1152,6 +1192,7 @@ mod tests {
                 verify_jwt: true,
                 regions: vec!["us-east-1-beta".to_owned()],
                 secret_names: vec![FunctionSecretName::parse("API_TOKEN").expect("name")],
+                allowed_hosts: vec![],
                 limits: FunctionLimits {
                     cpu_milliseconds: 100,
                     wall_milliseconds: 1000,

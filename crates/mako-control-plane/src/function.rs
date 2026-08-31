@@ -103,7 +103,17 @@ pub struct FunctionConfiguration {
     pub regions: Vec<String>,
     pub secret_names: Vec<FunctionSecretName>,
     pub limits: FunctionLimits,
+    /// External hosts this function may reach over HTTPS, beyond the platform
+    /// API origin every worker gets. Empty means egress stays denied. Stored
+    /// records predate this field, so it must keep a serde default: without
+    /// one, every function written before it existed fails to deserialize.
+    #[serde(default)]
+    pub allowed_hosts: Vec<String>,
 }
+
+/// The most egress hosts one function may declare. A documented constant, not
+/// a config flag: raising it is a deliberate change.
+pub const MAX_ALLOWED_HOSTS: usize = 8;
 
 impl FunctionConfiguration {
     fn validate(&mut self) -> Result<(), FunctionAdminError> {
@@ -112,6 +122,8 @@ impl FunctionConfiguration {
         self.regions.dedup();
         self.secret_names.sort();
         self.secret_names.dedup();
+        self.allowed_hosts.sort();
+        self.allowed_hosts.dedup();
         if self.regions.is_empty()
             || self.regions.len() > 16
             || self.secret_names.len() > 64
@@ -121,8 +133,54 @@ impl FunctionConfiguration {
         {
             return Err(FunctionAdminError::InvalidConfiguration);
         }
+        if self.allowed_hosts.len() > MAX_ALLOWED_HOSTS {
+            return Err(FunctionAdminError::InvalidAllowedHost(format!(
+                "at most {MAX_ALLOWED_HOSTS} hosts may be declared"
+            )));
+        }
+        for host in &self.allowed_hosts {
+            validate_allowed_host(host)?;
+        }
         Ok(())
     }
+}
+
+/// One declared egress host: a public DNS name and nothing else. IP literals,
+/// ports, wildcards, and the name families that reach the platform's own
+/// machinery from inside a worker's network namespace -- `localhost`,
+/// `metadata`, and everything under `.internal` (cloud metadata,
+/// `host.docker.internal`), `.local`, `.localhost`, and `.arpa` -- are refused
+/// here, before any version exists, naming the entry that failed.
+fn validate_allowed_host(host: &str) -> Result<(), FunctionAdminError> {
+    let refuse = |reason: &str| {
+        let shown: String = host.chars().take(64).filter(|c| !c.is_control()).collect();
+        Err(FunctionAdminError::InvalidAllowedHost(format!(
+            "{reason}: {shown}"
+        )))
+    };
+    let labels_are_valid = host.split('.').all(|label| {
+        !label.is_empty()
+            && label.len() <= 63
+            && !label.starts_with('-')
+            && !label.ends_with('-')
+            && label
+                .bytes()
+                .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+    });
+    if host.is_empty() || host.len() > 253 || !labels_are_valid {
+        return refuse("host must be a lowercase DNS name without port or wildcard");
+    }
+    if host.parse::<std::net::IpAddr>().is_ok() {
+        return refuse("host must be a DNS name, not an address");
+    }
+    if matches!(host, "localhost" | "metadata")
+        || [".internal", ".local", ".localhost", ".arpa"]
+            .iter()
+            .any(|suffix| host.ends_with(suffix))
+    {
+        return refuse("host resolves inside the platform, not on the public internet");
+    }
+    Ok(())
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -1481,6 +1539,7 @@ pub enum FunctionAdminError {
     CorruptRecord,
     InvalidFunction,
     InvalidConfiguration,
+    InvalidAllowedHost(String),
     InvalidDeployment,
     BundleNotFound,
     CorruptBundle,
@@ -1504,6 +1563,9 @@ pub enum FunctionAdminError {
 
 impl fmt::Display for FunctionAdminError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Self::InvalidAllowedHost(detail) = self {
+            return write!(formatter, "function allowed host is invalid: {detail}");
+        }
         formatter.write_str(match self {
             Self::UnsupportedDurability => "function durability is unsupported",
             Self::NotFound => "function resource was not found",
@@ -1512,6 +1574,7 @@ impl fmt::Display for FunctionAdminError {
             Self::CorruptRecord => "function record is corrupt",
             Self::InvalidFunction => "function name is invalid",
             Self::InvalidConfiguration => "function configuration is invalid",
+            Self::InvalidAllowedHost(_) => "function allowed host is invalid",
             Self::InvalidDeployment => "function deployment is invalid",
             Self::BundleNotFound => "function bundle was not found",
             Self::CorruptBundle => "function bundle is corrupt",
@@ -1693,6 +1756,7 @@ mod tests {
             verify_jwt: true,
             regions: vec!["local".to_owned()],
             secret_names,
+            allowed_hosts: vec![],
             limits: FunctionLimits {
                 cpu_milliseconds: 100,
                 wall_milliseconds: 1000,
@@ -1703,6 +1767,92 @@ mod tests {
             },
         }
     }
+    #[test]
+    fn allowed_hosts_accept_public_dns_names_and_refuse_everything_else() {
+        let mut valid = configuration(vec![]);
+        valid.allowed_hosts = vec![
+            "sandbox.plaid.com".to_owned(),
+            "api.example.com".to_owned(),
+            "api.example.com".to_owned(),
+        ];
+        valid.validate().expect("public DNS names are declarable");
+        assert_eq!(
+            valid.allowed_hosts,
+            vec!["api.example.com".to_owned(), "sandbox.plaid.com".to_owned()],
+            "hosts are sorted and deduplicated like every other list"
+        );
+
+        for (host, why) in [
+            ("127.0.0.1", "an IPv4 literal"),
+            ("2606:4700::1111", "an IPv6 literal"),
+            ("sandbox.plaid.com:8443", "a port"),
+            ("*.plaid.com", "a wildcard"),
+            ("Sandbox.Plaid.com", "uppercase"),
+            ("", "an empty host"),
+            ("plaid..com", "an empty label"),
+            ("-bad.example.com", "a leading hyphen"),
+            ("localhost", "the loopback name"),
+            ("metadata", "the bare metadata name"),
+            ("metadata.google.internal", "cloud metadata"),
+            ("host.docker.internal", "the container's route to the host"),
+            ("printer.local", "an mDNS name"),
+            ("1.0.0.127.in-addr.arpa", "reverse DNS"),
+        ] {
+            let mut config = configuration(vec![]);
+            config.allowed_hosts = vec![host.to_owned()];
+            let error = config.validate().expect_err(why);
+            let FunctionAdminError::InvalidAllowedHost(detail) = &error else {
+                panic!("{why} must be refused as an allowed-host error, got {error:?}");
+            };
+            assert!(
+                host.is_empty() || detail.contains(host.trim_matches('*')) || host.contains(':'),
+                "the refusal names the entry: {detail}"
+            );
+        }
+
+        let mut oversized = configuration(vec![]);
+        oversized.allowed_hosts = (0..9)
+            .map(|index| format!("h{index}.example.com"))
+            .collect();
+        assert!(matches!(
+            oversized.validate(),
+            Err(FunctionAdminError::InvalidAllowedHost(_))
+        ));
+    }
+
+    #[test]
+    fn a_function_record_stored_before_allowed_hosts_existed_still_deserializes() {
+        // The exact JSON shape `create_function` wrote before this field: a
+        // record in `mako_kv` is a blob, so an old row must load as deny-all
+        // rather than fail `deny_unknown_fields`.
+        let stored = r#"{
+            "tenant": {"projectId": "prj_example00", "environmentId": "env_example00"},
+            "name": "hello-world",
+            "state": "active",
+            "activeVersion": 3,
+            "configuration": {
+                "verifyJwt": true,
+                "regions": ["local"],
+                "secretNames": [],
+                "limits": {
+                    "cpuMilliseconds": 100,
+                    "wallMilliseconds": 1000,
+                    "memoryBytes": 1000000,
+                    "requestBytes": 1000,
+                    "responseBytes": 1000,
+                    "concurrency": 2
+                }
+            },
+            "createdAtUnixSeconds": 1,
+            "updatedAtUnixSeconds": 2
+        }"#;
+        let record: FunctionRecord = serde_json::from_str(stored).expect("old record loads");
+        assert!(
+            record.configuration().allowed_hosts.is_empty(),
+            "a record from before the field defaults to declaring nothing"
+        );
+    }
+
     #[test]
     fn deploy_promote_rollback_test_logs_and_delete_follow_safe_lifecycle() {
         futures::executor::block_on(async {

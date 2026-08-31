@@ -23,9 +23,6 @@ import {
   type JsonObject,
   type ServiceFunctionClient,
 } from "@mako-cloud/edge-sdk";
-
-import { serviceCredential } from "./credential.ts";
-import { RUN_KEY_HEADER, runKeyMatches } from "../shared/run-key.ts";
 import {
   type AlertAccount,
   type AlertBudget,
@@ -34,13 +31,15 @@ import {
   type FiredAlert,
   firedAlerts,
 } from "../shared/alerts.ts";
-import { budgetStatus, type BudgetLike } from "../shared/budgets.ts";
-import { type DetectedRecurrence, detectionId, detectRecurrences } from "../shared/recurrences.ts";
+import { type BudgetLike, budgetStatus } from "../shared/budgets.ts";
 import { duplicates, filings, netWorth, snapshotId } from "../shared/nightly.ts";
+import { type DetectedRecurrence, detectionId, detectRecurrences } from "../shared/recurrences.ts";
+import { RUN_KEY_HEADER, runKeyMatches } from "../shared/run-key.ts";
+import { serviceCredential } from "./credential.ts";
 
 declare const Deno: { readonly env: { get(name: string): string | undefined } };
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 const TRANSACTIONS = "transactions";
 const RULES = "rules";
 const ACCOUNTS = "accounts";

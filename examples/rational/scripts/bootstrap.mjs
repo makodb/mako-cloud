@@ -81,6 +81,8 @@ const DEFAULTS = {
   "nightly-function-name": "nightly",
   "nightly-cron": "0 2 * * *",
   "run-key": process.env.MAKO_RATIONAL_RUN_KEY,
+  "plaid-client-id": process.env.PLAID_CLIENT_ID,
+  "plaid-secret": process.env.PLAID_SECRET,
   "alerts-webhook": process.env.MAKO_ALERTS_WEBHOOK,
   "webhook-secret-file": undefined,
   "config-dir": process.env.MAKO_CONFIG_DIR,
@@ -261,10 +263,40 @@ for (const collection of model.collections) {
       String(model.schemaVersion),
       ...tenant,
     ]);
+  } else if (existing.schemaVersion < model.schemaVersion) {
+    // The model moved and this deployment has not: publish the model's
+    // version. Compatibility is the platform's call — a publish that would
+    // strand stored documents comes back migration_required and this fails
+    // loudly instead of half-upgrading. Every client and function names the
+    // model's version, so an upgraded environment and an upgraded app move
+    // together; a device holding the old local schema rebuilds its replica.
+    log(
+      `publishing schema version ${model.schemaVersion} of ${collection.id} ` +
+        `(deployment has ${existing.schemaVersion})`,
+    );
+    const published = makoJson([
+      "collections",
+      "schema",
+      "publish",
+      collection.id,
+      "--schema",
+      tempJson(`${collection.id}.schema.json`, collection.jsonSchema),
+      "--primary-key",
+      collection.primaryKey.field,
+      "--schema-version",
+      String(model.schemaVersion),
+      ...tenant,
+    ]);
+    if (published?.outcome === "migration_required" || published?.migrationRequired === true) {
+      fail(
+        `collection ${collection.id} needs a migration for schema version ${model.schemaVersion}; ` +
+          "stored documents do not fit the new schema",
+      );
+    }
   } else if (!deepEqual(existing.jsonSchema, collection.jsonSchema)) {
     log(
-      `collection ${collection.id} exists with a different schema (version ${existing.schemaVersion}); ` +
-        "publish a new schema version by hand (mako collections schema publish) — leaving it as is",
+      `collection ${collection.id} exists with a different schema at the same version ` +
+        `(${existing.schemaVersion}); publish a higher version — leaving it as is`,
     );
   } else {
     log(`collection ${collection.id} is up to date`);
@@ -495,8 +527,17 @@ function deployHouseholdsFunction() {
  * Deploy `functions/institution-sync` and put it on a schedule.
  *
  * The credential is scoped to what a sync writes and nothing else: it reads
- * and updates connections, and creates and updates transactions. It never
- * touches `users`, because a sync has no business changing anybody's claims.
+ * and updates connections, creates and updates transactions, reads accounts
+ * (to check a link's target and name its currency), and holds the only key to
+ * `plaid_items` -- the collection whose policy allows no application user
+ * anything. It never touches `users`, because a sync has no business changing
+ * anybody's claims.
+ *
+ * When Plaid Sandbox credentials are provided (`--plaid-client-id` and
+ * `--plaid-secret`, or the PLAID_CLIENT_ID / PLAID_SECRET environment), they
+ * become function secrets and the deployment declares `sandbox.plaid.com` as
+ * its one egress host. Without them nothing is declared and the function
+ * reports itself unconfigured: the simulated institution keeps working alone.
  */
 function deploySyncFunction() {
   const functionName = options["sync-function-name"];
@@ -512,6 +553,10 @@ function deploySyncFunction() {
     "connections",
     "--collection",
     "transactions",
+    "--collection",
+    "accounts",
+    "--collection",
+    "plaid_items",
     "--collection",
     "alerts",
     "--operation",
@@ -540,6 +585,41 @@ function deploySyncFunction() {
       ...tenant,
     ]);
   }
+  const plaidConfigured =
+    typeof options["plaid-client-id"] === "string" &&
+    options["plaid-client-id"] !== "" &&
+    typeof options["plaid-secret"] === "string" &&
+    options["plaid-secret"] !== "";
+  if (plaidConfigured) {
+    log("installing Plaid Sandbox credentials as function secrets");
+    putFunctionSecret("PLAID_CLIENT_ID", options["plaid-client-id"]);
+    putFunctionSecret("PLAID_SECRET", options["plaid-secret"]);
+  }
+  // A deploy freezes the function's configuration into the new version, and
+  // `--create` flags only shape a function that does not exist yet. So an
+  // existing function is reconciled first: its next version must carry the
+  // Plaid secrets and the `sandbox.plaid.com` egress declaration exactly when
+  // Plaid is configured, and must not lose what it already declares.
+  const desiredHosts = plaidConfigured ? ["sandbox.plaid.com"] : [];
+  const existingFunction = makoJson(["functions", "get", functionName, ...tenant], [4]);
+  if (existingFunction !== null) {
+    const configuration = existingFunction.configuration;
+    const secretNames = plaidConfigured
+      ? [...new Set([...configuration.secretNames, "PLAID_CLIENT_ID", "PLAID_SECRET"])].sort()
+      : configuration.secretNames;
+    const reconciled = { ...configuration, secretNames, allowedHosts: desiredHosts };
+    if (JSON.stringify(reconciled) !== JSON.stringify(configuration)) {
+      log(`updating ${functionName} configuration (egress: ${desiredHosts.join(", ") || "none"})`);
+      makoJson([
+        "functions",
+        "update",
+        functionName,
+        "--config",
+        JSON.stringify(reconciled),
+        ...tenant,
+      ]);
+    }
+  }
   const source = stageFunctionBundle("institution-sync", "sync-function");
   const deployed = mako([
     "functions",
@@ -554,6 +634,12 @@ function deploySyncFunction() {
     secretName,
     "--secret",
     RUN_KEY_SECRET,
+    // The declaration is the platform's egress capability used the ordinary
+    // way: one HTTPS host, granted at the worker permission boundary and
+    // reviewable in `mako functions get`.
+    ...(plaidConfigured
+      ? ["--secret", "PLAID_CLIENT_ID", "--secret", "PLAID_SECRET", "--allow-host", "sandbox.plaid.com"]
+      : []),
     "--yes",
     ...tenant,
     "--json",

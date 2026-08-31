@@ -33,7 +33,7 @@ import { serviceCredential } from "./credential.ts";
 declare const Deno: { readonly env: { get(name: string): string | undefined } };
 
 /** The schema version of `mako/collections.json`. */
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 const ROLES = ["owner", "editor", "viewer"] as const;
 type Role = (typeof ROLES)[number];
 

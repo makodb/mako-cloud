@@ -236,6 +236,17 @@ export default {
       return "connected";
     });
 
+    // This deployment declares egress-probe.invalid as an allowed host. The
+    // name can never resolve (RFC 2606 reserves .invalid), so the expected
+    // outcome is a *network* failure, not NotCapable: the permission layer let
+    // the request through and reality refused it. That is the whole proof --
+    // hermetic, and impossible to fake with a connection error, because an
+    // undeclared host never reaches the resolver at all.
+    await attempt("fetchDeclaredHost", async () => {
+      const response = await fetch("https://egress-probe.invalid/");
+      return `status ${response.status}`;
+    });
+
     await attempt("writeOutsideWorkerDirectory", async () => {
       await Deno.writeTextFile("/tmp/mako-sandbox-escape", "escaped");
       return "wrote /tmp/mako-sandbox-escape";
@@ -758,13 +769,17 @@ async fn deploy_function(deployment: FunctionDeployment<'_>) -> Result<(), Strin
         FUNCTION_NAME,
         FUNCTION_SOURCE,
         Vec::new(),
+        Vec::new(),
         now,
     )
     .await?;
 
     // The sandbox probe holds no secret and needs no credential, so it deploys
     // before the gate below: a repeated run that cannot re-issue the service
-    // credential still leaves this one deployed.
+    // credential still leaves this one deployed. It declares one egress host --
+    // a name RFC 2606 guarantees will never resolve -- so the probe can show
+    // the difference between a grant that exists and a destination that does
+    // not, without ever touching the real network.
     deploy_sample(
         &functions,
         actor,
@@ -772,6 +787,7 @@ async fn deploy_function(deployment: FunctionDeployment<'_>) -> Result<(), Strin
         SANDBOX_FUNCTION_NAME,
         SANDBOX_FUNCTION_SOURCE,
         Vec::new(),
+        vec!["egress-probe.invalid".to_owned()],
         now,
     )
     .await?;
@@ -806,6 +822,7 @@ async fn deploy_function(deployment: FunctionDeployment<'_>) -> Result<(), Strin
         SERVICE_FUNCTION_NAME,
         SERVICE_FUNCTION_SOURCE,
         vec![secret_name],
+        Vec::new(),
         now,
     )
     .await
@@ -813,6 +830,7 @@ async fn deploy_function(deployment: FunctionDeployment<'_>) -> Result<(), Strin
 
 /// One sample function, from creation to a promoted version. Already deployed
 /// is success: repeated runs must not duplicate a version.
+#[expect(clippy::too_many_arguments, reason = "a bootstrap-only helper")]
 async fn deploy_sample(
     functions: &FunctionAdminService,
     actor: &DeveloperPrincipal,
@@ -820,6 +838,7 @@ async fn deploy_sample(
     function_name: &str,
     source: &str,
     secret_names: Vec<FunctionSecretName>,
+    allowed_hosts: Vec<String>,
     now: u64,
 ) -> Result<(), String> {
     let name =
@@ -842,6 +861,7 @@ async fn deploy_sample(
                     verify_jwt: false,
                     regions: vec![FUNCTION_REGION.to_owned()],
                     secret_names,
+                    allowed_hosts,
                     limits: FunctionLimits {
                         cpu_milliseconds: 1_000,
                         wall_milliseconds: 10_000,

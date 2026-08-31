@@ -122,6 +122,16 @@ interface RationalBrowserApplication {
   directory: RationalHouseholdWire | null;
   writes: RationalWritesWire | null;
   receipts: RationalReceiptsWire | null;
+  plaid: {
+    configured(): Promise<boolean>;
+    linkToken(): Promise<string>;
+    exchange(input: {
+      publicToken: string;
+      householdId: string;
+      accountId: string;
+      institution: string;
+    }): Promise<string>;
+  } | null;
   signIn(email: string, password: string): Promise<void>;
   signUp(email: string, password: string): Promise<void>;
   signOut(): Promise<void>;
@@ -143,6 +153,7 @@ interface RationalBrowserApplication {
 
 interface RationalFakeBackend {
   demoHouseholdId: string;
+  plaidConfigured: boolean;
   putRemote(collectionId: string, document: RationalDocumentWire): void;
   deleteRemote(collectionId: string, id: string, updatedAt: number): void;
   remoteDocument(collectionId: string, id: string): RationalDocumentWire | undefined;

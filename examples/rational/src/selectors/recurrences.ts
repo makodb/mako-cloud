@@ -1,6 +1,6 @@
 import {
-  daysBetween,
   type DetectedRecurrence,
+  daysBetween,
   detectRecurrences as detect,
   type Interval,
 } from "../../functions/shared/recurrences.js";
@@ -15,13 +15,13 @@ import { memoizeLast } from "./memo.js";
  */
 export {
   addDays,
+  type DetectedRecurrence,
   daysBetween,
   detectionId,
+  type Interval,
   intervalOf,
   nextOccurrence,
   normalizeDescription,
-  type DetectedRecurrence,
-  type Interval,
 } from "../../functions/shared/recurrences.js";
 
 export function detectRecurrences(

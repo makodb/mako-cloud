@@ -96,6 +96,7 @@ type Tenant = { projectId: string; environmentId: string };
 type DeploymentAddress = Tenant & { functionName: string; version: number };
 type ProtocolDeploymentAddress = { tenant: Tenant; functionName: string; version: number };
 type FunctionAddress = { tenant: Tenant; functionName: string };
+type OutboundNetwork = { mode: "deny_all" } | { mode: "allow_list"; hosts: string[] };
 type RuntimeLimits = {
   cpuMilliseconds: number;
   wallMilliseconds: number;
@@ -103,7 +104,7 @@ type RuntimeLimits = {
   requestBytes: number;
   responseBytes: number;
   concurrency: number;
-  outboundNetwork: { mode: "deny_all" };
+  outboundNetwork: OutboundNetwork;
 };
 type SecretReference = { name: string; version: number };
 type SensitiveSecret = { reference: SecretReference; value: string };
@@ -799,9 +800,49 @@ function isLimits(value: unknown): value is RuntimeLimits {
     boundedInteger(value.requestBytes, 1, MAX_INVOCATION_BODY_BYTES) &&
     boundedInteger(value.responseBytes, 1, MAX_INVOCATION_BODY_BYTES) &&
     boundedInteger(value.concurrency, 1, 256) &&
-    isExactRecord(value.outboundNetwork, ["mode"]) &&
-    value.outboundNetwork.mode === "deny_all"
+    isOutboundNetwork(value.outboundNetwork)
   );
+}
+
+/**
+ * The manifest's egress policy: `deny_all`, or an allowlist carrying hosts and
+ * nothing else. The host rules mirror the control plane's protocol validation
+ * -- DNS names only, never an IP literal or a link-local metadata name -- so a
+ * manifest this process was handed is checked here too, not trusted for having
+ * been checked once elsewhere.
+ */
+function isOutboundNetwork(value: unknown): value is OutboundNetwork {
+  if (isExactRecord(value, ["mode"]) && value.mode === "deny_all") return true;
+  return (
+    isExactRecord(value, ["mode", "hosts"]) &&
+    value.mode === "allow_list" &&
+    Array.isArray(value.hosts) &&
+    value.hosts.length >= 1 &&
+    value.hosts.length <= 64 &&
+    value.hosts.every(validOutboundHost) &&
+    new Set(value.hosts).size === value.hosts.length
+  );
+}
+
+function validOutboundHost(value: unknown): boolean {
+  if (typeof value !== "string" || value === "" || value.length > 253) return false;
+  const labels = value.split(".");
+  const labelsAreValid = labels.every(
+    (label) =>
+      label !== "" &&
+      label.length <= 63 &&
+      !label.startsWith("-") &&
+      !label.endsWith("-") &&
+      /^[a-z0-9-]+$/.test(label),
+  );
+  const isIpLike = /^\d+(\.\d+){3}$/.test(value) || value.includes(":");
+  const denied = [
+    "localhost",
+    "metadata",
+    "metadata.google.internal",
+    "instance-data.ec2.internal",
+  ];
+  return labelsAreValid && !isIpLike && !denied.includes(value);
 }
 
 function isSensitiveSecret(value: unknown): value is SensitiveSecret {
@@ -1414,14 +1455,21 @@ function rewriteImports(source: string, importer: string, imports: Record<string
  * platform's API origin, which the runtime injects as `MAKO_API_URL` and the
  * first-party SDK is built to call: a function that could not reach it could
  * not read or write a document, which is the reason hosted functions exist.
- * Protocol v1's wire type also carries an allowlist variant, but no deploy
- * path emits one and a per-invocation request count cannot be enforced from
- * inside an isolate the tenant controls, so `isLimits` still refuses a
- * manifest that carries one rather than honouring half of it.
+ * An `allow_list` policy adds the deployment's declared hosts, each pinned to
+ * port 443, so granting a host never grants its neighbours on other ports. The
+ * variant carries hosts and nothing else -- a per-invocation request count
+ * cannot be enforced from inside an isolate the tenant controls, so the
+ * protocol no longer offers one.
  */
-function networkGrants(policy: RuntimeLimits["outboundNetwork"]): string[] {
-  if (policy.mode !== "deny_all") throw new Error("unsupported outbound network policy");
-  return [originGrant(requiredEnvironment("MAKO_API_URL"))];
+export function networkGrants(policy: OutboundNetwork): string[] {
+  const grants = [originGrant(requiredEnvironment("MAKO_API_URL"))];
+  if (policy.mode === "allow_list") {
+    for (const host of policy.hosts) {
+      if (!validOutboundHost(host)) throw new Error("unsupported outbound network policy");
+      grants.push(`${host}:443`);
+    }
+  }
+  return grants;
 }
 
 /**

@@ -52,8 +52,11 @@ async function draft(context: CommandContext, args: CommandArgs): Promise<void> 
   if (!Number.isInteger(version) || (version as number) < 1) {
     throw usageError("--input must carry a positive integer version");
   }
-  if (!Array.isArray(rules) || rules.length === 0) {
-    throw usageError("--input must carry a non-empty rules array");
+  // An empty array is a real policy — default-deny means it allows no
+  // application user anything, which is exactly what a server-only
+  // collection declares — so only a missing or non-array `rules` is refused.
+  if (!Array.isArray(rules)) {
+    throw usageError("--input must carry a rules array (empty means deny every application user)");
   }
   const request: CreatePolicyDraftRequest = {
     version: version as number,

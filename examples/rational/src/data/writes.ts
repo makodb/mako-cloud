@@ -23,8 +23,8 @@ import type {
   Transaction,
 } from "../model/types.js";
 import { isCurrencyCode } from "../selectors/money.js";
-import { isIsoDate, normalizeDescription } from "../selectors/transactions.js";
 import { validateSplits } from "../selectors/splits.js";
+import { isIsoDate, normalizeDescription } from "../selectors/transactions.js";
 import type { RationalCollections } from "./database.js";
 
 /**

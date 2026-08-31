@@ -11,10 +11,10 @@ export {
   applyRules,
   countMatches,
   pendingRecategorization,
-  ruleMatches,
-  ruleStatesSomething,
-  sortRules,
   type RuleLike,
   type RuleOutcome,
   type RuleSubject,
+  ruleMatches,
+  ruleStatesSomething,
+  sortRules,
 } from "../../functions/shared/rules.js";

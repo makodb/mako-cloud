@@ -256,6 +256,33 @@ requires `x-rational-run-key` and the bootstrap creates the schedule carrying
 it. That is also how the live suite starts a night deliberately instead of
 waiting until two in the morning; without the key the same request is `401`.
 
+## Plaid
+
+The simulated institution proves the sync machinery; Plaid Sandbox proves it against a real
+aggregator, through the platform's **declared-egress allowlist** (findings log #36) rather than
+any special treatment. Give the bootstrap sandbox credentials — `--plaid-client-id` and
+`--plaid-secret`, or the `PLAID_CLIENT_ID` / `PLAID_SECRET` environment — and it installs them
+as function secrets and deploys `institution-sync` with `--allow-host sandbox.plaid.com`, the
+one external host that deployment's worker may reach. Without them, nothing changes: the
+function reports itself unconfigured, the Connections screen never offers the option, and every
+CI-gating suite passes with no external network.
+
+The browser's part is deliberately small: `POST /plaid/link-token` mints a Link token for the
+signed-in member, Plaid's widget runs, and the short-lived public token goes straight back to
+`POST /plaid/exchange`. The access token that comes out of the exchange lands only in
+`plaid_items` — a collection whose policy has **no rules at all**, which under default-deny
+means no application user can read or write it; the app does not even open it. What the
+household sees is an ordinary `connections` document (`kind: "plaid"`), synced by the same
+fifteen-minute schedule with `/transactions/sync` under a stored cursor: added entries create,
+modified entries update the same `(account, external_id)` document, and an entry the
+institution withdrew — a pending charge that posted — is deleted while its replacement arrives
+in the same page. The cursor advances only after a page's writes commit, so a crashed pass
+replays into upserts that change nothing.
+
+The opt-in live spec (`test-live/plaid.spec.ts`) runs only when the credentials are present:
+it mints a sandbox public token the way Plaid's docs suggest for tests, links a real sandbox
+institution, runs the schedule twice, and proves the second run imports nothing.
+
 ## Alerts
 
 The household says what it wants to be told about — a large transaction, a

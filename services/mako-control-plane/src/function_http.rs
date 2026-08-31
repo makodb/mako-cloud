@@ -626,6 +626,16 @@ fn function_error(request: &HttpRequest, error: FunctionAdminError) -> HttpApiEr
         | FunctionAdminError::InvalidDeployment
         | FunctionAdminError::InvalidTestRequest
         | FunctionAdminError::InvalidLogQuery => invalid(request, "function input is invalid"),
+        // The one validation refusal that names its input: the offending host
+        // is the developer's own declaration, bounded and control-free, and a
+        // refusal that does not say which entry failed cannot be acted on.
+        ref denied @ FunctionAdminError::InvalidAllowedHost(_) => HttpApiError::new(
+            400,
+            ErrorCode::InvalidRequest,
+            denied.to_string(),
+            request.request_id(),
+            RetryAdvice::Never,
+        ),
         // The backend builds a bounded, control-character-free diagnostic for
         // exactly this: saying which dependency refused and why. Discarding it
         // left an operator with "unavailable" and nothing to act on.

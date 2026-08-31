@@ -91,6 +91,13 @@ export const CONFIGURATION_OPTIONS: Readonly<Record<string, OptionSpec>> = {
     description: `Concurrent invocations per worker (default: ${DEFAULT_LIMITS.concurrency})`,
     placeholder: "<n>",
   },
+  "allow-host": {
+    type: "string",
+    multiple: true,
+    description:
+      "External HTTPS host the function may reach (repeatable, max 8); omit to keep egress denied",
+    placeholder: "<host>",
+  },
 };
 
 export function positiveInteger(args: CommandArgs, name: string, fallback: number): number {
@@ -111,10 +118,15 @@ export function versionPositional(args: CommandArgs, index: number): number {
 export function configurationFromArgs(args: CommandArgs): FunctionConfiguration {
   const regions = [...new Set(args.strings("region"))];
   if (regions.length === 0) throw usageError("--region <region> is required at least once");
+  const allowedHosts = [...new Set(args.strings("allow-host"))].sort();
   return {
     verifyJwt: !args.boolean("no-verify-jwt"),
     regions,
     secretNames: [...new Set(args.strings("secret"))],
+    // Sent only when declared, so a configuration written by an older CLI and
+    // one that declares nothing stay byte-identical. The control plane is the
+    // validator; the CLI only carries the declaration.
+    ...(allowedHosts.length === 0 ? {} : { allowedHosts }),
     limits: {
       cpuMilliseconds: positiveInteger(args, "cpu-ms", DEFAULT_LIMITS.cpuMilliseconds),
       wallMilliseconds: positiveInteger(args, "wall-ms", DEFAULT_LIMITS.wallMilliseconds),

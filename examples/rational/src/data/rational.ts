@@ -14,7 +14,9 @@ import {
   type HouseholdRole,
   type Membership,
 } from "../model/types.js";
-import { HouseholdsError, type HouseholdsClient, MakoHouseholdsClient } from "./households.js";
+import { type HouseholdsClient, HouseholdsError, MakoHouseholdsClient } from "./households.js";
+import { MakoPlaidClient, type PlaidClient } from "./plaid.js";
+import { Receipts } from "./receipts.js";
 import { makoConfigFor } from "./replication.js";
 import { createReplicationStateStore, ScopeStatePersistence } from "./replication-state.js";
 import {
@@ -23,7 +25,6 @@ import {
   type ScopeSession,
   type ScopeState,
 } from "./scope.js";
-import { Receipts } from "./receipts.js";
 import { Transport, type TransportCounters } from "./transport.js";
 import { HouseholdWrites } from "./writes.js";
 
@@ -95,6 +96,8 @@ export class RationalApp {
   #receipts: Receipts | null = null;
   readonly #stateStore = createReplicationStateStore();
   readonly #households: HouseholdsClient | null;
+  /** The Plaid routes on `institution-sync`, or null without a functions endpoint. */
+  readonly plaid: PlaidClient | null;
   #subscriptions = new Set<Subscription>();
   #directoryWatch: Subscription | null = null;
   #householdWatch: Subscription | null = null;
@@ -121,6 +124,11 @@ export class RationalApp {
             auth: this.auth,
             fetch: this.transport.fetch,
           });
+    const syncUrl = functionUrl(this.config, "institution-sync");
+    this.plaid =
+      syncUrl === null
+        ? null
+        : new MakoPlaidClient({ url: syncUrl, auth: this.auth, fetch: this.transport.fetch });
     this.state$ = new BehaviorSubject<AppState>({
       phase: "starting",
       user: null,

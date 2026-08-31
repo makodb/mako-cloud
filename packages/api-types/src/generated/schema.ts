@@ -5360,6 +5360,8 @@ export interface components {
             regions: string[];
             secretNames: components["schemas"]["FunctionSecretName"][];
             limits: components["schemas"]["FunctionLimits"];
+            /** @description External hosts the deployed function may reach over HTTPS (port 443), beyond the platform API origin every function can call. Lowercase DNS names only -- never an IP literal, a port, a wildcard, or a platform-internal name -- and omitting the field keeps egress denied entirely. */
+            allowedHosts?: string[];
         };
         FunctionSourceFile: {
             path: string;

@@ -1,6 +1,6 @@
 {
   "$comment": "Single source of the Rational document model. scripts/bootstrap.mjs publishes jsonSchema, primaryKey, and indexes to the platform; src/model/collections.ts derives the RxDB schemas from the same object. Amounts are integer minor units with an ISO 4217 currency; timestamps are unix milliseconds; deletion is RxDB's _deleted. Small document types share a collection with a kind discriminator (taxonomy, alerts, connections) because RxDB's open-source build opens at most 13 collections per page.",
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "collections": [
     {
       "id": "households",
@@ -1080,7 +1080,7 @@
     {
       "id": "connections",
       "scope": "household",
-      "description": "Institution connections and CSV import batches in one collection; kind discriminates.",
+      "description": "Institution connections, Plaid links, and CSV import batches in one collection; kind discriminates.",
       "jsonSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -1109,7 +1109,7 @@
           },
           "kind": {
             "type": "string",
-            "enum": ["institution", "import"],
+            "enum": ["institution", "import", "plaid"],
             "maxLength": 32
           },
           "institution": {
@@ -1201,6 +1201,72 @@
           }
         },
         "required": ["id", "household_id", "created_at", "updated_at", "kind"]
+      },
+      "primaryKey": {
+        "kind": "field",
+        "field": "id"
+      },
+      "indexes": [
+        {
+          "name": "household_updated",
+          "fields": ["household_id", "updated_at"]
+        }
+      ]
+    },
+    {
+      "id": "plaid_items",
+      "scope": "household",
+      "description": "Server-only Plaid credentials: the access token and sync cursor for one connection. No policy rule allows any application user anything; only the sync function's service credential reads or writes here.",
+      "jsonSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "household_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "created_at": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "multipleOf": 1
+          },
+          "updated_at": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "multipleOf": 1
+          },
+          "item_id": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1
+          },
+          "access_token": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1
+          },
+          "cursor": {
+            "type": "string",
+            "maxLength": 500
+          }
+        },
+        "required": [
+          "id",
+          "household_id",
+          "created_at",
+          "updated_at",
+          "item_id",
+          "access_token",
+          "cursor"
+        ]
       },
       "primaryKey": {
         "kind": "field",

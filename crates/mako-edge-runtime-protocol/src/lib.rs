@@ -133,31 +133,28 @@ impl RuntimeLimits {
 }
 
 /// Network access granted to one worker. There is deliberately no unrestricted
-/// mode in protocol v1.
+/// mode in protocol v1, and the allowlist names hosts only: a per-invocation
+/// request count was once part of this variant, but nothing can enforce one
+/// from inside an isolate the tenant controls, and the protocol does not carry
+/// bounds nothing applies.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(
     tag = "mode",
+    deny_unknown_fields,
     rename_all = "snake_case",
     rename_all_fields = "camelCase"
 )]
 pub enum OutboundNetworkPolicy {
     DenyAll,
-    AllowList {
-        hosts: Vec<String>,
-        max_requests_per_invocation: u32,
-    },
+    AllowList { hosts: Vec<String> },
 }
 
 impl OutboundNetworkPolicy {
     fn is_valid(&self) -> bool {
         match self {
             Self::DenyAll => true,
-            Self::AllowList {
-                hosts,
-                max_requests_per_invocation,
-            } => {
-                *max_requests_per_invocation > 0
-                    && !hosts.is_empty()
+            Self::AllowList { hosts } => {
+                !hosts.is_empty()
                     && hosts.len() <= 64
                     && hosts.iter().all(|host| valid_outbound_host(host))
             }
@@ -682,7 +679,6 @@ mod tests {
             assert!(
                 !OutboundNetworkPolicy::AllowList {
                     hosts: vec![host.to_owned()],
-                    max_requests_per_invocation: 1,
                 }
                 .is_valid(),
                 "adversarial destination must be rejected: {host}"
@@ -691,9 +687,16 @@ mod tests {
         assert!(
             OutboundNetworkPolicy::AllowList {
                 hosts: vec!["api.example.com".to_owned()],
-                max_requests_per_invocation: 1,
             }
             .is_valid()
+        );
+        // The variant carries hosts and nothing else: a manifest still naming
+        // the retired per-invocation request count is refused, not ignored.
+        assert!(
+            serde_json::from_str::<OutboundNetworkPolicy>(
+                r#"{"mode":"allow_list","hosts":["api.example.com"],"maxRequestsPerInvocation":5}"#
+            )
+            .is_err()
         );
     }
 }

@@ -2,7 +2,7 @@
 // This file runs inside the pinned runtime image and intentionally has no
 // network imports, so the runtime contract never depends on a moving resource.
 
-import { originGrant, RuntimeSupervisor } from "./supervisor.ts";
+import { networkGrants, RuntimeSupervisor } from "./supervisor.ts";
 
 type UserWorker = {
   fetch(request: Request, options: { signal: AbortSignal }): Promise<Response>;
@@ -59,6 +59,12 @@ const jwtIssuer = Deno.env.get("MAKO_JWT_ISSUER") ?? "";
 const jwtAudience = Deno.env.get("MAKO_JWT_AUDIENCE") ?? "";
 const jwks = parseJwks(Deno.env.get("MAKO_JWKS") ?? "");
 const userEnvironment = selectedUserEnvironment(requiredEnvironment("MAKO_USER_ENV_NAMES"));
+// The same grant computation the hosted supervisor uses, resolved once at
+// startup so an invalid declaration refuses to serve instead of failing every
+// request: the API origin always, plus each locally declared egress host.
+const localNetworkGrants = networkGrants(
+  selectedOutboundNetwork(Deno.env.get("MAKO_ALLOWED_HOSTS") ?? ""),
+);
 const stablePrefix = `/${projectId}/functions/v1/${functionName}`;
 const allowedMethods = new Set(["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]);
 const runtimeSupervisor = await RuntimeSupervisor.open();
@@ -150,13 +156,13 @@ function createWorker(requestId: string, traceId: string): Promise<UserWorker> {
     staticPatterns: [`${functionPath}/**/*.wasm`],
     // The same grants a hosted deployment gets, so a function that works
     // locally is not one the hosted sandbox will refuse: its own directory,
-    // the environment names it was given, the platform API origin, and
-    // nothing else. Denied capabilities are `null` -- an empty list would
-    // grant them without restriction.
+    // the environment names it was given, the platform API origin plus any
+    // declared egress hosts, and nothing else. Denied capabilities are `null`
+    // -- an empty list would grant them without restriction.
     permissions: {
       allow_all: false,
       allow_env: Object.keys(environment),
-      allow_net: [originGrant(requiredEnvironment("MAKO_API_URL"))],
+      allow_net: localNetworkGrants,
       allow_read: [functionPath],
       allow_write: null,
       allow_import: null,
@@ -188,6 +194,23 @@ function boundedIntegerEnvironment(name: string, minimum: number, maximum: numbe
     throw new Error(`invalid runtime setting: ${name}`);
   }
   return value;
+}
+
+/** The locally declared egress hosts, in the manifest's own policy shape. */
+function selectedOutboundNetwork(
+  source: string,
+): { mode: "deny_all" } | { mode: "allow_list"; hosts: string[] } {
+  if (source === "") return { mode: "deny_all" };
+  const hosts: unknown = JSON.parse(source);
+  if (
+    !Array.isArray(hosts) ||
+    hosts.length === 0 ||
+    hosts.length > 64 ||
+    !hosts.every((host) => typeof host === "string")
+  ) {
+    throw new Error("invalid allowed host list");
+  }
+  return { mode: "allow_list", hosts: hosts as string[] };
 }
 
 function selectedUserEnvironment(source: string): Record<string, string> {

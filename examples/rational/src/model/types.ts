@@ -200,9 +200,9 @@ export interface AlertDocument extends BaseDocument {
 export type AlertSetting = AlertDocument & { readonly kind: "setting" };
 export type Alert = AlertDocument & { readonly kind: "alert" };
 
-export type ConnectionKind = "institution" | "import";
+export type ConnectionKind = "institution" | "plaid" | "import";
 
-/** An institution connection or a CSV import batch; `kind` says which. */
+/** An institution connection, a Plaid link, or a CSV import batch; `kind` says which. */
 export interface ConnectionDocument extends BaseDocument {
   readonly kind: ConnectionKind;
   readonly institution?: string;

@@ -18,13 +18,13 @@ import {
   type RationalDatabase,
   removeDatabase,
 } from "./database.js";
-import type { ScopeStatePersistence } from "./replication-state.js";
 import {
   type CollectionReplication,
-  type ReplicationDependencies,
   makoConfigFor,
+  type ReplicationDependencies,
   startCollectionReplication,
 } from "./replication.js";
+import type { ScopeStatePersistence } from "./replication-state.js";
 
 /**
  * A replicated scope is one local database — the household's, or the user's

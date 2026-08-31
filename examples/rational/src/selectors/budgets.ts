@@ -1,7 +1,7 @@
 import {
-  budgetStatus as status,
   type BudgetStatus,
   monthBudgets as month,
+  budgetStatus as status,
 } from "../../functions/shared/budgets.js";
 import type { Budget, Transaction } from "../model/types.js";
 import { memoizeLast } from "./memo.js";
@@ -12,11 +12,11 @@ import { memoizeLast } from "./memo.js";
  * be worse than no alert. What stays here is the application's own types.
  */
 export {
+  type BudgetStatus,
+  type BudgetTotals,
   budgetTotals,
   previousMonth,
   spentInMonth,
-  type BudgetStatus,
-  type BudgetTotals,
 } from "../../functions/shared/budgets.js";
 
 /** A status, narrowed to the application's own budget document. */

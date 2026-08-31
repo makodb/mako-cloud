@@ -75,6 +75,12 @@ export class FakeMakoBackend {
   #clock = 1_800_000_000_000;
   #lastMagicLink: string | null = null;
   readonly demoHouseholdId = "hh_demo";
+  /**
+   * Whether this fake deployment "holds" Plaid credentials. Tests flip it to
+   * play a copy of Rational deployed without them, whose Connections screen
+   * must simply never offer the option.
+   */
+  plaidConfigured = true;
 
   constructor() {
     const demo = generateDemoHousehold({
@@ -99,6 +105,10 @@ export class FakeMakoBackend {
     const functionPrefix = `/${FAKE_CONFIG.projectId}--${FAKE_CONFIG.environmentId}/functions/v1/households/`;
     if (path.startsWith(functionPrefix)) {
       return this.#households(path.slice(functionPrefix.length), init);
+    }
+    const plaidPrefix = `/${FAKE_CONFIG.projectId}--${FAKE_CONFIG.environmentId}/functions/v1/institution-sync/plaid/`;
+    if (path.startsWith(plaidPrefix)) {
+      return this.#plaid(path.slice(plaidPrefix.length), init);
     }
     if (!path.startsWith(`/v1/projects/${FAKE_CONFIG.projectId}/environments/`)) {
       return apiError(404, "not_found", "route not found");
@@ -391,6 +401,82 @@ export class FakeMakoBackend {
       _deleted: false,
     });
     return user;
+  }
+
+  // --- the plaid routes on institution-sync ------------------------------
+
+  /**
+   * The Plaid routes of `functions/institution-sync/index.ts`, honest about
+   * the one thing that matters here: no response carries anything
+   * token-shaped except the short-lived link token the widget consumes. The
+   * exchange answers with a connection id, writes the connection the way the
+   * function does, and plays the first scheduled sync immediately -- three
+   * transactions and a recorded outcome -- because the wire-mocked world has
+   * no scheduler to wait for.
+   */
+  async #plaid(route: string, init: RequestInit): Promise<Response> {
+    const caller = this.#authorize(init);
+    if (caller === null) return apiError(401, "unauthenticated", "the session is not valid");
+    if (route === "status") return jsonResponse({ configured: this.plaidConfigured });
+    if (!this.plaidConfigured) {
+      return apiError(503, "not_configured", "Plaid is not configured for this deployment");
+    }
+    if (route === "link-token") return jsonResponse({ linkToken: "link-sandbox-fake-1" });
+    if (route !== "exchange") return apiError(404, "not_found", "route not found");
+    const body = await jsonBody<Record<string, unknown>>(init);
+    const householdId = typeof body.householdId === "string" ? body.householdId : "";
+    const accountId = typeof body.accountId === "string" ? body.accountId : "";
+    const publicToken = typeof body.publicToken === "string" ? body.publicToken : "";
+    const institution = typeof body.institution === "string" ? body.institution : "Plaid";
+    if (householdId === "" || accountId === "" || publicToken === "") {
+      return apiError(
+        400,
+        "invalid_request",
+        "publicToken, householdId, and accountId are required",
+      );
+    }
+    const role = caller.households[householdId];
+    if (role !== "owner" && role !== "editor") {
+      return apiError(403, "permission_denied", "only an owner or editor may connect");
+    }
+    const at = this.#clock;
+    const connectionId = "con_plaid-item-fake-1";
+    this.#record("connections", {
+      id: connectionId,
+      household_id: householdId,
+      created_at: at,
+      updated_at: at,
+      kind: "plaid",
+      status: "connected",
+      account_id: accountId,
+      external_id: "item-fake-1",
+      institution,
+      last_sync_at: at,
+      last_sync_outcome: "imported 3, corrected 0, removed 0",
+      _deleted: false,
+    });
+    for (const [index, entry] of [
+      { amount: -8940, description: "SparkFun" },
+      { amount: -1250, description: "UBER TRIP HELP.UBER.COM" },
+      { amount: 250_000, description: "PAYROLL" },
+    ].entries()) {
+      this.#record("transactions", {
+        id: `txn_${accountId}.plaid-fake-${index + 1}`,
+        household_id: householdId,
+        created_at: at,
+        updated_at: at,
+        account_id: accountId,
+        date: "2026-08-28",
+        amount: entry.amount,
+        currency: "USD",
+        description: entry.description,
+        external_id: `plaid-fake-${index + 1}`,
+        tags: [],
+        splits: [],
+        _deleted: false,
+      });
+    }
+    return jsonResponse({ connectionId });
   }
 
   // --- the households function ------------------------------------------

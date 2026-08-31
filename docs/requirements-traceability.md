@@ -138,6 +138,11 @@ Run `npm run validate:traceability` whenever a scenario or row changes. The vali
 | ER-14 | Invocation fails | `crates/mako-edge-runtime/src/lib.rs::crash_recovery_and_clean_recycling_create_new_generations` | Automated |
 | ER-15 | Developer serves a function locally | `packages/cli/test/serve.test.mjs::local serve maps only declared environment and secret values into the pinned runtime` | Automated |
 | ER-16 | Function attempts to run past its wall limit | `packages/cli/test/adversarial.integration.mjs::the pinned runtime contains adversarial failures within one project worker` | Automated |
+| ER-17 | A declared host is reachable and an undeclared one is not | `crates/mako-smoke/tests/edge_function.rs::deployed_function_is_served_through_the_edge_gateway` | Automated |
+| ER-18 | An undeclared deployment stays deny-all | `crates/mako-control-plane/src/runtime_backend.rs::declared_egress_hosts_reach_the_manifest_verbatim_and_absent_stays_deny_all` | Automated |
+| ER-19 | An invalid declaration is refused before deployment | `crates/mako-control-plane/src/function.rs::allowed_hosts_accept_public_dns_names_and_refuse_everything_else` | Automated |
+| ER-20 | Local serving honours the same declaration | `packages/cli/test/serve.test.mjs::an allowed host must be a DNS name a hosted deployment would accept` | Automated |
+| ER-21 | The declaration is reviewable and bodies are not logged | `packages/cli/test/functions.test.mjs::functions deploy --allow-host sends a sorted declaration, and omits the field entirely when absent` | Automated |
 
 ## Identity / project auth
 
@@ -357,3 +362,7 @@ Run `npm run validate:traceability` whenever a scenario or row changes. The vali
 | RA-20 | The app restarts offline | `examples/rational/test-live/live.spec.ts::an offline restart shows the household from local storage` (end-to-end) | Automated |
 | RA-21 | A finding becomes a platform fix | `crates/mako-edge-gateway/src/lib.rs::a_public_caller_cannot_claim_to_be_a_schedule` and `crates/mako-documents/src/query.rs::a_one_sided_range_over_a_single_field_index_walks_the_collection` | Automated |
 | RA-22 | Rational runs on the beta | `crates/mako-smoke/tests/rational.rs::rationals_own_model_serves_a_household_over_http` (end-to-end), run by `scripts/run-rational-smoke-qualification.sh` | Automated |
+| RA-23 | An editor links an account through Plaid Sandbox | `examples/rational/test/plaid.spec.ts::linking through Plaid lands a connection and its first sync, and no token ever shows` (mocked backend) and `examples/rational/test-live/plaid.spec.ts::a sandbox institution links, syncs through the schedule, and does not double` (end-to-end, opt-in with Plaid Sandbox credentials) | Automated |
+| RA-24 | A pending charge posts between syncs | `examples/rational/test-unit/plaid.test.mjs::a pending charge that posts is one removal and one addition, not a double` | Automated |
+| RA-25 | No application user can reach the Plaid token | `examples/rational/test/plaid.spec.ts::linking through Plaid lands a connection and its first sync, and no token ever shows` (mocked backend) and `examples/rational/test-unit/plaid.test.mjs::the connection a household reads carries no credential; the item record carries exactly one` | Automated |
+| RA-26 | Rational without Plaid credentials is whole | `examples/rational/test/plaid.spec.ts::a deployment without Plaid credentials never offers the option, and everything else stands` (mocked backend) | Automated |

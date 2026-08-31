@@ -1,5 +1,7 @@
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
+import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import {
+  appendFileSync,
   chmodSync,
   mkdirSync,
   mkdtempSync,
@@ -8,10 +10,8 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { createServer as createHttpServer, type Server } from "node:http";
 import { createServer } from "node:net";
-import { appendFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -47,6 +47,12 @@ export interface LiveTenant {
   /** For driving the management API the way the developer's tooling does. */
   readonly developerToken: string;
   readonly cliConfigDir: string;
+  /**
+   * True only when real Plaid Sandbox credentials were in the environment and
+   * the functions deployed: the opt-in Plaid spec runs, and CI never sets
+   * them, so CI never leaves the machine.
+   */
+  readonly plaidConfigured: boolean;
 }
 
 /**
@@ -537,7 +543,9 @@ export default async function globalSetup(): Promise<void> {
   );
   if (rationalBootstrap.status !== 0) {
     throw new Error(
-      `Rational bootstrap failed:\n${rationalBootstrap.stderr}\n${rationalBootstrap.stdout}\n` +
+      `Rational bootstrap failed (status ${String(rationalBootstrap.status)}, signal ` +
+        `${String(rationalBootstrap.signal)}, error ${String(rationalBootstrap.error)}):\n` +
+        `${rationalBootstrap.stderr}\n${rationalBootstrap.stdout}\n` +
         `data plane log tail:\n${tail(path("data-plane.log"))}\ncontrol plane log tail:\n${tail(
           path("control-plane.log"),
         )}`,
@@ -628,6 +636,10 @@ export default async function globalSetup(): Promise<void> {
     runKey,
     developerToken,
     cliConfigDir: path("cli-config"),
+    plaidConfigured:
+      (process.env.PLAID_CLIENT_ID ?? "") !== "" &&
+      (process.env.PLAID_SECRET ?? "") !== "" &&
+      ((bootstrapped as { functionsEndpoint?: string | null }).functionsEndpoint ?? null) !== null,
   };
   writeFileSync(tenantFile, JSON.stringify(live, null, 2));
 }

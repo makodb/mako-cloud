@@ -13,7 +13,7 @@ The first is to show that the platform is enough to build a product on. The
 second is to find out where it is not. Every gap Rational hits is recorded in
 [`examples/rational/PLATFORM-FINDINGS.md`](../examples/rational/PLATFORM-FINDINGS.md)
 as symptom → platform change → regression test, and is fixed **in the
-platform**, never worked around in the application. Thirty-five findings so
+platform**, never worked around in the application. Thirty-seven findings so
 far, all closed. Several were things no test could have found without a real
 application asking for them:
 
@@ -49,6 +49,7 @@ application asking for them:
 | Invitations only the invitee may read | `identity.email` and `identity.email_verified` in [policies](document-policies.md#scoping-a-document-to-an-address) |
 | Membership changes | The `households` [edge function](edge-functions.md) under a service credential |
 | A bank connection that syncs itself | The `institution-sync` function on a [schedule](edge-functions.md), writing under a service credential without doubling a transaction |
+| A real institution through Plaid Sandbox | The [declared-egress allowlist](edge-functions.md) (#36): the deployment names `sandbox.plaid.com`, the access token lives in a collection whose policy allows no application user anything, and the same fifteen-minute schedule pulls `/transactions/sync` under a cursor |
 | Filing, duplicate-checking, and net worth overnight | The `nightly` function on a 02:00 UTC schedule |
 | Being told about a large charge or an overrun | Alerts decided server-side, delivered in-app as documents and outward by a [signed webhook](webhooks.md) on the `alerts` collection |
 | Working offline | Dexie storage, durable checkpoints, and the authorization-epoch [security reset](rxdb-client.md#authorization-epoch-security-reset) |

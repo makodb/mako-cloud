@@ -88,15 +88,15 @@ functions omit it rather than synthesizing an identity.
 - Bundle digests, runtime release, entrypoints, tenant identifiers, limits, and
   secret references are validated before worker creation.
 - Protocol v1 has no unrestricted egress mode. A worker receives either
-  `deny_all` or a bounded host allowlist with a per-invocation request count;
-  the worker sandbox or its mandatory network proxy enforces that policy.
-  `deny_all` denies the function's own destinations. It does not deny the
-  platform API origin the runtime injects as `MAKO_API_URL`: that origin is the
-  one the first-party SDK is built to call, the function never chose it, and a
-  function that could not reach it could neither read nor write a document. The
-  supervisor for this pin therefore grants exactly one `host:port` -- the API
-  origin -- and refuses a manifest carrying the allowlist variant rather than
-  honouring only the part of it the sandbox can enforce (see below).
+  `deny_all` or a bounded host allowlist (`allow_list`, carrying `hosts` and
+  nothing else); the worker sandbox enforces that policy through its own
+  permission set. `deny_all` denies the function's own destinations. It does
+  not deny the platform API origin the runtime injects as `MAKO_API_URL`: that
+  origin is the one the first-party SDK is built to call, the function never
+  chose it, and a function that could not reach it could neither read nor write
+  a document. The supervisor grants the API origin's `host:port` always, and
+  each allowlisted host on port 443 when the manifest declares an allowlist
+  (see below).
 - The supervisor passes only explicitly attached environment names and values
   to the user runtime. The main runtime's environment is never copied wholesale.
 - User exceptions and upstream error strings are mapped to stable
@@ -129,7 +129,7 @@ passed as `null`, never as `[]`.
 | Grant | Value | Effect |
 | --- | --- | --- |
 | `allow_env` | the attached secret names plus the `MAKO_*` values the supervisor injects | `Deno.env.get` of any other name is refused |
-| `allow_net` | one `host:port`: the platform API origin, plus whatever the egress policy allows | `fetch`, `Deno.connect`, `WebSocket`, and DNS to anything else are refused |
+| `allow_net` | explicit `host:port` grants: the platform API origin always, plus each host the deployment's egress allowlist declares, pinned to port 443 | `fetch`, `Deno.connect`, `WebSocket`, and DNS to anything else are refused |
 | `allow_read` | the worker's own directory | every other path is refused |
 | `allow_write` | `null` | the function cannot write anywhere, including `/tmp` |
 | `allow_import` | `null` | a module fetched over the network is never loaded; the bundle validator already refuses remote specifiers, and this closes the runtime half |
@@ -141,12 +141,16 @@ no network or import grant. `mako functions serve` gives the local worker the
 same grants, so a function that runs locally is not one the hosted sandbox will
 refuse.
 
-Protocol v1's `outboundNetwork` also defines an allowlist variant carrying
-`hosts` and `maxRequestsPerInvocation`. The supervisor for this pin refuses a
-manifest that carries it. The host bound could be enforced through `allow_net`,
-but a per-invocation request count cannot be enforced from inside an isolate the
+Protocol v1's `outboundNetwork` allowlist variant carries `hosts` and nothing
+else. It once also defined `maxRequestsPerInvocation`, and the supervisor
+refused any manifest carrying the variant rather than half-enforce it: a
+per-invocation request count cannot be enforced from inside an isolate the
 tenant controls -- tenant code can reach the network through `fetch`,
 `WebSocket`, or `Deno.connect`, and can replace any counter installed beside it
--- so honouring the variant would mean asserting a bound nothing applies.
-Enforcing it needs the mandatory network proxy this section already names, and
-no deploy path emits the variant until then.
+-- so honouring it would have meant asserting a bound nothing applies. The
+count left the contract for that reason, and a manifest still naming it is
+refused by deserialization, not ignored. The host bound is real: the supervisor
+unions each declared host, pinned to port 443, into `allow_net` beside the API
+origin, so the permission model that confines a `deny_all` worker is the one
+that confines an allowlisted one. A request count can return only together with
+a mandatory network proxy that can actually enforce it.

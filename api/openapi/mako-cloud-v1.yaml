@@ -10440,6 +10440,21 @@ components:
             $ref: "#/components/schemas/FunctionSecretName"
         limits:
           $ref: "#/components/schemas/FunctionLimits"
+        allowedHosts:
+          description: >-
+            External hosts the deployed function may reach over HTTPS (port
+            443), beyond the platform API origin every function can call.
+            Lowercase DNS names only -- never an IP literal, a port, a
+            wildcard, or a platform-internal name -- and omitting the field
+            keeps egress denied entirely.
+          type: array
+          maxItems: 8
+          uniqueItems: true
+          items:
+            type: string
+            minLength: 1
+            maxLength: 253
+            pattern: "^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$"
     FunctionSourceFile:
       type: object
       additionalProperties: false

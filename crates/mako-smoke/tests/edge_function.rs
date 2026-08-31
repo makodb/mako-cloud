@@ -644,6 +644,23 @@ fn deployed_function_is_served_through_the_edge_gateway() {
             "{attempt} was refused by something other than the permission sandbox: {body}"
         );
     }
+    // The sandbox deployment declares `egress-probe.invalid` as an allowed
+    // egress host -- a name RFC 2606 guarantees will never resolve. The proof
+    // that the grant exists is the *class* of the failure: an undeclared host
+    // dies as `NotCapable` before any resolver runs (asserted above), while
+    // the declared one passes the permission layer and fails on the network.
+    // No external connectivity is needed to tell the two apart.
+    let declared = &sandbox["attempts"]["fetchDeclaredHost"];
+    assert_eq!(
+        declared["outcome"], "refused",
+        "a reserved .invalid name must not actually answer: {body}"
+    );
+    assert_ne!(
+        declared["error"], "NotCapable",
+        "the declared egress host was refused by the permission sandbox, \
+         so the deployment's allowlist never became a grant: {body}"
+    );
+
     // These three are refused by the runtime image before a permission is
     // consulted -- it blocks subprocesses outright, exposes no `Deno.dlopen`,
     // and never resolves a module specifier computed at runtime -- so only the

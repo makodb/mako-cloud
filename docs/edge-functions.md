@@ -151,11 +151,29 @@ A worker is started with the capabilities a function needs and nothing else.
 Everything below is refused at the runtime boundary, not by convention:
 
 - **Network.** A function may open connections to the platform API origin the
-  runtime injects as `MAKO_API_URL`, and to nothing else. `outboundNetwork:
-  {mode: "deny_all"}` denies the function's own destinations -- another host,
-  another port on the same host, a raw socket, a WebSocket, a DNS lookup -- and
-  the injected `@mako-cloud/edge-sdk` keeps working, because the origin it talks
-  to is the platform's, not one the function chose.
+  runtime injects as `MAKO_API_URL`, plus any external HTTPS hosts its
+  deployment declares -- and to nothing else. By default nothing is declared
+  and `outboundNetwork: {mode: "deny_all"}` denies the function's own
+  destinations -- another host, another port on the same host, a raw socket, a
+  WebSocket, a DNS lookup -- while the injected `@mako-cloud/edge-sdk` keeps
+  working, because the origin it talks to is the platform's, not one the
+  function chose.
+
+  A deployment that needs a third-party API declares it:
+  `mako functions deploy --allow-host api.example.com` (repeatable, at most 8
+  hosts; locally, the same flag on `mako functions serve`). Each declared host
+  is granted on port 443 only. The declaration is validated fail-closed before
+  any version exists: lowercase DNS names only -- never an IP literal, a port,
+  a wildcard, or a name that resolves inside the platform (`localhost`,
+  `metadata`, and everything under `.internal`, `.local`, `.localhost`, or
+  `.arpa`) -- and the refusal names the entry that failed. One caveat is
+  documented rather than hidden: Deno's permission model authorizes by *name*,
+  so a declared host whose DNS answer later changes is still connectable
+  (DNS rebinding). The worker's own network namespace, the loopback-only
+  internal RPC, and the refused internal-name families bound what such a
+  rebind can reach; a resolver-pinning proxy is the complete fix and a
+  deliberate non-goal for now. Declared hosts are part of the reviewed
+  deployment and visible in `mako functions get`.
 - **Files.** A function may read its own worker directory. It may not read
   anywhere else and may not write anywhere at all, including `/tmp`. Persist
   state in a document, an object, or a function secret.

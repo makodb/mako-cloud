@@ -39,6 +39,10 @@ test("local serve maps only declared environment and secret values into the pinn
       "--no-verify-jwt",
       "--container-engine",
       "docker",
+      "--allow-host",
+      "sandbox.plaid.com",
+      "--allow-host",
+      "api.example.com",
       "--dry-run",
     ],
     fixture.root,
@@ -57,6 +61,10 @@ test("local serve maps only declared environment and secret values into the pinn
   assert.equal(plan.environment.MAKO_VERIFY_JWT, "false");
   assert.equal(plan.environment.MAKO_WALL_TIME_MS, "300000");
   assert.equal(plan.environment.DENO_DIR, "/tmp/deno-cache");
+  assert.equal(
+    plan.environment.MAKO_ALLOWED_HOSTS,
+    JSON.stringify(["api.example.com", "sandbox.plaid.com"]),
+  );
   assert.ok(plan.args.includes("SERVICE_TOKEN"));
   assert.ok(plan.args.includes("LOG_LEVEL"));
   assert.equal(plan.args.includes(secretValue), false);
@@ -115,6 +123,39 @@ test("JWT verification is default-on and requires one complete Ed25519 configura
   assert.equal(plan.command, "podman");
   assert.equal(plan.environment.MAKO_JWT_ISSUER, "https://auth.example.test");
   assert.equal(JSON.parse(plan.environment.MAKO_JWKS).keys[0].kid, "local-key");
+});
+
+test("an allowed host must be a DNS name a hosted deployment would accept", async (t) => {
+  const fixture = await createFixture(t);
+  const base = [
+    "functions",
+    "serve",
+    fixture.functionDirectory,
+    "--project-id",
+    "prj_abcdefgh",
+    "--environment-id",
+    "env_abcdefgh",
+    "--no-verify-jwt",
+  ];
+  for (const host of ["127.0.0.1", "localhost", "metadata.google.internal", "Bad.Example"]) {
+    assert.throws(
+      () => parseServeArguments([...base, "--allow-host", host], fixture.root),
+      (error) =>
+        error instanceof LocalServeConfigurationError && error.message.includes("DNS name"),
+      `host must be refused: ${host}`,
+    );
+  }
+  const nine = Array.from({ length: 9 }, (_, index) => [
+    "--allow-host",
+    `host-${index}.example.com`,
+  ]).flat();
+  assert.throws(
+    () => parseServeArguments([...base, ...nine], fixture.root),
+    /at most 8 allowed hosts/u,
+  );
+  // Undeclared stays exactly as before: the environment carries no host list.
+  const undeclared = parseServeArguments(base, fixture.root);
+  assert.equal(createRuntimeLaunchPlan(undeclared).environment.MAKO_ALLOWED_HOSTS, "");
 });
 
 test("reserved, duplicate, and partially configured environment inputs fail closed", async (t) => {
@@ -190,10 +231,13 @@ test("the packaged pin and main worker preserve the hosted request boundary", as
     assert.match(mainWorker, new RegExp(`allow_${grant}: null`, "u"));
   }
   // What remains is bounded: the worker's own directory, the names it was
-  // given, and the origins its egress policy allows.
+  // given, and the origins its egress policy allows. Both workers compute
+  // their network grant through the one shared function, so local and hosted
+  // sandboxes cannot drift apart.
   assert.match(supervisor, /allow_net: networkGrants\(limits\.outboundNetwork\)/u);
   assert.match(supervisor, /allow_read: \[directory\]/u);
-  assert.match(mainWorker, /allow_net: \[originGrant\(requiredEnvironment\("MAKO_API_URL"\)\)\]/u);
+  assert.match(mainWorker, /allow_net: localNetworkGrants/u);
+  assert.match(mainWorker, /localNetworkGrants = networkGrants\(/u);
   assert.match(mainWorker, /allow_read: \[functionPath\]/u);
 });
 

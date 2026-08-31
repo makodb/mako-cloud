@@ -1,5 +1,6 @@
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 
+import { openPlaidLink } from "../data/plaid.js";
 import type { RationalApp } from "../data/rational.js";
 import type { ScopeSession } from "../data/scope.js";
 import type { HouseholdCollectionId } from "../model/types.js";
@@ -25,10 +26,57 @@ export function ConnectionsScreen({
     session.collection("accounts")?.find({ sort: [{ name: "asc" }] }) ?? null,
   );
   const [problem, setProblem] = useState<string | null>(null);
-  const institutions = connections.filter((entry) => entry.kind === "institution");
+  // Whether the deployment can talk to Plaid at all. Asked once, of the
+  // function itself: a copy deployed without Plaid credentials answers no and
+  // this screen simply never offers the option.
+  const [plaidReady, setPlaidReady] = useState(false);
+  const [plaidBusy, setPlaidBusy] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    app.plaid
+      ?.configured()
+      .then((configured) => {
+        if (!cancelled) setPlaidReady(configured);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [app.plaid]);
+  const institutions = connections.filter(
+    (entry) => entry.kind === "institution" || entry.kind === "plaid",
+  );
   const imports = connections.filter((entry) => entry.kind === "import");
   const accountName = (id: string | undefined) =>
     id === undefined ? "—" : (accounts.find((account) => account.id === id)?.name ?? id);
+
+  const connectPlaid = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const accountId = String(new FormData(form).get("account_id") ?? "");
+    const client = app.plaid;
+    const householdId = app.state.currentHouseholdId;
+    if (client === null || householdId === null || accountId === "") return;
+    setPlaidBusy(true);
+    try {
+      // Token from the function, widget from Plaid, public token straight
+      // back to the function. No token that outlives this handler ever
+      // touches the browser.
+      const linked = await openPlaidLink(await client.linkToken());
+      await client.exchange({
+        publicToken: linked.publicToken,
+        householdId,
+        accountId,
+        institution: linked.institution,
+      });
+      form.reset();
+      setProblem(null);
+    } catch (error) {
+      setProblem(error instanceof Error ? error.message : "the institution could not be linked");
+    } finally {
+      setPlaidBusy(false);
+    }
+  };
 
   const connect = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -123,6 +171,34 @@ export function ConnectionsScreen({
             ))}
         </ul>
       )}
+
+      {plaidReady ? (
+        <form
+          aria-label="Connect through Plaid"
+          data-testid="plaid-connect"
+          onSubmit={(event) => void connectPlaid(event)}
+        >
+          <h3>Connect through Plaid</h3>
+          <p className="muted">
+            Link a real institution in Plaid&apos;s sandbox. The connection syncs on the same
+            fifteen-minute schedule as everything else; no credential ever reaches this browser.
+          </p>
+          <label>
+            Account
+            <select name="account_id" defaultValue="" required>
+              <option value="">Choose an account</option>
+              {accounts.map((account) => (
+                <option key={account.id} value={account.id}>
+                  {account.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button type="submit" disabled={plaidBusy}>
+            {plaidBusy ? "Linking…" : "Connect through Plaid"}
+          </button>
+        </form>
+      ) : null}
 
       <form aria-label="Connect an account" onSubmit={(event) => void connect(event)}>
         <h3>Connect an account</h3>

@@ -6,6 +6,10 @@
  *   POST /sync                  every connected account, one statement each
  *   GET  /institution/statement the simulated bank, called over HTTP like a
  *                               real one would be
+ *   GET  /plaid/status          whether this deployment holds Plaid credentials
+ *   POST /plaid/link-token      a Link token for the signed-in member
+ *   POST /plaid/exchange        public token in, connection id out; the access
+ *                               token lands only in `plaid_items`
  *
  * The schedule invokes `/sync` every fifteen minutes. What matters is not the
  * bank -- that one is simulated and deterministic -- but everything around
@@ -16,29 +20,50 @@
  * entry is an update of the same document rather than a second one.
  */
 import {
+  createFunctionClientFromRequest,
   createServiceClient,
   type FunctionDocument,
   type JsonObject,
   type ServiceFunctionClient,
 } from "@mako-cloud/edge-sdk";
-
-import { serviceCredential } from "./credential.ts";
-import { RUN_KEY_HEADER, runKeyMatches } from "../shared/run-key.ts";
 import {
   type AlertSettingLike,
   type AlertTransaction,
   type FiredAlert,
   firedAlerts,
 } from "../shared/alerts.ts";
+import {
+  parseExchange,
+  parseLinkToken,
+  parseSyncPage,
+  plaidConnectionBody,
+  plaidConnectionId,
+  plaidItemBody,
+  removedIds,
+  syncEntries,
+} from "../shared/plaid.ts";
+import { RUN_KEY_HEADER, runKeyMatches } from "../shared/run-key.ts";
+import { serviceCredential } from "./credential.ts";
 import { statement, transactionId } from "./institution.ts";
 
 declare const Deno: { readonly env: { get(name: string): string | undefined } };
 
 /** The schema version of `mako/collections.json`. */
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 const CONNECTIONS = "connections";
 const TRANSACTIONS = "transactions";
+const ACCOUNTS = "accounts";
 const ALERTS = "alerts";
+/** The credential and cursor store no application user can open. */
+const PLAID_ITEMS = "plaid_items";
+/**
+ * Plaid's sandbox origin -- the one external host this deployment declares.
+ * Hardcoded rather than configurable: the egress allowlist names it, and a
+ * URL a function could be talked into changing would hollow that grant out.
+ */
+const PLAID_HOST = "https://sandbox.plaid.com";
+/** Pages one connection may pull in one run; the cursor carries the rest. */
+const PLAID_PAGE_LIMIT = 10;
 /** How far back each sync asks. Overlap is deliberate: it is what proves the
  * idempotence, and it is what a real institution needs anyway because entries
  * settle days after they happen. */
@@ -47,13 +72,20 @@ const WINDOW_DAYS = 10;
 export default {
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
-    const route =
-      url.pathname
-        .split("/")
-        .filter((part) => part !== "")
-        .pop() ?? "";
+    const segments = url.pathname.split("/").filter((part) => part !== "");
+    const route = segments[segments.length - 1] ?? "";
+    const group = segments[segments.length - 2] ?? "";
     try {
       if (route === "statement") return institutionRoute(url);
+      if (group === "plaid") {
+        if (route === "status" && request.method === "GET") return await plaidStatus(request);
+        if (request.method !== "POST") {
+          return failure(405, "invalid_request", "plaid routes are POST");
+        }
+        if (route === "link-token") return await plaidLinkToken(request);
+        if (route === "exchange") return await plaidExchange(request);
+        return failure(404, "not_found", `unknown plaid route ${route}`);
+      }
       if (request.method !== "POST") {
         return failure(405, "invalid_request", "institution-sync routes are POST");
       }
@@ -70,6 +102,244 @@ export default {
     }
   },
 };
+
+// --- Plaid: a real aggregator through the declared egress host -------------
+
+interface PlaidCredentials {
+  readonly clientId: string;
+  readonly secret: string;
+}
+
+/**
+ * The Plaid credentials this deployment holds, or null when it holds none.
+ * Secrets are attached per deployment, and reading an unattached name is
+ * refused by the sandbox rather than answered with undefined -- so absence is
+ * caught, and means the Plaid routes honestly report themselves unconfigured
+ * instead of failing one fetch deep.
+ */
+function plaidCredentials(): PlaidCredentials | null {
+  try {
+    const clientId = Deno.env.get("PLAID_CLIENT_ID") ?? "";
+    const secret = Deno.env.get("PLAID_SECRET") ?? "";
+    return clientId !== "" && secret !== "" ? { clientId, secret } : null;
+  } catch {
+    return null;
+  }
+}
+
+interface Member {
+  readonly userId: string;
+  /** Household id → role, from the claim the runtime verified. */
+  readonly households: Record<string, string>;
+}
+
+/** The verified caller, or a 401 that says what to do about it. */
+async function memberOf(request: Request): Promise<Member> {
+  const client = createFunctionClientFromRequest({
+    request,
+    endpoint: environment("MAKO_API_URL"),
+    projectId: environment("MAKO_PROJECT_ID"),
+    environmentId: environment("MAKO_ENVIRONMENT_ID"),
+  });
+  let user: { id: string };
+  try {
+    user = await client.auth.getUser();
+  } catch {
+    throw new RouteError(401, "unauthenticated", "sign in to connect an institution");
+  }
+  return { userId: user.id, households: claimedHouseholds(request) };
+}
+
+function claimedHouseholds(request: Request): Record<string, string> {
+  const token = request.headers.get("x-mako-caller-authorization");
+  const payload = token?.split(".")[1];
+  if (payload === undefined) return {};
+  try {
+    const padded = payload.replaceAll("-", "+").replaceAll("_", "/");
+    const binary = atob(padded.padEnd(padded.length + ((4 - (padded.length % 4)) % 4), "="));
+    const claims = JSON.parse(binary) as { trusted_claims?: { households?: unknown } };
+    const value = claims.trusted_claims?.households;
+    if (typeof value !== "object" || value === null || Array.isArray(value)) return {};
+    const map: Record<string, string> = {};
+    for (const [householdId, role] of Object.entries(value as Record<string, unknown>)) {
+      if (typeof role === "string") map[householdId] = role;
+    }
+    return map;
+  } catch {
+    return {};
+  }
+}
+
+function requireWriter(member: Member, householdId: string): void {
+  const role = member.households[householdId];
+  if (role !== "owner" && role !== "editor") {
+    throw new RouteError(403, "forbidden", "only an owner or editor may connect an institution");
+  }
+}
+
+/**
+ * One call to Plaid. The caller learns that the institution refused, and the
+ * operator's log learns Plaid's own error code; the response body -- which
+ * carries request ids and echoes of what was sent -- goes no further.
+ */
+async function plaidCall(
+  credentials: PlaidCredentials,
+  path: string,
+  payload: JsonObject,
+): Promise<unknown> {
+  const response = await fetch(`${PLAID_HOST}${path}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      client_id: credentials.clientId,
+      secret: credentials.secret,
+      ...payload,
+    }),
+  });
+  const body: unknown = await response.json().catch(() => null);
+  if (!response.ok) {
+    const code =
+      typeof body === "object" && body !== null && "error_code" in body
+        ? String((body as { error_code: unknown }).error_code).slice(0, 64)
+        : "unknown";
+    console.error(`plaid ${path} refused: status ${response.status} code ${code}`);
+    throw new RouteError(502, "institution_error", `the institution refused ${path}`);
+  }
+  return body;
+}
+
+/** Whether this deployment can talk to Plaid at all; the UI asks before offering. */
+async function plaidStatus(request: Request): Promise<Response> {
+  await memberOf(request);
+  return Response.json({ configured: plaidCredentials() !== null });
+}
+
+async function plaidLinkToken(request: Request): Promise<Response> {
+  const member = await memberOf(request);
+  const credentials = plaidCredentials();
+  if (credentials === null) {
+    return failure(503, "not_configured", "Plaid is not configured for this deployment");
+  }
+  const answer = await plaidCall(credentials, "/link/token/create", {
+    client_name: "Rational",
+    language: "en",
+    country_codes: ["US"],
+    user: { client_user_id: member.userId },
+    products: ["transactions"],
+  });
+  return Response.json({ linkToken: parseLinkToken(answer) });
+}
+
+/**
+ * The handover: the browser's short-lived public token becomes an access
+ * token that never reaches a browser again. The token is written only to
+ * `plaid_items` -- the collection whose policy allows no application user
+ * anything -- and the response carries the connection id and nothing else.
+ */
+async function plaidExchange(request: Request): Promise<Response> {
+  const member = await memberOf(request);
+  const credentials = plaidCredentials();
+  if (credentials === null) {
+    return failure(503, "not_configured", "Plaid is not configured for this deployment");
+  }
+  let body: JsonObject;
+  try {
+    body = (await request.json()) as JsonObject;
+  } catch {
+    throw new RouteError(400, "invalid_request", "a JSON body is required");
+  }
+  const publicToken = typeof body.publicToken === "string" ? body.publicToken : "";
+  const householdId = typeof body.householdId === "string" ? body.householdId : "";
+  const accountId = typeof body.accountId === "string" ? body.accountId : "";
+  const institution =
+    typeof body.institution === "string" && body.institution !== ""
+      ? body.institution.slice(0, 200)
+      : "Plaid";
+  if (publicToken === "" || householdId === "" || accountId === "") {
+    throw new RouteError(
+      400,
+      "invalid_request",
+      "publicToken, householdId, and accountId are required",
+    );
+  }
+  requireWriter(member, householdId);
+  // The account must be the household's own: without this, an editor of one
+  // household could pour an institution's transactions into another's books.
+  const reason = `plaid link for household ${householdId}`;
+  const account = await read(reason, ACCOUNTS, accountId);
+  if (account === null || account._deleted || account.body.household_id !== householdId) {
+    throw new RouteError(403, "forbidden", "the account does not belong to that household");
+  }
+
+  const exchanged = parseExchange(
+    await plaidCall(credentials, "/item/public_token/exchange", { public_token: publicToken }),
+  );
+  const connectionId = plaidConnectionId(exchanged.itemId);
+  const now = Date.now();
+
+  // The item first: a connection without its item is a link that cannot sync,
+  // but an item without its connection is only an orphan a relink absorbs.
+  const existingItem = await read(reason, PLAID_ITEMS, connectionId);
+  if (existingItem === null || existingItem._deleted) {
+    await write(
+      reason,
+      PLAID_ITEMS,
+      connectionId,
+      plaidItemBody({
+        connectionId,
+        householdId,
+        itemId: exchanged.itemId,
+        accessToken: exchanged.accessToken,
+        cursor: "",
+        now,
+      }),
+      null,
+    );
+  } else {
+    // A relink of the same item keeps its cursor: history already imported
+    // does not need importing again.
+    await write(
+      reason,
+      PLAID_ITEMS,
+      connectionId,
+      { ...existingItem.body, access_token: exchanged.accessToken, updated_at: now },
+      existingItem.revision,
+    );
+  }
+
+  const existingConnection = await read(reason, CONNECTIONS, connectionId);
+  if (existingConnection === null || existingConnection._deleted) {
+    await write(
+      reason,
+      CONNECTIONS,
+      connectionId,
+      plaidConnectionBody({
+        connectionId,
+        householdId,
+        accountId,
+        itemId: exchanged.itemId,
+        institutionName: institution,
+        now,
+      }),
+      null,
+    );
+  } else {
+    await write(
+      reason,
+      CONNECTIONS,
+      connectionId,
+      {
+        ...existingConnection.body,
+        status: "connected",
+        account_id: accountId,
+        institution,
+        updated_at: now,
+      },
+      existingConnection.revision,
+    );
+  }
+  return Response.json({ connectionId });
+}
 
 /** The simulated bank, on its own route. */
 function institutionRoute(url: URL): Response {
@@ -139,7 +409,178 @@ async function sync(request: Request): Promise<Response> {
       });
     }
   }
+  outcomes.push(...(await syncPlaidPass(reason, through)));
   return Response.json({ ok: true, synced: outcomes.length, outcomes });
+}
+
+/**
+ * The same pass, for connections whose institution is real. A deployment
+ * without Plaid credentials skips them without recording an error on each:
+ * the connection is not broken, the deployment is undressed for it, and a
+ * record that said "error" every fifteen minutes would bury the one that
+ * matters.
+ */
+async function syncPlaidPass(reason: string, through: string): Promise<SyncOutcome[]> {
+  const connections = await service(reason)
+    .documents(CONNECTIONS)
+    .query({
+      predicates: [{ field: "kind", operator: "eq", value: "plaid" }],
+      sort: [],
+      cursor: null,
+      limit: 200,
+    });
+  const outcomes: SyncOutcome[] = [];
+  const credentials = plaidCredentials();
+  for (const document of connections.documents) {
+    if (document._deleted) continue;
+    const connection = document.body;
+    if (connection.status !== "connected") continue;
+    const accountId = typeof connection.account_id === "string" ? connection.account_id : "";
+    const householdId = typeof connection.household_id === "string" ? connection.household_id : "";
+    if (accountId === "" || householdId === "") continue;
+    if (credentials === null) {
+      outcomes.push({
+        connectionId: String(connection.id),
+        accountId,
+        created: 0,
+        updated: 0,
+        alerted: 0,
+        outcome: "skipped: plaid is not configured",
+      });
+      continue;
+    }
+    try {
+      outcomes.push(
+        await syncPlaidConnection(document, credentials, { accountId, householdId, through }),
+      );
+    } catch (error) {
+      const detail = error instanceof Error ? error.message.slice(0, 200) : "sync failed";
+      await recordSync(document, `error: ${detail}`);
+      outcomes.push({
+        connectionId: String(connection.id),
+        accountId,
+        created: 0,
+        updated: 0,
+        alerted: 0,
+        outcome: `error: ${detail}`,
+      });
+    }
+  }
+  return outcomes;
+}
+
+/**
+ * One Plaid connection, brought current under its cursor. Idempotence is the
+ * same one the simulator proved -- the transaction's id is derived from
+ * `(account, external_id)` -- and the cursor advances only after the page's
+ * writes committed, so a crashed pass replays a page into upserts that change
+ * nothing. An entry the institution withdrew (a pending charge that posted)
+ * is deleted, not annotated: the institution says it no longer exists, and
+ * its replacement arrives in the same page.
+ */
+async function syncPlaidConnection(
+  document: FunctionDocument,
+  credentials: PlaidCredentials,
+  target: { accountId: string; householdId: string; through: string },
+): Promise<SyncOutcome> {
+  const reason = `plaid sync for account ${target.accountId}`;
+  const connectionId = String(document.body.id);
+  const item = await read(reason, PLAID_ITEMS, connectionId);
+  if (item === null || item._deleted) {
+    throw new Error("the connection's credentials are gone; relink the institution");
+  }
+  const accessToken = String(item.body.access_token ?? "");
+  const account = await read(reason, ACCOUNTS, target.accountId);
+  const currency =
+    account !== null && typeof account.body.currency === "string" ? account.body.currency : "USD";
+
+  let cursor = typeof item.body.cursor === "string" ? item.body.cursor : "";
+  let created = 0;
+  let updated = 0;
+  let removed = 0;
+  const arrived: AlertTransaction[] = [];
+  for (let pages = 0; pages < PLAID_PAGE_LIMIT; pages += 1) {
+    const page = parseSyncPage(
+      await plaidCall(credentials, "/transactions/sync", {
+        access_token: accessToken,
+        count: 100,
+        ...(cursor === "" ? {} : { cursor }),
+      }),
+    );
+    for (const entry of syncEntries(page, currency)) {
+      const id = transactionId(target.accountId, entry.externalId);
+      const existing = await read(reason, TRANSACTIONS, id);
+      const now = Date.now();
+      const body: JsonObject = {
+        id,
+        household_id: target.householdId,
+        created_at: (existing?.body.created_at as number | undefined) ?? now,
+        updated_at: now,
+        account_id: target.accountId,
+        date: entry.date,
+        amount: entry.amount,
+        currency: entry.currency,
+        description: entry.description,
+        external_id: entry.externalId,
+        tags: [],
+        splits: [],
+      };
+      const arrival: AlertTransaction = {
+        id,
+        account_id: target.accountId,
+        date: entry.date,
+        amount: entry.amount,
+        currency: entry.currency,
+        description: entry.description,
+      };
+      if (existing === null || existing._deleted) {
+        await write(reason, TRANSACTIONS, id, body, null);
+        arrived.push(arrival);
+        created += 1;
+      } else if (
+        existing.body.amount !== entry.amount ||
+        existing.body.date !== entry.date ||
+        existing.body.description !== entry.description
+      ) {
+        await write(reason, TRANSACTIONS, id, body, existing.revision);
+        arrived.push(arrival);
+        updated += 1;
+      }
+    }
+    for (const withdrawnId of removedIds(page)) {
+      const id = transactionId(target.accountId, withdrawnId);
+      const existing = await read(reason, TRANSACTIONS, id);
+      if (existing !== null && !existing._deleted) {
+        await removeDocument(reason, TRANSACTIONS, id, existing);
+        removed += 1;
+      }
+    }
+    // Only now, with the page's writes down, does the cursor move.
+    cursor = page.next_cursor;
+    const current = await read(reason, PLAID_ITEMS, connectionId);
+    if (current !== null && !current._deleted) {
+      await write(
+        reason,
+        PLAID_ITEMS,
+        connectionId,
+        { ...current.body, cursor, updated_at: Date.now() },
+        current.revision,
+      );
+    }
+    if (!page.has_more) break;
+  }
+
+  const alerted = await raiseAlerts(target.householdId, target.through, arrived);
+  const outcome = `imported ${created}, corrected ${updated}, removed ${removed}`;
+  await recordSync(document, outcome);
+  return {
+    connectionId,
+    accountId: target.accountId,
+    created,
+    updated,
+    alerted,
+    outcome,
+  };
 }
 
 async function syncConnection(
@@ -342,6 +783,24 @@ async function write(
       expectedRevision,
       schemaVersion: SCHEMA_VERSION,
       body,
+    });
+}
+
+/** A delete names the revision it read, like every other write. */
+async function removeDocument(
+  reason: string,
+  collectionId: string,
+  documentId: string,
+  existing: FunctionDocument,
+): Promise<void> {
+  await service(reason)
+    .documents(collectionId)
+    .mutate(documentId, {
+      mutationId: `rational-sync-${randomSuffix()}${randomSuffix()}`,
+      operation: "delete",
+      expectedRevision: existing.revision,
+      schemaVersion: SCHEMA_VERSION,
+      body: existing.body,
     });
 }
 

@@ -408,10 +408,19 @@ test("policies are read, drafted from stdin, validated, and tested from a file",
   assert.deepEqual(sent.body, { version: 2, rules: policySet().rules });
   assert.match(sent.headers["idempotency-key"], UUID);
   assert.equal(JSON.parse(draft.stdout).version, 2);
-  const noRules = await cli(["policies", "draft", "todos", "--input", '{"version":2,"rules":[]}']);
+  // An empty rules array is a deliberate deny-everything policy (a
+  // server-only collection is exactly this) and goes to the API as written;
+  // only a missing or non-array `rules` is a usage error.
+  const emptyRules = await cli(["policies", "draft", "todos", "--input", '{"version":2,"rules":[]}']);
+  assert.equal(emptyRules.code, 0, emptyRules.stderr);
+  assert.deepEqual(api.find(`${BASE}/collections/todos/policies`, "POST")[1].body, {
+    version: 2,
+    rules: [],
+  });
+  const noRules = await cli(["policies", "draft", "todos", "--input", '{"version":2}']);
   assert.equal(noRules.code, 2);
   assert.match(noRules.stderr, /rules/u);
-  assert.equal(api.find(`${BASE}/collections/todos/policies`, "POST").length, 1);
+  assert.equal(api.find(`${BASE}/collections/todos/policies`, "POST").length, 2);
 
   const validated = await cli(["policies", "validate", "todos", "2", "--json"]);
   assert.equal(validated.code, 0, validated.stderr);

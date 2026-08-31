@@ -1,5 +1,5 @@
-import type { RxQuery } from "rxdb";
 import { useEffect, useRef, useState } from "react";
+import type { RxQuery } from "rxdb";
 import type { BehaviorSubject, Observable } from "rxjs";
 
 /** Render the latest value of a subject; the subject's current value is the first render. */
