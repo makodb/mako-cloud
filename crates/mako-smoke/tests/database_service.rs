@@ -828,3 +828,125 @@ fn await_index(port: u16, session: &str, path: &str) {
     }
     panic!("{path} did not become active within {PROVISIONING_TIMEOUT:?} ({last})");
 }
+
+/// A schema publish must change what the environment *serves*, not only what
+/// the management API records. The data plane answers documents and
+/// replication from its own copy of the collection metadata, and only
+/// `collections create` installed that copy -- so a published version 2 left
+/// the control plane saying v2 while every pull and write at v2 was refused
+/// with `schema_mismatch`, forever (finding #39). This drives the publish over
+/// real HTTP and then uses the new version where it matters: on the data
+/// plane.
+#[test]
+fn a_published_schema_version_is_served_not_just_recorded() {
+    let services = start();
+    let data = services.data_port;
+    let control = services.control_port;
+    let session = &services.session;
+    let (scope, key) = provision(&services);
+    let keyed = BTreeMap::from([("x-mako-key".to_owned(), key)]);
+
+    let user = sign_up(data, &scope, &keyed, ALICE);
+    let (status, body) = request(
+        data,
+        "GET",
+        &format!("{scope}/auth/user"),
+        &bearer(&keyed, &user.access),
+        None,
+    );
+    assert_eq!(status, 200, "reading the signed-in user failed: {body}");
+    let profile: Value = serde_json::from_str(&body).expect("user json");
+    let user_id = profile["id"].as_str().expect("user id").to_owned();
+    let pull = |version: u64| -> (u16, String) {
+        request(
+            data,
+            "POST",
+            &format!("{scope}/collections/{COLLECTION_ID}/replication/pull"),
+            &bearer(&keyed, &user.access),
+            Some(&json!({ "schemaVersion": version, "batchSize": 10 })),
+        )
+    };
+
+    let (status, body) = pull(1);
+    assert_eq!(
+        status, 200,
+        "the collection serves its created version: {body}"
+    );
+    let (status, body) = pull(2);
+    assert_eq!(
+        status, 409,
+        "an unpublished version must be refused: {body}"
+    );
+    assert!(
+        body.contains("schema"),
+        "the refusal names the schema: {body}"
+    );
+
+    // The widened schema: one new optional field. Compatible by construction.
+    let (status, body) = request(
+        control,
+        "POST",
+        &format!("{scope}/collections/{COLLECTION_ID}/schemas"),
+        &BTreeMap::from([
+            ("authorization".to_owned(), format!("Bearer {session}")),
+            (
+                "idempotency-key".to_owned(),
+                "db-service-publish-v2".to_owned(),
+            ),
+        ]),
+        Some(&json!({
+            "schemaVersion": 2,
+            "jsonSchema": {
+                "type": "object",
+                "required": ["id", "owner_id", "title", "updated_at"],
+                "properties": {
+                    "id": { "type": "string" },
+                    "owner_id": { "type": "string" },
+                    "title": { "type": "string" },
+                    "updated_at": { "type": "integer" },
+                    "note": { "type": "string" },
+                },
+                "additionalProperties": true,
+            },
+            "primaryKey": { "kind": "field", "field": "id" },
+        })),
+    );
+    assert_eq!(
+        status, 200,
+        "the compatible publish did not succeed: {body}"
+    );
+
+    // The new version is what the data plane serves now -- pulls and writes
+    // at v2 work, and v1 is told to migrate rather than silently served.
+    let (status, body) = pull(2);
+    assert_eq!(status, 200, "the published version is not served: {body}");
+    let (status, body) = pull(1);
+    assert_eq!(
+        status, 409,
+        "the superseded version must ask for migration: {body}"
+    );
+
+    let (status, body) = request(
+        data,
+        "POST",
+        &format!("{scope}/collections/{COLLECTION_ID}/documents/note-v2-1"),
+        &writing(&keyed, &user.access, "db-service-v2-write"),
+        Some(&json!({
+            "mutationId": "db-service-v2-write",
+            "operation": "create",
+            "expectedRevision": Value::Null,
+            "schemaVersion": 2,
+            "body": {
+                "id": "note-v2-1",
+                "owner_id": user_id,
+                "title": "written under the published schema",
+                "updated_at": 2,
+                "note": "the widened field",
+            },
+        })),
+    );
+    assert!(
+        (200..300).contains(&status),
+        "a write under the published schema failed with {status}: {body}"
+    );
+}

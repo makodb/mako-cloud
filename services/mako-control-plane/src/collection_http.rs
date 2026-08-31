@@ -244,6 +244,32 @@ fn handle_publish_schema(
             }
             Err(error) => return Err(collection_error(request, error)),
         };
+        // The data plane serves documents and replication from its own copy of
+        // the metadata, and `create` installs that copy -- a publish that only
+        // rewrote the control plane's record left every environment refusing
+        // the new schema version forever (finding #39). Install the published
+        // metadata the same way; a refused install leaves the control-side
+        // record ahead, and a retried publish lands in the idempotent arm
+        // above and installs again, so the two sides converge.
+        if let SchemaPublicationOutcome::Published(record) = &outcome {
+            let servable = CollectionAdminService::servable_metadata(record)
+                .map_err(|error| collection_error(request, error))?;
+            let encoded = servable
+                .encode()
+                .map_err(|_| unavailable(request, "collection metadata could not be encoded"))?;
+            let metadata: Value = serde_json::from_slice(&encoded)
+                .map_err(|_| unavailable(request, "collection metadata could not be encoded"))?;
+            let _: Value = administer(
+                graph,
+                request,
+                &actor,
+                &tenant,
+                IdentityAdminOperation::InstallCollection,
+                json!({"collectionId": record.collection_id().as_str(), "metadata": metadata}),
+                true,
+            )
+            .await?;
+        }
         explorer_invalidation::advance_tenant(
             graph,
             request,
