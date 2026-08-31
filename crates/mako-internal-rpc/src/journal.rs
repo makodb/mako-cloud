@@ -109,24 +109,38 @@ impl EncryptedResponseJournal {
         if successful_response.is_empty() || successful_response.len() > 1024 * 1024 {
             return Err(ResponseJournalError::InvalidResponse);
         }
-        match self.lookup(request, now_unix_seconds).await? {
+        // An expired record is not an answer -- it is what an answer decays
+        // into once nothing may replay it. Refusing to overwrite one made a
+        // fixed idempotency key unusable forever the day after its first use:
+        // the guard's fresh claim would execute, and the store would then
+        // refuse to record the new answer because a stale one was in the way.
+        // The stale bytes become the replace condition instead, so two
+        // concurrent re-executions still resolve to a single recorded answer.
+        let key = self.key(request)?;
+        let expired_record = match self.lookup(request, now_unix_seconds).await? {
             ResponseJournalLookup::Replay(response) => {
                 return Ok(ResponseJournalStoreOutcome::Replayed(response));
             }
             ResponseJournalLookup::Conflict => return Err(ResponseJournalError::Conflict),
-            ResponseJournalLookup::Expired => return Err(ResponseJournalError::Expired),
-            ResponseJournalLookup::Missing => {}
-        }
+            ResponseJournalLookup::Expired => self.adapter.get(&key).await?,
+            ResponseJournalLookup::Missing => None,
+        };
 
-        let key = self.key(request)?;
         let expires_at_unix_seconds = now_unix_seconds.saturating_add(RESPONSE_RETENTION_SECONDS);
         let record = self.encrypt(request, successful_response, expires_at_unix_seconds)?;
         let mut batch = WriteBatch::new();
         batch.put(&key, serde_json::to_vec(&record)?);
+        let condition = match expired_record {
+            Some(previous) => KeyCondition::ValueEquals {
+                key,
+                value: previous,
+            },
+            None => KeyCondition::Missing { key },
+        };
         match self
             .adapter
             .compare_and_write(AtomicWrite {
-                conditions: vec![KeyCondition::Missing { key }],
+                conditions: vec![condition],
                 batch,
                 durability: Durability::Sync,
             })

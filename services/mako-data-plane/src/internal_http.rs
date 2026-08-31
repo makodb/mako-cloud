@@ -223,12 +223,6 @@ fn handle_identity_admin(
                         "idempotency key was reused for another identity operation",
                     ));
                 }
-                Ok(ResponseJournalLookup::Expired) => {
-                    return Err(conflict(
-                        request,
-                        "the identity operation retry result has expired",
-                    ));
-                }
                 // A claimed key with no recorded answer means the claiming
                 // attempt died between the guard write and the journal write
                 // -- a crash or restart mid-operation -- and no caller ever
@@ -242,7 +236,13 @@ fn handle_identity_admin(
                 // proves they never happened. A concurrent in-flight original
                 // is arbitrated by the journal's conditional store below --
                 // whichever result lands first is the one both callers see.
-                Ok(ResponseJournalLookup::Missing) => {}
+                // An *expired* answer is the same situation one day later: a
+                // record nothing may replay is not an answer, and refusing on
+                // it made every fixed-key operation break the day after its
+                // first use. The store below replaces the stale bytes
+                // conditionally, so this recovery also resolves to a single
+                // recorded answer.
+                Ok(ResponseJournalLookup::Missing) | Ok(ResponseJournalLookup::Expired) => {}
                 Err(_) => {
                     return Err(auth_http::unavailable(
                         request,

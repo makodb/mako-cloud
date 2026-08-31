@@ -346,7 +346,11 @@ for (const collection of model.collections) {
   );
   const active = makoJson(["policies", "get", collection.id, ...tenant], [4]);
   const activeRules = active?.policy?.state === "active" ? active.policy.rules : null;
-  if (activeRules !== null && deepEqual(activeRules, desired.rules)) {
+  // Allow-rules are an OR: their order carries no meaning, and the platform
+  // serves them in its own order. Comparing them positionally made every
+  // re-run against a deployed environment draft one more identical version.
+  const byId = (rules) => [...rules].sort((a, b) => String(a.id).localeCompare(String(b.id)));
+  if (activeRules !== null && deepEqual(byId(activeRules), byId(desired.rules))) {
     log(`policy of ${collection.id} is active and up to date (version ${active.policy.version})`);
     continue;
   }

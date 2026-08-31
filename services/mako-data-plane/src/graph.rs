@@ -2145,6 +2145,33 @@ mod tests {
             other => panic!("the journaled answer must replay, got {other:?}"),
         }
 
+        // A day later the answer has decayed: nothing may replay it, and a
+        // fixed key used again must be able to record its new answer over the
+        // stale bytes. Refusing here used to break every fixed-key operation
+        // the day after its first use.
+        let much_later = 100 + 24 * 60 * 60 + 60;
+        let day_after = sign("req_day_after");
+        assert_eq!(
+            block_on(guard.claim(&day_after, much_later)).expect("guard claim"),
+            GuardDecision::Fresh,
+            "an expired guard claim is a fresh one"
+        );
+        assert!(matches!(
+            block_on(journal.lookup(&day_after, much_later)).expect("journal lookup"),
+            mako_internal_rpc::ResponseJournalLookup::Expired
+        ));
+        assert!(matches!(
+            block_on(journal.store(&day_after, b"{\"advanced\":2}", much_later))
+                .expect("stale journal bytes must be replaceable"),
+            mako_internal_rpc::ResponseJournalStoreOutcome::Stored
+        ));
+        match block_on(journal.lookup(&day_after, much_later)).expect("journal lookup") {
+            mako_internal_rpc::ResponseJournalLookup::Replay(body) => {
+                assert_eq!(body, b"{\"advanced\":2}");
+            }
+            other => panic!("the replaced answer must replay, got {other:?}"),
+        }
+
         block_on(graph.shutdown()).expect("shutdown");
     }
 
