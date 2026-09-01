@@ -65,16 +65,11 @@
       "indexes": [
         {
           "name": "household_updated",
-          "fields": [
-            "household_id",
-            "updated_at"
-          ]
+          "fields": ["household_id", "updated_at"]
         },
         {
           "name": "updated",
-          "fields": [
-            "updated_at"
-          ]
+          "fields": ["updated_at"]
         }
       ]
     },
@@ -118,21 +113,12 @@
           },
           "role": {
             "type": "string",
-            "enum": [
-              "owner",
-              "editor",
-              "viewer"
-            ],
+            "enum": ["owner", "editor", "viewer"],
             "maxLength": 32
           },
           "status": {
             "type": "string",
-            "enum": [
-              "active",
-              "invited",
-              "accepted",
-              "removed"
-            ],
+            "enum": ["active", "invited", "accepted", "removed"],
             "maxLength": 32
           },
           "invited_by": {
@@ -140,15 +126,7 @@
             "maxLength": 128
           }
         },
-        "required": [
-          "id",
-          "household_id",
-          "created_at",
-          "updated_at",
-          "user_id",
-          "role",
-          "status"
-        ]
+        "required": ["id", "household_id", "created_at", "updated_at", "user_id", "role", "status"]
       },
       "primaryKey": {
         "kind": "field",
@@ -157,17 +135,11 @@
       "indexes": [
         {
           "name": "household_updated",
-          "fields": [
-            "household_id",
-            "updated_at"
-          ]
+          "fields": ["household_id", "updated_at"]
         },
         {
           "name": "user_updated",
-          "fields": [
-            "user_id",
-            "updated_at"
-          ]
+          "fields": ["user_id", "updated_at"]
         }
       ]
     },
@@ -207,14 +179,7 @@
           },
           "type": {
             "type": "string",
-            "enum": [
-              "checking",
-              "savings",
-              "credit",
-              "investment",
-              "loan",
-              "cash"
-            ],
+            "enum": ["checking", "savings", "credit", "investment", "loan", "cash"],
             "maxLength": 32
           },
           "currency": {
@@ -273,10 +238,7 @@
       "indexes": [
         {
           "name": "household_updated",
-          "fields": [
-            "household_id",
-            "updated_at"
-          ]
+          "fields": ["household_id", "updated_at"]
         }
       ]
     },
@@ -381,10 +343,7 @@
                   "maxLength": 500
                 }
               },
-              "required": [
-                "id",
-                "amount"
-              ]
+              "required": ["id", "amount"]
             }
           },
           "pending": {
@@ -436,25 +395,15 @@
       "indexes": [
         {
           "name": "household_updated",
-          "fields": [
-            "household_id",
-            "updated_at"
-          ]
+          "fields": ["household_id", "updated_at"]
         },
         {
           "name": "household_account_date",
-          "fields": [
-            "household_id",
-            "account_id",
-            "date"
-          ]
+          "fields": ["household_id", "account_id", "date"]
         },
         {
           "name": "household_date",
-          "fields": [
-            "household_id",
-            "date"
-          ]
+          "fields": ["household_id", "date"]
         }
       ]
     },
@@ -490,10 +439,7 @@
           },
           "kind": {
             "type": "string",
-            "enum": [
-              "category",
-              "tag"
-            ],
+            "enum": ["category", "tag"],
             "maxLength": 32
           },
           "name": {
@@ -503,11 +449,7 @@
           },
           "category_kind": {
             "type": "string",
-            "enum": [
-              "income",
-              "expense",
-              "transfer"
-            ],
+            "enum": ["income", "expense", "transfer"],
             "maxLength": 32
           },
           "parent_id": {
@@ -522,14 +464,7 @@
             "type": "boolean"
           }
         },
-        "required": [
-          "id",
-          "household_id",
-          "created_at",
-          "updated_at",
-          "kind",
-          "name"
-        ]
+        "required": ["id", "household_id", "created_at", "updated_at", "kind", "name"]
       },
       "primaryKey": {
         "kind": "field",
@@ -538,10 +473,7 @@
       "indexes": [
         {
           "name": "household_updated",
-          "fields": [
-            "household_id",
-            "updated_at"
-          ]
+          "fields": ["household_id", "updated_at"]
         }
       ]
     },
@@ -654,10 +586,7 @@
       "indexes": [
         {
           "name": "household_updated",
-          "fields": [
-            "household_id",
-            "updated_at"
-          ]
+          "fields": ["household_id", "updated_at"]
         }
       ]
     },
@@ -736,10 +665,7 @@
       "indexes": [
         {
           "name": "household_updated",
-          "fields": [
-            "household_id",
-            "updated_at"
-          ]
+          "fields": ["household_id", "updated_at"]
         }
       ]
     },
@@ -782,13 +708,7 @@
           },
           "interval": {
             "type": "string",
-            "enum": [
-              "weekly",
-              "biweekly",
-              "monthly",
-              "quarterly",
-              "yearly"
-            ],
+            "enum": ["weekly", "biweekly", "monthly", "quarterly", "yearly"],
             "maxLength": 32
           },
           "expected_amount": {
@@ -817,11 +737,7 @@
           },
           "status": {
             "type": "string",
-            "enum": [
-              "detected",
-              "confirmed",
-              "dismissed"
-            ],
+            "enum": ["detected", "confirmed", "dismissed"],
             "maxLength": 32
           },
           "matched_count": {
@@ -853,10 +769,7 @@
       "indexes": [
         {
           "name": "household_updated",
-          "fields": [
-            "household_id",
-            "updated_at"
-          ]
+          "fields": ["household_id", "updated_at"]
         }
       ]
     },
@@ -918,11 +831,7 @@
           },
           "status": {
             "type": "string",
-            "enum": [
-              "active",
-              "completed",
-              "archived"
-            ],
+            "enum": ["active", "completed", "archived"],
             "maxLength": 32
           },
           "contributions": {
@@ -953,11 +862,7 @@
                   "maxLength": 500
                 }
               },
-              "required": [
-                "id",
-                "date",
-                "amount"
-              ]
+              "required": ["id", "date", "amount"]
             }
           }
         },
@@ -980,10 +885,7 @@
       "indexes": [
         {
           "name": "household_updated",
-          "fields": [
-            "household_id",
-            "updated_at"
-          ]
+          "fields": ["household_id", "updated_at"]
         }
       ]
     },
@@ -1067,10 +969,7 @@
       "indexes": [
         {
           "name": "household_updated",
-          "fields": [
-            "household_id",
-            "updated_at"
-          ]
+          "fields": ["household_id", "updated_at"]
         }
       ]
     },
@@ -1106,19 +1005,12 @@
           },
           "kind": {
             "type": "string",
-            "enum": [
-              "setting",
-              "alert"
-            ],
+            "enum": ["setting", "alert"],
             "maxLength": 32
           },
           "alert_kind": {
             "type": "string",
-            "enum": [
-              "large_transaction",
-              "budget_exceeded",
-              "low_balance"
-            ],
+            "enum": ["large_transaction", "budget_exceeded", "low_balance"],
             "maxLength": 32
           },
           "threshold": {
@@ -1172,14 +1064,7 @@
             "type": "boolean"
           }
         },
-        "required": [
-          "id",
-          "household_id",
-          "created_at",
-          "updated_at",
-          "kind",
-          "alert_kind"
-        ]
+        "required": ["id", "household_id", "created_at", "updated_at", "kind", "alert_kind"]
       },
       "primaryKey": {
         "kind": "field",
@@ -1188,10 +1073,7 @@
       "indexes": [
         {
           "name": "household_updated",
-          "fields": [
-            "household_id",
-            "updated_at"
-          ]
+          "fields": ["household_id", "updated_at"]
         }
       ]
     },
@@ -1227,11 +1109,7 @@
           },
           "kind": {
             "type": "string",
-            "enum": [
-              "institution",
-              "import",
-              "plaid"
-            ],
+            "enum": ["institution", "import", "plaid"],
             "maxLength": 32
           },
           "institution": {
@@ -1245,11 +1123,7 @@
           },
           "status": {
             "type": "string",
-            "enum": [
-              "connected",
-              "error",
-              "disconnected"
-            ],
+            "enum": ["connected", "error", "disconnected"],
             "maxLength": 32
           },
           "account_ids": {
@@ -1323,20 +1197,10 @@
                 "maxLength": 64
               }
             },
-            "required": [
-              "date",
-              "amount",
-              "description"
-            ]
+            "required": ["date", "amount", "description"]
           }
         },
-        "required": [
-          "id",
-          "household_id",
-          "created_at",
-          "updated_at",
-          "kind"
-        ]
+        "required": ["id", "household_id", "created_at", "updated_at", "kind"]
       },
       "primaryKey": {
         "kind": "field",
@@ -1345,16 +1209,11 @@
       "indexes": [
         {
           "name": "household_updated",
-          "fields": [
-            "household_id",
-            "updated_at"
-          ]
+          "fields": ["household_id", "updated_at"]
         },
         {
           "name": "kind",
-          "fields": [
-            "kind"
-          ]
+          "fields": ["kind"]
         }
       ]
     },
@@ -1420,10 +1279,7 @@
       "indexes": [
         {
           "name": "household_updated",
-          "fields": [
-            "household_id",
-            "updated_at"
-          ]
+          "fields": ["household_id", "updated_at"]
         }
       ]
     }

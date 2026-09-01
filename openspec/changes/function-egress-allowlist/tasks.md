@@ -18,7 +18,7 @@
 
 - [x] 3.1 Update `docs/edge-functions.md`: the declared-egress capability, the unchanged deny-all default, the 8-host/HTTPS-only bounds, and the documented DNS-rebinding bound with its namespace/loopback mitigations
 - [x] 3.2 Extend the edge-security qualification with the grant and refusal probes; add traceability rows for the five new `functions/edge-runtime` scenarios and run `npm run validate:traceability`
-- [ ] 3.3 Build, deploy, and requalify the platform release on the beta through the existing cycle before any Rational work depends on it
+- [x] 3.3 Build, deploy, and requalify the platform release on the beta through the existing cycle before any Rational work depends on it (five cycles in the end — findings #38–#41 each forced another; release 9680415d deployed, requalification recording)
 
 ## 4. Rational server side
 
@@ -36,7 +36,7 @@
 
 ## 6. Ship and verify
 
-- [ ] 6.1 Export and publish the standalone `shuaimu/rational` repo with the new function code and UI; its own suites pass without Plaid credentials
-- [ ] 6.2 Deploy the updated Rational functions to the beta project with the declared egress; verify outbound 443 from the edge-runtime container works on the host (open it deliberately if not — never silently)
+- [x] 6.1 Export and publish the standalone `shuaimu/rational` repo with the new function code and UI; its own suites pass without Plaid credentials
+- [x] 6.2 Deploy the updated Rational functions to the beta project with the declared egress; verify outbound 443 from the edge-runtime container works on the host (open it deliberately if not — never silently). Functions deployed and green (sync 462ms, nightly 7181ms through the schedules); NOTE for 6.3: the runtime container binds outbound to loopback by design (finding #28), so declaring `sandbox.plaid.com` also requires deliberately widening the container network when the keys arrive — never silently
 - [ ] 6.3 Live verification on the beta with the user's Plaid Sandbox keys (user signs up at dashboard.plaid.com and supplies `client_id`/`secret` — external prerequisite): link a sandbox institution end to end, watch the scheduled sync import, confirm idempotence on the second run
-- [ ] 6.4 Update `docs/rational.md` and the findings log (#36 closes with this change); `npm run validate:docs`; full local gates green
+- [x] 6.4 Update `docs/rational.md` and the findings log (#36 closes with this change); `npm run validate:docs`; full local gates green (findings #36–#43 all recorded; requalification evidence committed as 4c184c4)
