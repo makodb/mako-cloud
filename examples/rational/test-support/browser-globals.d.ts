@@ -64,6 +64,7 @@ interface RationalWritesWire {
   ): Promise<RationalDocumentWire>;
   deleteTransaction(id: string): Promise<void>;
   createAccount(input: Record<string, unknown>): Promise<RationalDocumentWire>;
+  connectInstitution(input: Record<string, unknown>): Promise<RationalDocumentWire>;
   createCategory(name: string, kind: string): Promise<RationalDocumentWire>;
   createRule(input: Record<string, unknown>): Promise<RationalDocumentWire>;
   updateRule(id: string, patch: Record<string, unknown>): Promise<RationalDocumentWire>;

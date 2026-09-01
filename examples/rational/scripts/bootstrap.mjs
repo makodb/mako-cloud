@@ -544,6 +544,16 @@ function deployHouseholdsFunction() {
 }
 
 /**
+ * Limits for the two scheduled functions. They are batch jobs: the nightly
+ * walks every household and the sync walks every connection, so the 1-second
+ * default CPU budget -- sized for a request handler -- kills them on any
+ * environment with real accumulated data, and a CPU kill surfaces as a bare
+ * `invocation_failed` with nothing in the function's own logs. Ten seconds of
+ * CPU and a minute of wall are still bounded; they are just batch-shaped.
+ */
+const SCHEDULED_LIMITS = { cpuMilliseconds: 10_000, wallMilliseconds: 60_000 };
+
+/**
  * Deploy `functions/institution-sync` and put it on a schedule.
  *
  * The credential is scoped to what a sync writes and nothing else: it reads
@@ -633,6 +643,7 @@ function deploySyncFunction() {
     const reconciled = {
       ...configuration,
       secretNames,
+      limits: { ...configuration.limits, ...SCHEDULED_LIMITS },
       ...(desiredHosts.length === 0 && (configuration.allowedHosts ?? []).length === 0
         ? {}
         : { allowedHosts: desiredHosts }),
@@ -663,6 +674,10 @@ function deploySyncFunction() {
     secretName,
     "--secret",
     RUN_KEY_SECRET,
+    "--cpu-ms",
+    String(SCHEDULED_LIMITS.cpuMilliseconds),
+    "--wall-ms",
+    String(SCHEDULED_LIMITS.wallMilliseconds),
     // The declaration is the platform's egress capability used the ordinary
     // way: one HTTPS host, granted at the worker permission boundary and
     // reviewable in `mako functions get`.
@@ -782,6 +797,18 @@ function deployNightlyFunction() {
       ...tenant,
     ]);
   }
+  const existingNightly = makoJson(["functions", "get", functionName, ...tenant], [4]);
+  if (existingNightly !== null) {
+    const configuration = existingNightly.configuration;
+    const reconciled = {
+      ...configuration,
+      limits: { ...configuration.limits, ...SCHEDULED_LIMITS },
+    };
+    if (JSON.stringify(reconciled) !== JSON.stringify(configuration)) {
+      log(`updating ${functionName} limits for batch work`);
+      makoJson(["functions", "update", functionName, "--config", JSON.stringify(reconciled), ...tenant]);
+    }
+  }
   const source = stageFunctionBundle("nightly", "nightly-function");
   const deployed = mako([
     "functions",
@@ -796,6 +823,10 @@ function deployNightlyFunction() {
     secretName,
     "--secret",
     RUN_KEY_SECRET,
+    "--cpu-ms",
+    String(SCHEDULED_LIMITS.cpuMilliseconds),
+    "--wall-ms",
+    String(SCHEDULED_LIMITS.wallMilliseconds),
     "--yes",
     ...tenant,
     "--json",

@@ -10,7 +10,7 @@
   },
   "planHash": "d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073",
   "source": {
-    "digest": "b7667b01dc3890b46828d344b40671e8cbd55bfb2ec74691852bbc5d285d4278",
+    "digest": "0d99cb50e744f9d654df11e0bd0057a0c38a4c68ce6047c407dcd4bdd92dc22e",
     "files": [
       {
         "path": ".env.example",
@@ -818,8 +818,8 @@
       },
       {
         "path": "crates/mako-control-plane/src/function.rs",
-        "sha256": "d9cf5342cbf9c99ece10e53db06ccd2e0e35e482c30636debe73a903eb437d51",
-        "size": 71157,
+        "sha256": "1f6291dc56aa5e0c23ef9e5fa48ed6069d04d10aae0dd3e33a3ac2e549755955",
+        "size": 72380,
         "mode": 420
       },
       {
@@ -1958,8 +1958,8 @@
       },
       {
         "path": "examples/rational/PLATFORM-FINDINGS.md",
-        "sha256": "8ff5b5e28a882121e06962e988b2f722eba78e86942956f498a7d113fbc44fe9",
-        "size": 48694,
+        "sha256": "294a72695eec124276c97661d5038a8c83a68827a8f5b764157e45ace269587c",
+        "size": 49835,
         "mode": 420
       },
       {
@@ -4888,13 +4888,13 @@
     ]
   },
   "artifacts": {
-    "digest": "1743eba011b5f0ef6c9753e998b6cc597800a0718b6ffdf80e7708bf0d2ec48a",
+    "digest": "d1e972557a3af5f6fabfd2bf3aa3a1cf19c10eaf01847cd6669e5d77339d23bf",
     "files": [
       {
         "path": "bin/mako-control-plane",
         "source": "target/release/mako-control-plane",
-        "sha256": "5b153ace77dbca91b178ac96d552b8627dcfc0251d4ae33780de089ec839f165",
-        "size": 18178952,
+        "sha256": "c9135cc92c8389ad01db61e576f78bdcd0670b00aacbb92e111796d30ef353fe",
+        "size": 18179016,
         "mode": 493
       },
       {
@@ -5011,10 +5011,10 @@
       }
     ]
   },
-  "releaseDigest": "c371f002adcfb2cc719083c0e2237d73c3548e2a6f00efd18948d292dc9c80ad",
-  "generatedAt": "2026-09-01T00:38:01.536Z",
+  "releaseDigest": "9680415da0fbb25fa96d01b45b3a63faad333fac9f0744c95bf3c0b164e53626",
+  "generatedAt": "2026-09-01T00:47:59.148Z",
   "candidateLayout": {
-    "root": ".local/public-beta-candidates/c371f002adcfb2cc719083c0e2237d73c3548e2a6f00efd18948d292dc9c80ad",
+    "root": ".local/public-beta-candidates/9680415da0fbb25fa96d01b45b3a63faad333fac9f0744c95bf3c0b164e53626",
     "manifest": "manifest.json",
     "binaries": "bin",
     "console": "console"

@@ -19,7 +19,12 @@ ContainerName=mako-edge-runtime
 # private bridge was protecting. Published ports are unaffected, and the
 # per-worker sandbox still grants tenant code exactly one host:port.
 Network=slirp4netns:allow_host_loopback=true,outbound_addr=127.0.0.1,enable_ipv6=false
-Exec=start --policy per_request --user-worker-request-idle-timeout 5000 --main-service /home/deno/functions/main
+# The per-function wall limit is the real bound, enforced per worker by the
+# supervisor; this outer timeout only catches a hung supervisor. It must sit
+# above the largest wall limit the platform allows (300000ms) plus grace --
+# at 5000 it silently killed every function whose honest work passed five
+# seconds, as a bare invocation_failed nothing could explain.
+Exec=start --policy per_request --user-worker-request-idle-timeout 330000 --main-service /home/deno/functions/main
 Environment=DENO_DIR=/tmp/deno-cache
 Environment=EDGE_RUNTIME_PORT=9000
 Environment=MAKO_API_URL=http://host.containers.internal:8080

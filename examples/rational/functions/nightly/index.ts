@@ -59,8 +59,10 @@ export default {
       return await run(dayOf(request));
     } catch (error) {
       if (error instanceof RouteError) return failure(error.status, error.code, error.message);
-      // The caller is told nothing but "it failed"; the operator is told what.
-      console.error(error);
+      // The caller is told nothing but "it failed"; the operator is told
+      // what -- including the message, which JSON serialization of an Error
+      // drops (its own properties are not enumerable).
+      console.error(error instanceof Error ? `${error.name}: ${error.message}` : error);
       return failure(500, "internal", "the nightly function failed");
     }
   },
