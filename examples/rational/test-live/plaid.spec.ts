@@ -150,13 +150,30 @@ test("a sandbox institution links, syncs through the schedule, and does not doub
     .toBeGreaterThan(0);
   const afterFirst = await countTransactions(page, accountId);
 
-  // Run the night... the fifteen minutes again: the cursor absorbs it.
+  // Run the fifteen minutes again. Plaid's sandbox backfills an item's
+  // history asynchronously, so a later sync may legitimately import *more*
+  // -- the cursor's promise is not "nothing new", it is "never the same
+  // entry twice". Idempotence is by (account, external_id), so the invariant
+  // with teeth is uniqueness, however many runs the history took to arrive.
   mako(["schedules", "run-now", schedule?.id ?? "", "--function", "institution-sync"]);
   await expect.poll(() => finished(schedule?.id ?? "").length, { timeout: 120_000 }).toBe(2);
   const [, second] = finished(schedule?.id ?? "");
   expect(second?.outcome).toBe("succeeded");
   await page.evaluate(() => window.rational.waitForSync());
-  expect(await countTransactions(page, accountId)).toBe(afterFirst);
+  const externalIds = await page.evaluate(async (account) => {
+    const collection = window.rational.household?.session?.collections.transactions;
+    if (collection === undefined) return [];
+    const documents = await collection.find().exec();
+    return documents
+      .map((document) => document.toJSON())
+      .filter((body) => body.account_id === account)
+      .map((body) => String(body.external_id ?? body.id));
+  }, accountId);
+  expect(externalIds.length).toBeGreaterThanOrEqual(afterFirst);
+  expect(
+    new Set(externalIds).size,
+    "an entry the institution already delivered must never import twice",
+  ).toBe(externalIds.length);
 });
 
 async function countTransactions(page: Page, accountId: string): Promise<number> {

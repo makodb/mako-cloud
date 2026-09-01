@@ -15,10 +15,15 @@ ContainerName=mako-edge-runtime
 #
 # `allow_host_loopback` makes the host's loopback reachable at 10.0.2.2, and
 # `outbound_addr=127.0.0.1` binds the container's outbound source there, so it
-# reaches this machine's services and nothing beyond them -- which is what the
-# private bridge was protecting. Published ports are unaffected, and the
-# per-worker sandbox still grants tenant code exactly one host:port.
-Network=slirp4netns:allow_host_loopback=true,outbound_addr=127.0.0.1,enable_ipv6=false
+# reaches this machine's services and, since the egress allowlist, the
+# outside world -- because a function's deployment may now declare external
+# HTTPS hosts, and a container that binds outbound traffic to loopback would
+# hollow that grant out. The boundary that confines *tenant* code moved into
+# the per-worker sandbox: a worker's allow_net holds exactly the platform API
+# origin plus its deployment's declared hosts, and nothing else. What this
+# container-level binding used to protect is now protected where the tenant
+# actually runs.
+Network=slirp4netns:allow_host_loopback=true,enable_ipv6=false
 # The per-function wall limit is the real bound, enforced per worker by the
 # supervisor; this outer timeout only catches a hung supervisor. It must sit
 # above the largest wall limit the platform allows (300000ms) plus grace --
