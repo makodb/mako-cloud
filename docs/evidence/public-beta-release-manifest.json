@@ -10,7 +10,7 @@
   },
   "planHash": "d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073",
   "source": {
-    "digest": "df0a0a5b669b94dd14a42840d2840c29eabd2feb4662722ce0a531d25cd93906",
+    "digest": "b7667b01dc3890b46828d344b40671e8cbd55bfb2ec74691852bbc5d285d4278",
     "files": [
       {
         "path": ".env.example",
@@ -746,8 +746,8 @@
       },
       {
         "path": "crates/mako-control-plane/src/collection.rs",
-        "sha256": "88e9309d81869853d5fde6b9ea41640ed36a7236405db83a53347710b8ffbdd0",
-        "size": 54738,
+        "sha256": "868dad3efe1af95ca4b9670bffe826dfbfeee1f4d36c5a57f5e544ccc8af4b3b",
+        "size": 59013,
         "mode": 420
       },
       {
@@ -1958,8 +1958,8 @@
       },
       {
         "path": "examples/rational/PLATFORM-FINDINGS.md",
-        "sha256": "2c53bb6553a1c747d9b5abec231f7bbfd7a4b114a54d5603eb1bb03e3035bfb1",
-        "size": 47517,
+        "sha256": "8ff5b5e28a882121e06962e988b2f722eba78e86942956f498a7d113fbc44fe9",
+        "size": 48694,
         "mode": 420
       },
       {
@@ -2168,8 +2168,8 @@
       },
       {
         "path": "examples/rational/scripts/bootstrap.mjs",
-        "sha256": "c89aa5996bfcd908cc34c1f299925dd496ddbfb216afe1fda824f4266ac7fe4a",
-        "size": 42526,
+        "sha256": "1d9231497dcac5767be00486c2e044cb4c242655e840dccbfac9db3bdd674ca8",
+        "size": 42525,
         "mode": 493
       },
       {
@@ -4888,13 +4888,13 @@
     ]
   },
   "artifacts": {
-    "digest": "68a48d9036259a92c95d32ba42e46f05fd1f07977e220e0c793f838054bf2520",
+    "digest": "1743eba011b5f0ef6c9753e998b6cc597800a0718b6ffdf80e7708bf0d2ec48a",
     "files": [
       {
         "path": "bin/mako-control-plane",
         "source": "target/release/mako-control-plane",
-        "sha256": "bb869786e78e1b54aa1f60313451ac878b5fe8b0ebc2f41da6c0af1fe8e3e58a",
-        "size": 18170120,
+        "sha256": "5b153ace77dbca91b178ac96d552b8627dcfc0251d4ae33780de089ec839f165",
+        "size": 18178952,
         "mode": 493
       },
       {
@@ -5011,10 +5011,10 @@
       }
     ]
   },
-  "releaseDigest": "f46c1b83417538fdf1a94f96188f4b43a7657de81d411ce984b3c5ba6e8dd7f1",
-  "generatedAt": "2026-09-01T00:26:44.008Z",
+  "releaseDigest": "c371f002adcfb2cc719083c0e2237d73c3548e2a6f00efd18948d292dc9c80ad",
+  "generatedAt": "2026-09-01T00:38:01.536Z",
   "candidateLayout": {
-    "root": ".local/public-beta-candidates/f46c1b83417538fdf1a94f96188f4b43a7657de81d411ce984b3c5ba6e8dd7f1",
+    "root": ".local/public-beta-candidates/c371f002adcfb2cc719083c0e2237d73c3548e2a6f00efd18948d292dc9c80ad",
     "manifest": "manifest.json",
     "binaries": "bin",
     "console": "console"

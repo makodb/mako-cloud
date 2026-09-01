@@ -105,9 +105,13 @@ pub struct FunctionConfiguration {
     pub limits: FunctionLimits,
     /// External hosts this function may reach over HTTPS, beyond the platform
     /// API origin every worker gets. Empty means egress stays denied. Stored
-    /// records predate this field, so it must keep a serde default: without
-    /// one, every function written before it existed fails to deserialize.
-    #[serde(default)]
+    /// records predate this field, so it must keep a serde default — without
+    /// one, every function written before it existed fails to deserialize —
+    /// and an empty list must serialize to *nothing*: the promote and deploy
+    /// paths compare-and-write against the re-serialized stored record, and a
+    /// field that appears on the way out but not in the stored bytes makes
+    /// that comparison fail forever (finding #41).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub allowed_hosts: Vec<String>,
 }
 
@@ -1850,6 +1854,21 @@ mod tests {
         assert!(
             record.configuration().allowed_hosts.is_empty(),
             "a record from before the field defaults to declaring nothing"
+        );
+        // The promote and deploy paths compare-and-write against the
+        // re-serialized stored record, so a round-trip of an old record must
+        // reproduce its bytes' shape: no `allowedHosts` key may appear on the
+        // way out when none was stored (finding #41 -- with it, no function
+        // written before the field could ever be promoted again).
+        let round_tripped = serde_json::to_value(&record).expect("record serializes");
+        assert!(
+            round_tripped["configuration"].get("allowedHosts").is_none(),
+            "an empty declaration must serialize to nothing: {round_tripped}"
+        );
+        assert_eq!(
+            serde_json::to_value(&record).expect("record serializes"),
+            serde_json::from_str::<serde_json::Value>(stored).expect("stored json"),
+            "a round-trip of a pre-field record is value-identical"
         );
     }
 
