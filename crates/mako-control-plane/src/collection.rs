@@ -1110,8 +1110,16 @@ fn static_compatibility_issues(
     let proposed_properties = object_at(proposed_schema, "properties");
     if let Some(current_properties) = current_properties {
         for (name, definition) in current_properties {
-            if proposed_properties.and_then(|properties| properties.get(name)) != Some(definition) {
-                issues.push(format!("existing field {name} was removed or changed"));
+            match proposed_properties.and_then(|properties| properties.get(name)) {
+                Some(proposed_definition) if proposed_definition == definition => {}
+                // A field may *widen*: the same definition with a superset of
+                // its `enum` values (or the enum lifted entirely) accepts
+                // every value the old definition accepted, so no stored
+                // document and no old writer can be broken by it. Anything
+                // else -- a narrowing, a type change, a removal -- still
+                // requires a migration.
+                Some(proposed_definition) if field_widened(definition, proposed_definition) => {}
+                _ => issues.push(format!("existing field {name} was removed or changed")),
             }
         }
     }
@@ -1129,6 +1137,36 @@ fn static_compatibility_issues(
         issues.push("additional properties became forbidden".to_owned());
     }
     issues
+}
+
+/// True when `proposed` accepts everything `current` accepts by construction:
+/// identical apart from the `enum` keyword, where the proposed set is a
+/// superset of the current one or the constraint is dropped altogether.
+fn field_widened(current: &Value, proposed: &Value) -> bool {
+    let (Some(current), Some(proposed)) = (current.as_object(), proposed.as_object()) else {
+        return false;
+    };
+    let strip = |definition: &Map<String, Value>| {
+        let mut rest = definition.clone();
+        rest.remove("enum");
+        rest
+    };
+    if strip(current) != strip(proposed) {
+        return false;
+    }
+    let Some(current_values) = current.get("enum").and_then(Value::as_array) else {
+        // The current field carries no enum: only an identical definition
+        // (handled by the caller) or a *new* restriction could differ here,
+        // and a new restriction is a narrowing.
+        return false;
+    };
+    match proposed.get("enum").and_then(Value::as_array) {
+        // The constraint was lifted: everything the old enum allowed remains allowed.
+        None => !proposed.contains_key("enum"),
+        Some(proposed_values) => current_values
+            .iter()
+            .all(|value| proposed_values.contains(value)),
+    }
 }
 
 fn object_at<'a>(schema: &'a Map<String, Value>, key: &str) -> Option<&'a Map<String, Value>> {
@@ -1263,6 +1301,54 @@ error_from!(serde_json::Error, Json);
 #[cfg(test)]
 mod tests {
     use std::sync::{Arc, Mutex};
+
+    /// A widened enum accepts everything the old field accepted, so it is not
+    /// "removed or changed" -- refusing it forced a migration for a change
+    /// that can strand neither a stored document nor an old writer (finding
+    /// #40). A narrowed enum, a dropped value, or a definition change beside
+    /// the enum still is.
+    #[test]
+    fn a_widened_enum_is_compatible_and_a_narrowed_or_reshaped_field_is_not() {
+        let field = |definition: serde_json::Value| {
+            serde_json::json!({
+                "type": "object",
+                "properties": { "id": { "type": "string" }, "kind": definition },
+                "required": ["id"],
+            })
+        };
+        let metadata = |schema: serde_json::Value| {
+            CollectionMetadata::new(
+                CollectionId::parse("widening").expect("collection id"),
+                CollectionMetadataVersion::new(1).expect("metadata version"),
+                SchemaVersion::new(1).expect("schema version"),
+                schema,
+                mako_documents::PrimaryKeyDefinition::Field { field: "id".into() },
+                SchemaCompatibility::Compatible,
+                CollectionLifecycle::Active,
+            )
+            .expect("metadata")
+        };
+        let current = metadata(field(
+            serde_json::json!({ "type": "string", "enum": ["institution", "import"] }),
+        ));
+        let superset = metadata(field(
+            serde_json::json!({ "type": "string", "enum": ["institution", "plaid", "import"] }),
+        ));
+        let lifted = metadata(field(serde_json::json!({ "type": "string" })));
+        let narrowed = metadata(field(
+            serde_json::json!({ "type": "string", "enum": ["institution"] }),
+        ));
+        let reshaped = metadata(field(
+            serde_json::json!({ "type": "integer", "enum": ["institution", "plaid", "import"] }),
+        ));
+        assert!(static_compatibility_issues(&current, &superset).is_empty());
+        assert!(static_compatibility_issues(&current, &lifted).is_empty());
+        assert!(!static_compatibility_issues(&current, &narrowed).is_empty());
+        assert!(!static_compatibility_issues(&current, &reshaped).is_empty());
+        // The reverse direction -- adding an enum where none existed -- is a
+        // narrowing however it is spelled.
+        assert!(!static_compatibility_issues(&lifted, &current).is_empty());
+    }
 
     use mako_documents::{IndexDirection, IndexState};
     use mako_storage::MemoryAdapter;

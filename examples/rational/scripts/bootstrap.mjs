@@ -303,7 +303,7 @@ for (const collection of model.collections) {
       String(model.schemaVersion),
       ...tenant,
     ]);
-    if (published?.outcome === "migration_required" || published?.migrationRequired === true) {
+    if (published?.status === "migration_required" || published?.migrationRequired === true) {
       fail(
         `collection ${collection.id} needs a migration for schema version ${model.schemaVersion}; ` +
           "stored documents do not fit the new schema",
