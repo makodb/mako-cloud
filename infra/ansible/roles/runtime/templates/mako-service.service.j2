@@ -108,6 +108,15 @@ IPAddressDeny=any
 # on the configured TLS relay ports. The relay's DNS-backed addresses can rotate,
 # so the service-level address filter cannot safely pin individual destination IPs.
 IPAddressAllow=any
+{% elif item.name == 'mako-data-plane' %}
+# Sign-in providers are the data plane's to run: it fetches the issuer's OIDC
+# discovery document, redeems authorization codes, and reads signing keys at
+# whatever public host the environment configured -- names an IP filter
+# cannot express. The guest nftables policy stays the outbound bound
+# (80/443, the SMTP relay ports, DNS); pinned to loopback, every provider
+# sign-in answered `unavailable` in production while the qualification's
+# loopback OIDC stub passed.
+IPAddressAllow=any
 {% else %}
 IPAddressAllow=localhost
 {% endif %}
