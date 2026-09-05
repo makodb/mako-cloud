@@ -1,9 +1,33 @@
+/* Rational's one stylesheet: a cabin-display aesthetic. Almost everything is
+   white; text is a single charcoal; one blue does every accent job; borders
+   are hairlines and shadows are hints. Components earn emphasis by spacing
+   and weight, not by color. */
+
 :root {
-  color: #17211d;
-  background: #f3f6f4;
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  /* The palette, complete. Nothing below invents a color. */
+  --ink: #171a20;
+  --ink-soft: #5c5e62;
+  --ink-faint: #8e8e93;
+  --canvas: #f4f5f6;
+  --surface: #ffffff;
+  --hairline: #e6e7e9;
+  --hairline-strong: #d5d7d9;
+  --accent: #3e6ae1;
+  --accent-deep: #3457b1;
+  --accent-wash: #f0f4fd;
+  --positive: #1a7f4e;
+  --danger: #b74134;
+  --danger-wash: #fdf0ee;
+  --warn-wash: #fdf6e7;
+  --warn-ink: #7a5b12;
+
+  color: var(--ink);
+  background: var(--canvas);
+  font-family:
+    "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Helvetica Neue", sans-serif;
   font-size: 15px;
-  line-height: 1.45;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
 }
 
 * {
@@ -17,20 +41,35 @@ body {
 
 h1 {
   margin: 0;
-  font-size: 1.5rem;
+  font-size: 1.45rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
 h2 {
   margin: 0 0 0.75rem;
-  font-size: 1.1rem;
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+h3 {
+  margin: 1.75rem 0 0.6rem;
+  font-size: 0.95rem;
+  font-weight: 600;
 }
 
 a {
-  color: #0b6e57;
+  color: var(--accent);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
 }
 
 small {
-  color: #5a6d65;
+  color: var(--ink-soft);
 }
 
 .visually-hidden {
@@ -43,11 +82,11 @@ small {
 }
 
 .eyebrow {
-  color: #0b6e57;
+  color: var(--ink);
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.22em;
   text-transform: uppercase;
-  font-size: 0.8rem;
+  font-size: 0.78rem;
 }
 
 .centered {
@@ -59,61 +98,101 @@ small {
 
 .panel {
   width: min(28rem, 100%);
-  padding: 1.5rem;
-  border: 1px solid #c9d8d1;
-  border-radius: 0.8rem;
-  background: white;
-  box-shadow: 0 0.8rem 2rem rgb(20 60 45 / 8%);
+  padding: 2.25rem 2rem;
+  border: 1px solid var(--hairline);
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgb(23 26 32 / 4%), 0 12px 40px rgb(23 26 32 / 6%);
 }
 
+/* --- Controls ---------------------------------------------------------- */
+
 button {
-  border: 0;
-  border-radius: 0.5rem;
-  padding: 0.55rem 0.9rem;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 0.55rem 1.1rem;
   color: white;
-  background: #0b6e57;
+  background: var(--accent);
   font: inherit;
-  font-weight: 600;
+  font-size: 0.92rem;
+  font-weight: 500;
   cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+button:hover:not(:disabled) {
+  background: var(--accent-deep);
 }
 
 button:disabled {
   cursor: not-allowed;
-  opacity: 0.6;
+  opacity: 0.45;
 }
 
 button.secondary {
-  color: #124b3d;
-  background: #d9e9e3;
+  color: var(--ink);
+  background: var(--surface);
+  border-color: var(--hairline-strong);
+}
+
+button.secondary:hover:not(:disabled) {
+  background: var(--canvas);
+  border-color: var(--ink-faint);
 }
 
 button.link {
-  padding: 0.2rem 0.4rem;
-  color: #0b6e57;
+  padding: 0.2rem 0.35rem;
+  color: var(--accent);
   background: transparent;
-  text-decoration: underline;
+  border: 0;
+  text-decoration: none;
   font-weight: 500;
+}
+
+button.link:hover:not(:disabled) {
+  background: var(--accent-wash);
+  border-radius: 6px;
 }
 
 input,
 select {
   width: 100%;
-  padding: 0.45rem 0.6rem;
-  border: 1px solid #b7c9c1;
-  border-radius: 0.45rem;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 8px;
   font: inherit;
-  background: white;
+  font-size: 0.92rem;
+  color: var(--ink);
+  background: var(--surface);
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+input:focus-visible,
+select:focus-visible,
+button:focus-visible,
+a:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgb(62 106 225 / 18%);
+}
+
+button:focus-visible,
+a:focus-visible {
+  box-shadow: 0 0 0 3px rgb(62 106 225 / 28%);
+  border-radius: 8px;
 }
 
 label {
   display: block;
-  font-weight: 600;
-  font-size: 0.9rem;
+  font-weight: 500;
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+  letter-spacing: 0.01em;
 }
 
 label input,
 label select {
-  margin-top: 0.25rem;
+  margin-top: 0.3rem;
   font-weight: 400;
 }
 
@@ -122,25 +201,38 @@ form.inline {
   gap: 0.75rem;
   align-items: end;
   flex-wrap: wrap;
-  margin-bottom: 1rem;
+  margin-bottom: 1.25rem;
 }
 
 .actions {
   display: flex;
   gap: 0.5rem;
-  margin-top: 0.75rem;
+  margin-top: 0.9rem;
   flex-wrap: wrap;
 }
 
 .error {
-  color: #a4261c;
-  font-weight: 600;
+  color: var(--danger);
+  font-weight: 500;
+}
+
+.notice.error {
+  padding: 0.6rem 0.9rem;
+  border: 1px solid rgb(183 65 52 / 25%);
+  border-radius: 8px;
+  background: var(--danger-wash);
 }
 
 .hint {
-  color: #5a6d65;
-  font-size: 0.9rem;
+  color: var(--ink-soft);
+  font-size: 0.88rem;
 }
+
+.muted {
+  color: var(--ink-soft);
+}
+
+/* --- The shell --------------------------------------------------------- */
 
 .shell {
   display: flex;
@@ -150,159 +242,202 @@ form.inline {
 
 .topbar {
   display: flex;
-  gap: 1.5rem;
+  gap: 0.75rem 1.25rem;
   align-items: center;
   flex-wrap: wrap;
-  padding: 0.75rem 1.25rem;
-  border-bottom: 1px solid #c9d8d1;
-  background: white;
+  padding: 0.7rem 1.5rem;
+  border-bottom: 1px solid var(--hairline);
+  background: var(--surface);
 }
 
 .brand {
   display: flex;
-  gap: 0.75rem;
+  gap: 1rem;
   align-items: center;
 }
 
 .switcher select {
   width: auto;
-  min-width: 14rem;
+  min-width: 13rem;
+  border-color: transparent;
+  background: var(--canvas);
+  font-weight: 500;
+}
+
+.switcher select:hover {
+  border-color: var(--hairline-strong);
 }
 
 .topbar nav {
   display: flex;
-  gap: 0.25rem;
+  gap: 0.1rem;
+  flex-wrap: wrap;
+  flex: 1;
 }
 
 .topbar nav a {
-  padding: 0.4rem 0.7rem;
-  border-radius: 0.5rem;
+  padding: 0.4rem 0.65rem;
+  border-radius: 8px;
   text-decoration: none;
-  font-weight: 600;
+  font-weight: 500;
+  font-size: 0.9rem;
+  color: var(--ink-soft);
+}
+
+.topbar nav a:hover {
+  color: var(--ink);
+  text-decoration: none;
 }
 
 .topbar nav a[aria-current="page"] {
-  background: #d9e9e3;
+  color: var(--ink);
+  background: var(--canvas);
+  font-weight: 600;
 }
 
 .session {
   display: flex;
-  gap: 0.75rem;
+  gap: 0.9rem;
   align-items: center;
   margin-left: auto;
 }
 
+.session .user {
+  color: var(--ink-soft);
+  font-size: 0.88rem;
+}
+
 .banner {
-  padding: 0.6rem 1.25rem;
-  font-weight: 500;
+  padding: 0.55rem 1.5rem;
+  font-weight: 450;
+  font-size: 0.9rem;
 }
 
 .banner.offline {
-  background: #fff3d6;
-  color: #6b4b00;
+  background: var(--warn-wash);
+  color: var(--warn-ink);
 }
 
 .banner.notice {
-  background: #dcecff;
-  color: #123a6b;
+  background: var(--accent-wash);
+  color: var(--accent-deep);
 }
 
 .banner.blocking {
-  background: #fde2df;
-  color: #7a1d15;
+  background: var(--danger-wash);
+  color: var(--danger);
 }
 
 .banner.demo {
-  background: #ece6ff;
-  color: #372a63;
+  background: var(--accent-wash);
+  color: var(--accent-deep);
   text-align: center;
 }
 
 .banner.demo a {
   color: inherit;
+  text-decoration: underline;
 }
 
 .content {
   flex: 1;
   width: min(72rem, 100%);
   margin: 0 auto;
-  padding: 1.25rem;
+  padding: 2rem 1.5rem 3rem;
 }
 
 .statusbar {
   display: flex;
   gap: 1.5rem;
-  padding: 0.5rem 1.25rem;
-  border-top: 1px solid #c9d8d1;
-  color: #5a6d65;
-  font-size: 0.85rem;
-  background: white;
+  padding: 0.55rem 1.5rem;
+  border-top: 1px solid var(--hairline);
+  color: var(--ink-faint);
+  font-size: 0.82rem;
+  background: var(--surface);
 }
 
-.heading {
+/* --- Page furniture ---------------------------------------------------- */
+
+.heading,
+.section-heading {
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 1rem;
-  margin-bottom: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.section-heading .muted {
+  margin: 0.15rem 0 0;
+  font-size: 0.88rem;
 }
 
 .totals {
   display: flex;
   gap: 1rem;
   flex-wrap: wrap;
-  margin-bottom: 1rem;
+  margin-bottom: 1.25rem;
 }
 
 .total {
   display: grid;
-  padding: 0.75rem 1rem;
-  border: 1px solid #c9d8d1;
-  border-radius: 0.6rem;
-  background: white;
+  gap: 0.15rem;
+  min-width: 10rem;
+  padding: 0.9rem 1.15rem;
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  background: var(--surface);
 }
 
 .total strong {
-  font-size: 1.3rem;
+  font-size: 1.35rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
 }
 
 .editor {
-  margin: 0 0 1.25rem;
-  padding: 1rem 1.25rem;
-  border: 1px solid #c9d8d1;
-  border-radius: 0.8rem;
-  background: white;
+  margin: 0 0 1.5rem;
+  padding: 1.25rem 1.5rem;
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  background: var(--surface);
 }
 
 .editor .grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
-  gap: 0.75rem;
+  gap: 0.9rem;
 }
 
 fieldset {
-  margin: 0.75rem 0 0;
-  padding: 0.6rem 0.9rem;
-  border: 1px solid #dbe6e1;
-  border-radius: 0.6rem;
+  margin: 0.9rem 0 0;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
 }
 
 legend {
-  font-weight: 600;
-  font-size: 0.9rem;
+  font-weight: 500;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+  padding: 0 0.3rem;
 }
 
 .chip-option {
   display: inline-flex;
-  gap: 0.3rem;
+  gap: 0.35rem;
   align-items: center;
-  margin: 0 0.75rem 0.25rem 0;
-  font-weight: 500;
+  margin: 0 0.9rem 0.25rem 0;
+  font-weight: 450;
+  font-size: 0.9rem;
+  color: var(--ink);
 }
 
 .chip-option input {
   width: auto;
   margin: 0;
+  accent-color: var(--accent);
 }
 
 .split-row {
@@ -319,72 +454,128 @@ legend {
   align-items: center;
 }
 
-table.list {
+/* --- Tables ------------------------------------------------------------ */
+
+table.list,
+table.data-table {
   width: 100%;
-  border-collapse: collapse;
-  background: white;
-  border: 1px solid #c9d8d1;
-  border-radius: 0.6rem;
+  border-collapse: separate;
+  border-spacing: 0;
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
   overflow: hidden;
-  margin-bottom: 1.25rem;
+  margin-bottom: 1.5rem;
+  box-shadow: 0 1px 2px rgb(23 26 32 / 3%);
 }
 
-table.list caption {
+table.list caption,
+table.data-table caption {
   text-align: left;
   padding: 0.5rem 0;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 table.list th,
-table.list td {
-  padding: 0.5rem 0.75rem;
-  border-bottom: 1px solid #e6eeea;
+table.list td,
+table.data-table th,
+table.data-table td {
+  padding: 0.65rem 1rem;
+  border-bottom: 1px solid var(--hairline);
   text-align: left;
-  vertical-align: top;
+  vertical-align: middle;
 }
 
-table.list th {
-  font-size: 0.8rem;
+/* Dates and other identity-ish leading cells read as units. */
+table.list th:first-child,
+table.list td:first-child,
+table.data-table th:first-child,
+table.data-table td:first-child {
+  white-space: nowrap;
+}
+
+table.list tbody tr:last-child td,
+table.list tbody tr:last-child th,
+table.data-table tbody tr:last-child td,
+table.data-table tbody tr:last-child th {
+  border-bottom: 0;
+}
+
+table.list tbody tr:hover td,
+table.list tbody tr:hover th,
+table.data-table tbody tr:hover td,
+table.data-table tbody tr:hover th {
+  background: #fafbfc;
+}
+
+table.list thead th,
+table.data-table thead th {
+  font-size: 0.72rem;
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: #5a6d65;
+  letter-spacing: 0.09em;
+  color: var(--ink-faint);
+  background: var(--surface);
+  border-bottom: 1px solid var(--hairline-strong);
+}
+
+/* A row's own header cell reads like its row, just a shade firmer. */
+table.list tbody th,
+table.data-table tbody th {
+  font-weight: 500;
 }
 
 table.list td.amount,
-table.list th.amount {
+table.list th.amount,
+table.data-table td.amount,
+table.data-table th.amount {
   text-align: right;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
-table.list td.actions {
+table.list td.actions,
+table.data-table td.actions {
+  /* The form-row `.actions` flex rule must not reshape a table cell. */
+  display: table-cell;
+  margin: 0;
   white-space: nowrap;
   text-align: right;
 }
 
-table.list td.empty {
-  color: #5a6d65;
+table.list td.actions .link,
+table.data-table td.actions .link {
+  margin-left: 0.4rem;
+}
+
+table.list td.empty,
+table.data-table td.empty {
+  color: var(--ink-soft);
   text-align: center;
+  padding: 1.5rem 1rem;
 }
 
 tr.muted {
-  color: #8a9a93;
+  color: var(--ink-faint);
 }
 
 .splits {
   margin: 0.25rem 0 0;
   padding-left: 1rem;
   font-size: 0.85rem;
-  color: #5a6d65;
+  color: var(--ink-soft);
 }
 
 .chip {
   display: inline-block;
   margin: 0 0.25rem 0.25rem 0;
-  padding: 0.1rem 0.5rem;
-  border-radius: 1rem;
-  background: #e3eee9;
-  font-size: 0.8rem;
+  padding: 0.12rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid var(--hairline);
+  background: var(--canvas);
+  color: var(--ink-soft);
+  font-size: 0.78rem;
+  font-weight: 500;
 }
 
 ul.chips {
@@ -410,7 +601,7 @@ ul.chips input {
   gap: 1rem;
   align-items: end;
   flex-wrap: wrap;
-  margin-bottom: 1rem;
+  margin-bottom: 1.25rem;
 }
 
 .filters select {
@@ -420,22 +611,74 @@ ul.chips input {
 
 .filters .summary {
   margin-left: auto;
-  color: #5a6d65;
+  color: var(--ink-soft);
+  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
 }
 
-/* The net-worth history. A line with no axes: the numbers that matter are
-   spelled out underneath it, and the shape is what a glance is for. */
+/* --- Sign-in ----------------------------------------------------------- */
+
+.sign-in h1 {
+  margin: 0.75rem 0 0.35rem;
+  font-size: 1.6rem;
+}
+
+.providers .divider,
+.magic-link .divider {
+  margin: 1.5rem 0 0.75rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+ul.provider-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+ul.provider-list li {
+  display: flex;
+  gap: 0.5rem;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+
+ul.provider-list button {
+  flex: 1;
+  min-width: 100%;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--hairline-strong);
+}
+
+ul.provider-list button:hover:not(:disabled) {
+  background: var(--canvas);
+}
+
+ul.provider-list .hint {
+  font-size: 0.8rem;
+}
+
+/* --- The net-worth history --------------------------------------------- */
+
+/* A line with no axes: the numbers that matter are spelled out underneath
+   it, and the shape is what a glance is for. */
 .sparkline {
   display: block;
   width: 100%;
   height: 4.5rem;
   margin-bottom: 0.25rem;
-  background: #ffffff;
-  border: 1px solid #d8e0dc;
-  border-radius: 6px;
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
 }
 
 .sparkline polyline {
-  stroke: #2f7d5f;
+  stroke: var(--accent);
   vector-effect: non-scaling-stroke;
 }
