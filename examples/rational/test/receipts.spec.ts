@@ -36,7 +36,7 @@ test("a receipt is attached by one member and opened by another", async ({ page 
   await enterCredentials(page, OWNER, "Create account");
 
   // A household with one member, one account, and one transaction to attach to.
-  await page.getByRole("link", { name: "Household" }).click();
+  await page.getByRole("link", { name: "Members" }).click();
   const before = await page.evaluate(() => window.rational.state.currentHouseholdId);
   const creator = page.getByRole("form", { name: "New household" });
   await creator.getByLabel("Name").fill("Shared flat");
@@ -99,7 +99,7 @@ test("a receipt is attached by one member and opened by another", async ({ page 
   // receipt they did not upload.
   await page.getByRole("button", { name: "Sign out" }).click();
   await enterCredentials(page, MEMBER, "Create account");
-  await page.getByRole("link", { name: "Household" }).click();
+  await page.getByRole("link", { name: "Members" }).click();
   await page
     .getByTestId(`invitation-${householdId}`)
     .getByRole("button", { name: "Accept" })

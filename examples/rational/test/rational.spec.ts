@@ -18,8 +18,11 @@ async function signInFresh(page: Page): Promise<void> {
   await page.getByLabel("Email").fill(EMAIL);
   await page.getByLabel("Password").fill(PASSWORD);
   await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page.getByRole("combobox", { name: "Household" })).toContainText("Demo household");
+  // One space, no switcher: the person lands straight in their money.
   await expect(page.getByRole("heading", { name: "Accounts" })).toBeVisible();
+  await expect
+    .poll(() => page.evaluate(() => window.rational.state.households[0]?.name ?? ""))
+    .toBe("Demo household");
   await page.waitForFunction(() => window.rational.household?.session !== null);
   await page.evaluate(() => window.rational.waitForSync());
 }
@@ -38,7 +41,9 @@ test("a person creates an account, signs in, and sees the household", async ({ p
 
   await page.getByLabel("Password").fill(PASSWORD);
   await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page.getByRole("combobox", { name: "Household" })).toContainText("owner");
+  await expect
+    .poll(() => page.evaluate(() => window.rational.state.memberships[0]?.role ?? ""))
+    .toBe("owner");
   await expect(page.locator('[data-testid^="account-acc_demo_"]')).toHaveCount(5);
   await expect(page.getByTestId("net-worth")).toContainText("Net worth (USD)");
 
@@ -275,5 +280,7 @@ test("a security reset clears the household's local data and syncs it again", as
   const after = await page.evaluate(() => window.rational.household?.session?.identifier);
   expect(after).not.toBe(before);
   await expect(page.locator('[data-testid^="account-acc_demo_"]')).toHaveCount(5);
-  await expect(page.getByRole("combobox", { name: "Household" })).toContainText("editor");
+  await expect
+    .poll(() => page.evaluate(() => window.rational.state.memberships[0]?.role ?? ""))
+    .toBe("editor");
 });

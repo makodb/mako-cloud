@@ -40,7 +40,7 @@ export function HouseholdScreen({ app, state }: { app: RationalApp; state: AppSt
   return (
     <section aria-labelledby="household-title">
       <div className="heading">
-        <h1 id="household-title">Household</h1>
+        <h1 id="household-title">Members</h1>
       </div>
       {app.householdsAvailable ? null : (
         <p className="hint" role="status" data-testid="households-unavailable">

@@ -23,7 +23,12 @@ test("a provider round trip signs the person in and the session survives a reloa
   await page.getByRole("button", { name: "Continue with Demo IdP" }).click();
   await page.waitForURL(/provider=demo-idp/u);
   await page.waitForFunction(() => window.rational?.state.phase === "ready");
-  await expect(page.getByRole("combobox", { name: "Household" })).toContainText("Demo household");
+  // One space means no switcher in the chrome -- the person is simply in
+  // their money; the directory still knows which space that is.
+  await expect(page.getByRole("combobox", { name: "Space" })).toHaveCount(0);
+  await expect
+    .poll(() => page.evaluate(() => window.rational.state.households[0]?.name ?? ""))
+    .toBe("Demo household");
   await expect(page.getByRole("heading", { name: "Accounts" })).toBeVisible();
 
   // The code is out of the address bar, so a reload cannot replay it.

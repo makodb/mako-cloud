@@ -83,9 +83,7 @@ function Screens({ app }: { app: RationalApp }) {
         <ScreenBoundary key={state.generation}>
           {session === null ? (
             <p role="status" data-testid="household-opening">
-              {state.memberships.length === 0
-                ? "You are not a member of any household yet. Create or accept one from the Household screen."
-                : "Opening household…"}
+              {state.memberships.length === 0 ? "Setting up your space…" : "Opening your space…"}
             </p>
           ) : route.name === "transactions" ? (
             <TransactionsScreen

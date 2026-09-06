@@ -32,8 +32,8 @@ async function enterCredentials(page: Page, email: string, action: string): Prom
 }
 
 async function openHousehold(page: Page): Promise<void> {
-  await page.getByRole("link", { name: "Household" }).click();
-  await expect(page.getByRole("heading", { name: "Household", exact: true })).toBeVisible();
+  await page.getByRole("link", { name: "Members" }).click();
+  await expect(page.getByRole("heading", { name: "Members", exact: true })).toBeVisible();
   await settle(page);
 }
 
@@ -64,7 +64,7 @@ test("a household is created, invited to, accepted, re-roled, and removed from",
     { timeout: 30_000 },
   );
   await settle(page);
-  await expect(page.getByRole("combobox", { name: "Household" })).toContainText("Holiday flat");
+  await expect(page.getByRole("combobox", { name: "Space" })).toContainText("Holiday flat");
   await expect(page.getByRole("heading", { name: /Members of Holiday flat/u })).toBeVisible();
   const householdId = await page.evaluate(() => window.rational.state.currentHouseholdId);
   expect(householdId).not.toBeNull();
@@ -94,14 +94,14 @@ test("a household is created, invited to, accepted, re-roled, and removed from",
     { timeout: 30_000 },
   );
   await settle(page);
-  await expect(page.getByRole("combobox", { name: "Household" })).toContainText(
+  await expect(page.getByRole("combobox", { name: "Space" })).toContainText(
     "Holiday flat · viewer",
   );
 
   await page.getByRole("button", { name: "Sign out" }).click();
   await enterCredentials(page, OWNER, "Sign in");
   await openHousehold(page);
-  await page.getByRole("combobox", { name: "Household" }).selectOption(householdId as string);
+  await page.getByRole("combobox", { name: "Space" }).selectOption(householdId as string);
   const memberId = await page.evaluate(
     (address) =>
       window.rational.state.memberships.length >= 0

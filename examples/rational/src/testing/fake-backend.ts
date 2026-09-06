@@ -375,19 +375,30 @@ export class FakeMakoBackend {
    * the demo household so there is data to show; the first one owns it, as
    * the households function would have made them.
    */
+  /**
+   * When true, a new sign-up joins no household -- the way a real fresh
+   * account belongs nowhere until the app provisions a space. Tests flip it
+   * to exercise the auto-provisioning the demo auto-join would otherwise mask.
+   */
+  joinDemoOnSignup = true;
+
   #ensureUser(email: string, password = ""): FakeUser {
     const normalized = email.trim().toLowerCase();
     const existing = this.#users.get(normalized);
     if (existing !== undefined) return existing;
+    const belongs = this.joinDemoOnSignup;
     const user: FakeUser = {
       id: `usr_${normalized.replaceAll(/[^a-z0-9]/gu, "").slice(0, 16)}${this.#users.size}`,
       email: normalized,
       password,
       authorizationEpoch: 1,
       revocation: 1,
-      households: { [this.demoHouseholdId]: this.#users.size === 0 ? "owner" : "editor" },
+      households: belongs
+        ? { [this.demoHouseholdId]: this.#users.size === 0 ? "owner" : "editor" }
+        : {},
     };
     this.#users.set(normalized, user);
+    if (!belongs) return user;
     const at = this.#clock;
     this.#record("memberships", {
       id: membershipId(this.demoHouseholdId, user.id),

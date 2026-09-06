@@ -50,7 +50,7 @@ export function SignInScreen({ app, state }: { app: RationalApp; state: AppState
       <section className="panel sign-in" aria-labelledby="sign-in-title">
         <p className="eyebrow">Rational</p>
         <h1 id="sign-in-title">Sign in</h1>
-        <p>Money for households, kept on your device and shared with the people you choose.</p>
+        <p>Your money, kept on your device — and shared with the people you choose.</p>
         <form onSubmit={(event) => void submit(event, "sign_in")}>
           <label htmlFor="email">Email</label>
           <input

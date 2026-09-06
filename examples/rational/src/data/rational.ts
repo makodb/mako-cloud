@@ -588,6 +588,7 @@ export class RationalApp {
     this.#directoryWatch = controller.observe().subscribe((scope) => {
       this.#patch((state) => ({ ...state, directory: scope }));
       this.#watchMemberships(user.id, user.email);
+      this.#maybeProvisionPersonalSpace();
     });
     this.#patch((state) => ({ ...state, phase: "ready", user, authError: null }));
     await controller.open(user.authorizationEpoch);
@@ -625,6 +626,7 @@ export class RationalApp {
           .sort((left, right) => left.household_id.localeCompare(right.household_id));
         this.#patch((state) => ({ ...state, memberships }));
         this.#reconcileSelection(memberships);
+        this.#maybeProvisionPersonalSpace();
       });
     // An invitation is a membership document that names an address rather
     // than a user; the person it names is the one who may accept it. The
@@ -654,6 +656,55 @@ export class RationalApp {
       }),
     );
     this.#membershipSubscription = subscription;
+  }
+
+  #provisioning = false;
+
+  /**
+   * A person who signs in and belongs nowhere gets a space of their own,
+   * silently. Nobody shopping for a money app wants to learn a "household"
+   * concept before seeing their accounts -- the sharing model is real, but it
+   * is a detail for later, on the Members screen. Runs once the directory's
+   * first pull has finished (so an existing membership that has not arrived
+   * yet is not mistaken for none), and only where the households function is
+   * deployed -- without it nobody could create a space anyway.
+   */
+  #maybeProvisionPersonalSpace(): void {
+    const session = this.#directory?.session ?? null;
+    const userId = this.state.user?.id;
+    if (
+      this.#provisioning ||
+      this.#households === null ||
+      this.state.phase !== "ready" ||
+      this.state.currentHouseholdId !== null ||
+      session === null ||
+      userId === undefined ||
+      this.#directory?.state.initialSynced !== true
+    ) {
+      return;
+    }
+    this.#provisioning = true;
+    void (async () => {
+      // Asked of the local database itself, after the first pull has
+      // finished: the live-query state can lag the sync signal by a beat,
+      // and a space must never be created because an existing membership
+      // had not been *rendered* yet.
+      const existing = await session.collections.memberships
+        .find({ selector: { user_id: userId } })
+        .exec();
+      if (existing.length > 0) {
+        this.#provisioning = false;
+        return;
+      }
+      await this.createHousehold("Personal", "USD");
+    })().catch(() => {
+      // Leave the flag set: a failure here (offline, a function mid-deploy)
+      // falls back to the Members screen's own form rather than a retry loop.
+      this.#patch((state) => ({
+        ...state,
+        notice: "Your space could not be set up automatically. Create one on the Members screen.",
+      }));
+    });
   }
 
   /**

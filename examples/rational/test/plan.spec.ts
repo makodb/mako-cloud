@@ -30,7 +30,7 @@ test("a budget rolls over, a recurring charge is confirmed, and a goal is saved 
   await page.waitForFunction(() => window.rational.state.phase === "ready");
   await settle(page);
 
-  await page.getByRole("link", { name: "Household" }).click();
+  await page.getByRole("link", { name: "Members" }).click();
   const before = await page.evaluate(() => window.rational.state.currentHouseholdId);
   const creator = page.getByRole("form", { name: "New household" });
   await creator.getByLabel("Name").fill("Planning");

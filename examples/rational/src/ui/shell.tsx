@@ -15,7 +15,7 @@ const NAV: ReadonlyArray<{ readonly route: Route; readonly label: string }> = [
   { route: { name: "reports" }, label: "Reports" },
   { route: { name: "categories" }, label: "Categories" },
   { route: { name: "tags" }, label: "Tags" },
-  { route: { name: "household" }, label: "Household" },
+  { route: { name: "household" }, label: "Members" },
 ];
 
 export function Shell({
@@ -37,23 +37,26 @@ export function Shell({
       <header className="topbar">
         <div className="brand">
           <span className="eyebrow">Rational</span>
-          <label className="switcher">
-            <span className="visually-hidden">Household</span>
-            <select
-              aria-label="Household"
-              value={state.currentHouseholdId ?? ""}
-              onChange={(event) => void app.selectHousehold(event.target.value || null)}
-            >
-              {state.memberships.length === 0 ? <option value="">No households yet</option> : null}
-              {state.memberships.map((membership) => (
-                <option key={membership.household_id} value={membership.household_id}>
-                  {state.households.find((candidate) => candidate.id === membership.household_id)
-                    ?.name ?? membership.household_id}{" "}
-                  · {membership.role}
-                </option>
-              ))}
-            </select>
-          </label>
+          {/* One space is the ordinary case and needs no chrome; the picker
+              appears only for people who actually belong to more than one. */}
+          {state.memberships.length > 1 ? (
+            <label className="switcher">
+              <span className="visually-hidden">Space</span>
+              <select
+                aria-label="Space"
+                value={state.currentHouseholdId ?? ""}
+                onChange={(event) => void app.selectHousehold(event.target.value || null)}
+              >
+                {state.memberships.map((membership) => (
+                  <option key={membership.household_id} value={membership.household_id}>
+                    {state.households.find((candidate) => candidate.id === membership.household_id)
+                      ?.name ?? membership.household_id}{" "}
+                    · {membership.role}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
         </div>
         <nav aria-label="Sections">
           {NAV.map((entry) => (

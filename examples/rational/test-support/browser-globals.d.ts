@@ -155,6 +155,7 @@ interface RationalBrowserApplication {
 interface RationalFakeBackend {
   demoHouseholdId: string;
   plaidConfigured: boolean;
+  joinDemoOnSignup: boolean;
   putRemote(collectionId: string, document: RationalDocumentWire): void;
   deleteRemote(collectionId: string, id: string, updatedAt: number): void;
   remoteDocument(collectionId: string, id: string): RationalDocumentWire | undefined;
