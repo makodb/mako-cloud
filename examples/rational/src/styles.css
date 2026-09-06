@@ -232,23 +232,7 @@ form.inline {
   color: var(--ink-soft);
 }
 
-/* --- The shell --------------------------------------------------------- */
-
-.shell {
-  display: flex;
-  flex-direction: column;
-  min-height: 100vh;
-}
-
-.topbar {
-  display: flex;
-  gap: 0.75rem 1.25rem;
-  align-items: center;
-  flex-wrap: wrap;
-  padding: 0.7rem 1.5rem;
-  border-bottom: 1px solid var(--hairline);
-  background: var(--surface);
-}
+/* --- The shell lives in ui/styles/shell.css; the banners stay here ------ */
 
 .brand {
   display: flex;
@@ -266,40 +250,6 @@ form.inline {
 
 .switcher select:hover {
   border-color: var(--hairline-strong);
-}
-
-.topbar nav {
-  display: flex;
-  gap: 0.1rem;
-  flex-wrap: wrap;
-  flex: 1;
-}
-
-.topbar nav a {
-  padding: 0.4rem 0.65rem;
-  border-radius: 8px;
-  text-decoration: none;
-  font-weight: 500;
-  font-size: 0.9rem;
-  color: var(--ink-soft);
-}
-
-.topbar nav a:hover {
-  color: var(--ink);
-  text-decoration: none;
-}
-
-.topbar nav a[aria-current="page"] {
-  color: var(--ink);
-  background: var(--canvas);
-  font-weight: 600;
-}
-
-.session {
-  display: flex;
-  gap: 0.9rem;
-  align-items: center;
-  margin-left: auto;
 }
 
 .session .user {
@@ -344,16 +294,6 @@ form.inline {
   width: min(72rem, 100%);
   margin: 0 auto;
   padding: 2rem 1.5rem 3rem;
-}
-
-.statusbar {
-  display: flex;
-  gap: 1.5rem;
-  padding: 0.55rem 1.5rem;
-  border-top: 1px solid var(--hairline);
-  color: var(--ink-faint);
-  font-size: 0.82rem;
-  background: var(--surface);
 }
 
 /* --- Page furniture ---------------------------------------------------- */

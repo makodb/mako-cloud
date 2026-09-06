@@ -134,7 +134,14 @@ test("a person signs up, links a bank, and wakes to filed transactions", async (
   await page.evaluate(() => window.rational.waitForSync());
 
   // --- Link the bank, from the Connections screen. -----------------------
-  await page.getByRole("link", { name: "Connections" }).click();
+  await page
+    .getByRole("navigation", { name: "Sections" })
+    .getByRole("link", { name: "Settings" })
+    .click();
+  await page
+    .getByRole("navigation", { name: "Settings pages" })
+    .getByRole("link", { name: "Connections" })
+    .click();
   await expect(page.getByTestId("connections-screen")).toBeVisible();
   const plaidForm = page.getByTestId("plaid-connect");
   await expect(plaidForm).toBeVisible();
@@ -170,7 +177,10 @@ test("a person signs up, links a bank, and wakes to filed transactions", async (
     .toMatch(/uber/iu);
 
   // --- The Transactions screen shows what the bank sent. -----------------
-  await page.getByRole("link", { name: "Transactions" }).click();
+  await page
+    .getByRole("navigation", { name: "Sections" })
+    .getByRole("link", { name: "Transactions" })
+    .click();
   const uberRow = page
     .locator('[data-testid^="transaction-txn_"]')
     .filter({ hasText: /uber/iu })

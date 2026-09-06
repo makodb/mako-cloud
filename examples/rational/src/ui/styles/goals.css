@@ -1,0 +1,136 @@
+/* --- Goals: one card per thing being saved for or paid down --------------- */
+
+.goal-list {
+  display: grid;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.goal-card {
+  padding: 1.1rem 1.25rem 1rem;
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgb(23 26 32 / 3%);
+}
+
+/* A finished goal stays on the page, quieter, so the history is legible. */
+.goal-card[data-status="completed"],
+.goal-card[data-status="archived"] {
+  color: var(--ink-soft);
+  background: var(--canvas);
+}
+
+.goal-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.goal-head h2 {
+  display: inline;
+  margin: 0 0.5rem 0 0;
+  font-size: 1.05rem;
+}
+
+.goal-head .chip {
+  vertical-align: middle;
+}
+
+/* The two arrows that rank a goal against its neighbours. */
+.goal-order {
+  display: flex;
+  gap: 0.25rem;
+  flex: none;
+}
+
+.goal-order button {
+  padding: 0.3rem 0.6rem;
+  font-size: 0.82rem;
+}
+
+/* The numbers under the bar, each with its own small heading. */
+.goal-figures {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+  gap: 0.75rem 1rem;
+  margin: 0.9rem 0 0;
+}
+
+.goal-figures div {
+  display: grid;
+  gap: 0.1rem;
+}
+
+.goal-figures dt {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--ink-faint);
+}
+
+.goal-figures dd {
+  margin: 0;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.goal-figures dd small {
+  display: block;
+  font-weight: 400;
+  font-size: 0.8rem;
+}
+
+/* On track is good news, behind is a warning; neither shouts. */
+.goal-figures dd[data-track="on"] {
+  color: var(--positive);
+}
+
+.goal-figures dd[data-track="behind"] {
+  color: var(--danger);
+}
+
+.goal-linked {
+  margin: 0.75rem 0 0;
+  font-size: 0.88rem;
+  color: var(--ink-soft);
+}
+
+details.goal-contributions {
+  margin-top: 0.9rem;
+}
+
+details.goal-contributions summary {
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--ink-soft);
+}
+
+details.goal-contributions summary:hover {
+  color: var(--ink);
+}
+
+details.goal-contributions table {
+  margin: 0.6rem 0 0.9rem;
+}
+
+details.goal-contributions form.inline {
+  margin: 0.6rem 0 0;
+}
+
+details.goal-contributions .hint {
+  margin: 0.5rem 0 0;
+}
+
+.goal-card .actions {
+  margin-top: 0.75rem;
+}
+
+/* A list of accounts to link; tall enough to see several at once. */
+.editor select[multiple] {
+  min-height: 6.5rem;
+}

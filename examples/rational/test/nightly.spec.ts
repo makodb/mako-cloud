@@ -38,7 +38,14 @@ test("the morning after: a filed transaction, a noticed bill, and a net-worth hi
   await page.waitForFunction(() => window.rational.state.phase === "ready");
   await settle(page);
 
-  await page.getByRole("link", { name: "Members" }).click();
+  await page
+    .getByRole("navigation", { name: "Sections" })
+    .getByRole("link", { name: "Settings" })
+    .click();
+  await page
+    .getByRole("navigation", { name: "Settings pages" })
+    .getByRole("link", { name: "Members" })
+    .click();
   const before = await page.evaluate(() => window.rational.state.currentHouseholdId);
   const creator = page.getByRole("form", { name: "New household" });
   await creator.getByLabel("Name").fill("Overnight");
@@ -93,7 +100,10 @@ test("the morning after: a filed transaction, a noticed bill, and a net-worth hi
   });
 
   // Before the job runs, nothing says who filed it -- because nobody did.
-  await page.getByRole("link", { name: "Transactions" }).click();
+  await page
+    .getByRole("navigation", { name: "Sections" })
+    .getByRole("link", { name: "Transactions" })
+    .click();
   const row = page.locator(`tr[data-testid="transaction-${seeded.transactionId}"]`);
   await expect(row).toBeVisible();
   await expect(row.getByTestId("filed-by")).toHaveCount(0);
@@ -145,7 +155,10 @@ test("the morning after: a filed transaction, a noticed bill, and a net-worth hi
   await expect(row.getByTestId("filed-by")).toHaveText("by Coffee shops");
 
   // The history is the snapshots' own, drawn as a line with the change spelled out.
-  await page.getByRole("link", { name: "Reports" }).click();
+  await page
+    .getByRole("navigation", { name: "Sections" })
+    .getByRole("link", { name: "Accounts" })
+    .click();
   const history = page.getByTestId("net-worth-history-USD");
   await expect(history).toBeVisible();
   await expect(history.getByTestId("net-worth-change")).toHaveText(
@@ -153,7 +166,10 @@ test("the morning after: a filed transaction, a noticed bill, and a net-worth hi
   );
 
   // The bill the job noticed is a suggestion, and says it was not this device.
-  await page.getByRole("link", { name: "Plan" }).click();
+  await page
+    .getByRole("navigation", { name: "Sections" })
+    .getByRole("link", { name: "Recurring" })
+    .click();
   const suggestion = page.getByTestId("detected-city-power");
   await expect(suggestion).toHaveAttribute("data-noticed-by", "the nightly job");
   await expect(suggestion.getByTestId("next")).toHaveText("2026-09-15");

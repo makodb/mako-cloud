@@ -79,6 +79,49 @@ interface RationalWritesWire {
     id: string,
     contribution: Record<string, unknown>,
   ): Promise<RationalDocumentWire>;
+  updateGoal(id: string, patch: Record<string, unknown>): Promise<RationalDocumentWire>;
+  reorderGoals(orderedIds: readonly string[]): Promise<void>;
+  updateAccount(id: string, patch: Record<string, unknown>): Promise<RationalDocumentWire>;
+  setHideFromNetWorth(id: string, hidden: boolean): Promise<RationalDocumentWire>;
+  upsertHolding(accountId: string, holding: Record<string, unknown>): Promise<RationalDocumentWire>;
+  removeHolding(accountId: string, holdingId: string): Promise<RationalDocumentWire>;
+  updateHoldingPrice(
+    accountId: string,
+    holdingId: string,
+    price: number,
+    priceAsOf: string,
+  ): Promise<RationalDocumentWire>;
+  updateTrackedBalance(
+    accountId: string,
+    newBalance: number,
+    date: string,
+  ): Promise<RationalDocumentWire | null>;
+  bulkPatchTransactions(ids: readonly string[], patch: Record<string, unknown>): Promise<number>;
+  addTagsToTransactions(ids: readonly string[], tagIds: readonly string[]): Promise<number>;
+  markReviewed(ids: readonly string[], reviewed: boolean): Promise<number>;
+  setHidden(ids: readonly string[], hidden: boolean): Promise<number>;
+  setMerchant(id: string, merchantId: string | null): Promise<RationalDocumentWire>;
+  pairTransfer(outflowId: string, inflowId: string): Promise<string>;
+  unpairTransfer(transferId: string): Promise<number>;
+  markRecurring(transaction: RationalDocumentWire, interval: string): Promise<RationalDocumentWire>;
+  pauseRecurrence(id: string, paused: boolean): Promise<RationalDocumentWire>;
+  copyBudgets(fromMonth: string, toMonth: string): Promise<number>;
+  deleteBudget(categoryId: string, month: string): Promise<void>;
+  createGroup(name: string, kind: string, sortOrder?: number): Promise<RationalDocumentWire>;
+  updateGroup(id: string, patch: Record<string, unknown>): Promise<RationalDocumentWire>;
+  deleteGroup(id: string): Promise<void>;
+  updateCategory(id: string, patch: Record<string, unknown>): Promise<RationalDocumentWire>;
+  deleteCategory(
+    id: string,
+    reassignTo: string | null,
+  ): Promise<{ transactions: number; rules: number; budgets: number }>;
+  reorderCategories(orderedIds: readonly string[]): Promise<void>;
+  createTag(name: string): Promise<RationalDocumentWire>;
+  createMerchant(name: string, patterns?: readonly string[]): Promise<RationalDocumentWire>;
+  updateMerchant(id: string, patch: Record<string, unknown>): Promise<RationalDocumentWire>;
+  mergeMerchants(loserId: string, winnerId: string): Promise<number>;
+  seedDefaultTaxonomy(): Promise<number>;
+  deleteRule(id: string): Promise<void>;
 }
 
 /** The household's receipts, as a browser test reaches them. */

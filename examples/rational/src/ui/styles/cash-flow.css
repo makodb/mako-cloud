@@ -1,0 +1,192 @@
+/* --- Cash flow: a range bar, the tiles, and a stack of cards ------------ */
+
+/* Everything is scoped under the screen, and the structural classes carry a
+   `flow-` prefix besides: stylesheets are global, every screen ships its own,
+   and a bare `.card` or `.breakdown` here would be whatever another screen
+   last said it was. */
+
+.cash-flow .stamp {
+  margin: 0.15rem 0 0;
+  font-size: 0.88rem;
+}
+
+/* --- The range bar ------------------------------------------------------ */
+
+.cash-flow .range-bar {
+  display: flex;
+  gap: 0.75rem 1.25rem;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 1.25rem;
+}
+
+/* The two control groups are fieldsets for what they mean, not for how a
+   fieldset looks; the page's fieldset chrome is a form's, not a toolbar's. */
+.cash-flow .range-bar fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.cash-flow .range-nav {
+  display: flex;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.cash-flow .range-nav button {
+  padding: 0.35rem 0.7rem;
+  line-height: 1;
+}
+
+.cash-flow .range-label {
+  min-width: 9.5rem;
+  text-align: center;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.cash-flow .range-presets {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.cash-flow .range-presets button {
+  padding: 0.35rem 0.8rem;
+  border-radius: 999px;
+  font-size: 0.85rem;
+}
+
+/* The chosen preset wears the accent wash rather than the solid accent: the
+   bar is chrome, and the numbers below are what should carry the weight. */
+.cash-flow .range-presets button[aria-pressed="true"] {
+  color: var(--accent-deep);
+  background: var(--accent-wash);
+  border-color: var(--accent);
+}
+
+.cash-flow .range-custom {
+  display: flex;
+  gap: 0.75rem;
+  align-items: end;
+  flex-wrap: wrap;
+  flex-basis: 100%;
+}
+
+.cash-flow .range-custom label input {
+  width: auto;
+}
+
+/* --- Tiles -------------------------------------------------------------- */
+
+.cash-flow .total .negative {
+  color: var(--danger);
+}
+
+/* --- Cards -------------------------------------------------------------- */
+
+.cash-flow .flow-card {
+  margin-bottom: 1.25rem;
+  padding: 1.25rem 1.5rem;
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.cash-flow .flow-card h2 {
+  margin-bottom: 0;
+}
+
+.cash-flow .flow-card .section-heading {
+  margin-bottom: 0.9rem;
+}
+
+/* Tables inside a card sit on the card's surface; the card is the frame. */
+.cash-flow .flow-card table.data-table {
+  margin-bottom: 0;
+  box-shadow: none;
+}
+
+/* A chart's plain twin, folded until asked for. */
+.cash-flow .flow-twin {
+  margin-top: 0.5rem;
+}
+
+.cash-flow .flow-twin summary {
+  cursor: pointer;
+  color: var(--ink-soft);
+  font-size: 0.88rem;
+  font-weight: 500;
+}
+
+.cash-flow .flow-twin[open] summary {
+  margin-bottom: 0.6rem;
+}
+
+/* The treemap over its table: five columns want the card's whole width, and
+   a treemap reads at any width the card gives it. */
+.cash-flow .flow-split {
+  display: grid;
+  gap: 1.25rem;
+}
+
+/* A wide table scrolls inside its card rather than past its edge. */
+.cash-flow .flow-scroll {
+  overflow-x: auto;
+}
+
+/* --- Tabs --------------------------------------------------------------- */
+
+.cash-flow .flow-tabs {
+  display: flex;
+  gap: 0.25rem;
+  margin-bottom: 0.9rem;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.cash-flow .flow-tabs [role="tab"] {
+  padding: 0.45rem 0.9rem;
+  margin-bottom: -1px;
+  color: var(--ink-soft);
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  font-weight: 500;
+}
+
+.cash-flow .flow-tabs [role="tab"]:hover:not(:disabled) {
+  color: var(--ink);
+  background: transparent;
+}
+
+.cash-flow .flow-tabs [role="tab"][aria-selected="true"] {
+  color: var(--ink);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+}
+
+/* --- Breakdown tables --------------------------------------------------- */
+
+.cash-flow table.flow-table tbody tr.selected th,
+.cash-flow table.flow-table tbody tr.selected td {
+  background: var(--accent-wash);
+}
+
+.cash-flow table.flow-table tfoot th,
+.cash-flow table.flow-table tfoot td {
+  border-top: 1px solid var(--hairline-strong);
+  border-bottom: 0;
+  font-weight: 600;
+}
+
+.cash-flow table.flow-table tbody th .link {
+  padding: 0;
+  font-weight: 500;
+}
+
+.cash-flow .footnote {
+  margin: 0.5rem 0 0;
+}

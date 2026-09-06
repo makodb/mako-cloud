@@ -8,7 +8,8 @@ import { expect, type Page, test } from "@playwright/test";
  * each step here waits for the directory to settle before the next.
  *
  * The fake lives in the page, so the whole story runs in one load: reloading
- * would forget the environment along with everything created in it.
+ * would forget the environment along with everything created in it. That is
+ * also why every screen is reached by clicking rather than by address.
  */
 const OWNER = "pat@rational.test";
 const MEMBER = "sam@rational.test";
@@ -31,8 +32,20 @@ async function enterCredentials(page: Page, email: string, action: string): Prom
   await settle(page);
 }
 
-async function openHousehold(page: Page): Promise<void> {
-  await page.getByRole("link", { name: "Members" }).click();
+/** Settings is a hub: the sidebar entry first, then the page in its own navigation. */
+async function openSettingsPage(page: Page, label: string): Promise<void> {
+  await page
+    .getByRole("navigation", { name: "Sections" })
+    .getByRole("link", { name: "Settings" })
+    .click();
+  await page
+    .getByRole("navigation", { name: "Settings pages" })
+    .getByRole("link", { name: label, exact: true })
+    .click();
+}
+
+async function openMembers(page: Page): Promise<void> {
+  await openSettingsPage(page, "Members");
   await expect(page.getByRole("heading", { name: "Members", exact: true })).toBeVisible();
   await settle(page);
 }
@@ -44,7 +57,7 @@ test("a household is created, invited to, accepted, re-roled, and removed from",
   await page.waitForFunction(() => window.rational !== undefined);
   await page.waitForFunction(() => window.rational.state.phase !== "starting");
   await enterCredentials(page, OWNER, "Create account");
-  await openHousehold(page);
+  await openMembers(page);
   await expect(page.getByRole("table", { name: "Members" })).toContainText(OWNER);
 
   // Creating a household makes this person its owner, which changes their own
@@ -84,7 +97,7 @@ test("a household is created, invited to, accepted, re-roled, and removed from",
   // The invited person signs up and finds the invitation waiting for their
   // address — the only membership document they may read before joining.
   await enterCredentials(page, MEMBER, "Create account");
-  await openHousehold(page);
+  await openMembers(page);
   const invitation = page.getByTestId(`invitation-${householdId}`);
   await expect(invitation).toBeVisible();
   await invitation.getByRole("button", { name: "Accept" }).click();
@@ -100,7 +113,7 @@ test("a household is created, invited to, accepted, re-roled, and removed from",
 
   await page.getByRole("button", { name: "Sign out" }).click();
   await enterCredentials(page, OWNER, "Sign in");
-  await openHousehold(page);
+  await openMembers(page);
   await page.getByRole("combobox", { name: "Space" }).selectOption(householdId as string);
   const memberId = await page.evaluate(
     (address) =>

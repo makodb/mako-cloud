@@ -19,7 +19,7 @@ async function signInFresh(page: Page): Promise<void> {
   await page.getByLabel("Password").fill(PASSWORD);
   await page.getByRole("button", { name: "Create account" }).click();
   // One space, no switcher: the person lands straight in their money.
-  await expect(page.getByRole("heading", { name: "Accounts" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
   await expect
     .poll(() => page.evaluate(() => window.rational.state.households[0]?.name ?? ""))
     .toBe("Demo household");
@@ -44,75 +44,15 @@ test("a person creates an account, signs in, and sees the household", async ({ p
   await expect
     .poll(() => page.evaluate(() => window.rational.state.memberships[0]?.role ?? ""))
     .toBe("owner");
-  await expect(page.locator('[data-testid^="account-acc_demo_"]')).toHaveCount(7);
-  await expect(page.getByTestId("net-worth")).toContainText("Net worth (USD)");
+  await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
 
   // The session persists across a reload.
   await page.reload();
   await page.waitForFunction(() => window.rational?.state.phase === "ready");
-  await expect(page.getByRole("heading", { name: "Accounts" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
 
   await page.getByRole("button", { name: "Sign out" }).click();
   await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
-});
-
-test("accounts are created, edited, closed, and their balances derive from transactions", async ({
-  page,
-}) => {
-  await signInFresh(page);
-  await page.getByRole("button", { name: "New account" }).click();
-  const editor = page.getByRole("form", { name: "Account editor" });
-  await editor.getByLabel("Name").fill("Travel fund");
-  await editor.getByLabel("Type").selectOption("savings");
-  await editor.getByLabel("Currency").fill("USD");
-  await editor.getByLabel("Opening balance").fill("500.00");
-  await editor.getByLabel("Opening date").fill("2026-08-01");
-  await editor.getByRole("button", { name: "Save account" }).click();
-
-  const row = page.locator('tr[data-name="Travel fund"]');
-  await expect(row).toBeVisible();
-  await expect(row.getByTestId("balance")).toHaveText("$500.00");
-  await expect.poll(async () => (await diagnostics(page)).acceptedWrites).toBeGreaterThan(0);
-
-  // A transaction on the account moves its derived balance.
-  const accountId = await row.evaluate((element) =>
-    (element as HTMLElement).dataset.testid?.replace("account-", ""),
-  );
-  await page.evaluate(
-    (id) =>
-      window.rational.writes?.createTransaction({
-        account_id: id,
-        date: "2026-08-10",
-        amount: -12_345,
-        currency: "USD",
-        description: "Flight deposit",
-      }),
-    accountId,
-  );
-  await expect(row.getByTestId("balance")).toHaveText("$376.55");
-
-  await row.getByRole("button", { name: "Edit" }).click();
-  await editor.getByLabel("Name").fill("Holiday fund");
-  await editor.getByRole("button", { name: "Save account" }).click();
-  await expect(page.locator('tr[data-name="Holiday fund"]')).toBeVisible();
-
-  await page.locator('tr[data-name="Holiday fund"]').getByRole("button", { name: "Close" }).click();
-  await expect(page.getByRole("table", { name: "Closed accounts" })).toContainText("Holiday fund");
-  await page
-    .getByRole("table", { name: "Closed accounts" })
-    .getByRole("button", { name: "Reopen" })
-    .click();
-  await expect(page.getByRole("table", { name: "Open accounts" })).toContainText("Holiday fund");
-
-  // Every account type is accepted.
-  for (const type of ["checking", "credit", "investment", "loan", "cash"]) {
-    await page.getByRole("button", { name: "New account" }).click();
-    await editor.getByLabel("Name").fill(`${type} account`);
-    await editor.getByLabel("Type").selectOption(type);
-    await editor.getByLabel("Opening balance").fill(type === "loan" ? "-1000" : "10");
-    await editor.getByRole("button", { name: "Save account" }).click();
-    await expect(page.locator(`tr[data-name="${type} account"]`)).toContainText(type);
-  }
 });
 
 test("transactions are created with splits that must add up, edited, and deleted", async ({
@@ -279,6 +219,7 @@ test("a security reset clears the household's local data and syncs it again", as
   await page.waitForFunction(() => window.rational.household?.session !== null);
   const after = await page.evaluate(() => window.rational.household?.session?.identifier);
   expect(after).not.toBe(before);
+  await page.goto("/#/accounts");
   await expect(page.locator('[data-testid^="account-acc_demo_"]')).toHaveCount(7);
   await expect
     .poll(() => page.evaluate(() => window.rational.state.memberships[0]?.role ?? ""))

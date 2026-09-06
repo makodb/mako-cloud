@@ -29,7 +29,7 @@ test("a provider round trip signs the person in and the session survives a reloa
   await expect
     .poll(() => page.evaluate(() => window.rational.state.households[0]?.name ?? ""))
     .toBe("Demo household");
-  await expect(page.getByRole("heading", { name: "Accounts" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
 
   // The code is out of the address bar, so a reload cannot replay it.
   expect(page.url()).not.toContain("code=");
@@ -39,7 +39,7 @@ test("a provider round trip signs the person in and the session survives a reloa
 
   await page.reload();
   await page.waitForFunction(() => window.rational?.state.phase === "ready");
-  await expect(page.getByRole("heading", { name: "Accounts" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
 });
 
 test("a provider the environment has not enabled is shown as unavailable", async ({ page }) => {
@@ -60,7 +60,7 @@ test("a magic link signs the person in once and is refused the second time", asy
   await page.goto(link as string);
   await page.waitForFunction(() => window.rational?.state.phase === "ready");
   expect(await page.evaluate(() => window.rational.state.user?.email)).toBe("mo@rational.test");
-  await expect(page.getByRole("heading", { name: "Accounts" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
 
   await page.getByRole("button", { name: "Sign out" }).click();
   await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();

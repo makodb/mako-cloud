@@ -345,7 +345,7 @@ export function monthlySeries(
     currency,
   )) {
     const month = monthKey(transaction.date);
-    const key = `${month} ${transaction.currency}`;
+    const key = `${month}\u0000${transaction.currency}`;
     const total = totals.get(key) ?? { income: 0, spending: 0 };
     total[side] += amount;
     totals.set(key, total);
@@ -357,7 +357,7 @@ export function monthlySeries(
   const rows: MonthFlow[] = [];
   for (const month of months) {
     for (const code of [...currencies].sort()) {
-      const total = totals.get(`${month} ${code}`) ?? { income: 0, spending: 0 };
+      const total = totals.get(`${month}\u0000${code}`) ?? { income: 0, spending: 0 };
       rows.push({
         month,
         currency: code,
@@ -433,7 +433,7 @@ export function spendingBy(
 
   const totals = new Map<string, { key: string; name: string; currency: string; amount: number }>();
   const add = (slice: string, name: string, currency: string, amount: number): void => {
-    const id = `${slice} ${currency}`;
+    const id = `${slice}\u0000${currency}`;
     const total = totals.get(id) ?? { key: slice, name, currency, amount: 0 };
     total.amount += amount;
     totals.set(id, total);

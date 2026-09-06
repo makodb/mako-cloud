@@ -26,6 +26,18 @@ async function settle(page: Page): Promise<void> {
   );
 }
 
+/** Settings is a hub: the sidebar entry first, then the page in its own navigation. */
+async function openSettingsPage(page: Page, label: string): Promise<void> {
+  await page
+    .getByRole("navigation", { name: "Sections" })
+    .getByRole("link", { name: "Settings" })
+    .click();
+  await page
+    .getByRole("navigation", { name: "Settings pages" })
+    .getByRole("link", { name: label, exact: true })
+    .click();
+}
+
 test("a deployment without Plaid credentials never offers the option, and everything else stands", async ({
   page,
 }) => {
@@ -50,11 +62,18 @@ test("a deployment without Plaid credentials never offers the option, and everyt
   );
   await page.waitForFunction(() => window.rational.state.currentHouseholdId !== null);
 
-  await page.getByRole("link", { name: "Connections" }).click();
+  await openSettingsPage(page, "Connections");
   await expect(page.getByTestId("connections-screen")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Connections" })).toBeVisible();
   // The simulator's own form is whole; the Plaid one simply is not offered.
   await expect(page.getByRole("form", { name: "Connect an account" })).toBeVisible();
   await expect(page.getByTestId("plaid-connect")).toHaveCount(0);
+  // Nothing has asked to be told about a failing sync yet, and the screen says so.
+  await expect(page.getByTestId("sync-error-hint")).toHaveAttribute("data-alert", "unset");
+  await expect(page.getByTestId("sync-error-hint").getByRole("link")).toHaveAttribute(
+    "href",
+    "#/settings/notifications",
+  );
 });
 
 test("linking through Plaid lands a connection and its first sync, and no token ever shows", async ({
@@ -109,7 +128,7 @@ test("linking through Plaid lands a connection and its first sync, and no token 
     }),
   );
 
-  await page.getByRole("link", { name: "Connections" }).click();
+  await openSettingsPage(page, "Connections");
   await expect(page.getByTestId("connections-screen")).toBeVisible();
 
   // The offer appears only because the (fake) deployment says it is
@@ -119,14 +138,43 @@ test("linking through Plaid lands a connection and its first sync, and no token 
   await plaidForm.getByLabel("Account").selectOption({ label: "Everyday" });
   await plaidForm.getByRole("button", { name: "Connect through Plaid" }).click();
 
-  // The connection lands with the institution's real name and the first
-  // sync's outcome, and the imported transactions replicate like any others.
+  // The connection lands with the institution's real name, a connected
+  // status, and the first sync's outcome; the imported transactions
+  // replicate like any others.
   const row = page.getByTestId("connection-con_plaid-item-fake-1");
   await expect(row).toContainText("First Platypus Bank");
+  await expect(row.getByTestId("status")).toHaveText("connected");
+  await expect(row).toHaveAttribute("data-status", "connected");
   await expect(row.getByTestId("outcome")).toHaveText("imported 3, corrected 0, removed 0");
-  await page.getByRole("link", { name: "Transactions" }).click();
-  await expect(page.getByText("SparkFun")).toBeVisible();
-  await expect(page.getByText("PAYROLL")).toBeVisible();
+  const synced = await page.evaluate(async () => {
+    const collection = window.rational.household?.session?.collections.transactions;
+    if (collection === undefined) throw new Error("no household is open");
+    const documents = await collection.find().exec();
+    return documents
+      .map((document) => document.toJSON())
+      .filter(
+        (transaction) =>
+          typeof transaction.external_id === "string" &&
+          transaction.external_id.startsWith("plaid-fake-"),
+      )
+      .map((transaction) => ({
+        description: String(transaction.description),
+        reviewed: transaction.reviewed,
+      }))
+      .sort((left, right) => left.description.localeCompare(right.description));
+  });
+  // What the sync brought in is nobody's yet: every row waits in the review queue.
+  expect(synced).toEqual([
+    { description: "PAYROLL", reviewed: undefined },
+    { description: "SparkFun", reviewed: undefined },
+    { description: "UBER TRIP HELP.UBER.COM", reviewed: undefined },
+  ]);
+  await page
+    .getByRole("navigation", { name: "Sections" })
+    .getByRole("link", { name: "Transactions" })
+    .click();
+  await expect(page.getByText("SparkFun", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("PAYROLL", { exact: true }).first()).toBeVisible();
 
   // Nothing token-shaped anywhere the browser can see: not in any document of
   // any collection the app opened, and not in the page itself.

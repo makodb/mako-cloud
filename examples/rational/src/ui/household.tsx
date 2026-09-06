@@ -9,12 +9,16 @@ import {
   type Membership,
 } from "../model/types.js";
 import { useQuery } from "./hooks.js";
+import "./styles/settings-pages.css";
 
 /**
  * Households, members, and invitations. Everything on this screen is a call
  * to the `households` edge function: membership lives in the claims a token
  * carries, so only trusted code may change it, and the app's own writes to
  * the `memberships` collection would be refused by its policy.
+ *
+ * It lives under Settings as "Members"; the household's own name and currency
+ * are the Household page's, next door.
  */
 export function HouseholdScreen({ app, state }: { app: RationalApp; state: AppState }) {
   const session = app.directory?.session ?? null;
@@ -55,7 +59,7 @@ export function HouseholdScreen({ app, state }: { app: RationalApp; state: AppSt
       )}
 
       {state.invitations.length === 0 ? null : (
-        <section aria-labelledby="invitations-title" className="panel">
+        <section aria-labelledby="invitations-title" className="settings-panel">
           <h2 id="invitations-title">Invitations</h2>
           <ul className="list" aria-label="Invitations">
             {state.invitations.map((invitation) => (
@@ -83,7 +87,7 @@ export function HouseholdScreen({ app, state }: { app: RationalApp; state: AppSt
           You are not a member of any household yet. Create one to start.
         </p>
       ) : (
-        <section aria-labelledby="members-title" className="panel">
+        <section aria-labelledby="members-title" className="settings-panel">
           <h2 id="members-title">
             Members of {household?.name ?? householdId}
             {role === null ? null : <small> · you are {role}</small>}
@@ -253,7 +257,7 @@ function CreateHouseholdForm({
     setName("");
   };
   return (
-    <section aria-labelledby="new-household-title" className="panel">
+    <section aria-labelledby="new-household-title" className="settings-panel">
       <h2 id="new-household-title">New household</h2>
       <form className="inline" onSubmit={(event) => void submit(event)} aria-label="New household">
         <label>

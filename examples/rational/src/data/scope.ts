@@ -362,6 +362,11 @@ export class ScopeController<Ids extends CollectionId> {
     this.#closed = true;
     await this.#session?.remove();
     this.#session = null;
+    // A database that is gone has no checkpoint to resume from. Left behind,
+    // the next generation of this scope on this device — the same person
+    // signing back in, or another member of the same household — would pull
+    // only what changed after it and never see the rest.
+    await this.#state.clearReplicationState();
     this.state$.complete();
   }
 

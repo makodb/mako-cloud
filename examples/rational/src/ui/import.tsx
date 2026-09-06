@@ -14,6 +14,8 @@ import {
 import { formatMinorUnits } from "../selectors/money.js";
 import { applyRules } from "../selectors/rules.js";
 import { useQuery } from "./hooks.js";
+import { transactionsHash } from "./router.js";
+import "./styles/settings-pages.css";
 
 /**
  * Importing a bank's CSV export.
@@ -22,7 +24,20 @@ import { useQuery } from "./hooks.js";
  * file suggests, the first rows under it, which rows are already here, and
  * which could not be read. Duplicate detection is against what this account
  * already holds, by date, amount, and normalized description.
+ *
+ * What is imported arrives needing review -- nobody in the household has
+ * looked at these rows, only at the file -- unless a rule marked it reviewed
+ * as it came in. The outcome says how many are waiting and where.
  */
+
+/** What an import did, kept as numbers so the outcome can carry a link. */
+interface Outcome {
+  readonly created: number;
+  readonly rowCount: number;
+  readonly duplicates: number;
+  readonly waiting: number;
+}
+
 export function ImportScreen({
   app,
   session,
@@ -42,7 +57,7 @@ export function ImportScreen({
   const [mapping, setMapping] = useState<ColumnMapping | null>(null);
   const [accountId, setAccountId] = useState("");
   const [problem, setProblem] = useState<string | null>(null);
-  const [outcome, setOutcome] = useState<string | null>(null);
+  const [outcome, setOutcome] = useState<Outcome | null>(null);
   const [busy, setBusy] = useState(false);
 
   const plan = useMemo(() => {
@@ -71,32 +86,41 @@ export function ImportScreen({
     if (plan === null || app.writes === null || filename === null) return;
     setBusy(true);
     try {
+      // The rules run as the rows arrive, with every action a rule can take:
+      // a category, a merchant, tags, hiding, and marking reviewed -- the
+      // same engine the nightly job applies to what arrives overnight.
+      const rows = plan.importable.map((row) => {
+        const matched = applyRules(rules, {
+          description: row.description,
+          amount: row.amount,
+          account_id: accountId,
+        });
+        return {
+          date: row.date,
+          description: row.description,
+          amount: row.amount,
+          ...(matched?.categoryId === undefined ? {} : { categoryId: matched.categoryId }),
+          ...(matched?.merchantId === undefined ? {} : { merchantId: matched.merchantId }),
+          ...(matched === null ? {} : { ruleId: matched.rule.id }),
+          ...(matched === null || matched.tags.length === 0 ? {} : { tags: matched.tags }),
+          ...(matched?.hide === true ? { hidden: true } : {}),
+          ...(matched?.markReviewed === true ? { reviewed: true } : {}),
+        };
+      });
       const result = await app.writes.importTransactions({
         accountId,
         currency,
         filename,
         rowCount: plan.rows.length,
         duplicateCount: plan.duplicates.size,
-        rows: plan.importable.map((row) => {
-          const matched = applyRules(rules, {
-            description: row.description,
-            amount: row.amount,
-            account_id: accountId,
-          });
-          return {
-            date: row.date,
-            description: row.description,
-            amount: row.amount,
-            ...(matched?.categoryId === undefined ? {} : { categoryId: matched.categoryId }),
-            ...(matched === null ? {} : { ruleId: matched.rule.id }),
-            ...(matched === null || matched.tags.length === 0 ? {} : { tags: matched.tags }),
-          };
-        }),
+        rows,
       });
-      setOutcome(
-        `Imported ${result.created} of ${result.rowCount} rows; ` +
-          `${result.duplicates} were already here.`,
-      );
+      setOutcome({
+        created: result.created,
+        rowCount: result.rowCount,
+        duplicates: result.duplicates,
+        waiting: rows.filter((row) => row.reviewed !== true).length,
+      });
       setTable(null);
       setMapping(null);
       setFilename(null);
@@ -114,9 +138,14 @@ export function ImportScreen({
 
   return (
     <section aria-labelledby="import-title" data-testid="import-screen">
-      <div className="section-heading">
-        <h2 id="import-title">Import</h2>
+      <div className="heading">
+        <h1 id="import-title">Import</h1>
       </div>
+      <p className="hint">
+        Nothing is written until you have seen what would be. Rows already in the account are
+        recognized by date, amount, and description and left alone; what is imported waits in Needs
+        review until somebody looks at it.
+      </p>
       {problem === null ? null : (
         <p className="notice error" role="alert">
           {problem}
@@ -124,25 +153,37 @@ export function ImportScreen({
       )}
       {outcome === null ? null : (
         <p className="notice success" role="status" data-testid="import-outcome">
-          {outcome}
+          Imported {outcome.created} of {outcome.rowCount} rows; {outcome.duplicates} were already
+          here.
+          {outcome.waiting === 0 ? null : (
+            <>
+              {" "}
+              {outcome.waiting} {outcome.waiting === 1 ? "is" : "are"} waiting in{" "}
+              <a href={transactionsHash({ review: "needs" })}>Needs review</a>.
+            </>
+          )}
         </p>
       )}
 
-      <label>
-        Account
-        <select value={accountId} onChange={(event) => setAccountId(event.target.value)}>
-          <option value="">Choose an account</option>
-          {accounts.map((account) => (
-            <option key={account.id} value={account.id}>
-              {account.name}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label>
-        CSV file
-        <input type="file" accept=".csv,text/csv" onChange={(event) => void choose(event)} />
-      </label>
+      <div className="editor">
+        <div className="grid">
+          <label>
+            Account
+            <select value={accountId} onChange={(event) => setAccountId(event.target.value)}>
+              <option value="">Choose an account</option>
+              {accounts.map((account) => (
+                <option key={account.id} value={account.id}>
+                  {account.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            CSV file
+            <input type="file" accept=".csv,text/csv" onChange={(event) => void choose(event)} />
+          </label>
+        </div>
+      </div>
 
       {table === null || mapping === null ? null : (
         <>
@@ -197,7 +238,9 @@ export function ImportScreen({
                 <th scope="col">Line</th>
                 <th scope="col">Date</th>
                 <th scope="col">Description</th>
-                <th scope="col">Amount</th>
+                <th scope="col" className="amount">
+                  Amount
+                </th>
                 <th scope="col">Outcome</th>
               </tr>
             </thead>

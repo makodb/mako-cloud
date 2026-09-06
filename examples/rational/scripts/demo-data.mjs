@@ -317,7 +317,7 @@ export function generateDemoHousehold(options) {
   const groupPosition = new Map();
   const taxonomy = [
     ...DEFAULT_TAXONOMY.map((group, index) =>
-      document(group.id, {
+      document(defaultGroupId(householdId, group.slug), {
         kind: "group",
         name: group.name,
         category_kind: group.kind,
@@ -325,7 +325,7 @@ export function generateDemoHousehold(options) {
       }),
     ),
     ...CATEGORY_SPECS.map((spec) => {
-      const parentId = defaultGroupId(spec.group);
+      const parentId = defaultGroupId(householdId, spec.group);
       const position = groupPosition.get(parentId) ?? 0;
       groupPosition.set(parentId, position + 1);
       return document(spec.id, {

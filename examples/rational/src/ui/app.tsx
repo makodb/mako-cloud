@@ -1,21 +1,19 @@
 import { Component, type ReactNode } from "react";
 
 import type { RationalApp } from "../data/rational.js";
+import { AccountScreen } from "./account.js";
 import { AccountsScreen } from "./accounts.js";
-import { AlertsScreen } from "./alerts.js";
-import { BudgetsScreen } from "./budgets.js";
-import { CategoriesScreen } from "./categories.js";
-import { ConnectionsScreen } from "./connections.js";
+import { BudgetScreen } from "./budget.js";
+import { CashFlowScreen } from "./cash-flow.js";
+import { DashboardScreen } from "./dashboard.js";
+import { GoalsScreen } from "./goals.js";
 import { useBehavior } from "./hooks.js";
-import { HouseholdScreen } from "./household.js";
-import { ImportScreen } from "./import.js";
-import { PlanScreen } from "./plan.js";
-import { ReportsScreen } from "./reports.js";
+import { InvestmentsScreen } from "./investments.js";
+import { RecurringScreen } from "./recurring.js";
 import { useRoute } from "./router.js";
-import { RulesScreen } from "./rules.js";
+import { SettingsScreen } from "./settings.js";
 import { Shell } from "./shell.js";
 import { SignInScreen } from "./sign-in.js";
-import { TagsScreen } from "./tags.js";
 import { TransactionsScreen } from "./transactions.js";
 
 /**
@@ -72,12 +70,18 @@ function Screens({ app }: { app: RationalApp }) {
   const currency = household?.currency ?? "USD";
   return (
     <Shell app={app} state={state} route={route}>
-      {route.name === "household" ? (
-        // Households and members come from the directory, not from the open
-        // household, so this screen outlives a household session — and a form
-        // being filled in must not be thrown away because one was replaced.
-        <ScreenBoundary key={`directory:${state.directory?.generation ?? 0}`}>
-          <HouseholdScreen app={app} state={state} />
+      {route.name === "settings" ? (
+        // Settings reads the directory as well as the household, and the
+        // members page outlives a household session — a form being filled in
+        // must not be thrown away because a session was replaced.
+        <ScreenBoundary key={`settings:${state.directory?.generation ?? 0}:${state.generation}`}>
+          <SettingsScreen
+            app={app}
+            state={state}
+            session={session}
+            route={route}
+            currency={currency}
+          />
         </ScreenBoundary>
       ) : (
         <ScreenBoundary key={state.generation}>
@@ -93,65 +97,67 @@ function Screens({ app }: { app: RationalApp }) {
               route={route}
               currency={currency}
             />
-          ) : route.name === "budgets" ? (
-            <BudgetsScreen
-              key={`${state.generation}:budgets`}
-              app={app}
-              session={session}
-              route={route}
-              currency={currency}
-            />
-          ) : route.name === "plan" ? (
-            <PlanScreen
-              key={`${state.generation}:plan`}
-              app={app}
-              session={session}
-              currency={currency}
-            />
-          ) : route.name === "connections" ? (
-            <ConnectionsScreen
-              key={`${state.generation}:connections`}
-              app={app}
-              session={session}
-            />
-          ) : route.name === "import" ? (
-            <ImportScreen
-              key={`${state.generation}:import`}
-              app={app}
-              session={session}
-              currency={currency}
-            />
-          ) : route.name === "rules" ? (
-            <RulesScreen
-              key={`${state.generation}:rules`}
-              app={app}
-              session={session}
-              currency={currency}
-            />
-          ) : route.name === "alerts" ? (
-            <AlertsScreen
-              key={`${state.generation}:alerts`}
-              app={app}
-              session={session}
-              currency={currency}
-            />
-          ) : route.name === "reports" ? (
-            <ReportsScreen
-              key={`${state.generation}:reports`}
-              app={app}
-              session={session}
-              route={route}
-            />
-          ) : route.name === "categories" ? (
-            <CategoriesScreen key={`${state.generation}:categories`} app={app} session={session} />
-          ) : route.name === "tags" ? (
-            <TagsScreen key={`${state.generation}:tags`} app={app} session={session} />
-          ) : (
+          ) : route.name === "accounts" ? (
             <AccountsScreen
               key={`${state.generation}:accounts`}
               app={app}
               session={session}
               currency={currency}
+            />
+          ) : route.name === "account" ? (
+            <AccountScreen
+              key={`${state.generation}:account:${route.accountId}`}
+              app={app}
+              session={session}
+              currency={currency}
+              accountId={route.accountId}
+            />
+          ) : route.name === "cash-flow" ? (
+            <CashFlowScreen
+              key={`${state.generation}:cash-flow`}
+              app={app}
+              session={session}
+              route={route}
+              currency={currency}
+            />
+          ) : route.name === "budget" ? (
+            <BudgetScreen
+              key={`${state.generation}:budget`}
+              app={app}
+              session={session}
+              route={route}
+              currency={currency}
+              household={household ?? null}
+            />
+          ) : route.name === "recurring" ? (
+            <RecurringScreen
+              key={`${state.generation}:recurring`}
+              app={app}
+              session={session}
+              route={route}
+              currency={currency}
+            />
+          ) : route.name === "goals" ? (
+            <GoalsScreen
+              key={`${state.generation}:goals`}
+              app={app}
+              session={session}
+              currency={currency}
+            />
+          ) : route.name === "investments" ? (
+            <InvestmentsScreen
+              key={`${state.generation}:investments`}
+              app={app}
+              session={session}
+              currency={currency}
+            />
+          ) : (
+            <DashboardScreen
+              key={`${state.generation}:dashboard`}
+              app={app}
+              session={session}
+              currency={currency}
+              household={household ?? null}
             />
           )}
         </ScreenBoundary>

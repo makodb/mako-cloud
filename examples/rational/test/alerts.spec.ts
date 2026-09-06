@@ -1,13 +1,13 @@
 import { expect, type Page, test } from "@playwright/test";
 
 /**
- * Alerts, from the household's side.
+ * Notifications, from the household's side.
  *
  * The household says what it wants to be told about; the server decides and
  * writes. So the test sets the thresholds through the app, then delivers the
  * alerts the way they really arrive — as documents another writer committed —
  * and checks that the screen shows them, names what they are about, and lets
- * a person mark one read without ever offering to delete it.
+ * a person mark one read, or all of them, without ever offering to delete.
  */
 const USER = "vireo@rational.test";
 const PASSWORD = "RationalDemo1!";
@@ -20,6 +20,18 @@ async function settle(page: Page): Promise<void> {
   );
 }
 
+/** Settings is a hub: the sidebar entry first, then the page in its own navigation. */
+async function openSettingsPage(page: Page, label: string): Promise<void> {
+  await page
+    .getByRole("navigation", { name: "Sections" })
+    .getByRole("link", { name: "Settings" })
+    .click();
+  await page
+    .getByRole("navigation", { name: "Settings pages" })
+    .getByRole("link", { name: label, exact: true })
+    .click();
+}
+
 test("a household sets its thresholds and is told what the server decided", async ({ page }) => {
   await page.goto("/");
   await page.waitForFunction(() => window.rational !== undefined);
@@ -30,7 +42,7 @@ test("a household sets its thresholds and is told what the server decided", asyn
   await page.waitForFunction(() => window.rational.state.phase === "ready");
   await settle(page);
 
-  await page.getByRole("link", { name: "Members" }).click();
+  await openSettingsPage(page, "Members");
   const before = await page.evaluate(() => window.rational.state.currentHouseholdId);
   const creator = page.getByRole("form", { name: "New household" });
   await creator.getByLabel("Name").fill("Watchful");
@@ -60,7 +72,8 @@ test("a household sets its thresholds and is told what the server decided", asyn
   });
 
   // The household says what it wants to hear about.
-  await page.getByRole("link", { name: "Alerts" }).click();
+  await openSettingsPage(page, "Notifications");
+  await expect(page.getByRole("heading", { name: "Notifications" })).toBeVisible();
   await expect(page.getByTestId("alerts-empty")).toBeVisible();
   const large = page.getByRole("form", { name: "A large transaction" });
   await large.getByRole("textbox").fill("400.00");
@@ -134,10 +147,22 @@ test("a household sets its thresholds and is told what the server decided", asyn
   await expect(largeRow.getByTestId("alert-message")).toContainText("ROOF REPAIR");
   await expect(largeRow.getByTestId("alert-message")).toContainText("Everyday");
   await expect(largeRow).toHaveAttribute("data-read", "no");
+  // The bell in the top bar counts the same documents.
+  await expect(page.getByTestId("unread-count")).toHaveText("2");
 
   // Marking one read changes the document, and nothing offers to delete it.
   await largeRow.getByRole("button", { name: "Mark read" }).click();
   await expect(largeRow).toHaveAttribute("data-read", "yes");
   await expect(largeRow.getByRole("button", { name: "Delete" })).toHaveCount(0);
   await expect(history.getByRole("row")).toHaveCount(3);
+  await expect(page.getByTestId("unread-count")).toHaveText("1");
+
+  // Marking the rest read at once leaves nothing unread and every row in place.
+  const lowRow = page.getByTestId(`alert-alr_${householdId}.low.${accountId}.2026-08-30`);
+  await expect(lowRow).toHaveAttribute("data-read", "no");
+  await page.getByRole("button", { name: "Mark all read" }).click();
+  await expect(lowRow).toHaveAttribute("data-read", "yes");
+  await expect(page.getByTestId("unread-count")).toHaveCount(0);
+  await expect(history.getByRole("row")).toHaveCount(3);
+  await expect(page.getByRole("button", { name: "Mark all read" })).toBeDisabled();
 });

@@ -4,18 +4,21 @@
  * seeds them into an empty household), the demo data (which files its
  * merchants under them), and the tests.
  *
- * Ids are deterministic (`grp_default_<slug>`, `cat_default_<slug>`), so two
- * devices seeding the same empty household at the same moment write the same
- * documents and the conflict handler settles them rather than doubling the
- * set. Plain JavaScript because `scripts/` runs under Node and the browser
- * build both, and neither may import the other's language.
+ * Ids are deterministic per household (`grp_<household>.<slug>`,
+ * `cat_<household>.<slug>`), so two devices seeding the same empty household
+ * at the same moment write the same documents and the conflict handler
+ * settles them rather than doubling the set — while two households never
+ * collide, because a collection's ids are one namespace for the whole
+ * environment, not one per household. Plain JavaScript because `scripts/`
+ * runs under Node and the browser build both, and neither may import the
+ * other's language.
  */
 
 /**
  * @typedef {"income" | "expense" | "transfer"} CategoryKind
  * @typedef {"fixed" | "flexible" | "non_monthly"} BudgetBucket
- * @typedef {{ readonly id: string; readonly name: string; readonly icon: string; readonly bucket?: BudgetBucket }} DefaultCategory
- * @typedef {{ readonly id: string; readonly name: string; readonly kind: CategoryKind; readonly categories: readonly DefaultCategory[] }} DefaultGroup
+ * @typedef {{ readonly slug: string; readonly name: string; readonly icon: string; readonly bucket?: BudgetBucket }} DefaultCategory
+ * @typedef {{ readonly slug: string; readonly name: string; readonly kind: CategoryKind; readonly categories: readonly DefaultCategory[] }} DefaultGroup
  */
 
 /** `Gas & electric` → `gas_electric`. */
@@ -27,12 +30,14 @@ export function taxonomySlug(name) {
     .replaceAll(/^_+|_+$/gu, "");
 }
 
-export function defaultGroupId(name) {
-  return `grp_default_${taxonomySlug(name)}`;
+/** The id of a household's default group, from its name or its slug. */
+export function defaultGroupId(householdId, name) {
+  return `grp_${householdId}.${taxonomySlug(name)}`;
 }
 
-export function defaultCategoryId(name) {
-  return `cat_default_${taxonomySlug(name)}`;
+/** The id of a household's default category, from its name or its slug. */
+export function defaultCategoryId(householdId, name) {
+  return `cat_${householdId}.${taxonomySlug(name)}`;
 }
 
 /**
@@ -42,7 +47,7 @@ export function defaultCategoryId(name) {
  * @returns {DefaultCategory}
  */
 function category(name, icon, bucket) {
-  return { id: defaultCategoryId(name), name, icon, ...(bucket === undefined ? {} : { bucket }) };
+  return { slug: taxonomySlug(name), name, icon, ...(bucket === undefined ? {} : { bucket }) };
 }
 
 /**
@@ -52,7 +57,7 @@ function category(name, icon, bucket) {
  * @returns {DefaultGroup}
  */
 function group(name, kind, categories) {
-  return { id: defaultGroupId(name), name, kind, categories };
+  return { slug: taxonomySlug(name), name, kind, categories };
 }
 
 /** @type {readonly DefaultGroup[]} */
@@ -156,8 +161,9 @@ export const DEFAULT_TAXONOMY = [
 export function defaultTaxonomyDocuments(householdId, at) {
   const documents = [];
   DEFAULT_TAXONOMY.forEach((entry, groupIndex) => {
+    const groupId = defaultGroupId(householdId, entry.slug);
     documents.push({
-      id: entry.id,
+      id: groupId,
       household_id: householdId,
       created_at: at,
       updated_at: at,
@@ -168,14 +174,14 @@ export function defaultTaxonomyDocuments(householdId, at) {
     });
     entry.categories.forEach((item, categoryIndex) => {
       documents.push({
-        id: item.id,
+        id: defaultCategoryId(householdId, item.slug),
         household_id: householdId,
         created_at: at,
         updated_at: at,
         kind: "category",
         name: item.name,
         category_kind: entry.kind,
-        parent_id: entry.id,
+        parent_id: groupId,
         icon: item.icon,
         sort_order: categoryIndex,
         ...(item.bucket === undefined ? {} : { budget_bucket: item.bucket }),

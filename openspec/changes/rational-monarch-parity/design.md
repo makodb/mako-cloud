@@ -113,9 +113,10 @@ parameters: `#/accounts/<id>`, `#/transactions?…` (every filter in the query),
 `#/settings/<page>`. Existing routes (`#/reports`, `#/plan`, `#/household`, …) redirect.
 
 **11. Default taxonomy is seeded on first open, idempotently.** When a household opens with no
-taxonomy documents, the app writes the default groups and categories with deterministic ids
-(`grp_default_<slug>`, `cat_default_<slug>`), so two devices seeding at once write the same
-documents and the conflict handler settles them. The demo household keeps its own richer seed.
+taxonomy documents, the app writes the default groups and categories with ids deterministic per
+household (`grp_<household>.<slug>`, `cat_<household>.<slug>`), so two devices seeding at once
+write the same documents and the conflict handler settles them, while two households never
+collide — a collection's ids are one namespace for the environment, not one per household. The demo household keeps its own richer seed.
 
 **12. Review state is a flag with a definition.** `reviewed: true` is set on everything a member
 creates by hand; sync and import leave it unset; the review queue is transactions without

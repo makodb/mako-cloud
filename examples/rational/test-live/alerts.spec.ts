@@ -178,7 +178,14 @@ test("an alert the nightly job decided reaches the app and the household's endpo
       { timeout: 90_000, message: "the nightly job's alert never arrived" },
     )
     .toContain(`${alertId}/alert`);
-  await page.getByRole("link", { name: "Alerts" }).click();
+  await page
+    .getByRole("navigation", { name: "Sections" })
+    .getByRole("link", { name: "Settings" })
+    .click();
+  await page
+    .getByRole("navigation", { name: "Settings pages" })
+    .getByRole("link", { name: "Notifications" })
+    .click();
   await expect(page.getByTestId("alerts-screen")).toBeVisible();
   const row = page.getByTestId(`alert-${alertId}`);
   await expect(row.getByTestId("alert-kind")).toHaveText("A large transaction");

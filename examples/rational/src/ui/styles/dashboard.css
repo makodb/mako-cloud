@@ -1,0 +1,381 @@
+/* --- The dashboard: a grid of cards, each a door to the screen that owns
+   its number. The hierarchy is done with size and weight, never with color:
+   the net-worth figure is the largest thing on the page, every other figure
+   a step down, labels small and muted, and the numbers tabular so the eye
+   can run down a column of them. ---------------------------------------- */
+
+.dashboard-subtitle {
+  margin: 0.15rem 0 0;
+  font-size: 0.88rem;
+}
+
+.dashboard-toolbar {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* Four columns on a wide screen; the counts step down with the viewport
+   below. Dense packing lets a one-column card fill the hole a wide card
+   leaves at the end of a row, so a customized order never shows a gap. */
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-auto-flow: dense;
+  gap: 1rem;
+}
+
+.widget {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  min-width: 0;
+  padding: 1.1rem 1.25rem 1.2rem;
+  border: 1px solid var(--hairline);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgb(23 26 32 / 3%);
+}
+
+.widget[data-size="wide"] {
+  grid-column: span 2;
+}
+
+.widget[data-size="full"] {
+  grid-column: span 3;
+}
+
+/* While customizing, a hidden card stays on the grid, dimmed and dashed, so
+   there is something to press "Show" on. */
+.widget[data-hidden="true"] {
+  opacity: 0.6;
+  border-style: dashed;
+  box-shadow: none;
+}
+
+.widget-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.75rem;
+}
+
+.widget-head h2 {
+  margin: 0;
+  font-size: 0.76rem;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  white-space: nowrap;
+}
+
+.widget-link {
+  font-size: 0.85rem;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.widget-controls {
+  display: flex;
+  gap: 0.1rem;
+  align-items: center;
+}
+
+.widget-controls button.icon {
+  padding: 0.2rem 0.45rem;
+  font-size: 0.9rem;
+}
+
+.widget-controls button.link {
+  font-size: 0.85rem;
+}
+
+.widget-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  min-width: 0;
+}
+
+.widget-hidden-note {
+  margin: 0;
+  font-size: 0.88rem;
+}
+
+/* --- Figures ------------------------------------------------------------ */
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+.widget-figure {
+  margin: 0;
+  font-size: 1.7rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+}
+
+.widget-figure.hero {
+  font-size: 2.6rem;
+  letter-spacing: -0.03em;
+}
+
+.widget-figure.negative {
+  color: var(--danger);
+}
+
+.widget-meta {
+  margin: 0;
+  font-size: 0.88rem;
+  color: var(--ink-soft);
+}
+
+.widget-empty {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--ink-soft);
+}
+
+.trend {
+  display: inline-flex;
+  gap: 0.35rem;
+  align-items: baseline;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.trend-arrow {
+  font-size: 0.7em;
+}
+
+.trend-good {
+  color: var(--positive);
+}
+
+.trend-bad {
+  color: var(--danger);
+}
+
+.trend-flat {
+  color: var(--ink-soft);
+  font-weight: 450;
+}
+
+/* The hero's line gets more room than a tile's would, and the same stroke. */
+.widget-sparkline .chart-sparkline {
+  height: 3.5rem;
+  margin-top: 0.25rem;
+}
+
+/* --- This month against last: two bars on one scale --------------------- */
+
+.compare {
+  display: grid;
+  gap: 0.55rem;
+  margin-top: 0.15rem;
+}
+
+.compare-row {
+  display: grid;
+  grid-template-columns: 6.5rem minmax(0, 1fr) auto;
+  gap: 0.75rem;
+  align-items: center;
+  font-size: 0.85rem;
+}
+
+.compare-label {
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+
+.compare-label small {
+  color: var(--ink-faint);
+}
+
+.compare-value {
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.compare-row.previous .progress-fill {
+  opacity: 0.4;
+}
+
+/* --- Lists of bills and goals ------------------------------------------- */
+
+.widget-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.7rem;
+}
+
+/* Two columns: what and how much on the first line, when and its state on
+   the second; a goal's bar takes a line of its own between them. */
+.widget-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.2rem 0.75rem;
+  align-items: baseline;
+  padding-top: 0.7rem;
+  border-top: 1px solid var(--hairline);
+  font-size: 0.9rem;
+}
+
+.widget-list li:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.row-title {
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.row-amount {
+  white-space: nowrap;
+}
+
+.row-bar {
+  grid-column: 1 / -1;
+  margin: 0.15rem 0;
+}
+
+.row-meta {
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+}
+
+/* With no chip beside it the meta line has the whole width. */
+.row-meta:last-child {
+  grid-column: 1 / -1;
+}
+
+.widget-list .chip {
+  margin: 0;
+  justify-self: end;
+  align-self: center;
+}
+
+/* A bill's state wears a tone: late is a problem, due is a nudge, upcoming
+   is just information. Goals borrow the same three for on track and behind. */
+.chip.state-late {
+  color: var(--danger);
+  background: var(--danger-wash);
+  border-color: transparent;
+}
+
+.chip.state-due {
+  color: var(--warn-ink);
+  background: var(--warn-wash);
+  border-color: transparent;
+}
+
+.chip.state-upcoming {
+  color: var(--accent-deep);
+  background: var(--accent-wash);
+  border-color: transparent;
+}
+
+/* --- Recent transactions: a table without the table's chrome ----------- */
+
+/* Fixed layout, so the merchant column is what is left after the date,
+   category, and amount take their measure -- and a long statement line
+   ellipsizes there instead of squeezing the others. */
+.widget-table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.widget-table td {
+  padding: 0.5rem 0.5rem 0.5rem 0;
+  border-top: 1px solid var(--hairline);
+  vertical-align: baseline;
+}
+
+.widget-table tr:first-child td {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.widget-table tr:last-child td {
+  padding-bottom: 0;
+}
+
+.widget-table td.date {
+  width: 4.25rem;
+  white-space: nowrap;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+.widget-table td.merchant {
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.widget-table td.merchant .chip {
+  margin: 0 0 0 0.5rem;
+}
+
+.widget-table td.category {
+  width: 30%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.widget-table td.amount {
+  width: 6.5rem;
+  padding-right: 0;
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* --- Fewer columns as the screen narrows -------------------------------- */
+
+@media (max-width: 78rem) {
+  .dashboard-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 62rem) {
+  .dashboard-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .widget[data-size="full"] {
+    grid-column: span 2;
+  }
+}
+
+@media (max-width: 36rem) {
+  .dashboard-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .widget[data-size="wide"],
+  .widget[data-size="full"] {
+    grid-column: span 1;
+  }
+
+  .widget-figure.hero {
+    font-size: 2.1rem;
+  }
+
+  .widget-table td.category {
+    display: none;
+  }
+}

@@ -5,6 +5,7 @@ import { MakoRationalAuth, type RationalAuth, signInFragment } from "../auth.js"
 import { functionUrl, type RationalConfig, redirectUrl } from "../config.js";
 import { databaseName } from "../model/ids.js";
 import {
+  type BudgetMode,
   type CollectionId,
   DIRECTORY_COLLECTIONS,
   type DirectoryCollectionId,
@@ -413,8 +414,33 @@ export class RationalApp {
         household: scope,
         generation: replaced ? state.generation + 1 : state.generation,
       }));
+      this.#maybeSeedTaxonomy();
     });
     await controller.open(user.authorizationEpoch);
+  }
+
+  /** Household sessions whose default taxonomy this run has already seen to. */
+  readonly #seededSessions = new WeakSet<ScopeSession<HouseholdCollectionId>>();
+
+  /**
+   * A household that finished its first pull with no taxonomy at all is a new
+   * one: give it the default groups and categories. Only after the pull, so a
+   * household whose categories simply had not arrived yet is not mistaken for
+   * an empty one; only once per session; and only for a member allowed to
+   * write, since a viewer's seed would be refused. The role arrives through
+   * the directory and the pull through the household, in either order, so
+   * both of them ask.
+   */
+  #maybeSeedTaxonomy(): void {
+    const controller = this.#household;
+    const session = controller?.session ?? null;
+    const writes = this.#writes;
+    if (controller === null || session === null || writes === null) return;
+    if (!controller.state.initialSynced || this.#seededSessions.has(session)) return;
+    const role = this.roleIn(this.state.currentHouseholdId);
+    if (role !== "owner" && role !== "editor") return;
+    this.#seededSessions.add(session);
+    void writes.seedDefaultTaxonomy().catch(() => undefined);
   }
 
   /**
@@ -451,6 +477,41 @@ export class RationalApp {
   async removeMember(householdId: string, userId: string): Promise<void> {
     await this.#requireHouseholds().remove({ householdId, userId });
     await this.#afterMembershipChange();
+  }
+
+  /**
+   * The household's own settings — its name, its currency, how its budget
+   * page presents the same budgets. The document lives in the directory, not
+   * the household database, and the policy lets only the owner change it.
+   */
+  async updateHousehold(patch: {
+    readonly name?: string;
+    readonly currency?: string;
+    readonly budget_mode?: BudgetMode;
+  }): Promise<Household> {
+    const controller = this.#directory;
+    const session = controller?.session ?? null;
+    const householdId = this.state.currentHouseholdId;
+    if (controller === null || session === null || householdId === null) {
+      throw new Error("No household is open.");
+    }
+    const name = patch.name?.trim();
+    if (name !== undefined && name === "") throw new Error("A household needs a name.");
+    if (patch.currency !== undefined && !/^[A-Z]{3}$/u.test(patch.currency)) {
+      throw new Error("The currency must be an ISO 4217 code such as USD.");
+    }
+    const document = await session.collections.households.findOne(householdId).exec();
+    if (document === null) throw new Error("The household is not on this device yet.");
+    controller.noteLocalWrite();
+    const stamp = this.#now();
+    const updated = await document.incrementalModify((current) => ({
+      ...current,
+      ...(name === undefined ? {} : { name }),
+      ...(patch.currency === undefined ? {} : { currency: patch.currency }),
+      ...(patch.budget_mode === undefined ? {} : { budget_mode: patch.budget_mode }),
+      updated_at: stamp,
+    }));
+    return updated.toJSON() as Household;
   }
 
   /** The role the signed-in person holds in a household, from the projection. */
@@ -627,6 +688,7 @@ export class RationalApp {
         this.#patch((state) => ({ ...state, memberships }));
         this.#reconcileSelection(memberships);
         this.#maybeProvisionPersonalSpace();
+        this.#maybeSeedTaxonomy();
       });
     // An invitation is a membership document that names an address rather
     // than a user; the person it names is the one who may accept it. The

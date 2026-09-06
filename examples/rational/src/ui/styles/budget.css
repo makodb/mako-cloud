@@ -1,0 +1,218 @@
+/* --- Budget: a month of numbers, edited where they sit ------------------- */
+
+.budget-tools {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.month-pager {
+  display: flex;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.month-pager button {
+  padding: 0.35rem 0.7rem;
+  line-height: 1;
+  font-size: 1.05rem;
+}
+
+/* Wide enough for "September 2026" so the buttons do not shuffle as the
+   month changes under them. */
+.month-title {
+  min-width: 9.5rem;
+  text-align: center;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.mode-hint {
+  margin: -0.75rem 0 1.25rem;
+}
+
+.budget .over {
+  color: var(--danger);
+  font-weight: 500;
+}
+
+/* The summary tiles hold five numbers; the income one is a button until it
+   is clicked and a field afterwards, and neither may look like a control
+   dropped into a display. */
+.budget-summary .total {
+  flex: 1 1 10rem;
+}
+
+.budget-summary .amount-button {
+  padding: 0;
+  font: inherit;
+  color: var(--ink);
+  border-bottom: 1px dashed var(--hairline-strong);
+  border-radius: 0;
+}
+
+.budget-summary .amount-button:hover:not(:disabled) {
+  background: transparent;
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.budget-summary .amount-field {
+  width: 100%;
+  font-size: 1.15rem;
+  font-weight: 600;
+  text-align: left;
+}
+
+/* --- A group, or a bucket: a card with a table inside ------------------- */
+
+.budget-group,
+.bucket {
+  margin-bottom: 1.25rem;
+  padding: 1rem 1.25rem 0;
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.group-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.6rem;
+}
+
+.group-heading h2 {
+  margin: 0 0 0.15rem;
+}
+
+.group-figures {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 0.88rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.group-budget {
+  display: flex;
+  gap: 0.9rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.group-budget .inline-field {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.group-budget .field-name {
+  font-weight: 500;
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+}
+
+.group-budget .inline-field .amount-field {
+  margin-top: 0;
+}
+
+/* The card's own border is the table's; a second one would draw a box in a box. */
+.budget-group table.list,
+.bucket table.list {
+  margin: 0.75rem -1.25rem 0;
+  width: calc(100% + 2.5rem);
+  border: 0;
+  border-top: 1px solid var(--hairline);
+  border-radius: 0 0 12px 12px;
+  box-shadow: none;
+}
+
+.budget-table th[scope="row"] {
+  white-space: normal;
+}
+
+.category-icon {
+  display: inline-block;
+  width: 1.5rem;
+  text-align: center;
+}
+
+.share-hint {
+  display: block;
+  font-weight: 400;
+  font-size: 0.78rem;
+}
+
+/* The amount field sits in a numeric column and lines up with the numbers
+   around it. */
+.budget-table .amount-field {
+  width: 7.5rem;
+  padding: 0.3rem 0.55rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.budget-table .rollover {
+  width: auto;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.progress-column {
+  width: 7rem;
+  min-width: 5rem;
+}
+
+/* --- Flex mode: three buckets ------------------------------------------- */
+
+.buckets {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+  gap: 1.25rem;
+  align-items: start;
+  margin-bottom: 1.25rem;
+}
+
+.buckets .bucket {
+  margin-bottom: 0;
+}
+
+.bucket.flexible {
+  grid-column: 1 / -1;
+}
+
+.breakdown {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.25rem 1.5rem;
+  margin: 0.9rem 0 0.25rem;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  background: var(--canvas);
+  font-size: 0.88rem;
+}
+
+.breakdown dt {
+  color: var(--ink-soft);
+}
+
+.breakdown dd {
+  margin: 0;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.breakdown .result {
+  padding-top: 0.35rem;
+  border-top: 1px solid var(--hairline-strong);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.budget-totals {
+  margin-top: 0.5rem;
+}

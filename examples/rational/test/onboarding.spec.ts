@@ -48,7 +48,7 @@ test("a brand-new account is dropped straight into a space of its own", async ({
   // No switcher in the chrome: one space needs no chrome. The person is just
   // looking at their accounts.
   await expect(page.getByRole("combobox", { name: "Space" })).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "Accounts" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
 
   // Exactly one space -- the auto-provision does not fire twice.
   expect(await page.evaluate(() => window.rational.state.households.length)).toBe(1);

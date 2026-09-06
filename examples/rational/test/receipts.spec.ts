@@ -29,6 +29,26 @@ async function enterCredentials(page: Page, email: string, action: string): Prom
   await settle(page);
 }
 
+/** Settings is a hub: the sidebar entry first, then the page in its own navigation. */
+async function openSettingsPage(page: Page, label: string): Promise<void> {
+  await page
+    .getByRole("navigation", { name: "Sections" })
+    .getByRole("link", { name: "Settings" })
+    .click();
+  await page
+    .getByRole("navigation", { name: "Settings pages" })
+    .getByRole("link", { name: label, exact: true })
+    .click();
+}
+
+async function openTransactions(page: Page): Promise<void> {
+  await page
+    .getByRole("navigation", { name: "Sections" })
+    .getByRole("link", { name: "Transactions" })
+    .click();
+  await expect(page.getByRole("heading", { name: "Transactions" })).toBeVisible();
+}
+
 test("a receipt is attached by one member and opened by another", async ({ page }) => {
   await page.goto("/");
   await page.waitForFunction(() => window.rational !== undefined);
@@ -36,7 +56,7 @@ test("a receipt is attached by one member and opened by another", async ({ page 
   await enterCredentials(page, OWNER, "Create account");
 
   // A household with one member, one account, and one transaction to attach to.
-  await page.getByRole("link", { name: "Members" }).click();
+  await openSettingsPage(page, "Members");
   const before = await page.evaluate(() => window.rational.state.currentHouseholdId);
   const creator = page.getByRole("form", { name: "New household" });
   await creator.getByLabel("Name").fill("Shared flat");
@@ -81,7 +101,7 @@ test("a receipt is attached by one member and opened by another", async ({ page 
   });
 
   // The owner attaches a receipt.
-  await page.getByRole("link", { name: "Transactions" }).click();
+  await openTransactions(page);
   await page
     .getByTestId(`transaction-${transactionId}`)
     .getByRole("button", { name: "Receipts" })
@@ -99,7 +119,7 @@ test("a receipt is attached by one member and opened by another", async ({ page 
   // receipt they did not upload.
   await page.getByRole("button", { name: "Sign out" }).click();
   await enterCredentials(page, MEMBER, "Create account");
-  await page.getByRole("link", { name: "Members" }).click();
+  await openSettingsPage(page, "Members");
   await page
     .getByTestId(`invitation-${householdId}`)
     .getByRole("button", { name: "Accept" })
@@ -110,7 +130,7 @@ test("a receipt is attached by one member and opened by another", async ({ page 
     { timeout: 30_000 },
   );
   await settle(page);
-  await page.getByRole("link", { name: "Transactions" }).click();
+  await openTransactions(page);
   await page
     .getByTestId(`transaction-${transactionId}`)
     .getByRole("button", { name: "Receipts" })
