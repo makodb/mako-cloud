@@ -54,12 +54,17 @@ for (const pin of pins.images) {
     // the private bridge `host.containers.internal` is the bridge gateway,
     // where nothing listens, so every SDK call a deployed function made was
     // refused -- and this assertion, requiring the bridge, is what held that
-    // in place. What replaces it must still reach nothing beyond the machine.
+    // in place (finding #28). Since the egress allowlist the container may
+    // also reach the outside world, because a deployment may declare external
+    // hosts and a loopback-bound container would hollow that grant out; what
+    // confines *tenant* code is the per-worker sandbox, whose allow_net holds
+    // exactly the API origin plus the declared hosts (finding #36). So the
+    // line must grant host loopback, keep IPv6 off, and bind outbound traffic
+    // nowhere in particular -- for a while this check still demanded the old
+    // loopback binding and had been failing unnoticed (finding #47).
     assert(
-      source.includes(
-        "Network=slirp4netns:allow_host_loopback=true,outbound_addr=127.0.0.1,enable_ipv6=false\n",
-      ),
-      "the edge runtime cannot reach the platform API, or is not confined to this machine",
+      source.includes("Network=slirp4netns:allow_host_loopback=true,enable_ipv6=false\n"),
+      "the edge runtime cannot reach the platform API, or its network line changed shape",
     );
     assert(
       source.includes("--add-host=host.containers.internal:10.0.2.2"),
