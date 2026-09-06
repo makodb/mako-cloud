@@ -52,8 +52,8 @@
 
 ## 10. Parity, docs, and traceability
 
-- [ ] 10.1 `examples/rational/MONARCH-PARITY.md` with every Monarch feature, its status, and where it lives; `scripts/validate-rational-parity.js` and `npm run validate:rational-parity`, run with the documentation validators; a unit test of the validator over a fixture.
-- [ ] 10.2 `examples/rational/README.md` (model, screens, functions), `docs/rational.md`, `docs/requirements-traceability.md` rows for every new scenario; spec sync into `openspec/specs/samples/rational-money-app/spec.md`.
+- [x] 10.1 `examples/rational/MONARCH-PARITY.md` with every Monarch feature, its status, and where it lives; `scripts/validate-rational-parity.js` and `npm run validate:rational-parity`, run with the documentation validators; a unit test of the validator over a fixture.
+- [x] 10.2 `examples/rational/README.md` (model, screens, functions), `docs/rational.md`, `docs/requirements-traceability.md` rows for every new scenario; spec sync into `openspec/specs/samples/rational-money-app/spec.md`.
 
 ## 11. Verification and the beta
 

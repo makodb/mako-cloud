@@ -1139,33 +1139,95 @@ fn static_compatibility_issues(
     issues
 }
 
-/// True when `proposed` accepts everything `current` accepts by construction:
-/// identical apart from the `enum` keyword, where the proposed set is a
-/// superset of the current one or the constraint is dropped altogether.
+/// True when `proposed` accepts everything `current` accepts by construction.
+///
+/// Four keywords may move, and only towards accepting more: an `enum` may
+/// gain values or be lifted; an object's `properties` may gain new ones and
+/// keep every old one identical or itself widened; `required` may shrink but
+/// never grow; an array's `items` may widen. Everything else in the
+/// definition — its type, bounds, patterns, `additionalProperties` — must be
+/// byte-identical, because any other difference is a narrowing or a reshaping
+/// no stored document can be trusted to survive. The check recurses, so a
+/// nested object gaining an optional field is as safe as a root one gaining
+/// one (finding #46), and a widened enum three levels down is still a widened
+/// enum (finding #40).
 fn field_widened(current: &Value, proposed: &Value) -> bool {
     let (Some(current), Some(proposed)) = (current.as_object(), proposed.as_object()) else {
         return false;
     };
+    const MOVABLE: [&str; 4] = ["enum", "properties", "required", "items"];
     let strip = |definition: &Map<String, Value>| {
         let mut rest = definition.clone();
-        rest.remove("enum");
+        for keyword in MOVABLE {
+            rest.remove(keyword);
+        }
         rest
     };
     if strip(current) != strip(proposed) {
         return false;
     }
-    let Some(current_values) = current.get("enum").and_then(Value::as_array) else {
-        // The current field carries no enum: only an identical definition
-        // (handled by the caller) or a *new* restriction could differ here,
-        // and a new restriction is a narrowing.
-        return false;
-    };
-    match proposed.get("enum").and_then(Value::as_array) {
-        // The constraint was lifted: everything the old enum allowed remains allowed.
-        None => !proposed.contains_key("enum"),
-        Some(proposed_values) => current_values
+    enum_widened(current, proposed)
+        && properties_widened(current, proposed)
+        && required_not_grown(current, proposed)
+        && items_widened(current, proposed)
+}
+
+/// The enum gained values, was lifted, or was absent on both sides.
+fn enum_widened(current: &Map<String, Value>, proposed: &Map<String, Value>) -> bool {
+    match (
+        current.get("enum").and_then(Value::as_array),
+        proposed.get("enum").and_then(Value::as_array),
+    ) {
+        (None, None) => !proposed.contains_key("enum") || current.contains_key("enum"),
+        // A new restriction is a narrowing however it is spelled.
+        (None, Some(_)) => false,
+        (Some(_), None) => !proposed.contains_key("enum"),
+        (Some(current_values), Some(proposed_values)) => current_values
             .iter()
             .all(|value| proposed_values.contains(value)),
+    }
+}
+
+/// Every current property is still there, identical or widened; new ones may
+/// appear (whether they may be required is `required_not_grown`'s question).
+fn properties_widened(current: &Map<String, Value>, proposed: &Map<String, Value>) -> bool {
+    match (
+        object_at(current, "properties"),
+        object_at(proposed, "properties"),
+    ) {
+        (None, None) => !current.contains_key("properties") && !proposed.contains_key("properties"),
+        (Some(current_properties), Some(proposed_properties)) => {
+            current_properties.iter().all(|(name, definition)| {
+                proposed_properties
+                    .get(name)
+                    .is_some_and(|proposed_definition| {
+                        proposed_definition == definition
+                            || field_widened(definition, proposed_definition)
+                    })
+            })
+        }
+        // Properties appearing where there were none, or vanishing, changes
+        // what `additionalProperties` means for the whole object.
+        _ => false,
+    }
+}
+
+/// A field may stop being required; it may not start.
+fn required_not_grown(current: &Map<String, Value>, proposed: &Map<String, Value>) -> bool {
+    let current_required = strings_at(current, "required");
+    strings_at(proposed, "required")
+        .iter()
+        .all(|name| current_required.contains(name))
+}
+
+/// An array's item definition is identical or widened; it may not appear or vanish.
+fn items_widened(current: &Map<String, Value>, proposed: &Map<String, Value>) -> bool {
+    match (current.get("items"), proposed.get("items")) {
+        (None, None) => true,
+        (Some(current_items), Some(proposed_items)) => {
+            current_items == proposed_items || field_widened(current_items, proposed_items)
+        }
+        _ => false,
     }
 }
 
@@ -1348,6 +1410,95 @@ mod tests {
         // The reverse direction -- adding an enum where none existed -- is a
         // narrowing however it is spelled.
         assert!(!static_compatibility_issues(&lifted, &current).is_empty());
+    }
+
+    /// A nested object that gains optional fields accepts every document the
+    /// old one accepted, exactly as a root object does -- refusing it forced a
+    /// migration for a change that strands nothing (finding #46: Rational's
+    /// rules gained conditions under `match` and the beta answered
+    /// `migration_required`). A nested field that becomes required, changes
+    /// type, or disappears still needs one, and so does an array whose items
+    /// narrow.
+    #[test]
+    fn a_nested_object_gaining_optional_fields_is_compatible_and_a_nested_narrowing_is_not() {
+        let rule = |match_properties: serde_json::Value, required: serde_json::Value| {
+            serde_json::json!({
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "id": { "type": "string" },
+                    "match": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": match_properties,
+                        "required": required,
+                    },
+                    "tags": { "type": "array", "items": { "type": "string", "maxLength": 128 } },
+                },
+                "required": ["id", "match"],
+            })
+        };
+        let metadata = |schema: serde_json::Value| {
+            CollectionMetadata::new(
+                CollectionId::parse("rules").expect("collection id"),
+                CollectionMetadataVersion::new(1).expect("metadata version"),
+                SchemaVersion::new(1).expect("schema version"),
+                schema,
+                mako_documents::PrimaryKeyDefinition::Field { field: "id".into() },
+                SchemaCompatibility::Compatible,
+                CollectionLifecycle::Active,
+            )
+            .expect("metadata")
+        };
+        let current = metadata(rule(
+            serde_json::json!({
+                "description_contains": { "type": "string", "maxLength": 500 },
+                "direction": { "type": "string", "enum": ["expense"] },
+            }),
+            serde_json::json!([]),
+        ));
+        let optional_fields_added = metadata(rule(
+            serde_json::json!({
+                "description_contains": { "type": "string", "maxLength": 500 },
+                "description_equals": { "type": "string", "maxLength": 500 },
+                "merchant_id": { "type": "string", "maxLength": 128 },
+                "direction": { "type": "string", "enum": ["expense", "income"] },
+            }),
+            serde_json::json!([]),
+        ));
+        let nested_required_added = metadata(rule(
+            serde_json::json!({
+                "description_contains": { "type": "string", "maxLength": 500 },
+                "direction": { "type": "string", "enum": ["expense"] },
+            }),
+            serde_json::json!(["description_contains"]),
+        ));
+        let nested_type_changed = metadata(rule(
+            serde_json::json!({
+                "description_contains": { "type": "integer" },
+                "direction": { "type": "string", "enum": ["expense"] },
+            }),
+            serde_json::json!([]),
+        ));
+        let nested_field_removed = metadata(rule(
+            serde_json::json!({ "direction": { "type": "string", "enum": ["expense"] } }),
+            serde_json::json!([]),
+        ));
+        assert!(static_compatibility_issues(&current, &optional_fields_added).is_empty());
+        assert!(!static_compatibility_issues(&current, &nested_required_added).is_empty());
+        assert!(!static_compatibility_issues(&current, &nested_type_changed).is_empty());
+        assert!(!static_compatibility_issues(&current, &nested_field_removed).is_empty());
+
+        // Array items follow the same rule: a wider item is fine, a narrower
+        // one is not.
+        let mut items_widened = optional_fields_added.json_schema().clone();
+        items_widened["properties"]["tags"]["items"]["maxLength"] = serde_json::json!(128);
+        let mut items_narrowed = optional_fields_added.json_schema().clone();
+        items_narrowed["properties"]["tags"]["items"]["maxLength"] = serde_json::json!(64);
+        let widened = metadata(Value::Object(items_widened));
+        let narrowed = metadata(Value::Object(items_narrowed));
+        assert!(static_compatibility_issues(&optional_fields_added, &widened).is_empty());
+        assert!(!static_compatibility_issues(&optional_fields_added, &narrowed).is_empty());
     }
 
     use mako_documents::{IndexDirection, IndexState};

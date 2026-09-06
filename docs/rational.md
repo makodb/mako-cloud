@@ -20,7 +20,7 @@ The first is to show that the platform is enough to build a product on. The
 second is to find out where it is not. Every gap Rational hits is recorded in
 [`examples/rational/PLATFORM-FINDINGS.md`](../examples/rational/PLATFORM-FINDINGS.md)
 as symptom → platform change → regression test, and is fixed **in the
-platform**, never worked around in the application. Forty-five findings so
+platform**, never worked around in the application. Forty-six findings so
 far, all closed. Several were things no test could have found without a real
 application asking for them:
 
