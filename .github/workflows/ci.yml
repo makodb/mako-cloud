@@ -41,6 +41,8 @@ jobs:
         run: npm run validate:rollback
       - name: Verify nothing collects payment and no enforcement reads the balance
         run: npm run validate:no-collection
+      - name: Check Rational's Monarch parity matrix
+        run: npm run validate:rational-parity && npm run test:rational-parity-validator
       - name: Check Rust formatting
         run: cargo fmt --all -- --check
       - name: Lint Rust

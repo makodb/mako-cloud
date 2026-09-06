@@ -1,9 +1,10 @@
 # How close Rational is to Monarch
 
 Rational is built to be a Monarch-style money manager, and this table is the honest account of
-how close it is: every feature Monarch offers, whether Rational has it, and where. It is read by
-`scripts/validate-rational-parity.js` (`npm run validate:rational-parity`), which refuses a
-malformed row and a coverage under ninety percent.
+how close it is: every feature Monarch offers, whether Rational has it, and where. In the
+platform repository it is read by `scripts/validate-rational-parity.js`
+(`npm run validate:rational-parity`), which refuses a malformed row and a coverage under ninety
+percent.
 
 Status means:
 

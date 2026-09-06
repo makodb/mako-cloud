@@ -2,7 +2,14 @@
 
 Rational is a household money manager built on nothing but what Mako Cloud
 offers a developer: an ordinary project, its ordinary API URL, document
-policies, RxDB replication, file storage, and one edge function. It lives in
+policies, RxDB replication, file storage, and three edge functions. It is a
+Monarch-style product — a dashboard, accounts of every class with a net-worth
+history, transactions with merchants, transfers, review, and bulk edit, category
+groups, rules, budgets in two modes, cash flow with a Sankey, recurring bills on
+a calendar, goals that save up or pay down, investments, notifications, and a
+settings hub — and how close it comes to Monarch is measured feature by feature
+in [`examples/rational/MONARCH-PARITY.md`](../examples/rational/MONARCH-PARITY.md),
+which `npm run validate:rational-parity` refuses under ninety percent. It lives in
 [`examples/rational`](../examples/rational/README.md), it is published from a
 repository of its own at <https://github.com/shuaimu/rational>, and the site
 GitHub Pages serves from it talks to a real project on the public beta.
@@ -53,6 +60,8 @@ application asking for them:
 | Filing, duplicate-checking, and net worth overnight | The `nightly` function on a 02:00 UTC schedule |
 | Being told about a large charge or an overrun | Alerts decided server-side, delivered in-app as documents and outward by a [signed webhook](webhooks.md) on the `alerts` collection |
 | Working offline | Dexie storage, durable checkpoints, and the authorization-epoch [security reset](rxdb-client.md#authorization-epoch-security-reset) |
+| A house valued by hand, a brokerage by its holdings, a category group, a merchant, a paired transfer | Fields of the documents an application already has — no new collection, because RxDB's open-source build opens thirteen per page and Rational holds twelve; schema version 3 published additively over the beta's version 2 |
+| A dashboard whose numbers agree with every other screen | One set of selectors over the replicated documents, shared with the nightly job through `functions/shared/` |
 | Calling the API from a static host | [Allowed origins](allowed-origins.md) |
 
 ## Running it
@@ -62,6 +71,7 @@ npm install
 npm run test:browser -w @mako-cloud/example-rational   # every screen, against the in-browser fake
 npm run test:unit -w @mako-cloud/example-rational      # the pure functions
 npm run test:rational-smoke                            # the model itself, over HTTP, no browser
+npm run validate:rational-parity                       # the Monarch parity matrix, at or above 90%
 ```
 
 The third is the one the beta runs. `crates/mako-smoke/tests/rational.rs` publishes the

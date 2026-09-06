@@ -63,12 +63,14 @@ const COPIED = [
   "test-support",
   "index.html",
   "playwright.config.ts",
+  "MONARCH-PARITY.md",
 ];
 /** Copied from `scripts/`: the two entry points, their data, and their types. */
 const COPIED_SCRIPTS = (entries) =>
   entries.filter(
     (entry) =>
-      ["bootstrap.mjs", "seed.mjs", "demo-data.mjs"].includes(entry) || entry.endsWith(".d.mts"),
+      ["bootstrap.mjs", "seed.mjs", "demo-data.mjs", "default-taxonomy.mjs"].includes(entry) ||
+      entry.endsWith(".d.mts"),
   );
 /** Rewritten rather than copied: they name this workspace. */
 const REWRITTEN_TSCONFIGS = ["tsconfig.json", "tsconfig.test.json"];
