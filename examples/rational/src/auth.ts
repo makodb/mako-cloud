@@ -3,6 +3,7 @@ import {
   type AuthUser,
   BrowserAuthSessionPersistence,
   MakoAuthClient,
+  MakoAuthError,
   MakoAuthenticationRequiredError,
   type MakoSignInFragment,
   type MakoUserSession,
@@ -79,32 +80,34 @@ export class MakoRationalAuth implements RationalAuth {
   }
 
   async signUp(email: string, password: string): Promise<void> {
-    await this.client.signUp(email, password);
+    await throughTransient(() => this.client.signUp(email, password));
   }
 
   async signIn(email: string, password: string): Promise<AuthUser> {
-    const session = await this.client.signInWithPassword(email, password);
+    const session = await throughTransient(() => this.client.signInWithPassword(email, password));
     this.#remember(session);
     return session.user;
   }
 
   async startProviderSignIn(provider: string, redirectUrl: string): Promise<string> {
-    const start = await this.client.startProviderSignIn(provider, redirectUrl);
+    const start = await throughTransient(() =>
+      this.client.startProviderSignIn(provider, redirectUrl),
+    );
     return start.authorizationUrl;
   }
 
   async completeProviderSignIn(fragment: string): Promise<AuthUser> {
-    const session = await this.client.completeProviderSignIn(fragment);
+    const session = await throughTransient(() => this.client.completeProviderSignIn(fragment));
     this.#remember(session);
     return session.user;
   }
 
   async requestMagicLink(email: string, redirectUrl: string): Promise<void> {
-    await this.client.requestMagicLink(email, redirectUrl);
+    await throughTransient(() => this.client.requestMagicLink(email, redirectUrl));
   }
 
   async redeemMagicLink(token: string): Promise<AuthUser> {
-    const session = await this.client.redeemMagicLink(token);
+    const session = await throughTransient(() => this.client.redeemMagicLink(token));
     this.#remember(session);
     return session.user;
   }
@@ -152,6 +155,33 @@ export class MakoRationalAuth implements RationalAuth {
   #remember(session: MakoUserSession): void {
     this.#user = session.user;
     this.#refreshUnavailable = false;
+  }
+}
+
+/**
+ * Retry an auth call through a transient outage.
+ *
+ * A hosted deployment restarts a service for a few seconds when it takes a
+ * checkpoint backup, and a `fetch` caught in that window throws a *retryable*
+ * `MakoAuthError` (`authentication service is unavailable`) — the base class,
+ * not the `MakoAuthenticationRequiredError` subclass a real refusal uses, so
+ * the check is on `MakoAuthError.retryable`. The platform's replication
+ * already retries through those windows; a person clicking "Sign in" should
+ * not be the one to hit the one blip in six minutes. A definitive refusal —
+ * a wrong password, an expired code — is never retryable and is surfaced at
+ * once. The whole budget is a few seconds, shorter than the window, so a
+ * genuine outage still fails promptly rather than hanging.
+ */
+export async function throughTransient<T>(call: () => Promise<T>): Promise<T> {
+  const backoffMs = [400, 900, 1600];
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await call();
+    } catch (error) {
+      const retryable = error instanceof MakoAuthError && error.retryable;
+      if (!retryable || attempt >= backoffMs.length) throw error;
+      await new Promise((resolve) => setTimeout(resolve, backoffMs[attempt]));
+    }
   }
 }
 
