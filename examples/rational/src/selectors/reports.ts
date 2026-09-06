@@ -1,3 +1,4 @@
+import { isCounted } from "../../functions/shared/exclusions.js";
 import type { Account, NetWorthSnapshot, Transaction } from "../model/types.js";
 import { memoizeLast } from "./memo.js";
 import { monthKey } from "./transactions.js";
@@ -11,7 +12,13 @@ import { monthKey } from "./transactions.js";
  * the findings log with the numbers rather than asserted away.
  *
  * Every total is minor units of one currency. A household with accounts in
- * two currencies gets two rows, never a conversion.
+ * two currencies gets two rows, never a conversion. Transfer legs, balance
+ * updates, and hidden transactions are not money moving and are not counted,
+ * by the same test (`functions/shared/exclusions.ts`) every other total uses.
+ *
+ * The cash-flow page has since grown its own module (`cashflow.ts`), with
+ * ranges, category kinds, and the breakdowns it draws; what remains here is
+ * the original month tables and the net-worth history the charts still read.
  */
 
 /** Money in and out over one month, by currency. */
@@ -48,6 +55,7 @@ function* effects(transaction: Transaction): Generator<{ categoryId: string; amo
 export function cashFlowByMonth(transactions: readonly Transaction[]): readonly CashFlowMonth[] {
   const months = new Map<string, { income: number; expense: number }>();
   for (const transaction of transactions) {
+    if (!isCounted(transaction)) continue;
     const key = `${monthKey(transaction.date)}\u0000${transaction.currency}`;
     const total = months.get(key) ?? { income: 0, expense: 0 };
     if (transaction.amount >= 0) total.income += transaction.amount;
@@ -83,6 +91,7 @@ export function spendingByCategory(
 ): readonly SpendingSlice[] {
   const totals = new Map<string, number>();
   for (const transaction of transactions) {
+    if (!isCounted(transaction)) continue;
     if (month !== undefined && monthKey(transaction.date) !== month) continue;
     for (const effect of effects(transaction)) {
       if (effect.amount >= 0) continue;
@@ -99,6 +108,7 @@ export function spendingByAccount(
 ): readonly SpendingSlice[] {
   const totals = new Map<string, number>();
   for (const transaction of transactions) {
+    if (!isCounted(transaction)) continue;
     if (month !== undefined && monthKey(transaction.date) !== month) continue;
     if (transaction.amount >= 0) continue;
     const key = `${transaction.account_id}\u0000${transaction.currency}`;
@@ -110,7 +120,7 @@ export function spendingByAccount(
 export function spendingByMonth(transactions: readonly Transaction[]): readonly SpendingSlice[] {
   const totals = new Map<string, number>();
   for (const transaction of transactions) {
-    if (transaction.amount >= 0) continue;
+    if (!isCounted(transaction) || transaction.amount >= 0) continue;
     const key = `${monthKey(transaction.date)}\u0000${transaction.currency}`;
     totals.set(key, (totals.get(key) ?? 0) + -transaction.amount);
   }

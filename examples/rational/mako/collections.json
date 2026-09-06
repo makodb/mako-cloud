@@ -1,11 +1,11 @@
 {
   "$comment": "Single source of the Rational document model. scripts/bootstrap.mjs publishes jsonSchema, primaryKey, and indexes to the platform; src/model/collections.ts derives the RxDB schemas from the same object. Amounts are integer minor units with an ISO 4217 currency; timestamps are unix milliseconds; deletion is RxDB's _deleted. Small document types share a collection with a kind discriminator (taxonomy, alerts, connections) because RxDB's open-source build opens at most 13 collections per page.",
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "collections": [
     {
       "id": "households",
       "scope": "directory",
-      "description": "A household. The `updated` index is what lets the nightly function walk every household: a query with no predicate names no index and is refused, so enumeration is a range over one.",
+      "description": "A household. The `updated` index is what lets the nightly function walk every household: a query with no predicate names no index and is refused, so enumeration is a range over one. budget_mode is how the budget page presents the same budgets (schema v3).",
       "jsonSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -46,6 +46,11 @@
           "owner_id": {
             "type": "string",
             "maxLength": 128
+          },
+          "budget_mode": {
+            "type": "string",
+            "enum": ["category", "flex"],
+            "maxLength": 32
           }
         },
         "required": [
@@ -179,7 +184,19 @@
           },
           "type": {
             "type": "string",
-            "enum": ["checking", "savings", "credit", "investment", "loan", "cash"],
+            "enum": [
+              "checking",
+              "savings",
+              "credit",
+              "investment",
+              "loan",
+              "cash",
+              "real_estate",
+              "vehicle",
+              "crypto",
+              "other_asset",
+              "other_liability"
+            ],
             "maxLength": 32
           },
           "currency": {
@@ -217,6 +234,63 @@
             "minimum": 0,
             "maximum": 9007199254740991,
             "multipleOf": 1
+          },
+          "hide_from_net_worth": {
+            "type": "boolean"
+          },
+          "owner_id": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "holdings": {
+            "type": "array",
+            "maxItems": 256,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                "symbol": {
+                  "type": "string",
+                  "maxLength": 32
+                },
+                "name": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "quantity": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "price": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991,
+                  "multipleOf": 1
+                },
+                "cost_basis": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991,
+                  "multipleOf": 1
+                },
+                "asset_class": {
+                  "type": "string",
+                  "enum": ["stock", "etf", "fund", "bond", "cash", "crypto", "other"],
+                  "maxLength": 32
+                },
+                "price_as_of": {
+                  "type": "string",
+                  "minLength": 10,
+                  "maxLength": 10,
+                  "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+                }
+              },
+              "required": ["id", "symbol", "name", "quantity", "price", "asset_class"]
+            }
           }
         },
         "required": [
@@ -240,7 +314,8 @@
           "name": "household_updated",
           "fields": ["household_id", "updated_at"]
         }
-      ]
+      ],
+      "description": "An account. Balance is the opening balance plus every transaction booked to it, plus the value of its holdings for an investment or crypto account. A tracked account (real estate, vehicle, other asset or liability) is moved by balance-update transactions flagged adjustment."
     },
     {
       "id": "transactions",
@@ -372,6 +447,23 @@
               "type": "string",
               "maxLength": 512
             }
+          },
+          "merchant_id": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "reviewed": {
+            "type": "boolean"
+          },
+          "hidden": {
+            "type": "boolean"
+          },
+          "adjustment": {
+            "type": "boolean"
+          },
+          "transfer_id": {
+            "type": "string",
+            "maxLength": 128
           }
         },
         "required": [
@@ -405,12 +497,13 @@
           "name": "household_date",
           "fields": ["household_id", "date"]
         }
-      ]
+      ],
+      "description": "A transaction. reviewed is set on what a member typed and on what a member or a rule has looked at; hidden keeps it out of budgets, reports, and cash flow; adjustment marks a balance update of a tracked account; transfer_id pairs the two legs of a transfer."
     },
     {
       "id": "taxonomy",
       "scope": "household",
-      "description": "Categories and tags in one collection; kind discriminates and category_kind carries a category's income/expense/transfer nature.",
+      "description": "Categories, tags, category groups, and merchants in one collection; kind discriminates. A category's parent_id names its group and category_kind its nature; budget_bucket, target_amount, and target_months carry its budgeting; a merchant's patterns are the normalized descriptions that mean it.",
       "jsonSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -439,7 +532,7 @@
           },
           "kind": {
             "type": "string",
-            "enum": ["category", "tag"],
+            "enum": ["category", "tag", "group", "merchant"],
             "maxLength": 32
           },
           "name": {
@@ -462,6 +555,41 @@
           },
           "archived": {
             "type": "boolean"
+          },
+          "icon": {
+            "type": "string",
+            "maxLength": 16
+          },
+          "sort_order": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "multipleOf": 1
+          },
+          "budget_bucket": {
+            "type": "string",
+            "enum": ["fixed", "flexible", "non_monthly"],
+            "maxLength": 32
+          },
+          "target_amount": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "multipleOf": 1
+          },
+          "target_months": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 60,
+            "multipleOf": 1
+          },
+          "patterns": {
+            "type": "array",
+            "maxItems": 64,
+            "items": {
+              "type": "string",
+              "maxLength": 500
+            }
           }
         },
         "required": ["id", "household_id", "created_at", "updated_at", "kind", "name"]
@@ -519,6 +647,23 @@
                 "type": "string",
                 "maxLength": 500
               },
+              "description_equals": {
+                "type": "string",
+                "maxLength": 500
+              },
+              "merchant_id": {
+                "type": "string",
+                "maxLength": 128
+              },
+              "category_id": {
+                "type": "string",
+                "maxLength": 128
+              },
+              "direction": {
+                "type": "string",
+                "enum": ["expense", "income"],
+                "maxLength": 32
+              },
               "amount_min": {
                 "type": "integer",
                 "minimum": -9007199254740991,
@@ -541,6 +686,16 @@
           "set_category_id": {
             "type": "string",
             "maxLength": 128
+          },
+          "set_merchant_id": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "hide": {
+            "type": "boolean"
+          },
+          "mark_reviewed": {
+            "type": "boolean"
           },
           "add_tags": {
             "type": "array",
@@ -593,7 +748,7 @@
     {
       "id": "budgets",
       "scope": "household",
-      "description": "One per category per month; id is <household_id>:<category_id>:<yyyy-mm>.",
+      "description": "One per subject per month; id is bud_<category or group id>.<yyyy-mm>, bud_income.<yyyy-mm>, or bud_flex.<yyyy-mm>; kind says which (absent means category).",
       "jsonSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -644,6 +799,11 @@
           },
           "rollover": {
             "type": "boolean"
+          },
+          "kind": {
+            "type": "string",
+            "enum": ["category", "group", "income", "flex"],
+            "maxLength": 32
           }
         },
         "required": [
@@ -737,7 +897,7 @@
           },
           "status": {
             "type": "string",
-            "enum": ["detected", "confirmed", "dismissed"],
+            "enum": ["detected", "confirmed", "dismissed", "paused"],
             "maxLength": 32
           },
           "matched_count": {
@@ -745,6 +905,27 @@
             "minimum": 0,
             "maximum": 9007199254740991,
             "multipleOf": 1
+          },
+          "source": {
+            "type": "string",
+            "enum": ["detected", "manual"],
+            "maxLength": 32
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "category_id": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "merchant_id": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "last_paid_transaction_id": {
+            "type": "string",
+            "maxLength": 128
           }
         },
         "required": [
@@ -864,6 +1045,42 @@
               },
               "required": ["id", "date", "amount"]
             }
+          },
+          "kind": {
+            "type": "string",
+            "enum": ["save", "pay_down"],
+            "maxLength": 32
+          },
+          "account_ids": {
+            "type": "array",
+            "maxItems": 16,
+            "items": {
+              "type": "string",
+              "maxLength": 128
+            }
+          },
+          "planned_monthly": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "multipleOf": 1
+          },
+          "priority": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "multipleOf": 1
+          },
+          "progress_source": {
+            "type": "string",
+            "enum": ["contributions", "balance"],
+            "maxLength": 32
+          },
+          "starting_balance": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "multipleOf": 1
           }
         },
         "required": [
@@ -892,7 +1109,7 @@
     {
       "id": "net_worth_snapshots",
       "scope": "household",
-      "description": "One per day, written by the nightly function; id is nws_<household_id>.<yyyy-mm-dd>.",
+      "description": "One per day, written by the nightly function; id is nws_<household_id>.<yyyy-mm-dd>. balances records each open account's balance that night, so an account has a history of its own.",
       "jsonSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -948,6 +1165,27 @@
             "minLength": 3,
             "maxLength": 3,
             "pattern": "^[A-Z]{3}$"
+          },
+          "balances": {
+            "type": "array",
+            "maxItems": 128,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "account_id": {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                "balance": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991,
+                  "multipleOf": 1
+                }
+              },
+              "required": ["account_id", "balance"]
+            }
           }
         },
         "required": [
@@ -1010,7 +1248,14 @@
           },
           "alert_kind": {
             "type": "string",
-            "enum": ["large_transaction", "budget_exceeded", "low_balance"],
+            "enum": [
+              "large_transaction",
+              "budget_exceeded",
+              "low_balance",
+              "bill_due",
+              "goal_reached",
+              "sync_error"
+            ],
             "maxLength": 32
           },
           "threshold": {
@@ -1062,6 +1307,18 @@
           },
           "read": {
             "type": "boolean"
+          },
+          "recurrence_id": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "goal_id": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "connection_id": {
+            "type": "string",
+            "maxLength": 128
           }
         },
         "required": ["id", "household_id", "created_at", "updated_at", "kind", "alert_kind"]

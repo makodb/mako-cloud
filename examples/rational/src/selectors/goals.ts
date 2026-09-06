@@ -1,16 +1,31 @@
+import {
+  type GoalMath,
+  goalProgress as sharedGoalProgress,
+  sortGoalsByPriority,
+} from "../../functions/shared/goals.js";
 import type { Goal } from "../model/types.js";
 import { memoizeLast } from "./memo.js";
 
 /**
- * Saving towards something, and what it takes to get there on time.
+ * Saving towards something, paying something down, and what it takes to get
+ * there on time.
  *
- * A goal's progress is the sum of its own contributions, not a balance: a
- * savings account holds several goals at once and a goal may be saved for
- * across accounts, so tying progress to a balance would make two goals in one
- * account both look complete. The linked account is where the money is meant
- * to live, which is a note to the person rather than a source of truth.
+ * The arithmetic is the shared engine's (`functions/shared/goals.ts`): the
+ * nightly job decides `goal_reached` from the same functions the bars here
+ * are drawn from, and an alert about a goal the page shows as unfinished
+ * would be worse than no alert. What stays here is the application's own
+ * types and the two orders the screens show goals in.
  */
+export {
+  addMonths,
+  contributed,
+  type GoalMath,
+  monthsUntil,
+  sortGoalsByPriority,
+  wholeMonthsSince,
+} from "../../functions/shared/goals.js";
 
+/** A goal's progress as the original goal page read it: contributions only. */
 export interface GoalProgress {
   readonly goal: Goal;
   readonly saved: number;
@@ -28,29 +43,25 @@ export interface GoalProgress {
   readonly monthlyContribution: number | null;
 }
 
-export function contributed(goal: Goal): number {
-  return goal.contributions.reduce((total, contribution) => total + contribution.amount, 0);
-}
+const NO_BALANCES: ReadonlyMap<string, number> = new Map();
 
-/** Whole months from `today` to `target`, counting the target's own month. */
-export function monthsUntil(today: string, target: string): number {
-  const [todayYear = 0, todayMonth = 1] = today.split("-").map(Number);
-  const [targetYear = 0, targetMonth = 1] = target.split("-").map(Number);
-  return (targetYear - todayYear) * 12 + (targetMonth - todayMonth) + 1;
-}
-
+/**
+ * Progress by contributions alone, whatever the goal's source says: the
+ * contribution ledger a member keeps by hand, read without any balance.
+ */
 export function goalProgress(goal: Goal, today: string): GoalProgress {
-  const saved = contributed(goal);
-  const remaining = Math.max(0, goal.target_amount - saved);
-  const percent =
-    goal.target_amount <= 0 ? 100 : Math.min(100, Math.round((saved / goal.target_amount) * 100));
-  if (goal.target_date === undefined) {
-    return { goal, saved, remaining, percent, monthsLeft: null, monthlyContribution: null };
-  }
-  const monthsLeft = monthsUntil(today, goal.target_date);
-  const monthlyContribution =
-    remaining === 0 ? 0 : monthsLeft <= 0 ? remaining : Math.ceil(remaining / monthsLeft);
-  return { goal, saved, remaining, percent, monthsLeft, monthlyContribution };
+  const math = sharedGoalProgress(
+    { ...goal, kind: "save", progress_source: "contributions" },
+    { today, balances: NO_BALANCES },
+  );
+  return {
+    goal,
+    saved: math.saved,
+    remaining: math.remaining,
+    percent: math.percent,
+    monthsLeft: math.monthsLeft,
+    monthlyContribution: math.monthlyNeeded,
+  };
 }
 
 /** Active goals first, then the soonest target date, then by name. */
@@ -68,3 +79,42 @@ export function goalsByUrgency(goals: readonly Goal[], today: string): readonly 
 }
 
 export const selectGoals = memoizeLast(goalsByUrgency);
+
+/** A goal with the whole of its arithmetic, as the goals page and the dashboard show it. */
+export interface GoalRow {
+  readonly goal: Goal;
+  readonly math: GoalMath;
+}
+
+/**
+ * Every goal with its progress -- from its linked balances or its
+ * contributions, as the goal says -- in the order the household ranked them:
+ * active first, then priority, then the soonest date, then name.
+ */
+export function goalRows(
+  goals: readonly Goal[],
+  balances: ReadonlyMap<string, number>,
+  today: string,
+): readonly GoalRow[] {
+  return sortGoalsByPriority(goals).map((goal) => ({
+    goal,
+    math: sharedGoalProgress(goal, { today, balances }),
+  }));
+}
+
+export const selectGoalProgress = memoizeLast(goalRows);
+
+/**
+ * What the active goals plan to put aside each month, in total -- the number
+ * the flex budget takes off the top. Given a currency, only goals in it, since
+ * a budget is in one currency and nothing is converted.
+ */
+export function plannedMonthlyTotal(goals: readonly Goal[], currency?: string): number {
+  let total = 0;
+  for (const goal of goals) {
+    if (goal.status !== "active") continue;
+    if (currency !== undefined && goal.currency !== currency) continue;
+    total += goal.planned_monthly ?? 0;
+  }
+  return total;
+}

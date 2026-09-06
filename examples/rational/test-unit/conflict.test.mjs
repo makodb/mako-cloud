@@ -30,7 +30,7 @@ test("the demo household is deterministic", () => {
   const second = generateDemoHousehold({ householdId: "hh_demo" });
   assert.deepEqual(first, second);
   assert.equal(first.transactions.length, 200);
-  assert.equal(first.accounts.length, 5);
+  assert.equal(first.accounts.length, 7);
   const split = first.transactions.find((transaction) => transaction.splits.length > 0);
   assert.ok(split);
   assert.equal(

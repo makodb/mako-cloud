@@ -1,4 +1,14 @@
-import type { Account, Household, TaxonomyEntry, Transaction } from "../src/model/types.js";
+import type {
+  Account,
+  Budget,
+  Goal,
+  Household,
+  NetWorthSnapshot,
+  Recurrence,
+  Rule,
+  TaxonomyEntry,
+  Transaction,
+} from "../src/model/types.js";
 
 export interface DemoHouseholdOptions {
   readonly householdId: string;
@@ -9,11 +19,17 @@ export interface DemoHouseholdOptions {
   readonly name?: string;
 }
 
+/** Every household collection the demo fills, keyed as the collections are. */
 export interface DemoHousehold {
   readonly household: Household;
   readonly accounts: Account[];
   readonly taxonomy: TaxonomyEntry[];
   readonly transactions: Transaction[];
+  readonly rules: Rule[];
+  readonly budgets: Budget[];
+  readonly recurrences: Recurrence[];
+  readonly goals: Goal[];
+  readonly net_worth_snapshots: NetWorthSnapshot[];
 }
 
 export function generateDemoHousehold(options: DemoHouseholdOptions): DemoHousehold;

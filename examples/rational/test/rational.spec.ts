@@ -44,7 +44,7 @@ test("a person creates an account, signs in, and sees the household", async ({ p
   await expect
     .poll(() => page.evaluate(() => window.rational.state.memberships[0]?.role ?? ""))
     .toBe("owner");
-  await expect(page.locator('[data-testid^="account-acc_demo_"]')).toHaveCount(5);
+  await expect(page.locator('[data-testid^="account-acc_demo_"]')).toHaveCount(7);
   await expect(page.getByTestId("net-worth")).toContainText("Net worth (USD)");
 
   // The session persists across a reload.
@@ -279,7 +279,7 @@ test("a security reset clears the household's local data and syncs it again", as
   await page.waitForFunction(() => window.rational.household?.session !== null);
   const after = await page.evaluate(() => window.rational.household?.session?.identifier);
   expect(after).not.toBe(before);
-  await expect(page.locator('[data-testid^="account-acc_demo_"]')).toHaveCount(5);
+  await expect(page.locator('[data-testid^="account-acc_demo_"]')).toHaveCount(7);
   await expect
     .poll(() => page.evaluate(() => window.rational.state.memberships[0]?.role ?? ""))
     .toBe("editor");

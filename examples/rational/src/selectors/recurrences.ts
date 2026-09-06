@@ -1,27 +1,44 @@
+import { cleanDescription } from "../../functions/shared/merchants.js";
 import {
   type DetectedRecurrence,
   daysBetween,
   detectRecurrences as detect,
   type Interval,
+  type ResolveBillsOptions,
+  type ResolvedBill,
+  resolveBills,
 } from "../../functions/shared/recurrences.js";
 import type { Recurrence, Transaction } from "../model/types.js";
 import { memoizeLast } from "./memo.js";
 
 /**
- * Recurrence detection is shared with the `nightly` function, so the engine
- * lives in `functions/shared/`: a household that has not opened Rational in a
- * month still gets its repeating bills noticed. What stays here is what only
- * the application has -- its document types, and the upcoming list it draws.
+ * Recurrence detection and the bill life cycle are shared with the `nightly`
+ * function, so the engine lives in `functions/shared/`: a household that has
+ * not opened Rational in a month still gets its repeating bills noticed and
+ * its paid bills advanced. What stays here is what only the application has
+ * -- its document types, and the lists it draws.
  */
 export {
   addDays,
+  advanceAfterPayment,
+  type BillState,
   type DetectedRecurrence,
   daysBetween,
   detectionId,
   type Interval,
   intervalOf,
+  monthlyEquivalent,
+  monthlyTotal,
   nextOccurrence,
   normalizeDescription,
+  occurrencesInMonth,
+  type PaymentAdvance,
+  paymentFor,
+  previousOccurrence,
+  type ResolveBillsOptions,
+  type ResolvedBill,
+  shiftOccurrence,
+  slackDays,
 } from "../../functions/shared/recurrences.js";
 
 export function detectRecurrences(
@@ -47,6 +64,13 @@ export function storedDetection(recurrence: Recurrence): DetectedRecurrence {
     nextDate: recurrence.next_date,
     occurrences: recurrence.matched_count,
   };
+}
+
+/** What the household calls a bill, or the statement text made readable. */
+export function recurrenceName(recurrence: Recurrence): string {
+  if (recurrence.name !== undefined && recurrence.name.trim() !== "") return recurrence.name;
+  const cleaned = cleanDescription(recurrence.normalized_description);
+  return cleaned === "" ? recurrence.normalized_description : cleaned;
 }
 
 export interface UpcomingBill {
@@ -81,5 +105,20 @@ export function upcomingBills(
     .sort((left, right) => left.daysAway - right.daysAway);
 }
 
+/**
+ * Every confirmed bill with where it stands today -- upcoming, due, paid, or
+ * late -- soonest first, decided by the same engine the nightly job advances
+ * them with.
+ */
+export function bills(
+  recurrences: readonly Recurrence[],
+  transactions: readonly Transaction[],
+  today: string,
+  options?: ResolveBillsOptions,
+): readonly ResolvedBill<Recurrence>[] {
+  return resolveBills(recurrences, transactions, today, options);
+}
+
 export const selectDetectedRecurrences = memoizeLast(detectRecurrences);
 export const selectUpcomingBills = memoizeLast(upcomingBills);
+export const selectBills = memoizeLast(bills);

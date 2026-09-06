@@ -98,6 +98,22 @@ test("a month narrows a category breakdown but never the months report", () => {
   );
 });
 
+test("transfer legs, balance updates, and hidden transactions are not in any report", () => {
+  const transactions = [
+    transaction({ id: "t1", account_id: "a", date: "2026-08-02", amount: -1_000, category_id: "c" }),
+    transaction({ id: "t2", account_id: "a", date: "2026-08-03", amount: -50_000, transfer_id: "tr1" }),
+    transaction({ id: "t3", account_id: "b", date: "2026-08-03", amount: 50_000, transfer_id: "tr1" }),
+    transaction({ id: "t4", account_id: "h", date: "2026-08-04", amount: 900_000, adjustment: true }),
+    transaction({ id: "t5", account_id: "a", date: "2026-08-05", amount: -777, hidden: true }),
+  ];
+  assert.deepEqual(cashFlowByMonth(transactions), [
+    { month: "2026-08", currency: "USD", income: 0, expense: 1_000, net: -1_000 },
+  ]);
+  assert.deepEqual(spendingByCategory(transactions).map((row) => [row.key, row.amount]), [["c", 1_000]]);
+  assert.deepEqual(spendingByAccount(transactions).map((row) => [row.key, row.amount]), [["a", 1_000]]);
+  assert.deepEqual(spendingByMonth(transactions).map((row) => row.amount), [1_000]);
+});
+
 /**
  * What client-side reporting costs, measured rather than assumed.
  *

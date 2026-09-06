@@ -770,6 +770,8 @@ function deployNightlyFunction() {
     "--collection",
     "budgets",
     "--collection",
+    "goals",
+    "--collection",
     "alerts",
     "--operation",
     "read",

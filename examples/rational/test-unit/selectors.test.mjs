@@ -4,7 +4,9 @@ import { test } from "node:test";
 import {
   accountBalance,
   accountBalances,
+  accountsByClass,
   netWorthByCurrency,
+  netWorthIn,
 } from "../dist/src/selectors/balances.js";
 import { amountToText, formatMinorUnits, parseAmount } from "../dist/src/selectors/money.js";
 import { validateSplits } from "../dist/src/selectors/splits.js";
@@ -67,6 +69,60 @@ test("net worth subtracts liabilities per currency and ignores closed accounts",
     { currency: "EUR", assets: 4_000, liabilities: 0, netWorth: 4_000 },
     { currency: "USD", assets: 100_000, liabilities: 330_000, netWorth: -230_000 },
   ]);
+});
+
+test("balances value holdings, and net worth leaves hidden accounts out", () => {
+  const accounts = [
+    account("acc_checking", "checking", 10_000),
+    {
+      ...account("acc_inv", "investment", 1_000),
+      holdings: [{ id: "h1", symbol: "VT", name: "World", quantity: 2.5, price: 10_000, asset_class: "etf" }],
+    },
+    { ...account("acc_hidden", "savings", 999_999), hide_from_net_worth: true },
+    account("acc_card", "credit", -2_000),
+  ];
+  const transactions = [transaction("t1", "acc_inv", "2026-08-01", 500)];
+  const balances = accountBalances(accounts, transactions);
+  assert.equal(balances.get("acc_inv"), 26_500, "cash plus the positions' value");
+  assert.equal(accountBalance(accounts[1], transactions), 26_500);
+  assert.deepEqual(netWorthByCurrency(accounts, balances), [
+    { currency: "USD", assets: 36_500, liabilities: 2_000, netWorth: 34_500 },
+  ]);
+  assert.deepEqual(netWorthIn("EUR", accounts, balances), {
+    currency: "EUR",
+    assets: 0,
+    liabilities: 0,
+    netWorth: 0,
+  });
+});
+
+test("accounts group by class in the declared order with a subtotal per currency", () => {
+  const accounts = [
+    account("acc_loan", "loan", -300_000),
+    account("acc_savings", "savings", 50_000),
+    account("acc_eur", "checking", 4_000, "EUR"),
+    account("acc_checking", "checking", 100_000),
+    account("acc_card", "credit", -25_000),
+    account("acc_house", "real_estate", 40_000_000),
+  ];
+  const groups = accountsByClass(accounts, accountBalances(accounts, []));
+  assert.deepEqual(
+    groups.map((group) => [group.class.id, group.accounts.map((entry) => entry.id), group.subtotals]),
+    [
+      [
+        "cash",
+        ["acc_checking", "acc_eur", "acc_savings"],
+        [
+          { currency: "EUR", total: 4_000 },
+          { currency: "USD", total: 150_000 },
+        ],
+      ],
+      ["credit", ["acc_card"], [{ currency: "USD", total: -25_000 }]],
+      ["loan", ["acc_loan"], [{ currency: "USD", total: -300_000 }]],
+      ["real_estate", ["acc_house"], [{ currency: "USD", total: 40_000_000 }]],
+    ],
+  );
+  assert.equal(groups[0].class.label, "Cash");
 });
 
 test("splits must add up exactly and the difference is reported", () => {

@@ -10,17 +10,23 @@ import { memoizeLast } from "./memo.js";
  */
 export type { AlertKind } from "../../functions/shared/alerts.js";
 
-/** The three questions a household can ask to be told about, in this order. */
+/** The questions a household can ask to be told about, in this order. */
 export const ALERT_KINDS = [
   "large_transaction",
   "budget_exceeded",
   "low_balance",
+  "bill_due",
+  "goal_reached",
+  "sync_error",
 ] as const satisfies readonly AlertKind[];
 
 export const ALERT_LABELS: Readonly<Record<AlertKind, string>> = {
   large_transaction: "A large transaction",
   budget_exceeded: "A budget gone over",
   low_balance: "An account running low",
+  bill_due: "A bill coming due",
+  goal_reached: "A goal reached",
+  sync_error: "A connection that stopped syncing",
 };
 
 /** What the threshold means for each kind, in the person's own terms. */
@@ -28,6 +34,9 @@ export const ALERT_THRESHOLD_LABELS: Readonly<Record<AlertKind, string>> = {
   large_transaction: "Tell me about spending of at least",
   budget_exceeded: "Tell me once a budget is over by",
   low_balance: "Tell me when an account falls below",
+  bill_due: "Tell me this many days before a bill is due",
+  goal_reached: "Tell me when a goal reaches its target",
+  sync_error: "Tell me when a connection fails to sync",
 };
 
 export function alertSettings(documents: readonly AlertDocument[]): readonly AlertSetting[] {

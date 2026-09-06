@@ -18,6 +18,13 @@
  * twice over an overlapping window. Idempotence is by `(account,
  * external_id)`, which is also the transaction's document id, so a repeated
  * entry is an update of the same document rather than a second one.
+ *
+ * What a sync imports arrives unreviewed: the review queue is what a member
+ * has not looked at yet, and nothing the institution sends has been looked
+ * at. A connection whose pass fails is marked `error` and, when the household
+ * asked, raises one `sync_error` alert that stays one alert however many
+ * passes keep failing; the next pass retries it, and a pass that succeeds
+ * marks it `connected` again.
  */
 import {
   createFunctionClientFromRequest,
@@ -27,6 +34,7 @@ import {
   type ServiceFunctionClient,
 } from "@mako-cloud/edge-sdk";
 import {
+  type AlertConnection,
   type AlertSettingLike,
   type AlertTransaction,
   type FiredAlert,
@@ -49,7 +57,7 @@ import { statement, transactionId } from "./institution.ts";
 declare const Deno: { readonly env: { get(name: string): string | undefined } };
 
 /** The schema version of `mako/collections.json`. */
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 const CONNECTIONS = "connections";
 const TRANSACTIONS = "transactions";
 const ACCOUNTS = "accounts";
@@ -385,7 +393,7 @@ async function sync(request: Request): Promise<Response> {
   for (const document of connections.documents) {
     if (document._deleted) continue;
     const connection = document.body;
-    if (connection.status !== "connected") continue;
+    if (!syncable(connection)) continue;
     const accountId = typeof connection.account_id === "string" ? connection.account_id : "";
     const externalId = typeof connection.external_id === "string" ? connection.external_id : "";
     const householdId = typeof connection.household_id === "string" ? connection.household_id : "";
@@ -399,20 +407,87 @@ async function sync(request: Request): Promise<Response> {
       });
       outcomes.push(outcome);
     } catch (error) {
-      const detail = error instanceof Error ? error.message.slice(0, 200) : "sync failed";
-      await recordSync(document, `error: ${detail}`);
-      outcomes.push({
-        connectionId: String(connection.id),
-        accountId,
-        created: 0,
-        updated: 0,
-        alerted: 0,
-        outcome: `error: ${detail}`,
-      });
+      outcomes.push(await recordFailure(document, { accountId, householdId, through }, error));
     }
   }
   outcomes.push(...(await syncPlaidPass(reason, through)));
   return Response.json({ ok: true, synced: outcomes.length, outcomes });
+}
+
+/**
+ * Whether a pass should try the connection. A connection in `error` is tried
+ * again -- that is how it gets back to `connected`, and how a household finds
+ * out the institution is working again without doing anything. A member's
+ * `disconnected` is not: they said stop.
+ */
+function syncable(connection: JsonObject): boolean {
+  return connection.status === "connected" || connection.status === "error";
+}
+
+/**
+ * One connection's failed pass: recorded on the connection, reported as an
+ * alert when the household asked for one, and returned as an outcome so the
+ * run's response says which connection and why. The alert is best effort --
+ * a failure to write it is logged, and must not turn a recorded failure into
+ * a pass that looks like it never happened.
+ */
+async function recordFailure(
+  document: FunctionDocument,
+  target: { accountId: string; householdId: string; through: string },
+  error: unknown,
+): Promise<SyncOutcome> {
+  const detail = error instanceof Error ? error.message.slice(0, 200) : "sync failed";
+  const outcome = `error: ${detail}`;
+  await recordSync(document, outcome, "error");
+  let alerted = 0;
+  try {
+    alerted = await raiseAlerts(target.householdId, target.through, {
+      arrived: [],
+      failing: {
+        id: String(document.body.id),
+        institution:
+          typeof document.body.institution === "string" && document.body.institution !== ""
+            ? document.body.institution
+            : "The institution",
+        failing: true,
+        outcome,
+      },
+      currency: await accountCurrency(target.accountId),
+    });
+  } catch (alertError) {
+    console.error(
+      alertError instanceof Error
+        ? `sync_error alert not written: ${alertError.message}`
+        : "sync_error alert not written",
+    );
+  }
+  return {
+    connectionId: String(document.body.id),
+    accountId: target.accountId,
+    created: 0,
+    updated: 0,
+    alerted,
+    outcome,
+  };
+}
+
+/**
+ * The currency to stamp on an alert about nothing priced. The household's own
+ * would be the natural one, but this credential is scoped to what a sync
+ * touches and `households` is not in it; the connection's account is, and
+ * its currency is the one the connection's transactions carry. When even that
+ * cannot be read -- the pass may have failed because nothing can be -- the
+ * engine falls back to ISO 4217's code for "no currency".
+ */
+async function accountCurrency(accountId: string): Promise<string | undefined> {
+  try {
+    const account = await read("currency for a sync alert", ACCOUNTS, accountId);
+    return account !== null && typeof account.body.currency === "string"
+      ? account.body.currency
+      : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -436,7 +511,7 @@ async function syncPlaidPass(reason: string, through: string): Promise<SyncOutco
   for (const document of connections.documents) {
     if (document._deleted) continue;
     const connection = document.body;
-    if (connection.status !== "connected") continue;
+    if (!syncable(connection)) continue;
     const accountId = typeof connection.account_id === "string" ? connection.account_id : "";
     const householdId = typeof connection.household_id === "string" ? connection.household_id : "";
     if (accountId === "" || householdId === "") continue;
@@ -456,16 +531,7 @@ async function syncPlaidPass(reason: string, through: string): Promise<SyncOutco
         await syncPlaidConnection(document, credentials, { accountId, householdId, through }),
       );
     } catch (error) {
-      const detail = error instanceof Error ? error.message.slice(0, 200) : "sync failed";
-      await recordSync(document, `error: ${detail}`);
-      outcomes.push({
-        connectionId: String(connection.id),
-        accountId,
-        created: 0,
-        updated: 0,
-        alerted: 0,
-        outcome: `error: ${detail}`,
-      });
+      outcomes.push(await recordFailure(document, { accountId, householdId, through }, error));
     }
   }
   return outcomes;
@@ -513,6 +579,10 @@ async function syncPlaidConnection(
       const id = transactionId(target.accountId, entry.externalId);
       const existing = await read(reason, TRANSACTIONS, id);
       const now = Date.now();
+      // No `reviewed`: what the institution sends has not been looked at, and
+      // the review queue is exactly the imported transactions without the
+      // flag. Setting it false would say the same thing in a way the queue
+      // does not read.
       const body: JsonObject = {
         id,
         household_id: target.householdId,
@@ -572,9 +642,9 @@ async function syncPlaidConnection(
     if (!page.has_more) break;
   }
 
-  const alerted = await raiseAlerts(target.householdId, target.through, arrived);
+  const alerted = await raiseAlerts(target.householdId, target.through, { arrived });
   const outcome = `imported ${created}, corrected ${updated}, removed ${removed}`;
-  await recordSync(document, outcome);
+  await recordSync(document, outcome, "connected");
   return {
     connectionId,
     accountId: target.accountId,
@@ -599,6 +669,8 @@ async function syncConnection(
     const id = transactionId(target.accountId, entry.externalId);
     const existing = await read(reason, TRANSACTIONS, id);
     const now = Date.now();
+    // No `reviewed`, for the same reason as the Plaid pass: an import is what
+    // the review queue is for.
     const body: JsonObject = {
       id,
       household_id: target.householdId,
@@ -636,9 +708,9 @@ async function syncConnection(
       updated += 1;
     }
   }
-  const alerted = await raiseAlerts(target.householdId, target.through, arrived);
+  const alerted = await raiseAlerts(target.householdId, target.through, { arrived });
   const outcome = `imported ${created}, corrected ${updated}`;
-  await recordSync(document, outcome);
+  await recordSync(document, outcome, "connected");
   return {
     connectionId: String(document.body.id),
     accountId: target.accountId,
@@ -649,22 +721,36 @@ async function syncConnection(
   };
 }
 
+/** What one pass gives the alert engine: what it wrote, and whether it failed. */
+interface SyncAlertSubject {
+  readonly arrived: readonly AlertTransaction[];
+  /** The connection whose pass just failed, when one did. */
+  readonly failing?: AlertConnection;
+  /** Stamped on an alert about nothing priced; the engine has a fallback. */
+  readonly currency?: string | undefined;
+}
+
 /**
- * A large charge should not have to wait until two in the morning.
+ * A large charge should not have to wait until two in the morning, and a
+ * connection that has stopped syncing should not wait at all.
  *
- * So the sync evaluates the household's large-transaction setting over what
- * this pass just wrote, and nothing else: whether a budget is over or an
- * account is low is a question about the household as a whole, and `nightly`
- * -- which has read the whole household -- answers those. The alert ids are
- * derived the same way in both, so whichever runs first fires the alert and
- * the other finds it already there.
+ * So the sync evaluates the household's settings over what this pass knows,
+ * and nothing else: the transactions it just wrote and the connection it just
+ * failed. Every setting is handed to the engine, with the household's
+ * accounts, budgets, bills, and goals empty -- whether a budget is over, an
+ * account low, a bill due, or a goal reached is a question about the
+ * household as a whole, and `nightly`, which has read the whole household,
+ * answers those. Over an empty subject those settings fire nothing here. The
+ * alert ids are derived the same way in both, so whichever runs first fires
+ * the alert and the other finds it already there -- which is also what makes
+ * a connection that keeps failing one alert rather than one per quarter hour.
  */
 async function raiseAlerts(
   householdId: string,
   day: string,
-  arrived: readonly AlertTransaction[],
+  subject: SyncAlertSubject,
 ): Promise<number> {
-  if (arrived.length === 0) return 0;
+  if (subject.arrived.length === 0 && subject.failing === undefined) return 0;
   const reason = `institution sync alerts for ${householdId}`;
   const stored = await service(reason)
     .documents(ALERTS)
@@ -679,15 +765,18 @@ async function raiseAlerts(
     });
   const settings = stored.documents
     .filter((entry) => !entry._deleted)
-    .map((entry) => entry.body as unknown as AlertSettingLike)
-    .filter((setting) => setting.alert_kind === "large_transaction");
+    .map((entry) => entry.body as unknown as AlertSettingLike);
   if (settings.length === 0) return 0;
   const fired = firedAlerts(settings, {
     householdId,
     day,
-    transactions: arrived,
+    transactions: subject.arrived,
     accounts: [],
     budgets: [],
+    bills: [],
+    goals: [],
+    connections: subject.failing === undefined ? [] : [subject.failing],
+    ...(subject.currency === undefined ? {} : { currency: subject.currency }),
     existingIds: new Set(),
   });
   let written = 0;
@@ -723,14 +812,25 @@ async function writeAlert(
       read: false,
       ...(alert.transaction_id === undefined ? {} : { transaction_id: alert.transaction_id }),
       ...(alert.account_id === undefined ? {} : { account_id: alert.account_id }),
+      ...(alert.connection_id === undefined ? {} : { connection_id: alert.connection_id }),
     },
     null,
   );
   return true;
 }
 
-/** The connection's own record of when it last ran and what happened. */
-async function recordSync(document: FunctionDocument, outcome: string): Promise<void> {
+/**
+ * The connection's own record of when it last ran, what happened, and where
+ * that leaves it: `error` after a failed pass, `connected` again after one
+ * that worked. A member who disconnected the institution while this pass ran
+ * has the last word -- the sync reports on a connection, it does not reopen
+ * one -- so a `disconnected` found on the fresh read is kept.
+ */
+async function recordSync(
+  document: FunctionDocument,
+  outcome: string,
+  status: "connected" | "error",
+): Promise<void> {
   const reason = "record an institution sync";
   const current = await read(reason, CONNECTIONS, String(document.body.id));
   if (current === null || current._deleted) return;
@@ -740,6 +840,7 @@ async function recordSync(document: FunctionDocument, outcome: string): Promise<
     String(document.body.id),
     {
       ...current.body,
+      ...(current.body.status === "disconnected" ? {} : { status }),
       updated_at: Date.now(),
       last_sync_at: Date.now(),
       last_sync_outcome: outcome.slice(0, 200),

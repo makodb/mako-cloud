@@ -18,9 +18,14 @@
     "src/**/*.ts",
     "src/**/*.tsx",
     "functions/shared/alerts.ts",
+    "functions/shared/balances.ts",
     "functions/shared/budgets.ts",
+    "functions/shared/exclusions.ts",
+    "functions/shared/goals.ts",
+    "functions/shared/merchants.ts",
     "functions/shared/recurrences.ts",
     "functions/shared/rules.ts",
+    "functions/shared/transfers.ts",
     "mako/collections.json",
     "scripts/*.d.mts"
   ]

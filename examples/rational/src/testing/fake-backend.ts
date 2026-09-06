@@ -95,6 +95,15 @@ export class FakeMakoBackend {
     for (const transaction of demo.transactions) {
       this.#record("transactions", { ...transaction, _deleted: false });
     }
+    for (const rule of demo.rules) this.#record("rules", { ...rule, _deleted: false });
+    for (const budget of demo.budgets) this.#record("budgets", { ...budget, _deleted: false });
+    for (const recurrence of demo.recurrences) {
+      this.#record("recurrences", { ...recurrence, _deleted: false });
+    }
+    for (const goal of demo.goals) this.#record("goals", { ...goal, _deleted: false });
+    for (const snapshot of demo.net_worth_snapshots) {
+      this.#record("net_worth_snapshots", { ...snapshot, _deleted: false });
+    }
   }
 
   readonly now = (): number => this.#clock;

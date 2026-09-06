@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 /**
- * Seed the demo household with accounts, categories and tags, and about two
- * hundred transactions across three months, as an application user would:
- * signed in with the public key and pushing through the replication API.
+ * Seed the demo household -- accounts, taxonomy, about two hundred
+ * transactions across three months, and the budgets, bills, goals, rule, and
+ * net-worth history that go with them -- as an application user would: signed
+ * in with the public key and pushing through the replication API.
  *
  *   node scripts/seed.mjs [--env-file mako.env.json] [--email owner@rational.test]
  *     [--password RationalDemo1!] [--household-id hh_demo] [--force]
@@ -156,5 +157,10 @@ const summary = {
   accounts: await push("accounts", demo.accounts),
   taxonomy: await push("taxonomy", demo.taxonomy),
   transactions: await push("transactions", demo.transactions),
+  budgets: await push("budgets", demo.budgets),
+  recurrences: await push("recurrences", demo.recurrences),
+  goals: await push("goals", demo.goals),
+  rules: await push("rules", demo.rules),
+  net_worth_snapshots: await push("net_worth_snapshots", demo.net_worth_snapshots),
 };
 console.log(JSON.stringify(summary, null, 2));
