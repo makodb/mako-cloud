@@ -1,4 +1,4 @@
-import { Alert, AlertDescription } from "@mako-cloud/ui";
+import { Alert, AlertDescription, useTheme } from "@mako-cloud/ui";
 import { Component, type ReactNode } from "react";
 
 import type { RationalApp } from "../data/rational.js";
@@ -13,7 +13,7 @@ import { InvestmentsScreen } from "./investments.js";
 import { RecurringScreen } from "./recurring.js";
 import { useRoute } from "./router.js";
 import { SettingsScreen } from "./settings.js";
-import { Shell } from "./shell.js";
+import { Shell, THEME_KEY } from "./shell.js";
 import { SignInScreen } from "./sign-in.js";
 import { TransactionsScreen } from "./transactions.js";
 
@@ -56,6 +56,9 @@ function DemoBanner() {
 }
 
 export function App({ app }: { app: RationalApp }) {
+  // At the root rather than in the shell: the preference dresses the sign-in
+  // screen too, so a person who chose dark does not meet a white page first.
+  useTheme(THEME_KEY);
   return (
     <>
       {app.config.mode === "fake" ? <DemoBanner /> : null}

@@ -32,9 +32,9 @@ test("the theme preference dresses every screen and is remembered on the device"
   expect((await theme(page)).attribute).toBeNull();
 
   const toggle = page.getByTestId("theme-toggle");
-  await expect(toggle).toHaveAccessibleName("Switch to the dark theme");
+  await expect(toggle).toHaveAccessibleName("Dark theme");
   await toggle.click();
-  await expect(toggle).toHaveAccessibleName("Switch to the light theme");
+  await expect(toggle).toHaveAccessibleName("Dark theme");
   await expect(toggle).toHaveAttribute("aria-pressed", "true");
   expect(await theme(page)).toEqual({ attribute: "dark", scheme: "dark" });
 
@@ -164,4 +164,12 @@ test("a chart names what it shows and explains the point under the pointer", asy
   const tooltip = chart.locator(".recharts-tooltip-wrapper");
   await expect(tooltip).toBeVisible();
   await expect(tooltip).toContainText("$");
+
+  // The drawing is not the only way to read it: the same values are a table
+  // that only a screen reader sees.
+  const table = page.locator("figure[data-slot='chart'] table.sr-only").first();
+  await expect(table).toHaveCount(1);
+  await expect(table.locator("caption")).toHaveText(/Net worth in USD over time/u);
+  expect(await table.locator("tbody tr").count()).toBeGreaterThan(1);
+  await expect(table.locator("tbody tr").first().locator("td").first()).toContainText("$");
 });

@@ -42,8 +42,11 @@
   /* Money and state: what an amount or a bill is doing. */
   --positive: light-dark(oklch(0.5 0.15 155), oklch(0.78 0.15 155));
   --positive-foreground: light-dark(oklch(0.985 0 0), oklch(0.15 0.04 155));
-  --warning: light-dark(oklch(0.72 0.16 75), oklch(0.82 0.15 80));
-  --warning-foreground: light-dark(oklch(0.24 0.05 75), oklch(0.2 0.05 80));
+  /* Dark enough in the light theme to be read as text on a card, not only to
+     be filled behind dark text: a warning is a word as often as it is a
+     badge, and 0.72 gave it 2.5:1. */
+  --warning: light-dark(oklch(0.54 0.16 78), oklch(0.82 0.15 80));
+  --warning-foreground: light-dark(oklch(0.985 0 0), oklch(0.2 0.05 80));
 
   /* Lines and focus. */
   --border: light-dark(oklch(0.91 0.005 250), oklch(1 0 0 / 10%));
@@ -133,7 +136,7 @@
 
 @layer base {
   * {
-    @apply border-border outline-ring/50;
+    @apply border-border outline-ring;
   }
 
   html {

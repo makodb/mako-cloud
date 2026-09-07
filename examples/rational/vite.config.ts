@@ -110,11 +110,7 @@ export default defineConfig(({ command }) => {
           manualChunks: (id) => {
             if (!id.includes("node_modules")) return undefined;
             if (/[\\/]node_modules[\\/](react|react-dom|scheduler)[\\/]/.test(id)) return "react";
-            if (
-              /[\\/]node_modules[\\/](recharts|d3-|victory-vendor|internmap|decimal\.js|fast-equals|es-toolkit|reselect|immer|@reduxjs|redux|use-sync-external-store|tiny-invariant)/.test(
-                id,
-              )
-            )
+            if (/[\\/]node_modules[\\/](recharts|d3-|victory-vendor|internmap)/.test(id))
               return "charts";
             if (
               /[\\/]node_modules[\\/](radix-ui|@radix-ui|@floating-ui|aria-hidden|react-remove-scroll)/.test(

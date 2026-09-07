@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useId, useState } from "react";
 import {
   Area,
   AreaChart as RechartsAreaChart,
@@ -159,12 +159,21 @@ function Legend({ series }: { series: ReadonlyArray<ChartSeries> }) {
   );
 }
 
+/**
+ * The frame every chart is drawn in: the drawing, announced as one image with
+ * the chart's name, and the same numbers as a table only a screen reader sees.
+ *
+ * The table is a sibling of the drawing, not a child: everything inside an
+ * element announced as an image is hidden, and the values are the part worth
+ * reading -- a path in an SVG says nothing to anyone.
+ */
 function Frame({
   title,
   height,
   className,
   legend,
   legendBelow = false,
+  table,
   children,
 }: {
   title: string;
@@ -172,22 +181,80 @@ function Frame({
   className?: string | undefined;
   legend?: ReactNode | undefined;
   legendBelow?: boolean;
+  table?: ReactNode | undefined;
   children: ReactNode;
 }) {
   return (
-    <figure
-      role="img"
-      aria-label={title}
-      data-slot="chart"
-      className={cn("m-0 grid w-full gap-2", className)}
-    >
+    <figure data-slot="chart" className={cn("m-0 grid w-full gap-2", className)}>
       {legendBelow ? null : legend}
-      <div style={{ height }} className="relative w-full text-xs">
+      <div role="img" aria-label={title} style={{ height }} className="relative w-full text-xs">
         {children}
       </div>
       {legendBelow ? legend : null}
+      {table}
     </figure>
   );
+}
+
+/** The chart's values as a table, for a reader who cannot see the drawing. */
+function DataTable({
+  caption,
+  columns,
+  rows,
+}: {
+  caption: string;
+  columns: ReadonlyArray<string>;
+  rows: ReadonlyArray<ReadonlyArray<string>>;
+}) {
+  return (
+    <table className="sr-only">
+      <caption>{caption}</caption>
+      <thead>
+        <tr>
+          {columns.map((column) => (
+            <th key={column} scope="col">
+              {column}
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((row) => (
+          <tr key={row[0]}>
+            {row.map((cell, index) =>
+              index === 0 ? (
+                <th key={cell} scope="row">
+                  {cell}
+                </th>
+              ) : (
+                <td key={`${row[0]}-${columns[index] ?? index}`}>{cell}</td>
+              ),
+            )}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+/** Every row of a cartesian chart, as strings, for `DataTable`. */
+function cartesianRows(
+  data: ReadonlyArray<ChartDatum>,
+  x: string,
+  series: ReadonlyArray<ChartSeries>,
+  formatValue: (value: number) => string,
+  formatX: (value: string | number) => string,
+): ReadonlyArray<ReadonlyArray<string>> {
+  return data.map((datum) => {
+    const label = datum[x];
+    return [
+      formatX(typeof label === "number" || typeof label === "string" ? label : ""),
+      ...series.map((entry) => {
+        const value = datum[entry.key];
+        return typeof value === "number" ? formatValue(value) : "—";
+      }),
+    ];
+  });
 }
 
 const axisTick = { fill: "var(--muted-foreground)", fontSize: 11 };
@@ -219,6 +286,13 @@ export function LineChart({
       height={height}
       className={className}
       legend={legend || series.length > 1 ? <Legend series={series} /> : undefined}
+      table={
+        <DataTable
+          caption={title}
+          columns={[x, ...series.map((entry) => entry.label)]}
+          rows={cartesianRows(data, x, series, formatValue, formatX)}
+        />
+      }
     >
       <ResponsiveContainer width="100%" height="100%">
         <RechartsLineChart
@@ -290,12 +364,23 @@ export function AreaChart({
 }: CartesianChartProps) {
   const animate = useEntryAnimation();
   const labels = labelsOf(series);
+  // `url(#...)` resolves document-wide to the first match, so a gradient has
+  // to name this chart and not just its series: Accounts draws one of these
+  // per currency, every one of them keyed "netWorth".
+  const instance = useId().replace(/[^A-Za-z0-9]/g, "");
   return (
     <Frame
       title={title}
       height={height}
       className={className}
       legend={legend || series.length > 1 ? <Legend series={series} /> : undefined}
+      table={
+        <DataTable
+          caption={title}
+          columns={[x, ...series.map((entry) => entry.label)]}
+          rows={cartesianRows(data, x, series, formatValue, formatX)}
+        />
+      }
     >
       <ResponsiveContainer width="100%" height="100%">
         <RechartsAreaChart
@@ -304,7 +389,14 @@ export function AreaChart({
         >
           <defs>
             {series.map((entry, index) => (
-              <linearGradient key={entry.key} id={`area-${entry.key}`} x1="0" y1="0" x2="0" y2="1">
+              <linearGradient
+                key={entry.key}
+                id={`area-${instance}-${entry.key}`}
+                x1="0"
+                y1="0"
+                x2="0"
+                y2="1"
+              >
                 <stop
                   offset="5%"
                   stopColor={entry.color ?? seriesColor(index)}
@@ -355,7 +447,7 @@ export function AreaChart({
               name={entry.label}
               stroke={entry.color ?? seriesColor(index)}
               strokeWidth={2}
-              fill={`url(#area-${entry.key})`}
+              fill={`url(#area-${instance}-${entry.key})`}
               isAnimationActive={animate}
               animationDuration={ENTRY_ANIMATION_MILLISECONDS}
             />
@@ -389,6 +481,13 @@ export function BarChart({
       height={height}
       className={className}
       legend={legend || series.length > 1 ? <Legend series={series} /> : undefined}
+      table={
+        <DataTable
+          caption={title}
+          columns={[x, ...series.map((entry) => entry.label)]}
+          rows={cartesianRows(data, x, series, formatValue, formatX)}
+        />
+      }
     >
       <ResponsiveContainer width="100%" height="100%">
         <RechartsBarChart
@@ -494,7 +593,20 @@ export function DonutChart({
     </ul>
   ) : undefined;
   return (
-    <Frame title={title} height={height} className={className} legend={rows} legendBelow>
+    <Frame
+      title={title}
+      height={height}
+      className={className}
+      legend={rows}
+      legendBelow
+      table={
+        <DataTable
+          caption={title}
+          columns={["Slice", "Value"]}
+          rows={data.map((slice) => [slice.name, formatValue(slice.value)])}
+        />
+      }
+    >
       <ResponsiveContainer width="100%" height="100%">
         <PieChart>
           <Tooltip

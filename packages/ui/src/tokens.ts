@@ -50,7 +50,15 @@ export const COLOR_TOKENS = [
 
 export type ColorToken = (typeof COLOR_TOKENS)[number];
 
-/** Text tokens and the surface each is read against. */
+/**
+ * Text tokens and the surface each is read against.
+ *
+ * The role colours are here twice over: once as a fill with their own
+ * foreground on top, and once as the text they are also used for -- a
+ * `text-destructive` message on a card, a `text-warning` count beside a rule.
+ * Leaving out the second use is how a palette passes its own contrast test
+ * while a screen fails it.
+ */
 export const READABLE_PAIRS: ReadonlyArray<readonly [text: ColorToken, surface: ColorToken]> = [
   ["foreground", "background"],
   ["card-foreground", "card"],
@@ -67,6 +75,34 @@ export const READABLE_PAIRS: ReadonlyArray<readonly [text: ColorToken, surface: 
   ["sidebar-foreground", "sidebar"],
   ["sidebar-primary-foreground", "sidebar-primary"],
   ["sidebar-accent-foreground", "sidebar-accent"],
+  // The same colours used as text rather than as a ground.
+  ["primary", "background"],
+  ["primary", "card"],
+  ["primary", "muted"],
+  ["destructive", "background"],
+  ["destructive", "card"],
+  ["destructive", "muted"],
+  ["positive", "background"],
+  ["positive", "card"],
+  ["positive", "muted"],
+  ["warning", "background"],
+  ["warning", "card"],
+  ["warning", "muted"],
+  ["foreground", "muted"],
+  ["foreground", "accent"],
+  ["muted-foreground", "accent"],
+];
+
+/**
+ * The focus ring against the grounds it is drawn on. A focus indicator is
+ * held to 3:1, not 4.5:1, and it is the only thing marking a borderless
+ * control, so it is drawn at full strength rather than tinted.
+ */
+export const FOCUS_PAIRS: ReadonlyArray<readonly [ring: ColorToken, surface: ColorToken]> = [
+  ["ring", "background"],
+  ["ring", "card"],
+  ["ring", "muted"],
+  ["ring", "sidebar"],
 ];
 
 /** The series colours a chart hands out, in order. */

@@ -13,52 +13,20 @@
 // application can be allow-listed by path while it is still being moved over.
 // Today nothing is excused.
 //
-// Only code is read: a comment explaining why a control was replaced, or a
-// string carrying an example, names these elements without rendering one, and
-// a validator that could not tell the difference would be a validator people
-// learn to argue with.
+// The sources are parsed, not scanned. A comment explaining why a control was
+// replaced and a string carrying an example both name these elements without
+// rendering one, and prose contains apostrophes; a reader working by regular
+// expression either cries wolf or -- as an earlier version of this file did,
+// blanking everything from the apostrophe in "Don't" to the next one -- goes
+// quietly blind over the rest of the file.
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-export const RAW_CONTROL = /<(button|input|select|textarea|dialog)(?=[\s/>])/g;
+import ts from "typescript";
 
-/**
- * The source with its comments and string literals blanked out, one space per
- * character so every line and column still lines up with the file on disk.
- */
-export function codeOnly(text) {
-  const out = [...text];
-  const blank = (start, end) => {
-    for (let index = start; index < end && index < out.length; index += 1) {
-      if (out[index] !== "\n") out[index] = " ";
-    }
-  };
-  let index = 0;
-  while (index < text.length) {
-    const two = text.slice(index, index + 2);
-    if (two === "//") {
-      const end = text.indexOf("\n", index);
-      blank(index, end === -1 ? text.length : end);
-      index = end === -1 ? text.length : end;
-    } else if (two === "/*") {
-      const end = text.indexOf("*/", index + 2);
-      blank(index, end === -1 ? text.length : end + 2);
-      index = end === -1 ? text.length : end + 2;
-    } else if (text[index] === '"' || text[index] === "'" || text[index] === "`") {
-      const quote = text[index];
-      let cursor = index + 1;
-      while (cursor < text.length && text[cursor] !== quote) {
-        cursor += text[cursor] === "\\" ? 2 : 1;
-      }
-      blank(index + 1, cursor);
-      index = cursor + 1;
-    } else {
-      index += 1;
-    }
-  }
-  return out.join("");
-}
+/** The elements an application must not render itself. */
+export const RAW_CONTROLS = new Set(["button", "input", "select", "textarea", "dialog"]);
 
 /** Where applications live, relative to the repository root. */
 export const APPLICATION_SOURCES = ["examples/rational/src", "apps/console/src"];
@@ -70,12 +38,12 @@ export const APPLICATION_SOURCES = ["examples/rational/src", "apps/console/src"]
  */
 export const ALLOWED = new Map();
 
-/** Elements the kit deliberately leaves to the application. */
-export const ALLOWED_RAW = [
-  // A file picker has no styled equivalent worth having; the kit's Button labels it.
-  /<input\s[^>]*type="file"/,
-  /<input\s[^>]*type="hidden"/,
-];
+/**
+ * The `input` types the kit deliberately leaves to the application: a file
+ * picker has no styled equivalent worth having, and a hidden input renders
+ * nothing at all.
+ */
+export const ALLOWED_INPUT_TYPES = new Set(["file", "hidden"]);
 
 function* sourceFiles(directory) {
   for (const entry of readdirSync(directory)) {
@@ -97,9 +65,60 @@ function isAllowed(relativePath) {
   return false;
 }
 
+/** The literal value of a JSX attribute; `null` when absent or computed. */
+function literalAttribute(element, name) {
+  for (const attribute of element.attributes.properties) {
+    if (!ts.isJsxAttribute(attribute)) continue;
+    if (attribute.name.getText() !== name) continue;
+    const value = attribute.initializer;
+    if (value === undefined) return "";
+    if (ts.isStringLiteral(value)) return value.text;
+    if (ts.isJsxExpression(value) && value.expression !== undefined) {
+      if (ts.isStringLiteral(value.expression)) return value.expression.text;
+      if (ts.isNoSubstitutionTemplateLiteral(value.expression)) return value.expression.text;
+    }
+    return null;
+  }
+  return null;
+}
+
+/** Every raw control the file renders, as `{ line, element }`, in source order. */
+export function rawControlsIn(fileName, source) {
+  const parsed = ts.createSourceFile(
+    fileName,
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TSX,
+  );
+  const found = [];
+  const visit = (node) => {
+    const opening = ts.isJsxSelfClosingElement(node)
+      ? node
+      : ts.isJsxElement(node)
+        ? node.openingElement
+        : null;
+    // A capitalised tag is a component; only the intrinsic elements matter.
+    if (opening !== null && ts.isIdentifier(opening.tagName)) {
+      const element = opening.tagName.text;
+      if (RAW_CONTROLS.has(element)) {
+        const excused =
+          element === "input" && ALLOWED_INPUT_TYPES.has(literalAttribute(opening, "type") ?? "");
+        if (!excused) {
+          const { line } = parsed.getLineAndCharacterOfPosition(opening.getStart(parsed));
+          found.push({ line: line + 1, element });
+        }
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(parsed);
+  return found;
+}
+
 /**
  * Every raw control in the applications under `root`, as
- * `{ file, line, element }`, skipping allow-listed files and forms.
+ * `{ file, line, element }`, skipping allow-listed files.
  */
 export function findRawControls(root, sources = APPLICATION_SOURCES) {
   const findings = [];
@@ -114,20 +133,9 @@ export function findRawControls(root, sources = APPLICATION_SOURCES) {
     for (const file of files) {
       const relativePath = relative(root, file).split("\\").join("/");
       if (isAllowed(relativePath)) continue;
-      const source = readFileSync(file, "utf8");
-      // Found in the code, but judged against what the line actually says: the
-      // attribute that excuses a file picker lives inside a string, which the
-      // blanked copy no longer carries.
-      const written = source.split("\n");
-      codeOnly(source)
-        .split("\n")
-        .forEach((line, index) => {
-          for (const match of line.matchAll(RAW_CONTROL)) {
-            const tag = (written[index] ?? "").slice(match.index);
-            if (ALLOWED_RAW.some((pattern) => pattern.test(tag))) continue;
-            findings.push({ file: relativePath, line: index + 1, element: match[1] });
-          }
-        });
+      for (const finding of rawControlsIn(file, readFileSync(file, "utf8"))) {
+        findings.push({ file: relativePath, ...finding });
+      }
     }
   }
   return findings;

@@ -80,16 +80,17 @@ export function ThemeToggle({
   resolved: ResolvedTheme;
   onToggle: () => void;
 }) {
-  const next = resolved === "dark" ? "light" : "dark";
-  // "theme", not "mode": an application screen may well have a control
-  // labelled "Mode", and a test looking for it must not find this button
-  // instead -- a label is matched by substring.
+  // A toggle's name says what it controls and its pressed state says where it
+  // stands; a name that changes with the state says both and agrees with
+  // neither. "Theme", not "mode": an application screen may have a control
+  // labelled "Mode", and a label is matched by substring, so a test looking
+  // for that one must not find this button instead.
   return (
     <Button
       variant="ghost"
       size="icon"
-      aria-label={`Switch to the ${next} theme`}
-      title={`Switch to the ${next} theme`}
+      aria-label="Dark theme"
+      title={resolved === "dark" ? "Switch to the light theme" : "Switch to the dark theme"}
       aria-pressed={resolved === "dark"}
       onClick={onToggle}
       className={className}

@@ -110,8 +110,15 @@ export function Treemap({
               />
               {fitsLabel ? (
                 <text
+                  // A label sits on whichever series colour its cell drew, and
+                  // some of those are light: ordinary text with a halo of the
+                  // card colour reads on all of them, in both themes.
                   className="pointer-events-none text-[12px] font-semibold tabular-nums"
-                  fill="var(--primary-foreground)"
+                  fill="var(--foreground)"
+                  stroke="var(--card)"
+                  strokeWidth={3}
+                  strokeLinejoin="round"
+                  paintOrder="stroke"
                   x={rect.x + PAD}
                   y={rect.y + PAD + LABEL_SIZE * 0.85}
                 >
@@ -120,8 +127,12 @@ export function Treemap({
               ) : null}
               {fitsValue ? (
                 <text
-                  className="pointer-events-none text-[11px] tabular-nums opacity-90"
-                  fill="var(--primary-foreground)"
+                  className="pointer-events-none text-[11px] tabular-nums"
+                  fill="var(--foreground)"
+                  stroke="var(--card)"
+                  strokeWidth={3}
+                  strokeLinejoin="round"
+                  paintOrder="stroke"
                   x={rect.x + PAD}
                   y={rect.y + PAD * 2 + LABEL_SIZE + VALUE_SIZE * 0.85}
                 >

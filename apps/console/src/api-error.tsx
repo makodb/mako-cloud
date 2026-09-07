@@ -23,12 +23,11 @@ export function ApiFailureNotice({ failure }: { readonly failure: ConsoleApiFail
   return (
     <Alert variant="destructive" role="alert">
       <CircleAlert aria-hidden="true" />
-      <AlertTitle>{failure.message}</AlertTitle>
-      {failure.requestId === null ? null : (
-        <AlertDescription>
-          <RequestId value={failure.requestId} />
-        </AlertDescription>
-      )}
+      <AlertTitle>The management request failed</AlertTitle>
+      <AlertDescription>
+        <p className="m-0 text-foreground">{failure.message}</p>
+        <RequestId value={failure.requestId} />
+      </AlertDescription>
     </Alert>
   );
 }

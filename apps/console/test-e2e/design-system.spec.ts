@@ -38,11 +38,11 @@ test("the console follows the developer's theme and remembers it on the device",
 }) => {
   await page.goto("/");
   const toggle = page.getByTestId("theme-toggle");
-  await expect(toggle).toHaveAccessibleName("Switch to the dark theme");
+  await expect(toggle).toHaveAccessibleName("Dark theme");
   expect((await theme(page)).attribute).toBeNull();
 
   await toggle.click();
-  await expect(toggle).toHaveAccessibleName("Switch to the light theme");
+  await expect(toggle).toHaveAccessibleName("Dark theme");
   await expect(toggle).toHaveAttribute("aria-pressed", "true");
   expect(await theme(page)).toEqual({ attribute: "dark", scheme: "dark", stored: "dark" });
 
@@ -51,7 +51,7 @@ test("the console follows the developer's theme and remembers it on the device",
   await expect(page.getByTestId("theme-toggle")).toBeVisible();
   expect((await theme(page)).attribute).toBe("dark");
   await page.reload();
-  await expect(page.getByTestId("theme-toggle")).toHaveAccessibleName("Switch to the light theme");
+  await expect(page.getByTestId("theme-toggle")).toHaveAccessibleName("Dark theme");
   expect(await theme(page)).toEqual({ attribute: "dark", scheme: "dark", stored: "dark" });
 
   await page.getByTestId("theme-toggle").click();

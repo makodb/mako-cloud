@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { ALLOWED, codeOnly, findRawControls, main } from "../validate-ui-kit.js";
+import { ALLOWED, findRawControls, main, rawControlsIn } from "../validate-ui-kit.js";
 
 function fixture(files) {
   const root = mkdtempSync(join(process.env.TMPDIR ?? tmpdir(), "validate-ui-kit-"));
@@ -97,17 +97,24 @@ test("a control named in a comment or a string is not a control", () => {
   }
 });
 
-test("blanking comments and strings keeps every line and column in place", () => {
+test("prose, comments and strings never look like controls, and real ones are still found", () => {
+  // The apostrophe in "Don't" once blinded the whole rest of the file.
   const source = [
-    'const a = "<button>";',
-    "// <input>",
-    'const b = <button type="button" />;',
+    "// A screen may not render its own <button>.",
+    "/** A checkbox is a <button> to the browser. */",
+    'const HELP = "use <Input> instead of <input>";',
+    "export const A = () => (",
+    "  <div>",
+    "    <p>Nothing here yet. Don't worry — add one.</p>",
+    "    <Button>Fine</Button>",
+    '    <input type="file" accept=".csv" />',
+    '    <select name="mode"><option /></select>',
+    "  </div>",
+    ");",
   ].join("\n");
-  const blanked = codeOnly(source);
-  assert.equal(blanked.split("\n").length, 3);
-  assert.equal(blanked.split("\n")[2].indexOf("<button"), source.split("\n")[2].indexOf("<button"));
-  assert.equal(blanked.split("\n")[0].includes("<button"), false);
-  assert.equal(blanked.split("\n")[1].includes("<input"), false);
+  // Only the select is rendered: the rest are prose, a comment, a string, a
+  // kit component, and the file picker the kit leaves to the application.
+  assert.deepEqual(rawControlsIn("screen.tsx", source), [{ line: 9, element: "select" }]);
 });
 
 test("a missing source tree is not a failure", () => {

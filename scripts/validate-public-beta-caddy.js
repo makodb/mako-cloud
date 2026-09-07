@@ -268,6 +268,19 @@ for (const path of [
     `${path} would be served on a custom domain`,
   );
 }
+// Every asset kind the console's build emits must be served, or the browser
+// silently does without it: the typeface went missing this way once.
+{
+  const consoleAssets = /@console_asset path_regexp console_asset \S*\(\?:([a-z0-9|]+)\)\$/.exec(
+    caddy,
+  );
+  assert(consoleAssets !== null, "the console asset route is missing");
+  const served = new Set(consoleAssets[1].split("|"));
+  for (const extension of ["css", "js", "woff2"]) {
+    assert(served.has(extension), `the console asset route does not serve .${extension}`);
+  }
+}
+
 for (const forbidden of [
   "127.0.0.1:8081",
   "@control_api",

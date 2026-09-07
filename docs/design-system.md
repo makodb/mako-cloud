@@ -61,6 +61,18 @@ kit's dependencies into the generated `package.json` with the exact versions the
 resolved. The kit's stylesheet uses `@source "./"` relative to itself, so it compiles its own
 classes from `src/kit` there and from `packages/ui/src` here with no change.
 
+## Serving it
+
+The typeface is a file the application ships, so whatever serves the built site has to hand it
+over. On the public beta the console is served by Caddy from the release directory, and its asset
+route names the kinds of file it will serve; when the kit arrived the route still listed only
+`css` and `js`, so every `woff2` answered 404 and the console quietly fell back to a system face —
+nothing failed, it just stopped being Inter. The route now serves `css`, `js`, and `woff2`, and
+`npm run validate:public-beta-caddy` reads the extensions out of the template and asserts that
+all three are there. It cannot know what a future build will emit, so a new asset kind still has
+to be added to both the route and that assertion; what the check buys is that nobody quietly
+removes one of the three.
+
 ## Tests
 
 - `packages/ui/test/tokens.test.mjs` reads every `light-dark()` pair from the stylesheet, converts
@@ -85,11 +97,11 @@ and one palette. The chunks:
 
 | Chunk | What is in it | Gzipped |
 | --- | --- | --- |
-| `index` | Rational's own screens, selectors, and data layer | 127 KB |
-| `charts` | Recharts and what it depends on | 117 KB |
+| `index` | Rational's own screens, selectors, and data layer | 128 KB |
+| `charts` | Recharts and the d3 modules it draws with | 95 KB |
 | `database` | RxDB, Dexie, RxJS, and the `@mako-cloud/rxdb` client | 73 KB |
 | `react` | React and the scheduler | 59 KB |
-| `vendor` | Lucide icons in use, Tailwind runtime helpers, everything else | 36 KB |
+| `vendor` | Lucide icons in use, the state and utility libraries Recharts shares, everything else | 57 KB |
 | `primitives` | Radix primitives | 30 KB |
 
 The Inter variable font adds 48 KB for Latin, with the other scripts loaded only when a page

@@ -47,7 +47,9 @@ export function AlertTitle({ className, ...props }: ComponentProps<"div">) {
   return (
     <div
       data-slot="alert-title"
-      className={cn("col-start-2 line-clamp-1 min-h-4 font-medium tracking-tight", className)}
+      // Not clamped: the title is often the whole message a server sent back,
+      // and a message worth showing is worth showing all of.
+      className={cn("col-start-2 min-h-4 font-medium tracking-tight", className)}
       {...props}
     />
   );

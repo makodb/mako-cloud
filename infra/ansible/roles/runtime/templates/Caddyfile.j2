@@ -97,7 +97,11 @@
 	}
 
 	# The release-owned console is served only on its documented client routes.
-	@console_asset path_regexp console_asset ^/assets/[A-Za-z0-9._-]+\.(?:css|js)$
+	# Its build emits three kinds of asset and no others: the script, the
+	# stylesheet, and the self-hosted typeface the design system carries so no
+	# page depends on a font service. A font left out of this list does not
+	# fail loudly -- the console just quietly falls back to a system face.
+	@console_asset path_regexp console_asset ^/assets/[A-Za-z0-9._-]+\.(?:css|js|woff2)$
 	handle @console_asset {
 		root * /opt/mako/current/console
 		file_server

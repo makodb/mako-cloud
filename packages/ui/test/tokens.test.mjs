@@ -11,7 +11,13 @@ import { dirname, resolve } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { CHART_SERIES, COLOR_TOKENS, READABLE_PAIRS, seriesColor } from "../dist/tokens.js";
+import {
+  CHART_SERIES,
+  COLOR_TOKENS,
+  FOCUS_PAIRS,
+  READABLE_PAIRS,
+  seriesColor,
+} from "../dist/tokens.js";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const stylesheet = readFileSync(resolve(root, "src/styles.css"), "utf8");
@@ -90,6 +96,19 @@ test("text stays readable on its surface in both themes (AA, 4.5:1)", () => {
       assert.ok(
         ratio >= 4.5,
         `${theme}: --${text} on --${surface} is ${ratio.toFixed(2)}:1, under 4.5:1`,
+      );
+    }
+  }
+});
+
+test("the focus ring stands out from every ground it is drawn on (3:1)", () => {
+  const pairs = tokenPairs();
+  for (const [ring, surface] of FOCUS_PAIRS) {
+    for (const theme of ["light", "dark"]) {
+      const ratio = contrast(oklchToSrgb(pairs.get(ring)[theme]), oklchToSrgb(pairs.get(surface)[theme]));
+      assert.ok(
+        ratio >= 3,
+        `${theme}: --${ring} on --${surface} is ${ratio.toFixed(2)}:1, under 3:1`,
       );
     }
   }
