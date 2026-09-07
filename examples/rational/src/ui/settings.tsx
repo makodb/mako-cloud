@@ -1,3 +1,14 @@
+import {
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  Field,
+  Input,
+  NativeSelect,
+  cn,
+} from "@mako-cloud/ui";
 import { type FormEvent, useState } from "react";
 
 import type { AppState, RationalApp } from "../data/rational.js";
@@ -13,7 +24,6 @@ import { MerchantsScreen } from "./merchants.js";
 import { type Route, routeHash, type SettingsPage } from "./router.js";
 import { RulesScreen } from "./rules.js";
 import { TagsScreen } from "./tags.js";
-import "./styles/settings.css";
 
 /**
  * Everything that configures the household rather than shows its money, in
@@ -47,19 +57,31 @@ export function SettingsScreen({
   currency: string;
 }) {
   return (
-    <div className="settings" data-testid="settings-screen">
-      <nav className="settings-nav" aria-label="Settings pages">
-        {PAGES.map((entry) => (
-          <a
-            key={entry.page}
-            href={routeHash({ name: "settings", page: entry.page })}
-            aria-current={route.page === entry.page ? "page" : undefined}
-          >
-            {entry.label}
-          </a>
-        ))}
+    <div className="grid gap-6" data-testid="settings-screen">
+      {/* The pages are links, not tabs: each has an address of its own, so
+          the row is drawn the way the kit draws TabsLine but stays a nav. */}
+      <nav
+        className="flex w-full flex-wrap items-end gap-4 border-b text-sm"
+        aria-label="Settings pages"
+      >
+        {PAGES.map((entry) => {
+          const active = route.page === entry.page;
+          return (
+            <a
+              key={entry.page}
+              href={routeHash({ name: "settings", page: entry.page })}
+              aria-current={active ? "page" : undefined}
+              className={cn(
+                "-mb-px inline-flex h-9 items-center border-b-2 border-transparent px-1 pb-2 font-medium text-muted-foreground no-underline transition-colors hover:text-foreground hover:no-underline",
+                active && "border-primary text-foreground",
+              )}
+            >
+              {entry.label}
+            </a>
+          );
+        })}
       </nav>
-      <div className="settings-page">
+      <div className="min-w-0">
         <SettingsPageBody
           app={app}
           state={state}
@@ -89,7 +111,7 @@ function SettingsPageBody({
   if (page === "household") return <HouseholdSettings app={app} state={state} />;
   if (session === null) {
     return (
-      <p role="status" data-testid="household-opening">
+      <p className="text-sm text-muted-foreground" role="status" data-testid="household-opening">
         {state.memberships.length === 0 ? "Setting up your space…" : "Opening your space…"}
       </p>
     );
@@ -130,7 +152,7 @@ function HouseholdSettings({ app, state }: { app: RationalApp; state: AppState }
 
   if (household === null) {
     return (
-      <p role="status" data-testid="household-opening">
+      <p className="text-sm text-muted-foreground" role="status" data-testid="household-opening">
         Opening your space…
       </p>
     );
@@ -158,76 +180,92 @@ function HouseholdSettings({ app, state }: { app: RationalApp; state: AppState }
   };
 
   return (
-    <section aria-labelledby="household-settings-title">
-      <div className="heading">
-        <h1 id="household-settings-title">Household</h1>
+    <section aria-labelledby="household-settings-title" className="grid gap-6">
+      <div className="grid gap-1">
+        <h1 id="household-settings-title" className="text-2xl">
+          Household
+        </h1>
+        <p className="text-sm text-muted-foreground">
+          What this space is called, the currency it thinks in, and how its budget reads.
+        </p>
       </div>
-      {readOnly ? (
-        <p className="hint" role="status">
-          Only the household's owner can change these settings.
-        </p>
-      ) : null}
-      <form
-        className="editor"
-        aria-label="Household settings"
-        key={`${household.id}:${household.updated_at}`}
-        onSubmit={(event) => void submit(event)}
-      >
-        <div className="grid">
-          <label>
-            Name
-            <input
-              name="name"
-              required
-              maxLength={200}
-              defaultValue={household.name}
-              disabled={readOnly}
-            />
-          </label>
-          <label>
-            Currency
-            <input
-              name="currency"
-              required
-              maxLength={3}
-              pattern="[A-Za-z]{3}"
-              defaultValue={household.currency}
-              disabled={readOnly}
-            />
-          </label>
-          <label>
-            Budget mode
-            <select
-              name="budget_mode"
-              defaultValue={(household.budget_mode ?? "category") satisfies BudgetMode}
-              disabled={readOnly}
-              data-testid="budget-mode"
-            >
-              <option value="category">By category — a number per category and group</option>
-              <option value="flex">Flex — fixed, non-monthly, and one flexible number</option>
-            </select>
-          </label>
-        </div>
-        <p className="hint">
-          The budget mode changes how the budget page presents the same budgets, never the budgets
-          themselves.
-        </p>
-        {error === null ? null : (
-          <p className="error" role="alert">
-            {error}
-          </p>
-        )}
-        {saved ? (
-          <p className="hint" role="status" data-testid="household-saved">
-            Saved.
-          </p>
+      <Card className="max-w-2xl">
+        {readOnly ? (
+          <CardHeader>
+            <CardDescription role="status">
+              Only the household's owner can change these settings.
+            </CardDescription>
+          </CardHeader>
         ) : null}
-        <div className="actions">
-          <button type="submit" disabled={readOnly || busy}>
-            Save settings
-          </button>
-        </div>
-      </form>
+        <CardContent>
+          <form
+            className="grid gap-4"
+            aria-label="Household settings"
+            key={`${household.id}:${household.updated_at}`}
+            onSubmit={(event) => void submit(event)}
+          >
+            <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_8rem]">
+              <Field label="Name" htmlFor="settings-name">
+                <Input
+                  id="settings-name"
+                  name="name"
+                  required
+                  maxLength={200}
+                  defaultValue={household.name}
+                  disabled={readOnly}
+                />
+              </Field>
+              <Field label="Currency" htmlFor="settings-currency">
+                <Input
+                  id="settings-currency"
+                  name="currency"
+                  required
+                  maxLength={3}
+                  pattern="[A-Za-z]{3}"
+                  className="uppercase"
+                  defaultValue={household.currency}
+                  disabled={readOnly}
+                />
+              </Field>
+            </div>
+            <Field
+              label="Budget mode"
+              htmlFor="settings-budget-mode"
+              hint="The budget mode changes how the budget page presents the same budgets, never the budgets themselves."
+            >
+              <NativeSelect
+                id="settings-budget-mode"
+                name="budget_mode"
+                defaultValue={(household.budget_mode ?? "category") satisfies BudgetMode}
+                disabled={readOnly}
+                data-testid="budget-mode"
+              >
+                <option value="category">By category — a number per category and group</option>
+                <option value="flex">Flex — fixed, non-monthly, and one flexible number</option>
+              </NativeSelect>
+            </Field>
+            {error === null ? null : (
+              <p className="text-sm text-destructive" role="alert">
+                {error}
+              </p>
+            )}
+            {saved ? (
+              <p
+                className="text-sm text-muted-foreground"
+                role="status"
+                data-testid="household-saved"
+              >
+                Saved.
+              </p>
+            ) : null}
+            <div className="flex gap-2">
+              <Button type="submit" disabled={readOnly || busy}>
+                Save settings
+              </Button>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
     </section>
   );
 }

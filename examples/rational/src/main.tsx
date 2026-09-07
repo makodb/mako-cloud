@@ -4,7 +4,7 @@ import { resolveConfig } from "./config.js";
 import { RationalApp } from "./data/rational.js";
 import { FakeMakoBackend } from "./testing/fake-backend.js";
 import { App } from "./ui/app.jsx";
-import "./styles.css";
+import "./app.css";
 
 /**
  * The app object is created once and exposed as `window.rational` so the

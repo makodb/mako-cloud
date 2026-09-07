@@ -1,0 +1,177 @@
+/* The Mako design system: one stylesheet every web surface imports once.
+
+   Tokens are declared once each with `light-dark()`, so the whole palette
+   follows the document's colour scheme: `:root` follows the device; a root
+   carrying `data-theme="dark"` or `data-theme="light"` pins it. Tailwind reads
+   the tokens through `@theme inline`, so `bg-background`, `text-primary`, and
+   the rest are the same colours the components use.
+
+   `@source "./"` is relative to this file, so the kit's own component classes
+   are compiled wherever the kit lives: the workspace package, or the copy a
+   standalone export carries under its own `src/kit`. */
+
+@import "tailwindcss";
+@import "@fontsource-variable/inter";
+@source "./";
+
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+:root {
+  color-scheme: light dark;
+
+  /* Surfaces and text. */
+  --background: light-dark(oklch(0.985 0.002 247), oklch(0.17 0.01 260));
+  --foreground: light-dark(oklch(0.21 0.01 260), oklch(0.93 0.005 250));
+  --card: light-dark(oklch(1 0 0), oklch(0.21 0.01 260));
+  --card-foreground: light-dark(oklch(0.21 0.01 260), oklch(0.93 0.005 250));
+  --popover: light-dark(oklch(1 0 0), oklch(0.22 0.01 260));
+  --popover-foreground: light-dark(oklch(0.21 0.01 260), oklch(0.93 0.005 250));
+
+  /* Roles. */
+  --primary: light-dark(oklch(0.52 0.19 265), oklch(0.75 0.13 265));
+  --primary-foreground: light-dark(oklch(0.985 0 0), oklch(0.17 0.03 265));
+  --secondary: light-dark(oklch(0.955 0.005 250), oklch(0.27 0.01 260));
+  --secondary-foreground: light-dark(oklch(0.25 0.01 260), oklch(0.93 0.005 250));
+  --muted: light-dark(oklch(0.955 0.005 250), oklch(0.27 0.01 260));
+  --muted-foreground: light-dark(oklch(0.46 0.02 258), oklch(0.72 0.015 255));
+  --accent: light-dark(oklch(0.945 0.02 262), oklch(0.29 0.03 262));
+  --accent-foreground: light-dark(oklch(0.25 0.01 260), oklch(0.93 0.005 250));
+  --destructive: light-dark(oklch(0.53 0.2 27), oklch(0.72 0.17 25));
+  --destructive-foreground: light-dark(oklch(0.985 0 0), oklch(0.15 0.03 25));
+
+  /* Money and state: what an amount or a bill is doing. */
+  --positive: light-dark(oklch(0.5 0.15 155), oklch(0.78 0.15 155));
+  --positive-foreground: light-dark(oklch(0.985 0 0), oklch(0.15 0.04 155));
+  --warning: light-dark(oklch(0.72 0.16 75), oklch(0.82 0.15 80));
+  --warning-foreground: light-dark(oklch(0.24 0.05 75), oklch(0.2 0.05 80));
+
+  /* Lines and focus. */
+  --border: light-dark(oklch(0.91 0.005 250), oklch(1 0 0 / 10%));
+  --input: light-dark(oklch(0.88 0.006 250), oklch(1 0 0 / 15%));
+  --ring: light-dark(oklch(0.52 0.19 265), oklch(0.62 0.12 265));
+
+  /* Series, in the order a chart hands them out. */
+  --chart-1: light-dark(oklch(0.55 0.19 265), oklch(0.72 0.15 265));
+  --chart-2: light-dark(oklch(0.62 0.15 165), oklch(0.75 0.15 165));
+  --chart-3: light-dark(oklch(0.74 0.16 70), oklch(0.82 0.15 75));
+  --chart-4: light-dark(oklch(0.6 0.2 320), oklch(0.74 0.17 320));
+  --chart-5: light-dark(oklch(0.65 0.13 220), oklch(0.78 0.12 220));
+  --chart-6: light-dark(oklch(0.6 0.18 25), oklch(0.74 0.16 25));
+  --chart-7: light-dark(oklch(0.55 0.15 300), oklch(0.72 0.14 300));
+  --chart-8: light-dark(oklch(0.7 0.14 130), oklch(0.8 0.14 130));
+
+  /* The sidebar is its own surface. */
+  --sidebar: light-dark(oklch(1 0 0), oklch(0.2 0.01 260));
+  --sidebar-foreground: light-dark(oklch(0.21 0.01 260), oklch(0.93 0.005 250));
+  --sidebar-primary: light-dark(oklch(0.52 0.19 265), oklch(0.75 0.13 265));
+  --sidebar-primary-foreground: light-dark(oklch(0.985 0 0), oklch(0.17 0.03 265));
+  --sidebar-accent: light-dark(oklch(0.955 0.005 250), oklch(0.27 0.01 260));
+  --sidebar-accent-foreground: light-dark(oklch(0.21 0.01 260), oklch(0.93 0.005 250));
+  --sidebar-border: light-dark(oklch(0.91 0.005 250), oklch(1 0 0 / 10%));
+  --sidebar-ring: light-dark(oklch(0.52 0.19 265), oklch(0.62 0.12 265));
+
+  --radius: 0.625rem;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+@theme inline {
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-positive: var(--positive);
+  --color-positive-foreground: var(--positive-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-chart-6: var(--chart-6);
+  --color-chart-7: var(--chart-7);
+  --color-chart-8: var(--chart-8);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  html {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-size: 15px;
+    line-height: 1.5;
+  }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    @apply m-0 font-semibold tracking-tight;
+  }
+
+  a {
+    @apply text-primary no-underline hover:underline;
+  }
+
+  /* Motion is a courtesy, never a requirement. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@utility money {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}

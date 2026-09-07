@@ -1,4 +1,25 @@
-import { type KeyboardEvent, useMemo, useState } from "react";
+import {
+  Alert,
+  AlertDescription,
+  Button,
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  Checkbox,
+  Input,
+  Label,
+  Progress,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  cn,
+} from "@mako-cloud/ui";
+import { ChevronLeft, ChevronRight, Copy } from "lucide-react";
+import { type ComponentProps, type KeyboardEvent, type ReactNode, useMemo, useState } from "react";
 
 import type { RationalApp } from "../data/rational.js";
 import type { ScopeSession } from "../data/scope.js";
@@ -27,10 +48,8 @@ import {
 } from "../selectors/budget-month.js";
 import { plannedMonthlyTotal } from "../selectors/goals.js";
 import { amountToText, formatMinorUnits, parseAmount } from "../selectors/money.js";
-import { ProgressBar, type ProgressTone } from "./charts/index.js";
 import { useQuery } from "./hooks.js";
 import { type Route, routeHash, transactionsHash } from "./router.js";
-import "./styles/budget.css";
 
 /**
  * The budget, one month at a time.
@@ -135,34 +154,48 @@ export function BudgetScreen({
   };
 
   return (
-    <section aria-labelledby="budget-title" data-testid="budget-screen" className="budget">
-      <div className="heading">
-        <h1 id="budget-title">Budget</h1>
-        <div className="budget-tools">
-          <div className="month-pager">
-            <button
-              type="button"
-              className="secondary"
+    <section aria-labelledby="budget-title" data-testid="budget-screen" className="grid gap-6">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="grid gap-1">
+          <h1 id="budget-title" className="text-2xl">
+            Budget
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            {mode === "flex" ? "Flex budget" : "Budget by category"} ·{" "}
+            <a href={routeHash({ name: "settings", page: "household" })}>
+              Change in Settings › Household
+            </a>
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-1">
+            <Button
+              variant="outline"
+              size="icon-sm"
               aria-label="Previous month"
               onClick={() => go(previous)}
             >
-              ‹
-            </button>
-            <span className="month-title" data-testid="budget-month">
+              <ChevronLeft />
+            </Button>
+            {/* Wide enough for "September 2026" so the buttons do not shuffle
+                as the month changes under them. */}
+            <span
+              className="min-w-[9.5rem] text-center font-semibold tabular-nums"
+              data-testid="budget-month"
+            >
               {monthTitle(month)}
             </span>
-            <button
-              type="button"
-              className="secondary"
+            <Button
+              variant="outline"
+              size="icon-sm"
               aria-label="Next month"
               onClick={() => go(nextMonth(month))}
             >
-              ›
-            </button>
+              <ChevronRight />
+            </Button>
           </div>
-          <button
-            type="button"
-            className="secondary"
+          <Button
+            variant="outline"
             disabled={readOnly || copyable === 0}
             title={
               copyable === 0
@@ -171,27 +204,24 @@ export function BudgetScreen({
             }
             onClick={() => void copyLastMonth()}
           >
+            <Copy />
             Copy last month
-          </button>
+          </Button>
         </div>
       </div>
-      <p className="hint mode-hint">
-        {mode === "flex" ? "Flex budget" : "Budget by category"} ·{" "}
-        <a href={routeHash({ name: "settings", page: "household" })}>
-          Change in Settings › Household
-        </a>
-      </p>
       {problem === null ? null : (
-        <p className="notice error" role="alert" data-testid="budget-error">
-          {problem}
-        </p>
+        <Alert variant="destructive" role="alert" data-testid="budget-error">
+          <AlertDescription>{problem}</AlertDescription>
+        </Alert>
       )}
       {copied === null || copied.month !== month ? null : (
-        <p className="hint" role="status" data-testid="copy-status">
-          {copied.count === 0
-            ? `Nothing to copy: ${monthTitle(month)} already has everything ${monthTitle(previous)} had.`
-            : `Copied ${copied.count} ${copied.count === 1 ? "budget" : "budgets"} from ${monthTitle(previous)}.`}
-        </p>
+        <Alert role="status" data-testid="copy-status">
+          <AlertDescription className="text-foreground">
+            {copied.count === 0
+              ? `Nothing to copy: ${monthTitle(month)} already has everything ${monthTitle(previous)} had.`
+              : `Copied ${copied.count} ${copied.count === 1 ? "budget" : "budgets"} from ${monthTitle(previous)}.`}
+          </AlertDescription>
+        </Alert>
       )}
 
       <Summary model={model} planned={planned} mode={mode} editing={editing} />
@@ -213,38 +243,39 @@ export function BudgetScreen({
         </>
       )}
 
-      <table className="list budget-totals" aria-label="Budget totals">
-        <thead>
-          <tr>
-            <th scope="col">Total</th>
-            <th scope="col" className="amount">
-              Budgeted
-            </th>
-            <th scope="col" className="amount">
-              Spent
-            </th>
-            <th scope="col" className="amount">
-              Remaining
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {[{ currency, ...model.totals }, ...otherTotals].map((total) => (
-            <tr key={total.currency} data-testid={`budget-total-${total.currency}`}>
-              <th scope="row">{total.currency}</th>
-              <td className="amount" data-testid="budgeted">
-                {formatMinorUnits(total.budgeted, total.currency)}
-              </td>
-              <td className="amount" data-testid="spent">
-                {formatMinorUnits(total.spent, total.currency)}
-              </td>
-              <td className={`amount${total.remaining < 0 ? " over" : ""}`} data-testid="remaining">
-                {formatMinorUnits(total.remaining, total.currency)}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <Card className="py-3">
+        <CardContent>
+          <Table aria-label="Budget totals">
+            <TableHeader>
+              <TableRow>
+                <TableHead scope="col">Total</TableHead>
+                <MoneyHead scope="col">Budgeted</MoneyHead>
+                <MoneyHead scope="col">Spent</MoneyHead>
+                <MoneyHead scope="col">Remaining</MoneyHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {[{ currency, ...model.totals }, ...otherTotals].map((total) => (
+                <TableRow key={total.currency} data-testid={`budget-total-${total.currency}`}>
+                  <RowHead>{total.currency}</RowHead>
+                  <TableCell className="money" data-testid="budgeted">
+                    {formatMinorUnits(total.budgeted, total.currency)}
+                  </TableCell>
+                  <TableCell className="money" data-testid="spent">
+                    {formatMinorUnits(total.spent, total.currency)}
+                  </TableCell>
+                  <TableCell
+                    className={cn("money", total.remaining < 0 && OVER)}
+                    data-testid="remaining"
+                  >
+                    {formatMinorUnits(total.remaining, total.currency)}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
     </section>
   );
 }
@@ -262,6 +293,12 @@ interface Editing {
   readonly clearBudget: (subject: string) => Promise<void>;
   readonly onProblem: (message: string | null) => void;
 }
+
+/** An amount past its limit: the one colour the page uses for trouble. */
+const OVER = "font-medium text-destructive";
+
+/** A dash where a row has no number to show. */
+const DASH = <span className="text-muted-foreground">—</span>;
 
 /**
  * The month in five numbers. Expected income is the one a person sets here
@@ -285,9 +322,12 @@ function Summary({
   const fmt = (amount: number) => formatMinorUnits(amount, currency);
   const remaining = mode === "flex" ? model.flex.flexible.remaining : model.totals.remaining;
   return (
-    <div className="totals budget-summary">
-      <div className="total" data-testid="expected-income">
-        <span>Expected income</span>
+    <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-5">
+      <Tile
+        label="Expected income"
+        detail={`received ${fmt(model.income.actual)}`}
+        data-testid="expected-income"
+      >
         {settingIncome ? (
           <AmountField
             label="Expected income"
@@ -295,45 +335,146 @@ function Summary({
             placeholder={amountToText(0, currency)}
             autoFocus
             editing={editing}
+            className="h-9 text-lg font-semibold md:text-lg"
             onSave={(amount) => editing.setBudget("income", INCOME_SUBJECT, amount, false)}
             onClear={() => editing.clearBudget(INCOME_SUBJECT)}
             onDone={() => setSettingIncome(false)}
           />
         ) : (
-          <strong>
-            <button
-              type="button"
-              className="link amount-button"
+          <strong className="text-xl font-semibold tabular-nums">
+            <Button
+              variant="link"
+              className="h-auto p-0 text-xl font-semibold text-foreground tabular-nums underline decoration-input decoration-dashed underline-offset-4 hover:text-primary hover:decoration-primary"
               aria-label="Set expected income"
               disabled={editing.readOnly}
               onClick={() => setSettingIncome(true)}
             >
               {model.income.expected === 0 ? "Set" : fmt(model.income.expected)}
-            </button>
+            </Button>
           </strong>
         )}
-        <small>received {fmt(model.income.actual)}</small>
-      </div>
-      <div className="total" data-testid="budgeted">
-        <span>Budgeted</span>
-        <strong>{fmt(model.totals.budgeted)}</strong>
-      </div>
-      <div className="total" data-testid="spent-total">
-        <span>Spent</span>
-        <strong>{fmt(model.totals.spent)}</strong>
-      </div>
-      <div className="total" data-testid="remaining-total">
-        <span>{mode === "flex" ? "Flexible remaining" : "Remaining"}</span>
-        <strong className={remaining < 0 ? "over" : undefined}>{fmt(remaining)}</strong>
-      </div>
-      <div className="total" data-testid="left-to-budget">
-        <span>Left to budget</span>
-        <strong className={model.totals.leftToBudget < 0 ? "over" : undefined}>
+      </Tile>
+      <Tile label="Budgeted" data-testid="budgeted">
+        <TileValue>{fmt(model.totals.budgeted)}</TileValue>
+      </Tile>
+      <Tile label="Spent" data-testid="spent-total">
+        <TileValue>{fmt(model.totals.spent)}</TileValue>
+      </Tile>
+      <Tile
+        label={mode === "flex" ? "Flexible remaining" : "Remaining"}
+        data-testid="remaining-total"
+      >
+        <TileValue className={remaining < 0 ? OVER : undefined}>{fmt(remaining)}</TileValue>
+      </Tile>
+      <Tile
+        label="Left to budget"
+        detail={`after ${fmt(planned)} to goals`}
+        data-testid="left-to-budget"
+      >
+        <TileValue className={model.totals.leftToBudget < 0 ? OVER : undefined}>
           {fmt(model.totals.leftToBudget)}
-        </strong>
-        <small>after {fmt(planned)} to goals</small>
-      </div>
+        </TileValue>
+      </Tile>
     </div>
+  );
+}
+
+/** One figure of the summary: what it is, the number, and a word about it. */
+function Tile({
+  label,
+  detail,
+  className,
+  children,
+  ...props
+}: ComponentProps<"section"> & { label: string; detail?: string }) {
+  return (
+    <Card className={cn("gap-0 py-4", className)} {...props}>
+      <CardContent className="grid gap-1 px-4">
+        <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          {label}
+        </span>
+        {children}
+        {detail === undefined ? null : (
+          <small className="text-xs text-muted-foreground">{detail}</small>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function TileValue({
+  className,
+  children,
+}: {
+  className?: string | undefined;
+  children: ReactNode;
+}) {
+  return (
+    <strong className={cn("text-xl font-semibold tabular-nums", className)}>{children}</strong>
+  );
+}
+
+/** A column header over money: right-aligned like the figures under it. */
+function MoneyHead({ className, ...props }: ComponentProps<"th">) {
+  return <TableHead className={cn("money text-right", className)} {...props} />;
+}
+
+/** A row's own heading cell: the kit's `th`, in the body's colour and weight. */
+function RowHead({ className, ...props }: ComponentProps<"th">) {
+  return (
+    <TableHead
+      scope="row"
+      className={cn("h-auto whitespace-normal py-2 font-medium text-foreground", className)}
+      {...props}
+    />
+  );
+}
+
+/** A cell that says the month has nothing for this table. */
+function EmptyRow({ colSpan, children }: { colSpan: number; children: ReactNode }) {
+  return (
+    <TableRow>
+      <TableCell
+        colSpan={colSpan}
+        className="py-6 text-center whitespace-normal text-muted-foreground"
+      >
+        {children}
+      </TableCell>
+    </TableRow>
+  );
+}
+
+/** The heading of a group or a bucket: its name and its figures, side by side with its controls. */
+function GroupHeading({
+  id,
+  title,
+  figures,
+  children,
+}: {
+  id: string;
+  title: string;
+  figures: ReactNode;
+  children?: ReactNode;
+}) {
+  return (
+    <CardHeader className="flex flex-wrap items-start justify-between gap-4">
+      <div className="grid gap-1">
+        <CardTitle id={id} className="text-lg">
+          {title}
+        </CardTitle>
+        <p className="text-sm text-muted-foreground tabular-nums">{figures}</p>
+      </div>
+      {children}
+    </CardHeader>
+  );
+}
+
+/** The emoji a category chose, in a fixed slot so names line up whether or not they have one. */
+function CategoryIcon({ icon }: { icon: string | undefined }) {
+  return (
+    <span className="inline-block w-6 text-center" aria-hidden="true">
+      {icon ?? ""}
+    </span>
   );
 }
 
@@ -363,30 +504,29 @@ function GroupSection({
     0,
   );
   return (
-    <section
-      className="budget-group"
+    <Card
+      className="gap-4"
       data-testid={`budget-group-${id}`}
       aria-labelledby={`budget-group-${id}-title`}
     >
-      <header className="group-heading">
-        <div>
-          <h2 id={`budget-group-${id}-title`}>{group.group.name}</h2>
-          <p className="group-figures">
+      <GroupHeading
+        id={`budget-group-${id}-title`}
+        title={group.group.name}
+        figures={
+          <>
             <span data-testid="group-spent">{fmt(group.spent)}</span> of{" "}
             <span data-testid="group-budgeted">{fmt(group.budgeted)}</span> ·{" "}
-            <span
-              data-testid="group-remaining"
-              className={group.remaining < 0 ? "over" : undefined}
-            >
+            <span data-testid="group-remaining" className={group.remaining < 0 ? OVER : undefined}>
               {fmt(group.remaining)}
             </span>{" "}
             left
-          </p>
-        </div>
+          </>
+        }
+      >
         {group.group.id === UNGROUPED_ID ? null : whole && group.budget !== null ? (
-          <div className="group-budget">
-            <span className="inline-field">
-              <span className="field-name">Group budget</span>
+          <div className="flex flex-wrap items-center gap-4">
+            <span className="flex items-center gap-2">
+              <span className="text-xs font-medium text-muted-foreground">Group budget</span>
               <AmountField
                 label={`Budget for ${group.group.name}`}
                 amount={group.budget.amount}
@@ -403,98 +543,91 @@ function GroupSection({
                 onClear={() => editing.clearBudget(group.group.id)}
               />
             </span>
-            <label className="chip-option">
-              <input
-                type="checkbox"
+            <span className="flex items-center gap-2">
+              <Checkbox
+                id={`budget-group-${id}-rollover`}
                 aria-label={`Roll over ${group.group.name}`}
                 checked={group.budget.budget.rollover}
                 disabled={editing.readOnly}
-                onChange={(event) =>
+                onCheckedChange={(checked) =>
                   void editing.setBudget(
                     "group",
                     group.group.id,
                     group.budget?.amount ?? 0,
-                    event.target.checked,
+                    checked === true,
                   )
                 }
               />
-              rolls over
-            </label>
+              <Label htmlFor={`budget-group-${id}-rollover`} className="font-normal">
+                rolls over
+              </Label>
+            </span>
             {group.budget.carriedIn === 0 ? null : (
-              <small data-testid="group-carried-in">{fmt(group.budget.carriedIn)} carried in</small>
+              <small className="text-xs text-muted-foreground" data-testid="group-carried-in">
+                {fmt(group.budget.carriedIn)} carried in
+              </small>
             )}
-            <button
-              type="button"
-              className="link"
+            <Button
+              variant="link"
+              size="sm"
+              className="h-auto p-0"
               disabled={editing.readOnly}
               onClick={() => void editing.clearBudget(group.group.id)}
             >
               Budget categories separately
-            </button>
+            </Button>
           </div>
         ) : (
-          <button
-            type="button"
-            className="link"
+          <Button
+            variant="link"
+            size="sm"
+            className="h-auto p-0"
             disabled={editing.readOnly}
             onClick={() => void editing.setBudget("group", group.group.id, ownAmounts, false)}
           >
             Budget this group as a whole
-          </button>
+          </Button>
         )}
-      </header>
-      <ProgressBar
-        value={group.spent}
-        max={group.budgeted}
-        label={`${group.group.name} budget used`}
-        tone={toneFor(group.spent, group.budgeted)}
-      />
-      <table className="list budget-table" aria-label={`${group.group.name} categories`}>
-        <thead>
-          <tr>
-            <th scope="col">Category</th>
-            <th scope="col" className="amount">
-              Budget
-            </th>
-            <th scope="col">Roll over</th>
-            <th scope="col" className="amount">
-              Carried in
-            </th>
-            <th scope="col" className="amount">
-              Allowance
-            </th>
-            <th scope="col" className="amount">
-              Spent
-            </th>
-            <th scope="col" className="amount">
-              Remaining
-            </th>
-            <th scope="col" className="progress-column">
-              Used
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {group.categories.length === 0 ? (
-            <tr>
-              <td colSpan={8} className="empty">
-                No categories in this group.
-              </td>
-            </tr>
-          ) : null}
-          {group.categories.map((entry) => (
-            <CategoryRow
-              key={entry.category.id}
-              entry={entry}
-              underGroupBudget={whole}
-              month={month}
-              icon={icons.get(entry.category.id)}
-              editing={editing}
-            />
-          ))}
-        </tbody>
-      </table>
-    </section>
+      </GroupHeading>
+      <CardContent className="grid gap-3">
+        <Progress
+          value={percentOf(group.spent, group.budgeted)}
+          tone={toneFor(group.spent, group.budgeted)}
+          aria-label={`${group.group.name} budget used`}
+        />
+        <Table aria-label={`${group.group.name} categories`}>
+          <TableHeader>
+            <TableRow>
+              <TableHead scope="col">Category</TableHead>
+              <MoneyHead scope="col">Budget</MoneyHead>
+              <TableHead scope="col">Roll over</TableHead>
+              <MoneyHead scope="col">Carried in</MoneyHead>
+              <MoneyHead scope="col">Allowance</MoneyHead>
+              <MoneyHead scope="col">Spent</MoneyHead>
+              <MoneyHead scope="col">Remaining</MoneyHead>
+              <TableHead scope="col" className="w-28 min-w-20">
+                Used
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {group.categories.length === 0 ? (
+              <EmptyRow colSpan={8}>No categories in this group.</EmptyRow>
+            ) : null}
+            {group.categories.map((entry) => (
+              <CategoryRow
+                key={entry.category.id}
+                entry={entry}
+                underGroupBudget={whole}
+                month={month}
+                icon={icons.get(entry.category.id)}
+                editing={editing}
+              />
+            ))}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -514,25 +647,25 @@ function CategoryRow({
   const { currency } = editing;
   const fmt = (amount: number) => formatMinorUnits(amount, currency);
   const { category, budget, spent, share } = entry;
-  const dash = <span className="muted">—</span>;
   return (
-    <tr data-testid={`budget-${category.id}`} data-percent={budget?.percent ?? 0}>
-      <th scope="row">
-        <span className="category-icon" aria-hidden="true">
-          {icon ?? ""}
-        </span>
+    <TableRow data-testid={`budget-${category.id}`} data-percent={budget?.percent ?? 0}>
+      <RowHead>
+        <CategoryIcon icon={icon} />
         <a href={transactionsHash({ category: category.id, month })}>{category.name}</a>
         {share === 0 ? null : (
-          <small className="share-hint" data-testid="suggested">
+          <small
+            className="block text-xs font-normal text-muted-foreground"
+            data-testid="suggested"
+          >
             {" "}
             {fmt(category.target_amount ?? 0)} every {category.target_months ?? 0} months ·{" "}
             {fmt(share)} a month
           </small>
         )}
-      </th>
-      <td className="amount">
+      </RowHead>
+      <TableCell className="money">
         {underGroupBudget ? (
-          <span className="muted" title="Budgeted with its group">
+          <span className="text-muted-foreground" title="Budgeted with its group">
             in group
           </span>
         ) : (
@@ -547,55 +680,48 @@ function CategoryRow({
             onClear={() => editing.clearBudget(category.id)}
           />
         )}
-      </td>
-      <td>
+      </TableCell>
+      <TableCell>
         {underGroupBudget ? (
-          dash
+          DASH
         ) : (
-          <input
-            type="checkbox"
-            className="rollover"
+          <Checkbox
             aria-label={`Roll over ${category.name}`}
             checked={budget?.budget.rollover ?? false}
             disabled={editing.readOnly || budget === null}
             title={budget === null ? "Set a budget first" : undefined}
-            onChange={(event) =>
-              void editing.setBudget(
-                "category",
-                category.id,
-                budget?.amount ?? 0,
-                event.target.checked,
-              )
+            onCheckedChange={(checked) =>
+              void editing.setBudget("category", category.id, budget?.amount ?? 0, checked === true)
             }
           />
         )}
-      </td>
-      <td className="amount" data-testid="carried-in">
-        {budget === null || budget.carriedIn === 0 ? dash : fmt(budget.carriedIn)}
-      </td>
-      <td className="amount" data-testid="allowance">
-        {budget === null ? dash : fmt(budget.allowance)}
-      </td>
-      <td className="amount" data-testid="spent">
+      </TableCell>
+      <TableCell className="money" data-testid="carried-in">
+        {budget === null || budget.carriedIn === 0 ? DASH : fmt(budget.carriedIn)}
+      </TableCell>
+      <TableCell className="money" data-testid="allowance">
+        {budget === null ? DASH : fmt(budget.allowance)}
+      </TableCell>
+      <TableCell className="money" data-testid="spent">
         {fmt(spent)}
-      </td>
-      <td
-        className={`amount${budget !== null && budget.remaining < 0 ? " over" : ""}`}
+      </TableCell>
+      <TableCell
+        className={cn("money", budget !== null && budget.remaining < 0 && OVER)}
         data-testid="remaining"
       >
-        {budget === null ? dash : fmt(budget.remaining)}
-      </td>
-      <td className="progress-column">
+        {budget === null ? DASH : fmt(budget.remaining)}
+      </TableCell>
+      <TableCell className="w-28 min-w-20">
         {budget === null ? null : (
-          <ProgressBar
-            value={spent}
-            max={budget.allowance}
-            label={`${category.name} budget used`}
+          <Progress
+            className="h-1.5"
+            value={percentOf(spent, budget.allowance)}
             tone={toneFor(spent, budget.allowance)}
+            aria-label={`${category.name} budget used`}
           />
         )}
-      </td>
-    </tr>
+      </TableCell>
+    </TableRow>
   );
 }
 
@@ -623,68 +749,66 @@ function Unbudgeted({
   const nameOf = (id: string) => taxonomy.find((entry) => entry.id === id)?.name ?? id;
   const total = model.unbudgeted.reduce((sum, entry) => sum + entry.spent, 0);
   return (
-    <section
-      className="budget-group unbudgeted"
-      data-testid="unbudgeted"
-      aria-labelledby="unbudgeted-title"
-    >
-      <header className="group-heading">
-        <div>
-          <h2 id="unbudgeted-title">Unbudgeted spending</h2>
-          <p className="group-figures">
+    <Card className="gap-4" data-testid="unbudgeted" aria-labelledby="unbudgeted-title">
+      <GroupHeading
+        id="unbudgeted-title"
+        title="Unbudgeted spending"
+        figures={
+          <>
             <span data-testid="unbudgeted-total">{fmt(total)}</span> with no budget against it
-          </p>
-        </div>
-      </header>
-      <table className="list budget-table" aria-label="Unbudgeted spending">
-        <thead>
-          <tr>
-            <th scope="col">Category</th>
-            <th scope="col" className="amount">
-              Spent
-            </th>
-            <th scope="col">
-              <span className="visually-hidden">Actions</span>
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {model.unbudgeted.map((entry) => (
-            <tr
-              key={entry.categoryId === "" ? "uncategorized" : entry.categoryId}
-              data-testid={`unbudgeted-${entry.categoryId === "" ? "uncategorized" : entry.categoryId}`}
-            >
-              <th scope="row">
-                {entry.categoryId === "" ? (
-                  <span className="muted">Uncategorized</span>
-                ) : (
-                  nameOf(entry.categoryId)
-                )}
-              </th>
-              <td className="amount" data-testid="spent">
-                {fmt(entry.spent)}
-              </td>
-              <td className="actions">
-                {entry.categoryId === "" ? (
-                  <a href={transactionsHash({ month })}>Categorize</a>
-                ) : (
-                  <button
-                    type="button"
-                    className="link"
-                    disabled={editing.readOnly}
-                    onClick={() =>
-                      void editing.setBudget("category", entry.categoryId, entry.spent, false)
-                    }
-                  >
-                    Budget it
-                  </button>
-                )}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </section>
+          </>
+        }
+      />
+      <CardContent>
+        <Table aria-label="Unbudgeted spending">
+          <TableHeader>
+            <TableRow>
+              <TableHead scope="col">Category</TableHead>
+              <MoneyHead scope="col">Spent</MoneyHead>
+              <TableHead scope="col">
+                <span className="sr-only">Actions</span>
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {model.unbudgeted.map((entry) => (
+              <TableRow
+                key={entry.categoryId === "" ? "uncategorized" : entry.categoryId}
+                data-testid={`unbudgeted-${entry.categoryId === "" ? "uncategorized" : entry.categoryId}`}
+              >
+                <RowHead>
+                  {entry.categoryId === "" ? (
+                    <span className="text-muted-foreground">Uncategorized</span>
+                  ) : (
+                    nameOf(entry.categoryId)
+                  )}
+                </RowHead>
+                <TableCell className="money" data-testid="spent">
+                  {fmt(entry.spent)}
+                </TableCell>
+                <TableCell className="text-right">
+                  {entry.categoryId === "" ? (
+                    <a href={transactionsHash({ month })}>Categorize</a>
+                  ) : (
+                    <Button
+                      variant="link"
+                      size="sm"
+                      className="h-auto p-0"
+                      disabled={editing.readOnly}
+                      onClick={() =>
+                        void editing.setBudget("category", entry.categoryId, entry.spent, false)
+                      }
+                    >
+                      Budget it
+                    </Button>
+                  )}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -724,236 +848,232 @@ function FlexBuckets({
   const uncategorized = model.unbudgeted.find((entry) => entry.categoryId === "")?.spent ?? 0;
   const { flex } = model;
   return (
-    <div className="buckets">
-      <section className="bucket" data-testid="bucket-fixed" aria-labelledby="bucket-fixed-title">
-        <header className="group-heading">
-          <div>
-            <h2 id="bucket-fixed-title">Fixed</h2>
-            <p className="group-figures">
+    <div className="grid items-start gap-5 lg:grid-cols-2">
+      <Card className="gap-4" data-testid="bucket-fixed" aria-labelledby="bucket-fixed-title">
+        <GroupHeading
+          id="bucket-fixed-title"
+          title="Fixed"
+          figures={
+            <>
               <span data-testid="bucket-spent">{fmt(flex.fixed.spent)}</span> of{" "}
               <span data-testid="bucket-budgeted">{fmt(flex.fixed.budgeted)}</span>
-            </p>
-          </div>
-        </header>
-        <ProgressBar
-          value={flex.fixed.spent}
-          max={flex.fixed.budgeted}
-          label="Fixed costs used"
-          tone={toneFor(flex.fixed.spent, flex.fixed.budgeted)}
+            </>
+          }
         />
-        <table className="list budget-table" aria-label="Fixed categories">
-          <thead>
-            <tr>
-              <th scope="col">Category</th>
-              <th scope="col" className="amount">
-                Budget
-              </th>
-              <th scope="col" className="amount">
-                Spent
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {fixed.length === 0 ? (
-              <tr>
-                <td colSpan={3} className="empty">
+        <CardContent className="grid gap-3">
+          <Progress
+            value={percentOf(flex.fixed.spent, flex.fixed.budgeted)}
+            tone={toneFor(flex.fixed.spent, flex.fixed.budgeted)}
+            aria-label="Fixed costs used"
+          />
+          <Table aria-label="Fixed categories">
+            <TableHeader>
+              <TableRow>
+                <TableHead scope="col">Category</TableHead>
+                <MoneyHead scope="col">Budget</MoneyHead>
+                <MoneyHead scope="col">Spent</MoneyHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {fixed.length === 0 ? (
+                <EmptyRow colSpan={3}>
                   No fixed categories. Mark rent, loans, and bills as fixed in Settings ›
                   Categories.
-                </td>
-              </tr>
-            ) : null}
-            {fixed.map(({ entry, group }) => (
-              <tr key={entry.category.id} data-testid={`budget-${entry.category.id}`}>
-                <th scope="row">
-                  <span className="category-icon" aria-hidden="true">
-                    {icons.get(entry.category.id) ?? ""}
-                  </span>
-                  {entry.category.name}
-                  <small> {group.group.name}</small>
-                </th>
-                <td className="amount">
-                  {group.budget !== null ? (
-                    <span className="muted">in group</span>
-                  ) : (
-                    <AmountField
-                      label={`Budget for ${entry.category.name}`}
-                      amount={entry.budget === null ? null : entry.budget.amount}
-                      placeholder={amountToText(0, currency)}
-                      editing={editing}
-                      onSave={(amount) =>
-                        editing.setBudget(
-                          "category",
-                          entry.category.id,
-                          amount,
-                          entry.budget?.budget.rollover ?? false,
-                        )
-                      }
-                      onClear={() => editing.clearBudget(entry.category.id)}
-                    />
-                  )}
-                </td>
-                <td className="amount" data-testid="spent">
-                  {fmt(entry.spent)}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
+                </EmptyRow>
+              ) : null}
+              {fixed.map(({ entry, group }) => (
+                <TableRow key={entry.category.id} data-testid={`budget-${entry.category.id}`}>
+                  <RowHead>
+                    <CategoryIcon icon={icons.get(entry.category.id)} />
+                    {entry.category.name}
+                    <small className="text-xs text-muted-foreground"> {group.group.name}</small>
+                  </RowHead>
+                  <TableCell className="money">
+                    {group.budget !== null ? (
+                      <span className="text-muted-foreground">in group</span>
+                    ) : (
+                      <AmountField
+                        label={`Budget for ${entry.category.name}`}
+                        amount={entry.budget === null ? null : entry.budget.amount}
+                        placeholder={amountToText(0, currency)}
+                        editing={editing}
+                        onSave={(amount) =>
+                          editing.setBudget(
+                            "category",
+                            entry.category.id,
+                            amount,
+                            entry.budget?.budget.rollover ?? false,
+                          )
+                        }
+                        onClear={() => editing.clearBudget(entry.category.id)}
+                      />
+                    )}
+                  </TableCell>
+                  <TableCell className="money" data-testid="spent">
+                    {fmt(entry.spent)}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
 
-      <section
-        className="bucket"
+      <Card
+        className="gap-4"
         data-testid="bucket-non-monthly"
         aria-labelledby="bucket-non-monthly-title"
       >
-        <header className="group-heading">
-          <div>
-            <h2 id="bucket-non-monthly-title">Non-monthly</h2>
-            <p className="group-figures">
+        <GroupHeading
+          id="bucket-non-monthly-title"
+          title="Non-monthly"
+          figures={
+            <>
               <span data-testid="bucket-spent">{fmt(flex.nonMonthly.spent)}</span> spent ·{" "}
               <span data-testid="bucket-share">{fmt(flex.nonMonthly.share)}</span> set aside a month
-            </p>
-          </div>
-        </header>
-        <ProgressBar
-          value={flex.nonMonthly.spent}
-          max={flex.nonMonthly.share}
-          label="Non-monthly share used"
-          tone={toneFor(flex.nonMonthly.spent, flex.nonMonthly.share)}
+            </>
+          }
         />
-        <table className="list budget-table" aria-label="Non-monthly categories">
-          <thead>
-            <tr>
-              <th scope="col">Category</th>
-              <th scope="col">Target</th>
-              <th scope="col" className="amount">
-                A month
-              </th>
-              <th scope="col" className="amount">
-                Spent
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {nonMonthly.length === 0 ? (
-              <tr>
-                <td colSpan={4} className="empty">
+        <CardContent className="grid gap-3">
+          <Progress
+            value={percentOf(flex.nonMonthly.spent, flex.nonMonthly.share)}
+            tone={toneFor(flex.nonMonthly.spent, flex.nonMonthly.share)}
+            aria-label="Non-monthly share used"
+          />
+          <Table aria-label="Non-monthly categories">
+            <TableHeader>
+              <TableRow>
+                <TableHead scope="col">Category</TableHead>
+                <TableHead scope="col">Target</TableHead>
+                <MoneyHead scope="col">A month</MoneyHead>
+                <MoneyHead scope="col">Spent</MoneyHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {nonMonthly.length === 0 ? (
+                <EmptyRow colSpan={4}>
                   No non-monthly categories. Give a category a target in Settings › Categories.
-                </td>
-              </tr>
-            ) : null}
-            {nonMonthly.map(({ entry }) => (
-              <tr key={entry.category.id} data-testid={`budget-${entry.category.id}`}>
-                <th scope="row">
-                  <span className="category-icon" aria-hidden="true">
-                    {icons.get(entry.category.id) ?? ""}
-                  </span>
-                  {entry.category.name}
-                </th>
-                <td>
-                  {entry.share === 0 ? (
-                    <span className="muted">no target yet</span>
-                  ) : (
-                    `${fmt(entry.category.target_amount ?? 0)} every ${entry.category.target_months ?? 0} months`
-                  )}
-                </td>
-                <td className="amount" data-testid="share">
-                  {fmt(entry.share)}
-                </td>
-                <td className="amount" data-testid="spent">
-                  {fmt(entry.spent)}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
+                </EmptyRow>
+              ) : null}
+              {nonMonthly.map(({ entry }) => (
+                <TableRow key={entry.category.id} data-testid={`budget-${entry.category.id}`}>
+                  <RowHead>
+                    <CategoryIcon icon={icons.get(entry.category.id)} />
+                    {entry.category.name}
+                  </RowHead>
+                  <TableCell className="whitespace-normal">
+                    {entry.share === 0 ? (
+                      <span className="text-muted-foreground">no target yet</span>
+                    ) : (
+                      `${fmt(entry.category.target_amount ?? 0)} every ${entry.category.target_months ?? 0} months`
+                    )}
+                  </TableCell>
+                  <TableCell className="money" data-testid="share">
+                    {fmt(entry.share)}
+                  </TableCell>
+                  <TableCell className="money" data-testid="spent">
+                    {fmt(entry.spent)}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
 
-      <section
-        className="bucket flexible"
+      <Card
+        className="gap-4 lg:col-span-2"
         data-testid="bucket-flexible"
         aria-labelledby="bucket-flexible-title"
       >
-        <header className="group-heading">
-          <div>
-            <h2 id="bucket-flexible-title">Flexible</h2>
-            <p className="group-figures">
+        <GroupHeading
+          id="bucket-flexible-title"
+          title="Flexible"
+          figures={
+            <>
               <span data-testid="flexible-spent">{fmt(flex.flexible.spent)}</span> of{" "}
               <span data-testid="flexible-allowance">{fmt(flex.flexible.allowance)}</span> ·{" "}
               <span
                 data-testid="flexible-remaining"
-                className={flex.flexible.remaining < 0 ? "over" : undefined}
+                className={flex.flexible.remaining < 0 ? OVER : undefined}
               >
                 {fmt(flex.flexible.remaining)}
               </span>{" "}
               left
-            </p>
-          </div>
-        </header>
-        <ProgressBar
-          value={flex.flexible.spent}
-          max={flex.flexible.allowance}
-          label="Flexible spending used"
-          tone={toneFor(flex.flexible.spent, flex.flexible.allowance)}
+            </>
+          }
         />
-        <dl className="breakdown" aria-label="How the flexible amount is made">
-          <dt>Expected income</dt>
-          <dd data-testid="term-income">{fmt(model.income.expected)}</dd>
-          <dt>− Fixed budgets</dt>
-          <dd data-testid="term-fixed">{fmt(flex.fixed.budgeted)}</dd>
-          <dt>− Non-monthly, a month</dt>
-          <dd data-testid="term-non-monthly">{fmt(flex.nonMonthly.share)}</dd>
-          <dt>− Planned goal contributions</dt>
-          <dd data-testid="term-goals">{fmt(planned)}</dd>
-          <dt className="result">= Flexible</dt>
-          <dd className="result" data-testid="term-flexible">
-            {fmt(flex.flexible.allowance)}
-          </dd>
-        </dl>
-        <table className="list budget-table" aria-label="Flexible spending">
-          <thead>
-            <tr>
-              <th scope="col">Category</th>
-              <th scope="col" className="amount">
-                Spent
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {flexible.length === 0 && uncategorized === 0 ? (
-              <tr>
-                <td colSpan={2} className="empty">
-                  Nothing flexible spent yet this month.
-                </td>
-              </tr>
-            ) : null}
-            {flexible.map(({ entry, group }) => (
-              <tr key={entry.category.id} data-testid={`budget-${entry.category.id}`}>
-                <th scope="row">
-                  <span className="category-icon" aria-hidden="true">
-                    {icons.get(entry.category.id) ?? ""}
-                  </span>
-                  {entry.category.name}
-                  <small> {group.group.name}</small>
-                </th>
-                <td className="amount" data-testid="spent">
-                  {fmt(entry.spent)}
-                </td>
-              </tr>
-            ))}
-            {uncategorized === 0 ? null : (
-              <tr data-testid="budget-uncategorized">
-                <th scope="row">
-                  <span className="muted">Uncategorized</span>
-                </th>
-                <td className="amount" data-testid="spent">
-                  {fmt(uncategorized)}
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </section>
+        <CardContent className="grid gap-4">
+          <Progress
+            value={percentOf(flex.flexible.spent, flex.flexible.allowance)}
+            tone={toneFor(flex.flexible.spent, flex.flexible.allowance)}
+            aria-label="Flexible spending used"
+          />
+          <dl
+            className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-6 gap-y-1 rounded-lg border bg-muted/40 px-4 py-3 text-sm"
+            aria-label="How the flexible amount is made"
+          >
+            <dt className="text-muted-foreground">Expected income</dt>
+            <dd className="money" data-testid="term-income">
+              {fmt(model.income.expected)}
+            </dd>
+            <dt className="text-muted-foreground">− Fixed budgets</dt>
+            <dd className="money" data-testid="term-fixed">
+              {fmt(flex.fixed.budgeted)}
+            </dd>
+            <dt className="text-muted-foreground">− Non-monthly, a month</dt>
+            <dd className="money" data-testid="term-non-monthly">
+              {fmt(flex.nonMonthly.share)}
+            </dd>
+            <dt className="text-muted-foreground">− Planned goal contributions</dt>
+            <dd className="money" data-testid="term-goals">
+              {fmt(planned)}
+            </dd>
+            <dt className="mt-1 border-t border-input pt-1.5 font-semibold">= Flexible</dt>
+            <dd
+              className="money mt-1 border-t border-input pt-1.5 font-semibold"
+              data-testid="term-flexible"
+            >
+              {fmt(flex.flexible.allowance)}
+            </dd>
+          </dl>
+          <Table aria-label="Flexible spending">
+            <TableHeader>
+              <TableRow>
+                <TableHead scope="col">Category</TableHead>
+                <MoneyHead scope="col">Spent</MoneyHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {flexible.length === 0 && uncategorized === 0 ? (
+                <EmptyRow colSpan={2}>Nothing flexible spent yet this month.</EmptyRow>
+              ) : null}
+              {flexible.map(({ entry, group }) => (
+                <TableRow key={entry.category.id} data-testid={`budget-${entry.category.id}`}>
+                  <RowHead>
+                    <CategoryIcon icon={icons.get(entry.category.id)} />
+                    {entry.category.name}
+                    <small className="text-xs text-muted-foreground"> {group.group.name}</small>
+                  </RowHead>
+                  <TableCell className="money" data-testid="spent">
+                    {fmt(entry.spent)}
+                  </TableCell>
+                </TableRow>
+              ))}
+              {uncategorized === 0 ? null : (
+                <TableRow data-testid="budget-uncategorized">
+                  <RowHead>
+                    <span className="text-muted-foreground">Uncategorized</span>
+                  </RowHead>
+                  <TableCell className="money" data-testid="spent">
+                    {fmt(uncategorized)}
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
     </div>
   );
 }
@@ -972,6 +1092,7 @@ function AmountField({
   placeholder,
   autoFocus = false,
   editing,
+  className,
   onSave,
   onClear,
   onDone,
@@ -981,6 +1102,8 @@ function AmountField({
   placeholder: string;
   autoFocus?: boolean;
   editing: Editing;
+  /** Sizing for where the field sits; a table cell's narrow figure by default. */
+  className?: string;
   onSave: (amount: number) => Promise<void>;
   onClear: () => Promise<void>;
   onDone?: () => void;
@@ -997,15 +1120,15 @@ function AmountField({
     }
   };
   return (
-    <input
+    <Input
       key={stored}
-      className="amount-field"
+      className={cn("money ml-auto h-8 w-28 px-2 text-sm md:text-sm", className)}
       aria-label={label}
       inputMode="decimal"
       defaultValue={stored}
       placeholder={placeholder}
       disabled={editing.readOnly}
-      // biome-ignore lint/a11y/noAutofocus: the field appears because the person clicked to set it
+      // The field appears because the person clicked to set it, so it takes focus.
       autoFocus={autoFocus}
       onKeyDown={onKeyDown}
       onBlur={(event) => {
@@ -1030,11 +1153,17 @@ function AmountField({
   );
 }
 
+/** How full a bar is, as the percentage the kit's Progress takes; nothing over a limit of zero. */
+function percentOf(value: number, max: number): number {
+  if (!(max > 0) || !Number.isFinite(value)) return 0;
+  return Math.min(100, Math.max(0, (value / max) * 100));
+}
+
 /** Calm under the limit, a warning near it, danger past it; a limit of zero is only trouble once spent. */
-function toneFor(spent: number, allowance: number): ProgressTone {
-  if (allowance <= 0) return spent > 0 ? "danger" : "accent";
+function toneFor(spent: number, allowance: number): "primary" | "warning" | "destructive" {
+  if (allowance <= 0) return spent > 0 ? "destructive" : "primary";
   const ratio = spent / allowance;
-  return ratio > 1 ? "danger" : ratio >= 0.85 ? "warn" : "accent";
+  return ratio > 1 ? "destructive" : ratio >= 0.85 ? "warning" : "primary";
 }
 
 function currentMonth(): string {

@@ -1,58 +1,64 @@
-import { type ReactNode, useEffect, useState } from "react";
+import {
+  Alert,
+  AlertDescription,
+  Badge,
+  Button,
+  NativeSelect,
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+  ThemeToggle,
+  cn,
+  useTheme,
+} from "@mako-cloud/ui";
+import {
+  ArrowLeftRight,
+  Bell,
+  Landmark,
+  LayoutDashboard,
+  type LucideIcon,
+  PieChart,
+  ReceiptText,
+  Repeat,
+  Settings,
+  Target,
+  TrendingUp,
+} from "lucide-react";
+import type { ReactNode } from "react";
 
 import type { AppState, RationalApp } from "../data/rational.js";
 import { firedAlertHistory, unreadCount } from "../selectors/alerts.js";
 import { useQuery } from "./hooks.js";
 import { type Route, routeHash } from "./router.js";
-import "./styles/shell.css";
 
 /**
  * Monarch's shape: a sidebar of the places money lives, a top bar for the
  * space, the notifications, and the person. Settings gathers everything that
  * configures the household rather than shows its money.
  */
-const NAV: ReadonlyArray<{ readonly route: Route; readonly label: string; readonly icon: string }> =
-  [
-    { route: { name: "dashboard" }, label: "Dashboard", icon: "◫" },
-    { route: { name: "accounts" }, label: "Accounts", icon: "◆" },
-    { route: { name: "transactions", params: {} }, label: "Transactions", icon: "≡" },
-    { route: { name: "cash-flow" }, label: "Cash Flow", icon: "⇅" },
-    { route: { name: "budget" }, label: "Budget", icon: "◔" },
-    { route: { name: "recurring" }, label: "Recurring", icon: "↻" },
-    { route: { name: "goals" }, label: "Goals", icon: "◎" },
-    { route: { name: "investments" }, label: "Investments", icon: "△" },
-    { route: { name: "settings", page: "household" }, label: "Settings", icon: "⚙" },
-  ];
+const NAV: ReadonlyArray<{
+  readonly route: Route;
+  readonly label: string;
+  readonly icon: LucideIcon;
+}> = [
+  { route: { name: "dashboard" }, label: "Dashboard", icon: LayoutDashboard },
+  { route: { name: "accounts" }, label: "Accounts", icon: Landmark },
+  { route: { name: "transactions", params: {} }, label: "Transactions", icon: ReceiptText },
+  { route: { name: "cash-flow" }, label: "Cash Flow", icon: ArrowLeftRight },
+  { route: { name: "budget" }, label: "Budget", icon: PieChart },
+  { route: { name: "recurring" }, label: "Recurring", icon: Repeat },
+  { route: { name: "goals" }, label: "Goals", icon: Target },
+  { route: { name: "investments" }, label: "Investments", icon: TrendingUp },
+  { route: { name: "settings", page: "household" }, label: "Settings", icon: Settings },
+];
 
 /** Which sidebar entry a route belongs to: an account page is still "Accounts". */
 function sectionOf(route: Route): Route["name"] {
   return route.name === "account" ? "accounts" : route.name;
 }
 
-type Theme = "light" | "dark";
-const THEME_KEY = "rational.theme";
-
-function readTheme(): Theme {
-  try {
-    return window.localStorage.getItem(THEME_KEY) === "dark" ? "dark" : "light";
-  } catch {
-    return "light";
-  }
-}
-
-/** The theme is a per-device preference, applied to the document root so CSS tokens follow it. */
-export function useTheme(): [Theme, () => void] {
-  const [theme, setTheme] = useState<Theme>(readTheme);
-  useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-    try {
-      window.localStorage.setItem(THEME_KEY, theme);
-    } catch {
-      // Not remembering is fine.
-    }
-  }, [theme]);
-  return [theme, () => setTheme(theme === "dark" ? "light" : "dark")];
-}
+/** The per-device theme preference lives under this key, as it always has. */
+export const THEME_KEY = "rational.theme";
 
 export function Shell({
   app,
@@ -68,114 +74,135 @@ export function Shell({
   const household = state.household;
   const offline = state.connectivity !== "online";
   const pending = household?.pendingWrites ?? 0;
-  const [theme, toggleTheme] = useTheme();
+  const { resolved, toggle } = useTheme(THEME_KEY);
   const section = sectionOf(route);
+  const spaceName =
+    state.households.find((candidate) => candidate.id === state.currentHouseholdId)?.name ?? "";
   return (
-    <div className="shell">
-      <aside className="sidebar">
-        <a className="brand" href={routeHash({ name: "dashboard" })}>
-          <span className="eyebrow">Rational</span>
+    <div className="grid min-h-screen grid-cols-[15rem_minmax(0,1fr)]">
+      <aside className="sticky top-0 flex h-screen flex-col gap-6 border-r bg-sidebar px-3 py-5 text-sidebar-foreground">
+        <a
+          className="px-3 text-xs font-semibold tracking-[0.18em] text-primary uppercase no-underline hover:no-underline"
+          href={routeHash({ name: "dashboard" })}
+        >
+          Rational
         </a>
-        <nav aria-label="Sections">
-          {NAV.map((entry) => (
-            <a
-              key={entry.route.name}
-              href={routeHash(entry.route)}
-              aria-current={section === entry.route.name ? "page" : undefined}
-            >
-              <span className="nav-icon" aria-hidden="true">
-                {entry.icon}
-              </span>
-              {entry.label}
-            </a>
-          ))}
+        <nav aria-label="Sections" className="grid gap-0.5">
+          {NAV.map((entry) => {
+            const active = section === entry.route.name;
+            const Icon = entry.icon;
+            return (
+              <a
+                key={entry.route.name}
+                href={routeHash(entry.route)}
+                aria-current={active ? "page" : undefined}
+                className={cn(
+                  "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground no-underline transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground hover:no-underline",
+                  active && "bg-sidebar-accent text-sidebar-foreground",
+                )}
+              >
+                <Icon aria-hidden="true" className="size-4 shrink-0" />
+                {entry.label}
+              </a>
+            );
+          })}
         </nav>
-        <footer className="statusbar">
+        <footer className="mt-auto grid gap-1 px-3 text-xs text-muted-foreground">
           <span data-testid="sync-activity">Sync: {household?.activity ?? "idle"}</span>
           <span>
             {household?.syncedAt === null || household === null
               ? "not synced yet"
               : `as of ${new Date(household.syncedAt).toLocaleTimeString()}`}
           </span>
-          <span data-testid="network-toggle">
-            <button type="button" className="link" onClick={() => void app.setOnline(false)}>
+          <span data-testid="network-toggle" className="flex gap-3">
+            <Button
+              variant="link"
+              size="sm"
+              className="h-auto p-0 text-xs"
+              onClick={() => void app.setOnline(false)}
+            >
               Go offline
-            </button>
-            <button type="button" className="link" onClick={() => void app.setOnline(true)}>
+            </Button>
+            <Button
+              variant="link"
+              size="sm"
+              className="h-auto p-0 text-xs"
+              onClick={() => void app.setOnline(true)}
+            >
               Go online
-            </button>
+            </Button>
           </span>
         </footer>
       </aside>
-      <div className="main">
-        <header className="topbar">
+      <div className="flex min-w-0 flex-col">
+        <header className="flex h-14 items-center gap-3 border-b bg-card px-6">
           {/* One space is the ordinary case and needs no chrome; the picker
               appears only for people who actually belong to more than one. */}
           {state.memberships.length > 1 ? (
-            <label className="switcher">
-              <span className="visually-hidden">Space</span>
-              <select
-                aria-label="Space"
-                value={state.currentHouseholdId ?? ""}
-                onChange={(event) => void app.selectHousehold(event.target.value || null)}
-              >
-                {state.memberships.map((membership) => (
-                  <option key={membership.household_id} value={membership.household_id}>
-                    {state.households.find((candidate) => candidate.id === membership.household_id)
-                      ?.name ?? membership.household_id}{" "}
-                    · {membership.role}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : (
-            <span className="space-name">
-              {state.households.find((candidate) => candidate.id === state.currentHouseholdId)
-                ?.name ?? ""}
-            </span>
-          )}
-          <div className="session">
-            <NotificationBell app={app} />
-            <button
-              type="button"
-              className="icon"
-              aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-              aria-pressed={theme === "dark"}
-              data-testid="theme-toggle"
-              onClick={toggleTheme}
+            <NativeSelect
+              aria-label="Space"
+              size="sm"
+              className="w-auto min-w-48 font-medium"
+              value={state.currentHouseholdId ?? ""}
+              onChange={(event) => void app.selectHousehold(event.target.value || null)}
             >
-              {theme === "dark" ? "☾" : "☼"}
-            </button>
-            <span className="user">{state.user?.email}</span>
-            <button type="button" className="secondary" onClick={() => void app.signOut()}>
+              {state.memberships.map((membership) => (
+                <option key={membership.household_id} value={membership.household_id}>
+                  {state.households.find((candidate) => candidate.id === membership.household_id)
+                    ?.name ?? membership.household_id}{" "}
+                  · {membership.role}
+                </option>
+              ))}
+            </NativeSelect>
+          ) : (
+            <span className="font-medium">{spaceName}</span>
+          )}
+          <div className="ml-auto flex items-center gap-2">
+            <NotificationBell app={app} />
+            <ThemeToggle resolved={resolved} onToggle={toggle} data-testid="theme-toggle" />
+            <span className="max-w-56 truncate text-sm text-muted-foreground">
+              {state.user?.email}
+            </span>
+            <Button variant="outline" size="sm" onClick={() => void app.signOut()}>
               Sign out
-            </button>
+            </Button>
           </div>
         </header>
         {offline ? (
-          <div className="banner offline" role="status" data-testid="offline-banner">
-            {state.connectivity === "offline" ? "You're offline." : "The service is unreachable."}{" "}
-            Changes are saved on this device and will sync when you're back online.
-            {pending > 0 ? (
-              <strong data-testid="pending-writes">
-                {" "}
-                {pending} {pending === 1 ? "change" : "changes"} waiting
-              </strong>
-            ) : null}
-          </div>
+          <Alert
+            variant="warning"
+            role="status"
+            data-testid="offline-banner"
+            className="rounded-none border-x-0 border-t-0"
+          >
+            <AlertDescription className="block">
+              {state.connectivity === "offline" ? "You're offline." : "The service is unreachable."}{" "}
+              Changes are saved on this device and will sync when you're back online.
+              {pending > 0 ? (
+                <strong data-testid="pending-writes">
+                  {" "}
+                  {pending} {pending === 1 ? "change" : "changes"} waiting
+                </strong>
+              ) : null}
+            </AlertDescription>
+          </Alert>
         ) : null}
         {household !== null && household.recovery.kind !== "active" ? (
-          <div className="banner blocking" role="alert">
-            {household.notice ?? "Replication needs attention."}
-          </div>
+          <Alert variant="destructive" role="alert" className="rounded-none border-x-0 border-t-0">
+            <AlertDescription className="block">
+              {household.notice ?? "Replication needs attention."}
+            </AlertDescription>
+          </Alert>
         ) : null}
         {state.notice !== null ||
         (household?.notice !== null && household?.recovery.kind === "active") ? (
-          <div className="banner notice" role="status" data-testid="notice">
-            {state.notice ?? household?.notice}
-          </div>
+          <Alert role="status" data-testid="notice" className="rounded-none border-x-0 border-t-0">
+            <AlertDescription className="block text-foreground">
+              {state.notice ?? household?.notice}
+            </AlertDescription>
+          </Alert>
         ) : null}
-        <main id="main-content" className="content">
+        <main id="main-content" className="flex-1 px-6 py-6">
           {children}
         </main>
       </div>
@@ -190,51 +217,65 @@ export function Shell({
 function NotificationBell({ app }: { app: RationalApp }) {
   const session = app.household?.session ?? null;
   const documents = useQuery(session?.collection("alerts")?.find() ?? null);
-  const [open, setOpen] = useState(false);
   const unread = unreadCount(documents);
   const latest = firedAlertHistory(documents).slice(0, 5);
   return (
-    <div className="bell">
-      <button
-        type="button"
-        className="icon"
-        aria-label={unread === 0 ? "Notifications" : `Notifications, ${unread} unread`}
-        aria-expanded={open}
-        data-testid="notification-bell"
-        onClick={() => setOpen(!open)}
-      >
-        ♪
-        {unread === 0 ? null : (
-          <span className="badge" data-testid="unread-count">
-            {unread}
-          </span>
-        )}
-      </button>
-      {open ? (
-        <div className="popover" role="dialog" aria-label="Notifications">
-          {latest.length === 0 ? (
-            <p className="muted">Nothing yet.</p>
-          ) : (
-            <ul>
-              {latest.map((alert) => (
-                <li key={alert.id} data-read={alert.read === true ? "yes" : "no"}>
-                  <span>{alert.message}</span>
-                  {alert.read === true ? null : (
-                    <button
-                      type="button"
-                      className="link"
-                      onClick={() => void app.writes?.markAlertRead(alert.id, true)}
-                    >
-                      Mark read
-                    </button>
-                  )}
-                </li>
-              ))}
-            </ul>
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="relative"
+          aria-label={unread === 0 ? "Notifications" : `Notifications, ${unread} unread`}
+          data-testid="notification-bell"
+        >
+          <Bell />
+          {unread === 0 ? null : (
+            <Badge
+              data-testid="unread-count"
+              className="absolute -top-0.5 -right-0.5 h-4 min-w-4 px-1 text-[10px] leading-none"
+            >
+              {unread}
+            </Badge>
           )}
-          <a href={routeHash({ name: "settings", page: "notifications" })}>All notifications</a>
-        </div>
-      ) : null}
-    </div>
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" aria-label="Notifications" className="w-80 p-3">
+        {latest.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Nothing yet.</p>
+        ) : (
+          <ul className="m-0 grid list-none gap-2 p-0">
+            {latest.map((alert) => (
+              <li
+                key={alert.id}
+                data-read={alert.read === true ? "yes" : "no"}
+                className={cn(
+                  "flex items-start justify-between gap-3 rounded-md px-2 py-1.5 text-sm",
+                  alert.read === true ? "text-muted-foreground" : "bg-accent/60",
+                )}
+              >
+                <span>{alert.message}</span>
+                {alert.read === true ? null : (
+                  <Button
+                    variant="link"
+                    size="sm"
+                    className="h-auto shrink-0 p-0 text-xs"
+                    onClick={() => void app.writes?.markAlertRead(alert.id, true)}
+                  >
+                    Mark read
+                  </Button>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+        <a
+          className="mt-3 block text-sm"
+          href={routeHash({ name: "settings", page: "notifications" })}
+        >
+          All notifications
+        </a>
+      </PopoverContent>
+    </Popover>
   );
 }

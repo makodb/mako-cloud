@@ -1,3 +1,27 @@
+import {
+  Alert,
+  AlertDescription,
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  Checkbox,
+  Field,
+  Input,
+  Label,
+  NativeSelect,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  cn,
+} from "@mako-cloud/ui";
+import { CircleAlert, CircleCheck, Play, Plus } from "lucide-react";
 import { type FormEvent, useEffect, useRef, useState } from "react";
 
 import { moveRule, reprioritize, wouldChange } from "../../functions/shared/rules.js";
@@ -29,7 +53,6 @@ import {
 } from "../selectors/rules.js";
 import { normalizeDescription } from "../selectors/transactions.js";
 import { useQuery } from "./hooks.js";
-import "./styles/taxonomy.css";
 
 /**
  * Categorization rules.
@@ -279,6 +302,21 @@ function describeActions(rule: Rule, names: Names): string {
   return parts.length === 0 ? "do nothing" : parts.join(", ");
 }
 
+/** A row's small actions share one compact look. */
+const ROW_ACTION = "h-7 px-2 text-xs";
+
+/** A native radio, dressed only as far as its accent: the browser draws the dot. */
+const RADIO = "size-4 shrink-0 rounded-full border-0 p-0 shadow-none accent-primary";
+
+/**
+ * A Radix checkbox is a button element; while the old stylesheet's button
+ * padding is still loaded it would widen the box, so the box says it has none.
+ */
+const CHECKBOX = "p-0";
+
+/** A group of fields inside the editor, with its legend as the group's name. */
+const FIELDSET = "m-0 grid min-w-0 gap-4 rounded-lg border p-4";
+
 export function RulesScreen({
   app,
   session,
@@ -433,294 +471,411 @@ export function RulesScreen({
     }, "The rule could not be moved.");
 
   return (
-    <section aria-labelledby="rules-title" data-testid="rules-screen">
-      <div className="heading">
-        <h1 id="rules-title">Rules</h1>
-        <div className="taxonomy-inline">
-          <button
-            type="button"
-            className="secondary"
-            disabled={rules.length === 0}
-            onClick={applyAll}
-          >
+    <section aria-labelledby="rules-title" data-testid="rules-screen" className="grid gap-6">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="grid gap-1">
+          <h1 id="rules-title" className="text-2xl">
+            Rules
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            Run in this order: the first rule that matches a transaction is the one that files it.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" disabled={rules.length === 0} onClick={applyAll}>
+            <Play />
             Apply all rules
-          </button>
-          <button type="button" onClick={() => setDraft(emptyDraft(nextPriority))}>
+          </Button>
+          <Button onClick={() => setDraft(emptyDraft(nextPriority))}>
+            <Plus />
             New rule
-          </button>
+          </Button>
         </div>
       </div>
       {problem === null ? null : (
-        <p className="notice error" role="alert">
-          {problem}
-        </p>
+        <Alert variant="destructive" role="alert">
+          <CircleAlert />
+          <AlertDescription>{problem}</AlertDescription>
+        </Alert>
       )}
       {applied === null ? null : (
-        <p className="taxonomy-status" role="status" data-testid="rule-applied">
-          {applied}
-        </p>
+        <Alert variant="positive" role="status" data-testid="rule-applied">
+          <CircleCheck />
+          <AlertDescription>{applied}</AlertDescription>
+        </Alert>
       )}
 
       {draft === null ? null : (
-        <form
-          key={`${draft.id ?? "new"}:${draft.nonce}`}
-          className="editor"
-          aria-label={draft.id === null ? "New rule" : "Edit rule"}
-          onSubmit={(event) => void save(event)}
-        >
-          <div className="grid">
-            <label>
-              Name
-              <input name="name" required maxLength={200} defaultValue={draft.name} />
-            </label>
-          </div>
-          <fieldset>
-            <legend>Conditions</legend>
-            <div className="grid">
-              <label>
-                Statement text
-                <input name="text" maxLength={500} defaultValue={draft.text} />
-              </label>
-              <div className="rule-text-mode" role="radiogroup" aria-label="Text match">
-                <label className="chip-option">
-                  <input
-                    type="radio"
-                    name="text_mode"
-                    value="contains"
-                    defaultChecked={draft.textMode === "contains"}
+        <Card>
+          <CardHeader>
+            <CardTitle>{draft.id === null ? "New rule" : "Edit rule"}</CardTitle>
+            <CardDescription>
+              Every condition has to hold for the rule to match; every action is taken when it does.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form
+              key={`${draft.id ?? "new"}:${draft.nonce}`}
+              className="grid gap-5"
+              aria-label={draft.id === null ? "New rule" : "Edit rule"}
+              onSubmit={(event) => void save(event)}
+            >
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                <Field label="Name" htmlFor="rule-name">
+                  <Input
+                    id="rule-name"
+                    name="name"
+                    required
+                    maxLength={200}
+                    defaultValue={draft.name}
                   />
-                  contains
-                </label>
-                <label className="chip-option">
-                  <input
-                    type="radio"
-                    name="text_mode"
-                    value="equals"
-                    defaultChecked={draft.textMode === "equals"}
-                  />
-                  equals exactly
-                </label>
+                </Field>
               </div>
-              <label>
-                Merchant
-                <select name="merchant_id" defaultValue={draft.merchantId}>
-                  <option value="">Any merchant</option>
-                  {merchants.map((merchant) => (
-                    <option key={merchant.id} value={merchant.id}>
-                      {merchant.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Category
-                <select name="category_id" defaultValue={draft.categoryId}>
-                  <option value="">Any category</option>
-                  {categories.map((category) => (
-                    <option key={category.id} value={category.id}>
-                      {category.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Direction
-                <select name="direction" defaultValue={draft.direction}>
-                  <option value="">Any direction</option>
-                  <option value="expense">Spending</option>
-                  <option value="income">Income</option>
-                </select>
-              </label>
-              <label>
-                Amount at least
-                <input
-                  name="amount_min"
-                  inputMode="decimal"
-                  placeholder={amountToText(-5_000, currency)}
-                  defaultValue={draft.amountMin}
-                />
-              </label>
-              <label>
-                Amount at most
-                <input
-                  name="amount_max"
-                  inputMode="decimal"
-                  placeholder={amountToText(-100, currency)}
-                  defaultValue={draft.amountMax}
-                />
-              </label>
-              <label>
-                Account
-                <select name="account_id" defaultValue={draft.accountId}>
-                  <option value="">Any account</option>
-                  {accounts.map((account) => (
-                    <option key={account.id} value={account.id}>
-                      {account.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-            <p className="hint">
-              Amounts are as stored: spending is negative, so “at most -10.00” means purchases of
-              ten or more.
-            </p>
-          </fieldset>
-          <fieldset>
-            <legend>Actions</legend>
-            <div className="grid">
-              <label>
-                Set category
-                <select name="set_category_id" defaultValue={draft.setCategoryId}>
-                  <option value="">Leave the category</option>
-                  {categories.map((category) => (
-                    <option key={category.id} value={category.id}>
-                      {category.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Set merchant
-                <select name="set_merchant_id" defaultValue={draft.setMerchantId}>
-                  <option value="">Leave the merchant</option>
-                  {merchants.map((merchant) => (
-                    <option key={merchant.id} value={merchant.id}>
-                      {merchant.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-            {tags.length === 0 ? null : (
-              <fieldset className="rule-tags">
-                <legend>Add tags</legend>
-                {tags.map((tag) => (
-                  <label key={tag.id} className="chip-option">
-                    <input
-                      type="checkbox"
-                      name="add_tags"
-                      value={tag.id}
-                      defaultChecked={draft.addTags.includes(tag.id)}
+              <fieldset className={FIELDSET}>
+                <legend className="px-1 text-sm font-medium">Conditions</legend>
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  <Field label="Statement text" htmlFor="rule-text">
+                    <Input id="rule-text" name="text" maxLength={500} defaultValue={draft.text} />
+                  </Field>
+                  <div
+                    className="flex flex-wrap items-center gap-4 self-end pb-2.5"
+                    role="radiogroup"
+                    aria-label="Text match"
+                  >
+                    <Label htmlFor="rule-text-contains" className="font-normal">
+                      <Input
+                        id="rule-text-contains"
+                        className={RADIO}
+                        type="radio"
+                        name="text_mode"
+                        value="contains"
+                        defaultChecked={draft.textMode === "contains"}
+                      />
+                      contains
+                    </Label>
+                    <Label htmlFor="rule-text-equals" className="font-normal">
+                      <Input
+                        id="rule-text-equals"
+                        className={RADIO}
+                        type="radio"
+                        name="text_mode"
+                        value="equals"
+                        defaultChecked={draft.textMode === "equals"}
+                      />
+                      equals exactly
+                    </Label>
+                  </div>
+                  <Field label="Merchant" htmlFor="rule-merchant">
+                    <NativeSelect
+                      id="rule-merchant"
+                      name="merchant_id"
+                      defaultValue={draft.merchantId}
+                    >
+                      <option value="">Any merchant</option>
+                      {merchants.map((merchant) => (
+                        <option key={merchant.id} value={merchant.id}>
+                          {merchant.name}
+                        </option>
+                      ))}
+                    </NativeSelect>
+                  </Field>
+                  <Field label="Category" htmlFor="rule-category">
+                    <NativeSelect
+                      id="rule-category"
+                      name="category_id"
+                      defaultValue={draft.categoryId}
+                    >
+                      <option value="">Any category</option>
+                      {categories.map((category) => (
+                        <option key={category.id} value={category.id}>
+                          {category.name}
+                        </option>
+                      ))}
+                    </NativeSelect>
+                  </Field>
+                  <Field label="Direction" htmlFor="rule-direction">
+                    <NativeSelect
+                      id="rule-direction"
+                      name="direction"
+                      defaultValue={draft.direction}
+                    >
+                      <option value="">Any direction</option>
+                      <option value="expense">Spending</option>
+                      <option value="income">Income</option>
+                    </NativeSelect>
+                  </Field>
+                  <Field label="Amount at least" htmlFor="rule-amount-min">
+                    <Input
+                      id="rule-amount-min"
+                      className="money"
+                      name="amount_min"
+                      inputMode="decimal"
+                      placeholder={amountToText(-5_000, currency)}
+                      defaultValue={draft.amountMin}
                     />
-                    {tag.name}
-                  </label>
-                ))}
+                  </Field>
+                  <Field label="Amount at most" htmlFor="rule-amount-max">
+                    <Input
+                      id="rule-amount-max"
+                      className="money"
+                      name="amount_max"
+                      inputMode="decimal"
+                      placeholder={amountToText(-100, currency)}
+                      defaultValue={draft.amountMax}
+                    />
+                  </Field>
+                  <Field label="Account" htmlFor="rule-account">
+                    <NativeSelect
+                      id="rule-account"
+                      name="account_id"
+                      defaultValue={draft.accountId}
+                    >
+                      <option value="">Any account</option>
+                      {accounts.map((account) => (
+                        <option key={account.id} value={account.id}>
+                          {account.name}
+                        </option>
+                      ))}
+                    </NativeSelect>
+                  </Field>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Amounts are as stored: spending is negative, so “at most -10.00” means purchases
+                  of ten or more.
+                </p>
               </fieldset>
-            )}
-            <div className="rule-flags">
-              <label className="chip-option">
-                <input type="checkbox" name="hide" defaultChecked={draft.hide} />
-                Hide from budgets and reports
-              </label>
-              <label className="chip-option">
-                <input type="checkbox" name="mark_reviewed" defaultChecked={draft.markReviewed} />
-                Mark reviewed
-              </label>
-            </div>
-          </fieldset>
-          <div className="actions">
-            <button type="submit">Save rule</button>
-            <button type="button" className="secondary" onClick={() => setDraft(null)}>
-              Cancel
-            </button>
-          </div>
-        </form>
+              <fieldset className={FIELDSET}>
+                <legend className="px-1 text-sm font-medium">Actions</legend>
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  <Field label="Set category" htmlFor="rule-set-category">
+                    <NativeSelect
+                      id="rule-set-category"
+                      name="set_category_id"
+                      defaultValue={draft.setCategoryId}
+                    >
+                      <option value="">Leave the category</option>
+                      {categories.map((category) => (
+                        <option key={category.id} value={category.id}>
+                          {category.name}
+                        </option>
+                      ))}
+                    </NativeSelect>
+                  </Field>
+                  <Field label="Set merchant" htmlFor="rule-set-merchant">
+                    <NativeSelect
+                      id="rule-set-merchant"
+                      name="set_merchant_id"
+                      defaultValue={draft.setMerchantId}
+                    >
+                      <option value="">Leave the merchant</option>
+                      {merchants.map((merchant) => (
+                        <option key={merchant.id} value={merchant.id}>
+                          {merchant.name}
+                        </option>
+                      ))}
+                    </NativeSelect>
+                  </Field>
+                </div>
+                {tags.length === 0 ? null : (
+                  <fieldset className="m-0 grid min-w-0 gap-3 rounded-md border border-dashed px-3 py-2.5">
+                    <legend className="px-1 text-sm font-medium">Add tags</legend>
+                    <div className="flex flex-wrap gap-x-5 gap-y-2">
+                      {tags.map((tag) => (
+                        <span key={tag.id} className="flex items-center gap-2">
+                          <Checkbox
+                            id={`rule-tag-${tag.id}`}
+                            className={CHECKBOX}
+                            name="add_tags"
+                            value={tag.id}
+                            defaultChecked={draft.addTags.includes(tag.id)}
+                          />
+                          <Label htmlFor={`rule-tag-${tag.id}`} className="font-normal">
+                            {tag.name}
+                          </Label>
+                        </span>
+                      ))}
+                    </div>
+                  </fieldset>
+                )}
+                <div className="flex flex-wrap gap-x-5 gap-y-2">
+                  <span className="flex items-center gap-2">
+                    <Checkbox
+                      id="rule-hide"
+                      className={CHECKBOX}
+                      name="hide"
+                      defaultChecked={draft.hide}
+                    />
+                    <Label htmlFor="rule-hide" className="font-normal">
+                      Hide from budgets and reports
+                    </Label>
+                  </span>
+                  <span className="flex items-center gap-2">
+                    <Checkbox
+                      id="rule-mark-reviewed"
+                      className={CHECKBOX}
+                      name="mark_reviewed"
+                      defaultChecked={draft.markReviewed}
+                    />
+                    <Label htmlFor="rule-mark-reviewed" className="font-normal">
+                      Mark reviewed
+                    </Label>
+                  </span>
+                </div>
+              </fieldset>
+              <div className="flex flex-wrap gap-2">
+                <Button type="submit">Save rule</Button>
+                <Button variant="outline" onClick={() => setDraft(null)}>
+                  Cancel
+                </Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
       )}
 
-      <table className="data-table rules-table" aria-label="Rules">
-        <thead>
-          <tr>
-            <th scope="col">Order</th>
-            <th scope="col">Rule</th>
-            <th scope="col">Matches</th>
-            <th scope="col">Would touch</th>
-            <th scope="col">
-              <span className="visually-hidden">Actions</span>
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {ordered.length === 0 ? (
-            <tr>
-              <td colSpan={5} className="empty">
-                No rules yet.
-              </td>
-            </tr>
-          ) : null}
-          {ordered.map((rule, index) => (
-            <tr
-              key={rule.id}
-              data-testid={`rule-${rule.id}`}
-              data-name={rule.name}
-              className={rule.enabled ? undefined : "muted"}
-            >
-              <td data-testid="order">{index + 1}</td>
-              <th scope="row">
-                <span data-testid="name">{rule.name}</span>
-                {rule.enabled ? null : <span className="chip">disabled</span>}
-                <span className="rule-sentence" data-testid="sentence">
-                  When {describeConditions(rule, names, currency)}, {describeActions(rule, names)}.
-                </span>
-              </th>
-              <td data-testid="match-count">{countMatches(rule, transactions)}</td>
-              <td data-testid="pending">{pendingRecategorization(rule, transactions).length}</td>
-              <td className="actions">
-                <button
-                  type="button"
-                  className="link"
-                  disabled={index === 0}
-                  onClick={() => move(rule, "up")}
-                >
-                  Move up
-                </button>
-                <button
-                  type="button"
-                  className="link"
-                  disabled={index >= ordered.length - 1}
-                  onClick={() => move(rule, "down")}
-                >
-                  Move down
-                </button>
-                <button type="button" className="link" onClick={() => apply(rule)}>
-                  Apply
-                </button>
-                <button
-                  type="button"
-                  className="link"
-                  onClick={() =>
-                    void attempt(
-                      (writes) => writes.updateRule(rule.id, { enabled: !rule.enabled }),
-                      "The rule could not be changed.",
-                    )
-                  }
-                >
-                  {rule.enabled ? "Disable" : "Enable"}
-                </button>
-                <button
-                  type="button"
-                  className="link"
-                  onClick={() => setDraft(draftFromRule(rule, currency))}
-                >
-                  Edit
-                </button>
-                <button
-                  type="button"
-                  className="link"
-                  onClick={() =>
-                    void attempt(
-                      (writes) => writes.deleteRule(rule.id),
-                      "The rule could not be deleted.",
-                    )
-                  }
-                >
-                  Delete
-                </button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <Card className="py-2">
+        <CardContent className="px-2">
+          <Table aria-label="Rules">
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead scope="col" className="w-16 text-right">
+                  Order
+                </TableHead>
+                <TableHead scope="col">Rule</TableHead>
+                <TableHead scope="col" className="text-right">
+                  Matches
+                </TableHead>
+                <TableHead scope="col" className="text-right">
+                  Would touch
+                </TableHead>
+                <TableHead scope="col">
+                  <span className="sr-only">Actions</span>
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {ordered.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={5} className="py-8 text-center text-muted-foreground">
+                    No rules yet.
+                  </TableCell>
+                </TableRow>
+              ) : null}
+              {ordered.map((rule, index) => {
+                const pending = pendingRecategorization(rule, transactions).length;
+                return (
+                  <TableRow
+                    key={rule.id}
+                    data-testid={`rule-${rule.id}`}
+                    data-name={rule.name}
+                    className={rule.enabled ? undefined : "text-muted-foreground"}
+                  >
+                    <TableCell className="money text-muted-foreground" data-testid="order">
+                      {index + 1}
+                    </TableCell>
+                    <TableHead
+                      scope="row"
+                      className={cn(
+                        "h-auto py-2 whitespace-normal",
+                        rule.enabled ? "text-foreground" : "text-muted-foreground",
+                      )}
+                    >
+                      <div className="grid gap-0.5">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span data-testid="name" className="font-medium">
+                            {rule.name}
+                          </span>
+                          {rule.enabled ? null : <Badge variant="outline">disabled</Badge>}
+                        </div>
+                        <span
+                          className="block text-xs font-normal text-muted-foreground"
+                          data-testid="sentence"
+                        >
+                          When {describeConditions(rule, names, currency)},{" "}
+                          {describeActions(rule, names)}.
+                        </span>
+                      </div>
+                    </TableHead>
+                    <TableCell className="money" data-testid="match-count">
+                      {countMatches(rule, transactions)}
+                    </TableCell>
+                    <TableCell
+                      className={cn("money", pending > 0 && rule.enabled && "text-warning")}
+                      data-testid="pending"
+                    >
+                      {pending}
+                    </TableCell>
+                    <TableCell className="whitespace-normal">
+                      <div className="flex flex-wrap justify-end gap-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className={ROW_ACTION}
+                          disabled={index === 0}
+                          onClick={() => move(rule, "up")}
+                        >
+                          Move up
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className={ROW_ACTION}
+                          disabled={index >= ordered.length - 1}
+                          onClick={() => move(rule, "down")}
+                        >
+                          Move down
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className={ROW_ACTION}
+                          onClick={() => apply(rule)}
+                        >
+                          Apply
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className={ROW_ACTION}
+                          onClick={() =>
+                            void attempt(
+                              (writes) => writes.updateRule(rule.id, { enabled: !rule.enabled }),
+                              "The rule could not be changed.",
+                            )
+                          }
+                        >
+                          {rule.enabled ? "Disable" : "Enable"}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className={ROW_ACTION}
+                          onClick={() => setDraft(draftFromRule(rule, currency))}
+                        >
+                          Edit
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className={cn(ROW_ACTION, "text-destructive hover:text-destructive")}
+                          onClick={() =>
+                            void attempt(
+                              (writes) => writes.deleteRule(rule.id),
+                              "The rule could not be deleted.",
+                            )
+                          }
+                        >
+                          Delete
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
     </section>
   );
 }

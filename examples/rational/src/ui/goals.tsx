@@ -1,4 +1,45 @@
-import { type FormEvent, useState } from "react";
+import {
+  Alert,
+  AlertDescription,
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  CardFooter,
+  CardHeader,
+  type ChartDatum,
+  cn,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  EmptyState,
+  Field,
+  Input,
+  LineChart,
+  NativeSelect,
+  Progress,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@mako-cloud/ui";
+import {
+  Archive,
+  ArrowDown,
+  ArrowUp,
+  Check,
+  ChevronRight,
+  Pencil,
+  Plus,
+  RotateCcw,
+  Target,
+} from "lucide-react";
+import { type FormEvent, type ReactNode, useState } from "react";
 
 import type { RationalApp } from "../data/rational.js";
 import type { ScopeSession } from "../data/scope.js";
@@ -11,11 +52,15 @@ import {
   LIABILITY_TYPES,
 } from "../model/types.js";
 import { selectAccountBalances } from "../selectors/balances.js";
-import { type GoalRow, plannedMonthlyTotal, selectGoalProgress } from "../selectors/goals.js";
+import {
+  addMonths,
+  type GoalRow,
+  plannedMonthlyTotal,
+  selectGoalProgress,
+} from "../selectors/goals.js";
 import { amountToText, formatMinorUnits, parseAmount } from "../selectors/money.js";
-import { ProgressBar, readoutLabel } from "./charts/index.js";
+import { compactMoney, readoutLabel, shortMonthLabel } from "./charts/layout.js";
 import { useQuery } from "./hooks.js";
-import "./styles/goals.css";
 
 /**
  * What the household is saving for and paying down, in the order it ranks
@@ -28,6 +73,13 @@ import "./styles/goals.css";
  * the bars here agree with the alert the nightly job fires when a goal is
  * reached.
  */
+
+/** The small heading over a figure. */
+const EYEBROW = "text-xs font-semibold uppercase tracking-wider text-muted-foreground";
+
+/** A projection is drawn no further than this, however small the payment. */
+const PROJECTION_MONTHS = 600;
+
 export function GoalsScreen({
   app,
   session,
@@ -83,46 +135,76 @@ export function GoalsScreen({
     );
 
   return (
-    <section aria-labelledby="goals-title" data-testid="goals-screen">
-      <div className="heading">
-        <h1 id="goals-title">Goals</h1>
-        <button type="button" onClick={() => setCreating(!creating)} aria-expanded={creating}>
-          New goal
-        </button>
-      </div>
-      <div className="totals">
-        <div className="total">
-          <span>Planned a month ({currency})</span>
-          <strong data-testid="planned-monthly">{formatMinorUnits(planned, currency)}</strong>
-          <small>
-            {active.length === 1 ? "1 active goal" : `${active.length} active goals`}
-            {finished.length === 0 ? "" : ` · ${finished.length} finished`}
-          </small>
+    <section aria-labelledby="goals-title" data-testid="goals-screen" className="grid gap-6">
+      <header className="flex flex-wrap items-start justify-between gap-4">
+        <div className="grid gap-1">
+          <h1 id="goals-title" className="text-2xl">
+            Goals
+          </h1>
+          <p className="m-0 text-sm text-muted-foreground">
+            What the household is saving for and paying down, in the order it ranks them.
+          </p>
         </div>
+        <Button onClick={() => setCreating(!creating)} aria-expanded={creating}>
+          <Plus />
+          New goal
+        </Button>
+      </header>
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <Card className="gap-1 py-4">
+          <CardContent className="grid gap-1 px-4">
+            <span className={EYEBROW}>Planned a month ({currency})</span>
+            <strong
+              className="money justify-self-start text-2xl font-semibold"
+              data-testid="planned-monthly"
+            >
+              {formatMinorUnits(planned, currency)}
+            </strong>
+            <small className="text-xs text-muted-foreground">
+              {active.length === 1 ? "1 active goal" : `${active.length} active goals`}
+              {finished.length === 0 ? "" : ` · ${finished.length} finished`}
+            </small>
+          </CardContent>
+        </Card>
       </div>
       {problem === null ? null : (
-        <p className="notice error" role="alert">
-          {problem}
-        </p>
+        <Alert variant="destructive" role="alert">
+          <AlertDescription>{problem}</AlertDescription>
+        </Alert>
       )}
-      {creating ? (
-        <NewGoalForm
-          app={app}
-          accounts={open}
-          balances={balances}
-          currency={currency}
-          nextPriority={active.length}
-          onDone={() => setCreating(false)}
-          onProblem={setProblem}
+
+      <Dialog open={creating} onOpenChange={setCreating}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>New goal</DialogTitle>
+            <DialogDescription>
+              Something to save up for, or a debt to pay down. Progress is measured from today.
+            </DialogDescription>
+          </DialogHeader>
+          {creating ? (
+            <NewGoalForm
+              app={app}
+              accounts={open}
+              balances={balances}
+              currency={currency}
+              nextPriority={active.length}
+              onDone={() => setCreating(false)}
+              onProblem={setProblem}
+            />
+          ) : null}
+        </DialogContent>
+      </Dialog>
+
+      {rows.length === 0 ? (
+        <EmptyState
+          icon={<Target />}
+          title="No goals yet."
+          description="Name something to save for, or a debt to pay down."
         />
       ) : null}
 
-      {rows.length === 0 ? (
-        <p className="muted">No goals yet. Name something to save for, or a debt to pay down.</p>
-      ) : null}
-
       {active.length === 0 ? null : (
-        <div className="goal-list" data-testid="active-goals">
+        <div className="grid gap-4" data-testid="active-goals">
           {active.map((row, index) => (
             <GoalCard
               key={row.goal.id}
@@ -144,9 +226,9 @@ export function GoalsScreen({
       )}
 
       {finished.length === 0 ? null : (
-        <>
-          <h2>Finished</h2>
-          <div className="goal-list" data-testid="finished-goals">
+        <div className="grid gap-4">
+          <h2 className="text-lg">Finished</h2>
+          <div className="grid gap-4" data-testid="finished-goals">
             {finished.map((row) => (
               <GoalCard
                 key={row.goal.id}
@@ -165,7 +247,7 @@ export function GoalsScreen({
               />
             ))}
           </div>
-        </>
+        </div>
       )}
     </section>
   );
@@ -185,6 +267,45 @@ function kindOf(goal: Goal): GoalKind {
 function sourceOf(goal: Goal): GoalProgressSource {
   if (kindOf(goal) === "pay_down") return "balance";
   return goal.progress_source ?? "contributions";
+}
+
+/**
+ * What a pay-down goal still owes at the start of each month, from today
+ * until the planned payment clears it: the same arithmetic as `payoffMonth`,
+ * drawn out. Empty without a plan or with nothing left to pay.
+ */
+function payoffProjection(
+  remaining: number,
+  planned: number | undefined,
+  today: string,
+): ChartDatum[] {
+  if (planned === undefined || planned <= 0 || remaining <= 0) return [];
+  const points: ChartDatum[] = [];
+  let owed = remaining;
+  let month = today.slice(0, 7);
+  points.push({ month, owed });
+  while (owed > 0 && points.length < PROJECTION_MONTHS) {
+    month = addMonths(month, 1);
+    owed = Math.max(0, owed - planned);
+    points.push({ month, owed });
+  }
+  return points;
+}
+
+/** `2027-02` on an axis: `Feb 27`, short and unambiguous across a long projection. */
+function monthTick(value: string | number): string {
+  const month = String(value);
+  return `${shortMonthLabel(month)} ${month.slice(2, 4)}`;
+}
+
+/** One figure under the bar: a small heading and the number it names. */
+function Figure({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="grid content-start gap-0.5">
+      <dt className={EYEBROW}>{label}</dt>
+      {children}
+    </div>
+  );
 }
 
 function GoalCard({
@@ -229,182 +350,253 @@ function GoalCard({
   const contributions = [...goal.contributions].sort(
     (left, right) => right.date.localeCompare(left.date) || right.id.localeCompare(left.id),
   );
+  const projection =
+    kind === "pay_down" && goal.status === "active"
+      ? payoffProjection(math.remaining, goal.planned_monthly, today)
+      : [];
+  const finished = goal.status !== "active";
   return (
+    // The kit's Card is a `<section>`; a goal is an article, which is what
+    // the suite and a screen reader look for, so the card's dress is worn here.
     <article
-      className="goal-card"
+      className={cn(
+        "flex flex-col gap-5 rounded-xl border bg-card py-5 text-card-foreground shadow-xs",
+        // A finished goal stays on the page, quieter, so the history is legible.
+        finished && "bg-muted/40 text-muted-foreground",
+      )}
       data-testid={`goal-${goal.id}`}
       data-percent={math.percent}
       data-kind={kind}
       data-status={goal.status}
       aria-label={goal.name}
     >
-      <header className="goal-head">
-        <div>
-          <h2>{goal.name}</h2>
-          <span className="chip" data-testid="kind">
-            {kind === "pay_down" ? "pay-down" : "save-up"}
-          </span>
-          <span className="chip" data-testid="source">
-            {source === "balance" ? "follows the balance" : "by contributions"}
-          </span>
-          {goal.status === "active" ? null : <span className="chip">{goal.status}</span>}
+      <CardHeader className="flex flex-wrap items-start justify-between gap-3">
+        <div className="grid gap-2">
+          <h2 className="text-lg">{goal.name}</h2>
+          <div className="flex flex-wrap gap-1.5">
+            <Badge variant="secondary" data-testid="kind">
+              {kind === "pay_down" ? "pay-down" : "save-up"}
+            </Badge>
+            <Badge variant="outline" data-testid="source">
+              {source === "balance" ? "follows the balance" : "by contributions"}
+            </Badge>
+            {goal.status === "active" ? null : <Badge variant="outline">{goal.status}</Badge>}
+          </div>
         </div>
         {goal.status === "active" ? (
-          <div className="goal-order">
-            <button
-              type="button"
-              className="secondary"
+          <div className="flex gap-1">
+            <Button
+              variant="outline"
+              size="sm"
               disabled={position === 0}
               onClick={() => onMove(-1)}
             >
+              <ArrowUp />
               Move up
-            </button>
-            <button
-              type="button"
-              className="secondary"
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
               disabled={position >= count - 1}
               onClick={() => onMove(1)}
             >
+              <ArrowDown />
               Move down
-            </button>
+            </Button>
           </div>
         ) : null}
-      </header>
-      <ProgressBar
-        value={math.saved}
-        max={goal.target_amount}
-        label={`${goal.name}: ${math.percent}% of the way`}
-        tone={math.percent >= 100 ? "positive" : "accent"}
-      />
-      <dl className="goal-figures">
-        <div>
-          <dt>{kind === "pay_down" ? "Paid down" : "Saved"}</dt>
-          <dd data-testid="saved">{money(math.saved)}</dd>
-        </div>
-        <div>
-          <dt>{kind === "pay_down" ? "Owed" : "Remaining"}</dt>
-          <dd data-testid="remaining">{money(math.remaining)}</dd>
-        </div>
-        <div>
-          <dt>Target</dt>
-          <dd data-testid="target">{money(goal.target_amount)}</dd>
-        </div>
-        <div>
-          <dt>By</dt>
-          <dd data-testid="target-date">{goal.target_date ?? "—"}</dd>
-        </div>
-        <div>
-          <dt>{goal.target_date === undefined ? "Planned a month" : "Needed a month"}</dt>
-          <dd>
-            <span data-testid="monthly">{monthly === null ? "—" : money(monthly)}</span>
-            {goal.target_date !== undefined && goal.planned_monthly !== undefined ? (
-              <small>planned {money(goal.planned_monthly)}</small>
-            ) : null}
-          </dd>
-        </div>
-        <div>
-          <dt>Plan</dt>
-          <dd data-track={track}>
-            <span data-testid="on-track">
-              {track === "none" ? "no plan" : track === "on" ? "on track" : "behind"}
+      </CardHeader>
+      <CardContent className="grid gap-5">
+        <div className="grid gap-1.5">
+          <div className="flex items-baseline justify-between gap-3 text-sm">
+            <span className="font-medium">{math.percent}% of the way</span>
+            <span className="text-muted-foreground">
+              {money(math.saved)} of {money(goal.target_amount)}
             </span>
-            {math.onTrack === null ? null : (
-              <small>{money(math.expectedByNow)} expected by now</small>
-            )}
-          </dd>
+          </div>
+          <Progress
+            value={math.percent}
+            tone={math.percent >= 100 ? "positive" : "primary"}
+            aria-label={`${goal.name}: ${math.percent}% of the way`}
+          />
         </div>
-        {kind === "pay_down" ? (
-          <div>
-            <dt>Paid off</dt>
-            <dd>
-              {math.payoffMonth === null ? (
-                <span data-testid="payoff">—</span>
-              ) : (
-                <time data-testid="payoff" dateTime={math.payoffMonth}>
-                  {readoutLabel(math.payoffMonth)}
-                </time>
-              )}
-              {goal.planned_monthly === undefined ? (
-                <small>set a planned payment to project it</small>
+        <dl className="m-0 grid grid-cols-[repeat(auto-fit,minmax(8rem,1fr))] gap-x-4 gap-y-3">
+          <Figure label={kind === "pay_down" ? "Paid down" : "Saved"}>
+            <dd className="m-0 font-medium tabular-nums" data-testid="saved">
+              {money(math.saved)}
+            </dd>
+          </Figure>
+          <Figure label={kind === "pay_down" ? "Owed" : "Remaining"}>
+            <dd className="m-0 font-medium tabular-nums" data-testid="remaining">
+              {money(math.remaining)}
+            </dd>
+          </Figure>
+          <Figure label="Target">
+            <dd className="m-0 font-medium tabular-nums" data-testid="target">
+              {money(goal.target_amount)}
+            </dd>
+          </Figure>
+          <Figure label="By">
+            <dd className="m-0 font-medium tabular-nums" data-testid="target-date">
+              {goal.target_date ?? "—"}
+            </dd>
+          </Figure>
+          <Figure label={goal.target_date === undefined ? "Planned a month" : "Needed a month"}>
+            <dd className="m-0 grid font-medium tabular-nums">
+              <span data-testid="monthly">{monthly === null ? "—" : money(monthly)}</span>
+              {goal.target_date !== undefined && goal.planned_monthly !== undefined ? (
+                <small className="text-xs font-normal text-muted-foreground">
+                  planned {money(goal.planned_monthly)}
+                </small>
               ) : null}
             </dd>
-          </div>
-        ) : null}
-      </dl>
-      {linked.length === 0 ? null : (
-        <p className="goal-linked" data-testid="linked">
-          {kind === "pay_down" ? "Paying down" : "Linked to"} {linked.join(", ")}
-        </p>
-      )}
-
-      <details className="goal-contributions">
-        <summary>
-          Contributions ({contributions.length}
-          {contributions.length === 0
-            ? ""
-            : `, ${money(contributions.reduce((total, entry) => total + entry.amount, 0))}`}
-          )
-        </summary>
-        {source === "balance" ? (
-          <p className="hint">
-            Progress follows the linked balance; contributions here are a record of what was put in,
-            not what moves the bar.
-          </p>
-        ) : null}
-        {contributions.length === 0 ? null : (
-          <table className="data-table" aria-label={`Contributions to ${goal.name}`}>
-            <thead>
-              <tr>
-                <th scope="col">Date</th>
-                <th scope="col" className="amount">
-                  Amount
-                </th>
-                <th scope="col">Note</th>
-              </tr>
-            </thead>
-            <tbody>
-              {contributions.map((entry) => (
-                <tr key={entry.id} data-testid={`contribution-${entry.id}`}>
-                  <td>{entry.date}</td>
-                  <td className="amount">{money(entry.amount)}</td>
-                  <td>{entry.note ?? ""}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          </Figure>
+          <Figure label="Plan">
+            {/* On track is good news, behind is a warning; neither shouts. */}
+            <dd className="m-0 grid justify-items-start gap-1" data-track={track}>
+              <Badge
+                variant={
+                  track === "on" ? "positive" : track === "behind" ? "destructive" : "secondary"
+                }
+                data-testid="on-track"
+              >
+                {track === "none" ? "no plan" : track === "on" ? "on track" : "behind"}
+              </Badge>
+              {math.onTrack === null ? null : (
+                <small className="text-xs text-muted-foreground">
+                  {money(math.expectedByNow)} expected by now
+                </small>
+              )}
+            </dd>
+          </Figure>
+          {kind === "pay_down" ? (
+            <Figure label="Paid off">
+              <dd className="m-0 grid font-medium tabular-nums">
+                {math.payoffMonth === null ? (
+                  <span data-testid="payoff">—</span>
+                ) : (
+                  <time data-testid="payoff" dateTime={math.payoffMonth}>
+                    {readoutLabel(math.payoffMonth)}
+                  </time>
+                )}
+                {goal.planned_monthly === undefined ? (
+                  <small className="text-xs font-normal text-muted-foreground">
+                    set a planned payment to project it
+                  </small>
+                ) : null}
+              </dd>
+            </Figure>
+          ) : null}
+        </dl>
+        {projection.length < 2 ? null : (
+          <LineChart
+            data={projection}
+            x="month"
+            series={[{ key: "owed", label: "Still owed" }]}
+            title={`${goal.name}: what is still owed each month until the planned payment clears it`}
+            height={160}
+            legend
+            formatValue={(value) => compactMoney(value, goal.currency)}
+            formatX={monthTick}
+          />
         )}
-        <ContributionForm app={app} goal={goal} today={today} onProblem={onProblem} />
-      </details>
+        {linked.length === 0 ? null : (
+          <p className="m-0 text-sm text-muted-foreground" data-testid="linked">
+            {kind === "pay_down" ? "Paying down" : "Linked to"} {linked.join(", ")}
+          </p>
+        )}
 
-      <div className="actions">
-        <button type="button" className="link" onClick={() => onEdit(!editing)}>
+        <details className="group rounded-lg border">
+          <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-2.5 text-sm font-medium text-muted-foreground select-none hover:text-foreground [&::-webkit-details-marker]:hidden">
+            <ChevronRight
+              aria-hidden="true"
+              className="size-4 shrink-0 transition-transform group-open:rotate-90"
+            />
+            Contributions ({contributions.length}
+            {contributions.length === 0
+              ? ""
+              : `, ${money(contributions.reduce((total, entry) => total + entry.amount, 0))}`}
+            )
+          </summary>
+          <div className="grid gap-3 border-t px-4 py-3">
+            {source === "balance" ? (
+              <p className="m-0 text-sm text-muted-foreground">
+                Progress follows the linked balance; contributions here are a record of what was put
+                in, not what moves the bar.
+              </p>
+            ) : null}
+            {contributions.length === 0 ? null : (
+              <Table aria-label={`Contributions to ${goal.name}`}>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead scope="col" className="w-36">
+                      Date
+                    </TableHead>
+                    <TableHead scope="col" className="w-32 text-right">
+                      Amount
+                    </TableHead>
+                    <TableHead scope="col">Note</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {contributions.map((entry) => (
+                    <TableRow key={entry.id} data-testid={`contribution-${entry.id}`}>
+                      <TableCell className="tabular-nums">{entry.date}</TableCell>
+                      <TableCell className="money">{money(entry.amount)}</TableCell>
+                      <TableCell className="whitespace-normal">{entry.note ?? ""}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+            <ContributionForm app={app} goal={goal} today={today} onProblem={onProblem} />
+          </div>
+        </details>
+      </CardContent>
+
+      <CardFooter className="flex-wrap gap-2">
+        <Button variant="outline" size="sm" onClick={() => onEdit(!editing)}>
+          <Pencil />
           {editing ? "Close" : "Edit"}
-        </button>
+        </Button>
         {goal.status === "active" ? (
-          <button type="button" className="link" onClick={() => onStatus("completed")}>
+          <Button variant="ghost" size="sm" onClick={() => onStatus("completed")}>
+            <Check />
             Complete
-          </button>
+          </Button>
         ) : (
-          <button type="button" className="link" onClick={() => onStatus("active")}>
+          <Button variant="ghost" size="sm" onClick={() => onStatus("active")}>
+            <RotateCcw />
             Reopen
-          </button>
+          </Button>
         )}
         {goal.status === "archived" ? null : (
-          <button type="button" className="link" onClick={() => onStatus("archived")}>
+          <Button variant="ghost" size="sm" onClick={() => onStatus("archived")}>
+            <Archive />
             Archive
-          </button>
+          </Button>
         )}
-      </div>
-      {editing ? (
-        <GoalEditor
-          app={app}
-          goal={goal}
-          accounts={accounts}
-          balances={balances}
-          onDone={() => onEdit(false)}
-          onProblem={onProblem}
-        />
-      ) : null}
+      </CardFooter>
+      <Dialog open={editing} onOpenChange={onEdit}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Edit {goal.name}</DialogTitle>
+            <DialogDescription>
+              Everything but its kind, which would change what its numbers mean.
+            </DialogDescription>
+          </DialogHeader>
+          {editing ? (
+            <GoalEditor
+              app={app}
+              goal={goal}
+              accounts={accounts}
+              balances={balances}
+              onDone={() => onEdit(false)}
+              onProblem={onProblem}
+            />
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </article>
   );
 }
@@ -441,43 +633,52 @@ function ContributionForm({
     }
   };
 
+  const ids = {
+    amount: `contribution-amount-${goal.id}`,
+    date: `contribution-date-${goal.id}`,
+    note: `contribution-note-${goal.id}`,
+  };
+
   return (
     <form
-      className="inline"
+      className="flex flex-wrap items-end gap-3"
       aria-label={`Add contribution to ${goal.name}`}
       onSubmit={(event) => void submit(event)}
     >
-      <label>
-        Amount ({goal.currency})
-        <input
+      <Field label={`Amount (${goal.currency})`} htmlFor={ids.amount} className="w-36">
+        <Input
+          id={ids.amount}
           name="amount"
           inputMode="decimal"
           required
+          className="money"
           placeholder={amountToText(10_000, goal.currency)}
           value={amount}
           onChange={(event) => setAmount(event.target.value)}
         />
-      </label>
-      <label>
-        Date
-        <input
+      </Field>
+      <Field label="Date" htmlFor={ids.date} className="w-40">
+        <Input
+          id={ids.date}
           name="date"
           type="date"
           required
           value={date}
           onChange={(event) => setDate(event.target.value)}
         />
-      </label>
-      <label>
-        Note
-        <input
+      </Field>
+      <Field label="Note" htmlFor={ids.note} className="min-w-48 flex-1">
+        <Input
+          id={ids.note}
           name="note"
           maxLength={200}
           value={note}
           onChange={(event) => setNote(event.target.value)}
         />
-      </label>
-      <button type="submit">Add contribution</button>
+      </Field>
+      <Button type="submit" variant="secondary">
+        Add contribution
+      </Button>
     </form>
   );
 }
@@ -489,6 +690,11 @@ function eligibleAccounts(kind: GoalKind, accounts: readonly Account[]): readonl
     : accounts;
 }
 
+/**
+ * A list of accounts to link, tall enough to see several at once. The kit's
+ * select is dressed for one choice -- its chevron says "open me" -- so the
+ * chevron is hidden here, where the whole list is already open.
+ */
 function AccountsSelect({
   id,
   accounts,
@@ -501,21 +707,24 @@ function AccountsSelect({
   onChange: (ids: readonly string[]) => void;
 }) {
   return (
-    <select
-      id={id}
-      name="account_ids"
-      multiple
-      value={[...value]}
-      onChange={(event) =>
-        onChange(Array.from(event.target.selectedOptions, (option) => option.value))
-      }
-    >
-      {accounts.map((account) => (
-        <option key={account.id} value={account.id}>
-          {account.name}
-        </option>
-      ))}
-    </select>
+    <div className="[&_svg]:hidden">
+      <NativeSelect
+        id={id}
+        name="account_ids"
+        multiple
+        className="h-auto min-h-28 py-1 pr-3 [&_option]:rounded-sm [&_option]:px-2 [&_option]:py-1"
+        value={[...value]}
+        onChange={(event) =>
+          onChange(Array.from(event.target.selectedOptions, (option) => option.value))
+        }
+      >
+        {accounts.map((account) => (
+          <option key={account.id} value={account.id}>
+            {account.name}
+          </option>
+        ))}
+      </NativeSelect>
+    </div>
   );
 }
 
@@ -592,36 +801,36 @@ function NewGoalForm({
   };
 
   return (
-    <form className="editor" aria-label="New goal" onSubmit={(event) => void submit(event)}>
-      <h2>New goal</h2>
-      <div className="grid">
-        <label>
-          Kind
-          <select
+    <form className="grid gap-4" aria-label="New goal" onSubmit={(event) => void submit(event)}>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Kind" htmlFor="new-goal-kind">
+          <NativeSelect
+            id="new-goal-kind"
             name="kind"
             value={kind}
             onChange={(event) => setKind(event.target.value as GoalKind)}
           >
             <option value="save">Save up</option>
             <option value="pay_down">Pay down</option>
-          </select>
-        </label>
-        <label>
-          Name
-          <input
+          </NativeSelect>
+        </Field>
+        <Field label="Name" htmlFor="new-goal-name">
+          <Input
+            id="new-goal-name"
             name="name"
             required
             maxLength={200}
             value={name}
             onChange={(event) => setName(event.target.value)}
           />
-        </label>
-        <label>
-          Target ({currency})
-          <input
+        </Field>
+        <Field label={`Target (${currency})`} htmlFor="new-goal-target">
+          <Input
+            id="new-goal-target"
             name="target_amount"
             inputMode="decimal"
             required={kind !== "pay_down"}
+            className="money"
             placeholder={
               kind === "pay_down" && owed > 0
                 ? amountToText(owed, currency)
@@ -630,50 +839,50 @@ function NewGoalForm({
             value={target}
             onChange={(event) => setTarget(event.target.value)}
           />
-        </label>
-        <label>
-          By
-          <input
+        </Field>
+        <Field label="By" htmlFor="new-goal-target-date">
+          <Input
+            id="new-goal-target-date"
             name="target_date"
             type="date"
             value={targetDate}
             onChange={(event) => setTargetDate(event.target.value)}
           />
-        </label>
-        <label>
-          Planned monthly ({currency})
-          <input
+        </Field>
+        <Field label={`Planned monthly (${currency})`} htmlFor="new-goal-planned">
+          <Input
+            id="new-goal-planned"
             name="planned_monthly"
             inputMode="decimal"
+            className="money"
             placeholder={amountToText(25_000, currency)}
             value={plannedMonthly}
             onChange={(event) => setPlannedMonthly(event.target.value)}
           />
-        </label>
-        <label htmlFor="new-goal-accounts">
-          Accounts
+        </Field>
+        <Field label="Accounts" htmlFor="new-goal-accounts">
           <AccountsSelect
             id="new-goal-accounts"
             accounts={eligible}
             value={linked}
             onChange={setAccountIds}
           />
-        </label>
+        </Field>
         {kind === "pay_down" ? null : (
-          <label>
-            Progress
-            <select
+          <Field label="Progress" htmlFor="new-goal-progress">
+            <NativeSelect
+              id="new-goal-progress"
               name="progress_source"
               value={source}
               onChange={(event) => setSource(event.target.value as GoalProgressSource)}
             >
               <option value="contributions">By contributions I record</option>
               <option value="balance">Follows the linked balance</option>
-            </select>
-          </label>
+            </NativeSelect>
+          </Field>
         )}
       </div>
-      <p className="hint">
+      <p className="m-0 text-sm text-muted-foreground">
         {kind === "pay_down"
           ? linked.length === 0
             ? "Choose the loan or card being paid down; progress follows what it still owes."
@@ -684,12 +893,12 @@ function NewGoalForm({
               : `The linked balance is ${formatMinorUnits(linkedBalance, currency)} today; the goal measures what is saved from here.`
             : "Record each contribution on the goal; linked accounts are for reference."}
       </p>
-      <div className="actions">
-        <button type="submit">Add goal</button>
-        <button type="button" className="secondary" onClick={onDone}>
+      <DialogFooter>
+        <Button variant="outline" onClick={onDone}>
           Cancel
-        </button>
-      </div>
+        </Button>
+        <Button type="submit">Add goal</Button>
+      </DialogFooter>
     </form>
   );
 }
@@ -728,6 +937,15 @@ function GoalEditor({
   const [source, setSource] = useState<GoalProgressSource>(sourceOf(goal));
   const eligible = eligibleAccounts(kind, accounts);
   const linked = accountIds.filter((id) => eligible.some((account) => account.id === id));
+  const ids = {
+    name: `edit-goal-name-${goal.id}`,
+    target: `edit-goal-target-${goal.id}`,
+    targetDate: `edit-goal-target-date-${goal.id}`,
+    planned: `edit-goal-planned-${goal.id}`,
+    priority: `edit-goal-priority-${goal.id}`,
+    accounts: `edit-goal-accounts-${goal.id}`,
+    progress: `edit-goal-progress-${goal.id}`,
+  };
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -768,87 +986,89 @@ function GoalEditor({
 
   return (
     <form
-      className="editor"
+      className="grid gap-4"
       aria-label={`Edit ${goal.name}`}
       onSubmit={(event) => void submit(event)}
     >
-      <div className="grid">
-        <label>
-          Name
-          <input
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Name" htmlFor={ids.name}>
+          <Input
+            id={ids.name}
             name="name"
             required
             maxLength={200}
             value={name}
             onChange={(event) => setName(event.target.value)}
           />
-        </label>
-        <label>
-          Target ({goal.currency})
-          <input
+        </Field>
+        <Field label={`Target (${goal.currency})`} htmlFor={ids.target}>
+          <Input
+            id={ids.target}
             name="target_amount"
             inputMode="decimal"
             required
+            className="money"
             value={target}
             onChange={(event) => setTarget(event.target.value)}
           />
-        </label>
-        <label>
-          By
-          <input
+        </Field>
+        <Field label="By" htmlFor={ids.targetDate}>
+          <Input
+            id={ids.targetDate}
             name="target_date"
             type="date"
             value={targetDate}
             onChange={(event) => setTargetDate(event.target.value)}
           />
-        </label>
-        <label>
-          Planned monthly ({goal.currency})
-          <input
+        </Field>
+        <Field label={`Planned monthly (${goal.currency})`} htmlFor={ids.planned}>
+          <Input
+            id={ids.planned}
             name="planned_monthly"
             inputMode="decimal"
+            className="money"
             value={plannedMonthly}
             onChange={(event) => setPlannedMonthly(event.target.value)}
           />
-        </label>
-        <label>
-          Priority
-          <input
+        </Field>
+        <Field label="Priority" htmlFor={ids.priority}>
+          <Input
+            id={ids.priority}
             name="priority"
             inputMode="numeric"
+            className="tabular-nums"
             value={priority}
             onChange={(event) => setPriority(event.target.value)}
           />
-        </label>
-        <label htmlFor={`edit-goal-accounts-${goal.id}`}>
-          Accounts
+        </Field>
+        <Field label="Accounts" htmlFor={ids.accounts}>
           <AccountsSelect
-            id={`edit-goal-accounts-${goal.id}`}
+            id={ids.accounts}
             accounts={eligible}
             value={linked}
             onChange={setAccountIds}
           />
-        </label>
+        </Field>
         {kind === "pay_down" ? null : (
-          <label>
-            Progress
-            <select
+          <Field label="Progress" htmlFor={ids.progress}>
+            <NativeSelect
+              id={ids.progress}
               name="progress_source"
               value={source}
               onChange={(event) => setSource(event.target.value as GoalProgressSource)}
             >
               <option value="contributions">By contributions I record</option>
               <option value="balance">Follows the linked balance</option>
-            </select>
-          </label>
+            </NativeSelect>
+          </Field>
         )}
       </div>
-      <div className="actions">
-        <button type="submit">Save goal</button>
-        <button type="button" className="secondary" onClick={onDone}>
+      <DialogFooter>
+        <Button variant="outline" onClick={onDone}>
           Cancel
-        </button>
-      </div>
+        </Button>
+        <Button type="submit">Save goal</Button>
+      </DialogFooter>
     </form>
   );
 }

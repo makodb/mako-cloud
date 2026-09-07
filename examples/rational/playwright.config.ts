@@ -27,8 +27,11 @@ export default defineConfig({
   webServer: {
     command: `npm run dev -- --port ${port} --strictPort`,
     env: { RATIONAL_CONFIG: "example" },
-    url: `http://127.0.0.1:${port}`,
+    // Ready means the entry module is served, which the dev server does only once
+    // it has bundled the dependencies; the bare index answers long before that.
+    url: `http://127.0.0.1:${port}/src/main.tsx`,
     reuseExistingServer: false,
-    timeout: 30_000,
+    // Cold, the dev server pre-bundles the design system's dependencies first.
+    timeout: 120_000,
   },
 });

@@ -1,3 +1,23 @@
+import {
+  Alert,
+  AlertDescription,
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  Field,
+  Input,
+  NativeSelect,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@mako-cloud/ui";
+import { CircleAlert, House, UserPlus } from "lucide-react";
 import { type FormEvent, useState } from "react";
 
 import type { AppState, RationalApp } from "../data/rational.js";
@@ -9,7 +29,6 @@ import {
   type Membership,
 } from "../model/types.js";
 import { useQuery } from "./hooks.js";
-import "./styles/settings-pages.css";
 
 /**
  * Households, members, and invitations. Everything on this screen is a call
@@ -42,132 +61,166 @@ export function HouseholdScreen({ app, state }: { app: RationalApp; state: AppSt
   };
 
   return (
-    <section aria-labelledby="household-title">
-      <div className="heading">
-        <h1 id="household-title">Members</h1>
+    <section aria-labelledby="household-title" className="grid gap-6">
+      <div className="grid gap-1">
+        <h1 id="household-title" className="text-2xl">
+          Members
+        </h1>
+        <p className="text-sm text-muted-foreground">
+          Who shares this space, and what each of them may do in it.
+        </p>
       </div>
       {app.householdsAvailable ? null : (
-        <p className="hint" role="status" data-testid="households-unavailable">
+        <p
+          className="text-sm text-muted-foreground"
+          role="status"
+          data-testid="households-unavailable"
+        >
           This environment has no <code>households</code> function deployed, so membership can be
           seen but not changed here.
         </p>
       )}
       {error === null ? null : (
-        <p className="error" role="alert" data-testid="household-error">
-          {error}
-        </p>
+        <Alert variant="destructive" data-testid="household-error">
+          <CircleAlert />
+          <AlertDescription className="block">{error}</AlertDescription>
+        </Alert>
       )}
 
       {state.invitations.length === 0 ? null : (
-        <section aria-labelledby="invitations-title" className="settings-panel">
-          <h2 id="invitations-title">Invitations</h2>
-          <ul className="list" aria-label="Invitations">
-            {state.invitations.map((invitation) => (
-              <li key={invitation.id} data-testid={`invitation-${invitation.household_id}`}>
-                <span>
-                  {state.households.find((candidate) => candidate.id === invitation.household_id)
-                    ?.name ?? invitation.household_id}{" "}
-                  · {invitation.role}
-                </span>
-                <button
-                  type="button"
-                  disabled={busy || !app.householdsAvailable}
-                  onClick={() => void run(() => app.acceptInvitation(invitation.household_id))}
+        <Card aria-labelledby="invitations-title">
+          <CardHeader>
+            <CardTitle id="invitations-title">Invitations</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ul className="m-0 grid list-none gap-2 p-0 text-sm" aria-label="Invitations">
+              {state.invitations.map((invitation) => (
+                <li
+                  key={invitation.id}
+                  data-testid={`invitation-${invitation.household_id}`}
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-md bg-accent/60 px-3 py-2"
                 >
-                  Accept
-                </button>
-              </li>
-            ))}
-          </ul>
-        </section>
+                  <span>
+                    {state.households.find((candidate) => candidate.id === invitation.household_id)
+                      ?.name ?? invitation.household_id}{" "}
+                    · {invitation.role}
+                  </span>
+                  <Button
+                    size="sm"
+                    disabled={busy || !app.householdsAvailable}
+                    onClick={() => void run(() => app.acceptInvitation(invitation.household_id))}
+                  >
+                    Accept
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
       )}
 
       {householdId === null ? (
-        <p role="status" data-testid="household-empty">
+        <p className="text-sm text-muted-foreground" role="status" data-testid="household-empty">
           You are not a member of any household yet. Create one to start.
         </p>
       ) : (
-        <section aria-labelledby="members-title" className="settings-panel">
-          <h2 id="members-title">
-            Members of {household?.name ?? householdId}
-            {role === null ? null : <small> · you are {role}</small>}
-          </h2>
-          <table className="list" aria-label="Members">
-            <thead>
-              <tr>
-                <th scope="col">Member</th>
-                <th scope="col">Role</th>
-                <th scope="col">Status</th>
-                <th scope="col">
-                  <span className="visually-hidden">Actions</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {members.map((member) => (
-                <tr
-                  key={member.id}
-                  data-testid={`member-${member.user_id === "" ? (member.email ?? "") : member.user_id}`}
-                >
-                  <td>{member.email ?? member.user_id}</td>
-                  <td>
-                    {role === "owner" && member.user_id !== "" && member.status === "active" ? (
-                      <select
-                        aria-label={`Role of ${member.email ?? member.user_id}`}
-                        value={member.role}
-                        disabled={busy}
-                        onChange={(event) =>
-                          void run(() =>
-                            app.changeMemberRole(
-                              householdId,
-                              member.user_id,
-                              event.target.value as HouseholdRole,
-                            ),
-                          )
-                        }
-                      >
-                        {HOUSEHOLD_ROLES.map((candidate) => (
-                          <option key={candidate} value={candidate}>
-                            {candidate}
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      member.role
-                    )}
-                  </td>
-                  <td>{member.status}</td>
-                  <td className="actions">
-                    {role === "owner" &&
-                    member.user_id !== "" &&
-                    member.user_id !== household?.owner_id ? (
-                      <button
-                        type="button"
-                        className="link"
-                        disabled={busy}
-                        onClick={() =>
-                          void run(() => app.removeMember(householdId, member.user_id))
-                        }
-                      >
-                        Remove
-                      </button>
-                    ) : null}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {role === "owner" ? (
-            <InviteForm
-              busy={busy || !app.householdsAvailable}
-              onInvite={(email, invitedRole) =>
-                run(() => app.inviteMember(householdId, email, invitedRole))
-              }
-            />
-          ) : (
-            <p className="hint">Only the household's owner can invite or remove members.</p>
-          )}
-        </section>
+        <Card aria-labelledby="members-title">
+          <CardHeader>
+            <CardTitle id="members-title">
+              Members of {household?.name ?? householdId}
+              {role === null ? null : (
+                <small className="font-normal text-muted-foreground"> · you are {role}</small>
+              )}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-5">
+            <Table aria-label="Members">
+              <TableHeader>
+                <TableRow>
+                  <TableHead scope="col">Member</TableHead>
+                  <TableHead scope="col">Role</TableHead>
+                  <TableHead scope="col">Status</TableHead>
+                  <TableHead scope="col">
+                    <span className="sr-only">Actions</span>
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {members.map((member) => (
+                  <TableRow
+                    key={member.id}
+                    data-testid={`member-${member.user_id === "" ? (member.email ?? "") : member.user_id}`}
+                  >
+                    <TableCell className="font-medium">{member.email ?? member.user_id}</TableCell>
+                    <TableCell>
+                      {role === "owner" && member.user_id !== "" && member.status === "active" ? (
+                        <div className="max-w-36">
+                          <NativeSelect
+                            size="sm"
+                            aria-label={`Role of ${member.email ?? member.user_id}`}
+                            value={member.role}
+                            disabled={busy}
+                            onChange={(event) =>
+                              void run(() =>
+                                app.changeMemberRole(
+                                  householdId,
+                                  member.user_id,
+                                  event.target.value as HouseholdRole,
+                                ),
+                              )
+                            }
+                          >
+                            {HOUSEHOLD_ROLES.map((candidate) => (
+                              <option key={candidate} value={candidate}>
+                                {candidate}
+                              </option>
+                            ))}
+                          </NativeSelect>
+                        </div>
+                      ) : (
+                        member.role
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={member.status === "active" ? "positive" : "warning"}>
+                        {member.status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {role === "owner" &&
+                      member.user_id !== "" &&
+                      member.user_id !== household?.owner_id ? (
+                        <Button
+                          variant="link"
+                          size="sm"
+                          className="h-auto p-0 text-destructive"
+                          disabled={busy}
+                          onClick={() =>
+                            void run(() => app.removeMember(householdId, member.user_id))
+                          }
+                        >
+                          Remove
+                        </Button>
+                      ) : null}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+            {role === "owner" ? (
+              <InviteForm
+                busy={busy || !app.householdsAvailable}
+                onInvite={(email, invitedRole) =>
+                  run(() => app.inviteMember(householdId, email, invitedRole))
+                }
+              />
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Only the household's owner can invite or remove members.
+              </p>
+            )}
+          </CardContent>
+        </Card>
       )}
 
       <CreateHouseholdForm
@@ -210,20 +263,24 @@ function InviteForm({
     setEmail("");
   };
   return (
-    <form className="inline" onSubmit={(event) => void submit(event)} aria-label="Invite a member">
-      <label>
-        Email
-        <input
+    <form
+      className="flex flex-wrap items-end gap-3 border-t pt-5"
+      onSubmit={(event) => void submit(event)}
+      aria-label="Invite a member"
+    >
+      <Field label="Email" htmlFor="invite-email" className="min-w-64 flex-1">
+        <Input
+          id="invite-email"
           name="invite-email"
           type="email"
           required
           value={email}
           onChange={(event) => setEmail(event.target.value)}
         />
-      </label>
-      <label>
-        Role
-        <select
+      </Field>
+      <Field label="Role" htmlFor="invite-role" className="w-36">
+        <NativeSelect
+          id="invite-role"
           name="invite-role"
           value={role}
           onChange={(event) => setRole(event.target.value as HouseholdRole)}
@@ -233,11 +290,12 @@ function InviteForm({
               {candidate}
             </option>
           ))}
-        </select>
-      </label>
-      <button type="submit" disabled={busy}>
+        </NativeSelect>
+      </Field>
+      <Button type="submit" disabled={busy}>
+        <UserPlus />
         Send invitation
-      </button>
+      </Button>
     </form>
   );
 }
@@ -257,32 +315,42 @@ function CreateHouseholdForm({
     setName("");
   };
   return (
-    <section aria-labelledby="new-household-title" className="settings-panel">
-      <h2 id="new-household-title">New household</h2>
-      <form className="inline" onSubmit={(event) => void submit(event)} aria-label="New household">
-        <label>
-          Name
-          <input
-            name="household-name"
-            required
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-          />
-        </label>
-        <label>
-          Currency
-          <input
-            name="household-currency"
-            required
-            maxLength={3}
-            value={currency}
-            onChange={(event) => setCurrency(event.target.value.toUpperCase())}
-          />
-        </label>
-        <button type="submit" disabled={busy}>
-          Create household
-        </button>
-      </form>
-    </section>
+    <Card aria-labelledby="new-household-title">
+      <CardHeader>
+        <CardTitle id="new-household-title">New household</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <form
+          className="flex flex-wrap items-end gap-3"
+          onSubmit={(event) => void submit(event)}
+          aria-label="New household"
+        >
+          <Field label="Name" htmlFor="new-household-name" className="min-w-64 flex-1">
+            <Input
+              id="new-household-name"
+              name="household-name"
+              required
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+            />
+          </Field>
+          <Field label="Currency" htmlFor="new-household-currency" className="w-28">
+            <Input
+              id="new-household-currency"
+              name="household-currency"
+              required
+              maxLength={3}
+              className="uppercase"
+              value={currency}
+              onChange={(event) => setCurrency(event.target.value.toUpperCase())}
+            />
+          </Field>
+          <Button type="submit" variant="secondary" disabled={busy}>
+            <House />
+            Create household
+          </Button>
+        </form>
+      </CardContent>
+    </Card>
   );
 }

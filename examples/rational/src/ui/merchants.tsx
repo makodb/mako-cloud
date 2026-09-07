@@ -1,3 +1,25 @@
+import {
+  Alert,
+  AlertDescription,
+  Avatar,
+  AvatarFallback,
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  Input,
+  Label,
+  NativeSelect,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  cn,
+  initials,
+} from "@mako-cloud/ui";
+import { CircleAlert, CircleCheck, Search } from "lucide-react";
 import { type FormEvent, type KeyboardEvent, useMemo, useState } from "react";
 
 import type { RationalApp } from "../data/rational.js";
@@ -13,7 +35,6 @@ import { type MerchantRow, merchantResolver, selectMerchantRows } from "../selec
 import { formatMinorUnits } from "../selectors/money.js";
 import { normalizeDescription } from "../selectors/transactions.js";
 import { useQuery } from "./hooks.js";
-import "./styles/taxonomy.css";
 
 /**
  * Merchants: the names a household gives to the statement lines that mean
@@ -45,6 +66,9 @@ function slug(name: string): string {
 function plural(count: number, noun: string): string {
   return `${count} ${count === 1 ? noun : `${noun}s`}`;
 }
+
+/** A row's small actions share one compact look. */
+const ROW_ACTION = "h-7 px-2 text-xs";
 
 export function MerchantsScreen({
   app,
@@ -181,142 +205,209 @@ export function MerchantsScreen({
     merchants.filter((merchant) => merchant.id !== row.id);
 
   return (
-    <section aria-labelledby="merchants-title" data-testid="merchants-screen">
-      <div className="heading">
-        <h1 id="merchants-title">Merchants</h1>
-        <span className="muted">
+    <section
+      aria-labelledby="merchants-title"
+      data-testid="merchants-screen"
+      className="grid gap-6"
+    >
+      <div className="grid gap-1">
+        <h1 id="merchants-title" className="text-2xl">
+          Merchants
+        </h1>
+        <p className="text-sm text-muted-foreground">
           {plural(rows.length, "merchant")} · {plural(transactions.length, "transaction")}
-        </span>
+        </p>
       </div>
-      <div className="filters">
-        <label className="merchants-search">
-          Search
-          <input
+      <div className="flex flex-wrap items-center gap-3">
+        <Label htmlFor="merchant-search">Search</Label>
+        <span className="relative w-72">
+          <Search
+            aria-hidden="true"
+            className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
+          />
+          <Input
+            id="merchant-search"
             type="search"
+            className="pl-8"
             aria-label="Search merchants"
             placeholder="Find a merchant"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
           />
-        </label>
-        <span className="summary" data-testid="merchant-summary">
+        </span>
+        <span className="text-sm text-muted-foreground" data-testid="merchant-summary">
           {shown.length === rows.length ? "" : `${shown.length} of ${rows.length} shown`}
         </span>
       </div>
       {error === null ? null : (
-        <p className="notice error" role="alert">
-          {error}
-        </p>
+        <Alert variant="destructive" role="alert">
+          <CircleAlert />
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
       )}
       {status === null ? null : (
-        <p className="taxonomy-status" role="status" data-testid="merchant-status">
-          {status}
-        </p>
+        <Alert variant="positive" role="status" data-testid="merchant-status">
+          <CircleCheck />
+          <AlertDescription>{status}</AlertDescription>
+        </Alert>
       )}
-      <table className="list" aria-label="Merchants">
-        <thead>
-          <tr>
-            <th scope="col">Merchant</th>
-            <th scope="col">Transactions</th>
-            <th scope="col" className="amount">
-              Spending
-            </th>
-            <th scope="col">Last</th>
-            <th scope="col">
-              <span className="visually-hidden">Actions</span>
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {shown.length === 0 ? (
-            <tr>
-              <td colSpan={5} className="empty">
-                {rows.length === 0 ? "No merchants yet." : "No merchant matches."}
-              </td>
-            </tr>
-          ) : null}
-          {shown.map((row) => {
-            const key = keyOf(row);
-            const targets = mergeTargets(row);
-            return (
-              <tr
-                key={key}
-                data-testid={`merchant-${row.id ?? slug(row.name)}`}
-                data-name={row.name}
-                className={row.id === null ? "muted" : undefined}
-              >
-                <th scope="row">
-                  {renaming?.key === key ? (
-                    <input
-                      aria-label={`Rename ${row.name}`}
-                      value={renaming.name}
-                      onChange={(event) => setRenaming({ key, name: event.target.value })}
-                      onKeyDown={renameKeys(row)}
-                    />
-                  ) : (
-                    <span data-testid="name">{row.name}</span>
-                  )}
-                  {row.id === null ? <span className="chip">from statement text</span> : null}
-                  {merging?.key === key ? (
-                    <form
-                      className="taxonomy-inline merge-form"
-                      aria-label={`Merge ${row.name}`}
-                      onSubmit={(event) => void merge(event, row)}
-                    >
-                      <select
-                        aria-label={`Merge ${row.name} into`}
-                        value={merging.winnerId}
-                        onChange={(event) => setMerging({ key, winnerId: event.target.value })}
-                      >
-                        <option value="">Choose a merchant</option>
-                        {targets.map((merchant) => (
-                          <option key={merchant.id} value={merchant.id}>
-                            {merchant.name}
-                          </option>
-                        ))}
-                      </select>
-                      <button type="submit" disabled={merging.winnerId === ""}>
-                        Merge
-                      </button>
-                      <button type="button" className="secondary" onClick={() => setMerging(null)}>
-                        Cancel
-                      </button>
-                    </form>
-                  ) : null}
-                </th>
-                <td data-testid="count">{row.count}</td>
-                <td className="amount" data-testid="total">
-                  {formatMinorUnits(row.total, currency)}
-                </td>
-                <td>{row.lastDate === "" ? <span className="muted">—</span> : row.lastDate}</td>
-                <td className="actions">
-                  {renaming?.key === key ? (
-                    <button type="button" className="link" onClick={() => void saveName(row)}>
-                      Save
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      className="link"
-                      onClick={() => setRenaming({ key, name: row.name })}
-                    >
-                      {row.id === null ? "Give it a name" : "Rename"}
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    className="link"
-                    disabled={targets.length === 0}
-                    onClick={() => setMerging(merging?.key === key ? null : { key, winnerId: "" })}
+      <Card className="py-2">
+        <CardContent className="px-2">
+          <Table aria-label="Merchants">
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead scope="col">Merchant</TableHead>
+                <TableHead scope="col" className="text-right">
+                  Transactions
+                </TableHead>
+                <TableHead scope="col" className="text-right">
+                  Spending
+                </TableHead>
+                <TableHead scope="col">Last</TableHead>
+                <TableHead scope="col">
+                  <span className="sr-only">Actions</span>
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {shown.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={5} className="py-8 text-center text-muted-foreground">
+                    {rows.length === 0 ? "No merchants yet." : "No merchant matches."}
+                  </TableCell>
+                </TableRow>
+              ) : null}
+              {shown.map((row) => {
+                const key = keyOf(row);
+                const targets = mergeTargets(row);
+                const unnamed = row.id === null;
+                return (
+                  <TableRow
+                    key={key}
+                    data-testid={`merchant-${row.id ?? slug(row.name)}`}
+                    data-name={row.name}
+                    className={unnamed ? "text-muted-foreground" : undefined}
                   >
-                    Merge into…
-                  </button>
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+                    <TableHead
+                      scope="row"
+                      className={cn(
+                        "h-auto py-2 font-medium whitespace-normal",
+                        unnamed ? "text-muted-foreground" : "text-foreground",
+                      )}
+                    >
+                      <div className="flex items-start gap-3">
+                        <Avatar className="mt-0.5">
+                          <AvatarFallback
+                            className={unnamed ? "bg-muted text-muted-foreground" : undefined}
+                          >
+                            {initials(row.name)}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="grid min-w-0 gap-1.5">
+                          <div className="flex flex-wrap items-center gap-2">
+                            {renaming?.key === key ? (
+                              <Input
+                                aria-label={`Rename ${row.name}`}
+                                className="h-8 w-56"
+                                value={renaming.name}
+                                onChange={(event) => setRenaming({ key, name: event.target.value })}
+                                onKeyDown={renameKeys(row)}
+                              />
+                            ) : (
+                              <span data-testid="name" className="py-1.5">
+                                {row.name}
+                              </span>
+                            )}
+                            {unnamed ? <Badge variant="outline">from statement text</Badge> : null}
+                          </div>
+                          {merging?.key === key ? (
+                            <form
+                              className="flex flex-wrap items-center gap-2"
+                              aria-label={`Merge ${row.name}`}
+                              onSubmit={(event) => void merge(event, row)}
+                            >
+                              <span className="w-56">
+                                <NativeSelect
+                                  size="sm"
+                                  aria-label={`Merge ${row.name} into`}
+                                  value={merging.winnerId}
+                                  onChange={(event) =>
+                                    setMerging({ key, winnerId: event.target.value })
+                                  }
+                                >
+                                  <option value="">Choose a merchant</option>
+                                  {targets.map((merchant) => (
+                                    <option key={merchant.id} value={merchant.id}>
+                                      {merchant.name}
+                                    </option>
+                                  ))}
+                                </NativeSelect>
+                              </span>
+                              <Button type="submit" size="sm" disabled={merging.winnerId === ""}>
+                                Merge
+                              </Button>
+                              <Button variant="outline" size="sm" onClick={() => setMerging(null)}>
+                                Cancel
+                              </Button>
+                            </form>
+                          ) : null}
+                        </div>
+                      </div>
+                    </TableHead>
+                    <TableCell className="money" data-testid="count">
+                      {row.count}
+                    </TableCell>
+                    <TableCell className="money" data-testid="total">
+                      {formatMinorUnits(row.total, currency)}
+                    </TableCell>
+                    <TableCell className="tabular-nums">
+                      {row.lastDate === "" ? (
+                        <span className="text-muted-foreground">—</span>
+                      ) : (
+                        row.lastDate
+                      )}
+                    </TableCell>
+                    <TableCell className="whitespace-normal">
+                      <div className="flex flex-wrap justify-end gap-1">
+                        {renaming?.key === key ? (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className={ROW_ACTION}
+                            onClick={() => void saveName(row)}
+                          >
+                            Save
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className={ROW_ACTION}
+                            onClick={() => setRenaming({ key, name: row.name })}
+                          >
+                            {unnamed ? "Give it a name" : "Rename"}
+                          </Button>
+                        )}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className={ROW_ACTION}
+                          disabled={targets.length === 0}
+                          onClick={() =>
+                            setMerging(merging?.key === key ? null : { key, winnerId: "" })
+                          }
+                        >
+                          Merge into…
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
     </section>
   );
 }

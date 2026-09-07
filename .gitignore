@@ -14,3 +14,6 @@
 **/test-results/
 **/.live-tenant.json
 **/playwright-report/
+# Playwright artefacts, including the per-group output directories used when suites run side by side
+test-results*/
+playwright-report*/

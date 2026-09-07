@@ -1,3 +1,15 @@
+import {
+  Alert,
+  AlertDescription,
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  EmptyState,
+  Field,
+  Input,
+} from "@mako-cloud/ui";
+import { CircleAlert, Plus, Tag } from "lucide-react";
 import { type FormEvent, useState } from "react";
 
 import type { RationalApp } from "../data/rational.js";
@@ -6,7 +18,6 @@ import type { HouseholdCollectionId, TaxonomyEntry } from "../model/types.js";
 import { selectTagUsage } from "../selectors/tags.js";
 import { useQuery } from "./hooks.js";
 import { transactionsHash } from "./router.js";
-import "./styles/settings-pages.css";
 
 /**
  * Tags: the household's own words for what a transaction is besides its
@@ -53,40 +64,70 @@ export function TagsScreen({
   };
 
   return (
-    <section aria-labelledby="tags-title" data-testid="tags-screen">
-      <div className="heading">
-        <h1 id="tags-title">Tags</h1>
-      </div>
-      <form className="inline" onSubmit={(event) => void add(event)} aria-label="New tag">
-        <label>
-          Name
-          <input
-            name="name"
-            required
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-          />
-        </label>
-        <button type="submit">Add tag</button>
-      </form>
-      {error === null ? null : (
-        <p className="error" role="alert">
-          {error}
+    <section aria-labelledby="tags-title" data-testid="tags-screen" className="grid gap-6">
+      <div className="grid gap-1">
+        <h1 id="tags-title" className="text-2xl">
+          Tags
+        </h1>
+        <p className="text-sm text-muted-foreground">
+          Your own words for what a transaction is, beside its category; each count leads to the
+          transactions that carry it.
         </p>
+      </div>
+      <Card>
+        <CardContent>
+          <form
+            className="flex flex-wrap items-end gap-3"
+            onSubmit={(event) => void add(event)}
+            aria-label="New tag"
+          >
+            <Field label="Name" htmlFor="tag-name" className="w-72">
+              <Input
+                id="tag-name"
+                name="name"
+                required
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+              />
+            </Field>
+            <Button type="submit">
+              <Plus />
+              Add tag
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+      {error === null ? null : (
+        <Alert variant="destructive">
+          <CircleAlert />
+          <AlertDescription className="block">{error}</AlertDescription>
+        </Alert>
       )}
       {tags.length === 0 ? (
-        <p className="muted" data-testid="tags-empty">
-          No tags yet. A tag is a word of your own on a transaction, beside its category.
-        </p>
+        <div data-testid="tags-empty">
+          <EmptyState
+            icon={<Tag />}
+            title="No tags yet."
+            description="A tag is a word of your own on a transaction, beside its category."
+          />
+        </div>
       ) : (
-        <ul className="chips" aria-label="Tags">
+        <ul
+          className="m-0 list-none divide-y rounded-xl border bg-card p-0 text-sm shadow-xs"
+          aria-label="Tags"
+        >
           {tags.map((tag) => {
             const count = usage.get(tag.id) ?? 0;
             return (
-              <li key={tag.id} data-testid={`tag-${tag.id}`}>
+              <li
+                key={tag.id}
+                data-testid={`tag-${tag.id}`}
+                className="flex flex-wrap items-center gap-3 px-4 py-2.5"
+              >
                 {renaming?.id === tag.id ? (
-                  <input
+                  <Input
                     aria-label={`Rename ${tag.name}`}
+                    className="h-8 w-56"
                     value={renaming.name}
                     onChange={(event) => setRenaming({ id: tag.id, name: event.target.value })}
                     onKeyDown={(event) => {
@@ -95,36 +136,42 @@ export function TagsScreen({
                     }}
                   />
                 ) : (
-                  <span className="chip">{tag.name}</span>
+                  <Badge variant="secondary" className="text-sm">
+                    <Tag aria-hidden="true" />
+                    {tag.name}
+                  </Badge>
                 )}
                 <a
-                  className="tag-count"
+                  className="text-muted-foreground tabular-nums"
                   data-testid="tag-count"
                   href={transactionsHash({ tag: tag.id })}
                   aria-label={`${count} ${count === 1 ? "transaction" : "transactions"} tagged ${tag.name}`}
                 >
                   {count} {count === 1 ? "transaction" : "transactions"}
                 </a>
-                {renaming?.id === tag.id ? (
-                  <button type="button" className="link" onClick={() => void rename(tag)}>
-                    Save
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    className="link"
-                    onClick={() => setRenaming({ id: tag.id, name: tag.name })}
+                <span className="ml-auto flex items-center gap-1">
+                  {renaming?.id === tag.id ? (
+                    <Button variant="ghost" size="sm" onClick={() => void rename(tag)}>
+                      Save
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setRenaming({ id: tag.id, name: tag.name })}
+                    >
+                      Rename
+                    </Button>
+                  )}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-destructive hover:text-destructive"
+                    onClick={() => void app.writes?.deleteTag(tag.id)}
                   >
-                    Rename
-                  </button>
-                )}
-                <button
-                  type="button"
-                  className="link"
-                  onClick={() => void app.writes?.deleteTag(tag.id)}
-                >
-                  Delete
-                </button>
+                    Delete
+                  </Button>
+                </span>
               </li>
             );
           })}

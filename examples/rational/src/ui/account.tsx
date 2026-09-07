@@ -1,4 +1,25 @@
-import { type FormEvent, useMemo, useState } from "react";
+import {
+  Alert,
+  AlertDescription,
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  Field,
+  Input,
+  LineChart,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  cn,
+} from "@mako-cloud/ui";
+import { ChevronLeft } from "lucide-react";
+import { type FormEvent, useId, useMemo, useState } from "react";
 
 import type { RationalApp } from "../data/rational.js";
 import type { ScopeSession } from "../data/scope.js";
@@ -24,19 +45,25 @@ import { amountToText, formatMinorUnits, parseAmount } from "../selectors/money.
 import { sortTransactions } from "../selectors/transactions.js";
 import {
   AccountForm,
+  EditorDialog,
   HistoryRangePicker,
+  Stat,
+  compactMoney,
   memberLabel,
+  shortDate,
   todayIso,
   useHouseholdMembers,
 } from "./account-form.js";
-import { LineChart } from "./charts/index.js";
 import { HoldingForm, HoldingsTable } from "./holdings.js";
 import { useBehavior, useQuery } from "./hooks.js";
 import { routeHash, transactionsHash } from "./router.js";
-import "./styles/accounts.css";
 
 /** How many of an account's transactions the page lists before pointing at the full list. */
 const TRANSACTION_LIMIT = 100;
+
+/** The table's cells sit flush with the card that holds it. */
+const TABLE_IN_CARD =
+  "[&_td:first-child]:pl-5 [&_td:last-child]:pr-5 [&_th:first-child]:pl-5 [&_th:last-child]:pr-5";
 
 /**
  * One account: what it is, what it holds, how its balance has moved night by
@@ -104,19 +131,17 @@ export function AccountScreen({
 
   if (account === undefined) {
     return (
-      <section aria-labelledby="account-title" data-testid="account-screen">
-        <nav className="breadcrumb" aria-label="Breadcrumb">
-          <a href={routeHash({ name: "accounts" })}>Accounts</a>
-        </nav>
-        <div className="heading">
-          <h1 id="account-title">Account</h1>
-        </div>
+      <section aria-labelledby="account-title" data-testid="account-screen" className="grid gap-4">
+        <Breadcrumb />
+        <h1 id="account-title" className="m-0 text-2xl font-semibold tracking-tight">
+          Account
+        </h1>
         {accounts.length === 0 ? (
-          <p role="status" className="muted">
+          <p role="status" className="m-0 text-sm text-muted-foreground">
             Opening the account…
           </p>
         ) : (
-          <p className="muted" data-testid="account-missing">
+          <p className="m-0 text-sm text-muted-foreground" data-testid="account-missing">
             There is no account with this id on this device. It may have been deleted, or belong to
             another space.
           </p>
@@ -149,106 +174,110 @@ export function AccountScreen({
   };
 
   return (
-    <section aria-labelledby="account-title" data-testid="account-screen">
-      <nav className="breadcrumb" aria-label="Breadcrumb">
-        <a href={routeHash({ name: "accounts" })}>Accounts</a>
-      </nav>
-      <div className="heading">
-        <div>
-          <h1 id="account-title">{account.name}</h1>
-          <p className="muted account-meta" data-testid="account-meta">
-            <span data-testid="type">{ACCOUNT_TYPE_LABELS[account.type]}</span>
-            {account.institution === undefined ? null : <span>{account.institution}</span>}
-            <span>{account.currency}</span>
-            {account.owner_id === undefined ? null : (
-              <span data-testid="owner">
-                {owner === null ? account.owner_id : memberLabel(owner)}&apos;s
-              </span>
-            )}
-            {hidden ? <span className="chip">hidden from net worth</span> : null}
-            {closed ? <span className="chip">closed</span> : null}
-          </p>
-        </div>
-        {canEdit ? (
-          <div className="account-actions">
-            <button type="button" className="secondary" onClick={() => setPanel("edit")}>
-              Edit
-            </button>
-            <button
-              type="button"
-              className="secondary"
-              onClick={() => void act(() => app.writes?.setHideFromNetWorth(account.id, !hidden))}
+    <section aria-labelledby="account-title" data-testid="account-screen" className="grid gap-6">
+      <div className="grid gap-3">
+        <Breadcrumb />
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="grid gap-1">
+            <h1 id="account-title" className="m-0 text-2xl font-semibold tracking-tight">
+              {account.name}
+            </h1>
+            <p
+              className="m-0 flex flex-wrap items-center text-sm text-muted-foreground [&>*+*]:before:mx-2 [&>*+*]:before:content-['·']"
+              data-testid="account-meta"
             >
-              {hidden ? "Unhide from net worth" : "Hide from net worth"}
-            </button>
-            {tracked ? (
-              <button type="button" onClick={() => setPanel("value")}>
-                Update value
-              </button>
-            ) : null}
-            {holdsPositions ? (
-              <button
-                type="button"
-                onClick={() => {
-                  setEditingHolding(null);
-                  setPanel("holding");
-                }}
-              >
-                Add holding
-              </button>
-            ) : null}
-            <button
-              type="button"
-              className="secondary"
-              onClick={() =>
-                void act(() =>
-                  closed
-                    ? app.writes?.reopenAccount(account.id)
-                    : app.writes?.closeAccount(account.id),
-                )
-              }
-            >
-              {closed ? "Reopen account" : "Close account"}
-            </button>
+              <span data-testid="type">{ACCOUNT_TYPE_LABELS[account.type]}</span>
+              {account.institution === undefined ? null : <span>{account.institution}</span>}
+              <span>{account.currency}</span>
+              {account.owner_id === undefined ? null : (
+                <span data-testid="owner">
+                  {owner === null ? account.owner_id : memberLabel(owner)}&apos;s
+                </span>
+              )}
+              {hidden ? (
+                <span>
+                  <Badge variant="secondary">hidden from net worth</Badge>
+                </span>
+              ) : null}
+              {closed ? (
+                <span>
+                  <Badge variant="outline">closed</Badge>
+                </span>
+              ) : null}
+            </p>
           </div>
-        ) : null}
+          {canEdit ? (
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <Button variant="outline" onClick={() => setPanel("edit")}>
+                Edit
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => void act(() => app.writes?.setHideFromNetWorth(account.id, !hidden))}
+              >
+                {hidden ? "Unhide from net worth" : "Hide from net worth"}
+              </Button>
+              {tracked ? <Button onClick={() => setPanel("value")}>Update value</Button> : null}
+              {holdsPositions ? (
+                <Button
+                  onClick={() => {
+                    setEditingHolding(null);
+                    setPanel("holding");
+                  }}
+                >
+                  Add holding
+                </Button>
+              ) : null}
+              <Button
+                variant="outline"
+                onClick={() =>
+                  void act(() =>
+                    closed
+                      ? app.writes?.reopenAccount(account.id)
+                      : app.writes?.closeAccount(account.id),
+                  )
+                }
+              >
+                {closed ? "Reopen account" : "Close account"}
+              </Button>
+            </div>
+          ) : null}
+        </div>
       </div>
       {problem === null ? null : (
-        <p className="notice error" role="alert">
-          {problem}
-        </p>
+        <Alert variant="destructive" role="alert">
+          <AlertDescription>{problem}</AlertDescription>
+        </Alert>
       )}
 
-      <div className="totals">
-        <div className="total" data-testid="account-balance">
-          <span>Balance</span>
-          <strong data-testid="balance">{formatMinorUnits(balance, account.currency)}</strong>
-          <small>
-            {tracked
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <Stat
+          data-testid="account-balance"
+          label="Balance"
+          value={formatMinorUnits(balance, account.currency)}
+          valueTestId="balance"
+          note={
+            tracked
               ? "Tracked value, updated in place"
               : `Opened ${account.opening_date} at ${formatMinorUnits(
                   account.opening_balance,
                   account.currency,
-                )}`}
-          </small>
-        </div>
+                )}`
+          }
+        />
         {holdsPositions ? (
           <>
-            <div className="total">
-              <span>Cash</span>
-              <strong data-testid="cash">
-                {formatMinorUnits(balance - positionsValue, account.currency)}
-              </strong>
-            </div>
-            <div className="total">
-              <span>Holdings</span>
-              <strong data-testid="holdings-value">
-                {formatMinorUnits(positionsValue, account.currency)}
-              </strong>
-              <small>
-                {holdingRows.length} {holdingRows.length === 1 ? "position" : "positions"}
-              </small>
-            </div>
+            <Stat
+              label="Cash"
+              value={formatMinorUnits(balance - positionsValue, account.currency)}
+              valueTestId="cash"
+            />
+            <Stat
+              label="Holdings"
+              value={formatMinorUnits(positionsValue, account.currency)}
+              valueTestId="holdings-value"
+              note={`${holdingRows.length} ${holdingRows.length === 1 ? "position" : "positions"}`}
+            />
           </>
         ) : null}
       </div>
@@ -280,111 +309,163 @@ export function AccountScreen({
         />
       ) : null}
 
-      <div className="section-heading">
-        <h2>Balance history</h2>
-        <HistoryRangePicker value={rangeKey} onChange={setRangeKey} />
-      </div>
-      {history.length === 0 ? (
-        <p className="muted" data-testid="balance-history-empty">
-          No snapshots for this account in this range. The nightly job records one a night, so the
-          chart fills in from tomorrow.
-        </p>
-      ) : (
-        <div className="history" data-testid="balance-history">
-          <LineChart
-            points={history.map((point) => ({ x: point.date, y: point.balance }))}
-            currency={account.currency}
-            ariaLabel={`Balance of ${account.name} over time`}
-            label="Balance"
-            showArea
-            height={180}
-          />
-          <p className="muted" data-testid="balance-history-change">
-            {balanceCaption(history, account.currency)}
-          </p>
-        </div>
-      )}
+      <Card>
+        <CardHeader className="flex flex-wrap items-center justify-between gap-3">
+          <CardTitle>Balance history</CardTitle>
+          <HistoryRangePicker value={rangeKey} onChange={setRangeKey} />
+        </CardHeader>
+        <CardContent>
+          {history.length === 0 ? (
+            <p className="m-0 text-sm text-muted-foreground" data-testid="balance-history-empty">
+              No snapshots for this account in this range. The nightly job records one a night, so
+              the chart fills in from tomorrow.
+            </p>
+          ) : (
+            <div className="grid gap-2" data-testid="balance-history">
+              <LineChart
+                data={history.map((point) => ({ date: point.date, balance: point.balance }))}
+                x="date"
+                series={[{ key: "balance", label: "Balance" }]}
+                title={`Balance of ${account.name} over time`}
+                height={200}
+                formatValue={(value) => compactMoney(value, account.currency)}
+                formatX={shortDate}
+              />
+              <p
+                className="m-0 text-sm text-muted-foreground tabular-nums"
+                data-testid="balance-history-change"
+              >
+                {balanceCaption(history, account.currency)}
+              </p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {holdsPositions ? (
-        <>
-          <h2>Holdings</h2>
-          <HoldingsTable
-            app={app}
-            rows={holdingRows}
-            showAccount={false}
-            canEdit={canEdit}
-            onEdit={(row) => {
-              setEditingHolding(row);
-              setPanel("holding");
-            }}
-            emptyMessage="No holdings yet. Add one and its value joins the balance."
-          />
-        </>
+        <Card className="gap-4 pb-0">
+          <CardHeader>
+            <CardTitle>Holdings</CardTitle>
+          </CardHeader>
+          <CardContent className="px-0">
+            <HoldingsTable
+              app={app}
+              rows={holdingRows}
+              showAccount={false}
+              canEdit={canEdit}
+              onEdit={(row) => {
+                setEditingHolding(row);
+                setPanel("holding");
+              }}
+              emptyMessage="No holdings yet. Add one and its value joins the balance."
+            />
+          </CardContent>
+        </Card>
       ) : null}
 
       {institutionConnections.length === 0 ? null : (
-        <>
-          <h2>Connection</h2>
-          {institutionConnections.map((connection) => (
-            <p key={connection.id} className="hint" data-testid="connection-status">
-              Connected to {connection.institution ?? "an institution"} —{" "}
-              <span data-testid="status">{connection.status ?? "connected"}</span>; last sync{" "}
-              {connection.last_sync_at === undefined
-                ? "never"
-                : new Date(connection.last_sync_at).toLocaleString()}
-              {connection.last_sync_outcome === undefined
-                ? ""
-                : ` (${connection.last_sync_outcome})`}
-              . <a href={routeHash({ name: "settings", page: "connections" })}>Connections</a>
-            </p>
-          ))}
-        </>
+        <Card className="gap-3">
+          <CardHeader>
+            <CardTitle>Connection</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-2">
+            {institutionConnections.map((connection) => (
+              <p
+                key={connection.id}
+                className="m-0 text-sm text-muted-foreground"
+                data-testid="connection-status"
+              >
+                Connected to {connection.institution ?? "an institution"} —{" "}
+                <span data-testid="status">{connection.status ?? "connected"}</span>; last sync{" "}
+                {connection.last_sync_at === undefined
+                  ? "never"
+                  : new Date(connection.last_sync_at).toLocaleString()}
+                {connection.last_sync_outcome === undefined
+                  ? ""
+                  : ` (${connection.last_sync_outcome})`}
+                .{" "}
+                <a
+                  className="text-primary"
+                  href={routeHash({ name: "settings", page: "connections" })}
+                >
+                  Connections
+                </a>
+              </p>
+            ))}
+          </CardContent>
+        </Card>
       )}
 
-      <div className="section-heading">
-        <h2>{tracked ? "Balance updates" : "Transactions"}</h2>
-        <a href={transactionsHash({ account: account.id })}>All transactions</a>
-      </div>
-      <table className="list" aria-label={tracked ? "Balance updates" : "Transactions"}>
-        <thead>
-          <tr>
-            <th scope="col">Date</th>
-            <th scope="col">Description</th>
-            <th scope="col">Category</th>
-            <th scope="col" className="amount">
-              Amount
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {listed.length === 0 ? (
-            <tr>
-              <td colSpan={4} className="empty">
-                {tracked ? "No balance updates yet." : "No transactions yet."}
-              </td>
-            </tr>
+      <Card className="gap-4 pb-0">
+        <CardHeader className="flex flex-wrap items-center justify-between gap-3">
+          <CardTitle>{tracked ? "Balance updates" : "Transactions"}</CardTitle>
+          <a className="text-sm text-primary" href={transactionsHash({ account: account.id })}>
+            All transactions
+          </a>
+        </CardHeader>
+        <CardContent className="px-0">
+          <Table
+            aria-label={tracked ? "Balance updates" : "Transactions"}
+            className={TABLE_IN_CARD}
+          >
+            <TableHeader>
+              <TableRow>
+                <TableHead scope="col">Date</TableHead>
+                <TableHead scope="col">Description</TableHead>
+                <TableHead scope="col">Category</TableHead>
+                <TableHead scope="col" className="money text-right">
+                  Amount
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {listed.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={4} className="py-8 text-center text-muted-foreground">
+                    {tracked ? "No balance updates yet." : "No transactions yet."}
+                  </TableCell>
+                </TableRow>
+              ) : null}
+              {listed.map((transaction) => (
+                <TransactionRow
+                  key={transaction.id}
+                  transaction={transaction}
+                  merchant={
+                    transaction.adjustment === true
+                      ? BALANCE_UPDATE_DESCRIPTION
+                      : resolveMerchant(transaction).name
+                  }
+                  categoryName={categoryNames}
+                />
+              ))}
+            </TableBody>
+          </Table>
+          {sorted.length > listed.length ? (
+            <p className="m-0 px-5 py-3 text-sm text-muted-foreground">
+              Showing the latest {listed.length} of {sorted.length}.{" "}
+              <a className="text-primary" href={transactionsHash({ account: account.id })}>
+                All transactions
+              </a>
+            </p>
           ) : null}
-          {listed.map((transaction) => (
-            <TransactionRow
-              key={transaction.id}
-              transaction={transaction}
-              merchant={
-                transaction.adjustment === true
-                  ? BALANCE_UPDATE_DESCRIPTION
-                  : resolveMerchant(transaction).name
-              }
-              categoryName={categoryNames}
-            />
-          ))}
-        </tbody>
-      </table>
-      {sorted.length > listed.length ? (
-        <p className="hint">
-          Showing the latest {listed.length} of {sorted.length}.{" "}
-          <a href={transactionsHash({ account: account.id })}>All transactions</a>
-        </p>
-      ) : null}
+        </CardContent>
+      </Card>
     </section>
+  );
+}
+
+/** The way back to the list this account is one of. */
+function Breadcrumb() {
+  return (
+    <nav aria-label="Breadcrumb" className="text-sm">
+      <a
+        className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground"
+        href={routeHash({ name: "accounts" })}
+      >
+        <ChevronLeft aria-hidden="true" className="size-4" />
+        Accounts
+      </a>
+    </nav>
   );
 }
 
@@ -420,37 +501,48 @@ function TransactionRow({
   const needsReview =
     transaction.reviewed !== true &&
     (transaction.external_id !== undefined || transaction.import_batch_id !== undefined);
+  const quiet = transaction.hidden === true || transaction.adjustment === true;
   return (
-    <tr
+    <TableRow
       data-testid={`transaction-${transaction.id}`}
       data-description={transaction.description}
-      className={
-        transaction.hidden === true || transaction.adjustment === true ? "muted" : undefined
-      }
+      className={quiet ? "text-muted-foreground" : undefined}
     >
-      <td>{transaction.date}</td>
-      <td>
-        <span data-testid="description">{merchant}</span>
-        {merchant === transaction.description ? null : <small> {transaction.description}</small>}
-        {transaction.notes === undefined ? null : <small> {transaction.notes}</small>}
-      </td>
-      <td>
-        {transaction.splits.length > 0
-          ? "split"
-          : transaction.category_id === undefined
-            ? ""
-            : (categoryName.get(transaction.category_id) ?? transaction.category_id)}
-        {transaction.adjustment === true ? <span className="chip"> balance update</span> : null}
-        {transaction.transfer_id === undefined ? null : <span className="chip"> transfer</span>}
-        {transaction.hidden === true && transaction.adjustment !== true ? (
-          <span className="chip"> hidden</span>
-        ) : null}
-        {needsReview ? <span className="chip"> needs review</span> : null}
-      </td>
-      <td className="amount" data-testid="amount">
+      <TableCell className="tabular-nums">{transaction.date}</TableCell>
+      <TableCell className="whitespace-normal">
+        <span data-testid="description" className={cn(!quiet && "font-medium")}>
+          {merchant}
+        </span>
+        {merchant === transaction.description ? null : (
+          <small className="text-xs text-muted-foreground"> {transaction.description}</small>
+        )}
+        {transaction.notes === undefined ? null : (
+          <small className="text-xs text-muted-foreground"> {transaction.notes}</small>
+        )}
+      </TableCell>
+      <TableCell className="whitespace-normal">
+        <span className="inline-flex flex-wrap items-center gap-1.5">
+          {transaction.splits.length > 0
+            ? "split"
+            : transaction.category_id === undefined
+              ? ""
+              : (categoryName.get(transaction.category_id) ?? transaction.category_id)}
+          {transaction.adjustment === true ? (
+            <Badge variant="secondary">balance update</Badge>
+          ) : null}
+          {transaction.transfer_id === undefined ? null : (
+            <Badge variant="secondary">transfer</Badge>
+          )}
+          {transaction.hidden === true && transaction.adjustment !== true ? (
+            <Badge variant="secondary">hidden</Badge>
+          ) : null}
+          {needsReview ? <Badge variant="warning">needs review</Badge> : null}
+        </span>
+      </TableCell>
+      <TableCell className="money" data-testid="amount">
         {formatMinorUnits(transaction.amount, transaction.currency)}
-      </td>
-    </tr>
+      </TableCell>
+    </TableRow>
   );
 }
 
@@ -470,6 +562,7 @@ function UpdateValueForm({
   current: number;
   onDone: () => void;
 }) {
+  const id = useId();
   const [value, setValue] = useState(amountToText(current, account.currency));
   const [date, setDate] = useState(todayIso());
   const [error, setError] = useState<string | null>(null);
@@ -492,50 +585,43 @@ function UpdateValueForm({
   };
 
   return (
-    <form
-      className="editor"
-      aria-label="Update value"
-      data-testid="update-value"
+    <EditorDialog
+      title="Update value"
+      description={`The difference from ${formatMinorUnits(current, account.currency)} is booked as a balance update: it moves this account and net worth, and never counts as income or spending.`}
+      formLabel="Update value"
+      formTestId="update-value"
+      submitLabel="Save value"
+      onDone={onDone}
       onSubmit={(event) => void submit(event)}
     >
-      <h2>Update value</h2>
-      <div className="grid">
-        <label>
-          New value ({account.currency})
-          <input
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label={`New value (${account.currency})`} htmlFor={`${id}-value`}>
+          <Input
+            id={`${id}-value`}
             name="value"
             inputMode="decimal"
             required
+            className="tabular-nums"
             value={value}
             onChange={(event) => setValue(event.target.value)}
           />
-        </label>
-        <label>
-          As of
-          <input
+        </Field>
+        <Field label="As of" htmlFor={`${id}-date`}>
+          <Input
+            id={`${id}-date`}
             name="date"
             type="date"
             required
             value={date}
             onChange={(event) => setDate(event.target.value)}
           />
-        </label>
+        </Field>
       </div>
-      <p className="hint">
-        The difference from {formatMinorUnits(current, account.currency)} is booked as a balance
-        update: it moves this account and net worth, and never counts as income or spending.
-      </p>
       {error === null ? null : (
-        <p className="error" role="alert">
+        <p className="m-0 text-sm text-destructive" role="alert">
           {error}
         </p>
       )}
-      <div className="actions">
-        <button type="submit">Save value</button>
-        <button type="button" className="secondary" onClick={onDone}>
-          Cancel
-        </button>
-      </div>
-    </form>
+    </EditorDialog>
   );
 }

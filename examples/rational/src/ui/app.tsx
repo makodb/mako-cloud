@@ -1,3 +1,4 @@
+import { Alert, AlertDescription } from "@mako-cloud/ui";
 import { Component, type ReactNode } from "react";
 
 import type { RationalApp } from "../data/rational.js";
@@ -32,13 +33,25 @@ const OWN_PROJECT_GUIDE = "https://github.com/shuaimu/rational#point-it-at-your-
  */
 function DemoBanner() {
   return (
-    <div className="banner demo" role="status" data-testid="demo-banner">
-      Demo data — this copy talks to no server.{" "}
-      <a href={OWN_PROJECT_GUIDE} target="_blank" rel="noreferrer">
-        Point it at a Mako Cloud project
-      </a>{" "}
-      to make it real.
-    </div>
+    <Alert
+      variant="warning"
+      role="status"
+      data-testid="demo-banner"
+      className="rounded-none border-x-0 border-t-0 py-2 text-center [&>[data-slot=alert-description]]:justify-items-center"
+    >
+      <AlertDescription className="block">
+        Demo data — this copy talks to no server.{" "}
+        <a
+          href={OWN_PROJECT_GUIDE}
+          target="_blank"
+          rel="noreferrer"
+          className="font-medium text-foreground underline"
+        >
+          Point it at a Mako Cloud project
+        </a>{" "}
+        to make it real.
+      </AlertDescription>
+    </Alert>
   );
 }
 
@@ -57,7 +70,7 @@ function Screens({ app }: { app: RationalApp }) {
 
   if (state.phase === "starting") {
     return (
-      <main className="centered">
+      <main className="flex min-h-screen items-center justify-center text-muted-foreground">
         <p role="status">Starting…</p>
       </main>
     );

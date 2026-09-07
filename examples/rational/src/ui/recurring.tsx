@@ -1,4 +1,33 @@
-import { type FormEvent, useEffect, useRef, useState } from "react";
+import {
+  Alert,
+  AlertDescription,
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  cn,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  EmptyState,
+  Field,
+  Input,
+  NativeSelect,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@mako-cloud/ui";
+import { CalendarDays, List, type LucideIcon, Pause, Pencil, Play, Repeat, X } from "lucide-react";
+import { type FormEvent, type ReactNode, useEffect, useRef, useState } from "react";
 
 import type { RationalApp } from "../data/rational.js";
 import type { ScopeSession } from "../data/scope.js";
@@ -21,10 +50,10 @@ import {
   selectDetectedRecurrences,
   storedDetection,
 } from "../selectors/recurrences.js";
-import { MonthCalendar, readoutLabel } from "./charts/index.js";
+import { MonthCalendar } from "./charts/calendar.js";
+import { readoutLabel } from "./charts/layout.js";
 import { useQuery } from "./hooks.js";
 import { type Route, routeHash } from "./router.js";
-import "./styles/recurring.css";
 
 /**
  * What repeats: the charges Rational has noticed, the bills that are coming,
@@ -52,6 +81,9 @@ const UPCOMING_WITHIN_DAYS = 45;
 const HIGHLIGHT_MS = 4_000;
 
 const MONTH_KEY = /^\d{4}-(0[1-9]|1[0-2])$/u;
+
+/** The small heading over a figure or a table column. */
+const EYEBROW = "text-xs font-semibold uppercase tracking-wider text-muted-foreground";
 
 interface Suggestion {
   readonly detection: DetectedRecurrence;
@@ -123,6 +155,10 @@ export function RecurringScreen({
     );
   const byDate = selectBillsByDate(recurrences, month);
   const monthTotals = calendarTotals(byDate);
+  const editingRecurrence =
+    editing === null
+      ? null
+      : (confirmedOrPaused.find((recurrence) => recurrence.id === editing) ?? null);
 
   // A bill whose transaction has landed is advanced here as the nightly job
   // would advance it: the engine decided the payment, this device records it
@@ -209,33 +245,59 @@ export function RecurringScreen({
     }, "the recurrence could not be saved");
 
   return (
-    <section aria-labelledby="recurring-title" data-testid="recurring-screen">
-      <div className="heading">
-        <h1 id="recurring-title">Recurring</h1>
-        <nav className="view-toggle" aria-label="View">
-          <a href={hashFor("list")} aria-current={view === "list" ? "page" : undefined}>
+    <section
+      aria-labelledby="recurring-title"
+      data-testid="recurring-screen"
+      className="grid gap-6"
+    >
+      <header className="flex flex-wrap items-start justify-between gap-4">
+        <div className="grid gap-1">
+          <h1 id="recurring-title" className="text-2xl">
+            Recurring
+          </h1>
+          <p className="m-0 text-sm text-muted-foreground">
+            The charges that repeat, the bills that are coming, and what the household has confirmed
+            — as a list, or laid over a month.
+          </p>
+        </div>
+        {/* Two views of one thing, side by side like a segmented control. The
+            address carries which one is showing, so these are links rather
+            than tabs: a link to the calendar of a month is a link to exactly
+            that. */}
+        <nav
+          aria-label="View"
+          className="inline-flex h-9 items-center rounded-lg bg-muted p-[3px] text-muted-foreground"
+        >
+          <ViewLink href={hashFor("list")} active={view === "list"} icon={List}>
             List
-          </a>
-          <a href={hashFor("calendar")} aria-current={view === "calendar" ? "page" : undefined}>
+          </ViewLink>
+          <ViewLink href={hashFor("calendar")} active={view === "calendar"} icon={CalendarDays}>
             Calendar
-          </a>
+          </ViewLink>
         </nav>
-      </div>
-      <div className="totals">
+      </header>
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {(perMonth.length === 0 ? [{ currency, total: 0 }] : perMonth).map((total) => (
-          <div key={total.currency} className="total">
-            <span>Recurring per month ({total.currency})</span>
-            <strong data-testid={`monthly-total-${total.currency}`}>
-              {formatMinorUnits(total.total, total.currency)}
-            </strong>
-            <small>every confirmed recurrence, at its monthly equivalent</small>
-          </div>
+          <Card key={total.currency} className="gap-1 py-4">
+            <CardContent className="grid gap-1 px-4">
+              <span className={EYEBROW}>Recurring per month ({total.currency})</span>
+              <strong
+                className="money justify-self-start text-2xl font-semibold"
+                data-testid={`monthly-total-${total.currency}`}
+              >
+                {formatMinorUnits(total.total, total.currency)}
+              </strong>
+              <small className="text-xs text-muted-foreground">
+                every confirmed recurrence, at its monthly equivalent
+              </small>
+            </CardContent>
+          </Card>
         ))}
       </div>
       {problem === null ? null : (
-        <p className="notice error" role="alert">
-          {problem}
-        </p>
+        <Alert variant="destructive" role="alert">
+          <AlertDescription>{problem}</AlertDescription>
+        </Alert>
       )}
 
       {view === "calendar" ? (
@@ -252,202 +314,294 @@ export function RecurringScreen({
         />
       ) : (
         <>
-          <h2>Suggested</h2>
-          {suggestions.length === 0 ? (
-            <p className="muted">Nothing looks like it repeats yet.</p>
-          ) : (
-            <table className="data-table" aria-label="Suggested recurring charges">
-              <thead>
-                <tr>
-                  <th scope="col">Description</th>
-                  <th scope="col">Account</th>
-                  <th scope="col">Every</th>
-                  <th scope="col" className="amount">
-                    Usually
-                  </th>
-                  <th scope="col">Next</th>
-                  <th scope="col">
-                    <span className="visually-hidden">Actions</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {suggestions.map((suggestion) => {
-                  const { detection, storedId } = suggestion;
-                  return (
-                    <tr
-                      key={storedId ?? `${detection.accountId}:${detection.normalizedDescription}`}
-                      data-testid={`detected-${detection.normalizedDescription.replaceAll(" ", "-")}`}
-                      data-noticed-by={storedId === null ? "this device" : "the nightly job"}
-                    >
-                      <th scope="row">
-                        {detection.description}
-                        <small className="bill-statement">
-                          {storedId === null
-                            ? `${detection.occurrences} times on this device`
-                            : "noticed by the nightly job"}
-                        </small>
-                      </th>
-                      <td>{accountName(detection.accountId)}</td>
-                      <td data-testid="interval">{detection.interval}</td>
-                      <td className="amount">
-                        {formatMinorUnits(detection.expectedAmount, detection.currency)}
-                      </td>
-                      <td data-testid="next">{detection.nextDate}</td>
-                      <td className="actions">
-                        <button
-                          type="button"
-                          className="link"
-                          onClick={() => void decide(suggestion, "confirmed")}
+          <Card>
+            <CardHeader>
+              <CardTitle>Suggested</CardTitle>
+              <CardDescription>
+                Charges that look like they repeat. Nothing is written down until you decide.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {suggestions.length === 0 ? (
+                <p className="m-0 text-sm text-muted-foreground">
+                  Nothing looks like it repeats yet.
+                </p>
+              ) : (
+                <Table aria-label="Suggested recurring charges">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead scope="col">Description</TableHead>
+                      <TableHead scope="col">Account</TableHead>
+                      <TableHead scope="col">Every</TableHead>
+                      <TableHead scope="col" className="text-right">
+                        Usually
+                      </TableHead>
+                      <TableHead scope="col">Next</TableHead>
+                      <TableHead scope="col">
+                        <span className="sr-only">Actions</span>
+                      </TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {suggestions.map((suggestion) => {
+                      const { detection, storedId } = suggestion;
+                      return (
+                        <TableRow
+                          key={
+                            storedId ?? `${detection.accountId}:${detection.normalizedDescription}`
+                          }
+                          data-testid={`detected-${detection.normalizedDescription.replaceAll(" ", "-")}`}
+                          data-noticed-by={storedId === null ? "this device" : "the nightly job"}
                         >
-                          Confirm
-                        </button>
-                        <button
-                          type="button"
-                          className="link"
-                          onClick={() => void decide(suggestion, "dismissed")}
-                        >
-                          Dismiss
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          )}
+                          <TableHead
+                            scope="row"
+                            className="h-auto py-2 font-medium whitespace-normal text-current"
+                          >
+                            {detection.description}
+                            <small className="block text-xs font-normal text-muted-foreground">
+                              {storedId === null
+                                ? `${detection.occurrences} times on this device`
+                                : "noticed by the nightly job"}
+                            </small>
+                          </TableHead>
+                          <TableCell>{accountName(detection.accountId)}</TableCell>
+                          <TableCell data-testid="interval">{detection.interval}</TableCell>
+                          <TableCell className="money">
+                            {formatMinorUnits(detection.expectedAmount, detection.currency)}
+                          </TableCell>
+                          <TableCell data-testid="next">{detection.nextDate}</TableCell>
+                          <TableCell>
+                            <div className="flex justify-end gap-1">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => void decide(suggestion, "confirmed")}
+                              >
+                                Confirm
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => void decide(suggestion, "dismissed")}
+                              >
+                                Dismiss
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
 
-          <h2>Upcoming</h2>
-          {upcoming.length === 0 ? (
-            <p className="muted">Nothing due in the next six weeks.</p>
-          ) : (
-            <ul className="bills" aria-label="Upcoming bills">
-              {upcoming.map((bill) => (
-                <BillRow key={bill.recurrence.id} bill={bill} transactions={transactions} />
-              ))}
-            </ul>
-          )}
+          <Card>
+            <CardHeader>
+              <CardTitle>Upcoming</CardTitle>
+              <CardDescription>
+                Confirmed bills due in the next six weeks, and how each one stands.
+              </CardDescription>
+            </CardHeader>
+            {upcoming.length === 0 ? (
+              <CardContent>
+                <p className="m-0 text-sm text-muted-foreground">
+                  Nothing due in the next six weeks.
+                </p>
+              </CardContent>
+            ) : (
+              <ul className="m-0 list-none divide-y border-t p-0" aria-label="Upcoming bills">
+                {upcoming.map((bill) => (
+                  <BillRow key={bill.recurrence.id} bill={bill} transactions={transactions} />
+                ))}
+              </ul>
+            )}
+          </Card>
 
-          <h2>Confirmed and paused</h2>
-          {confirmedOrPaused.length === 0 ? (
-            <p className="muted">
-              Nothing recurring yet. Confirm a suggestion above, or mark a transaction as recurring
-              from the transactions screen.
-            </p>
-          ) : (
-            <table className="data-table" aria-label="All recurring">
-              <thead>
-                <tr>
-                  <th scope="col">Name</th>
-                  <th scope="col">Account</th>
-                  <th scope="col">Every</th>
-                  <th scope="col" className="amount">
-                    Amount
-                  </th>
-                  <th scope="col">Next</th>
-                  <th scope="col">Category</th>
-                  <th scope="col">
-                    <span className="visually-hidden">Actions</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {confirmedOrPaused.map((recurrence) =>
-                  editing === recurrence.id ? (
-                    <tr key={recurrence.id} data-testid={`recurrence-${recurrence.id}`}>
-                      <td colSpan={7}>
-                        <RecurrenceEditor
-                          app={app}
-                          recurrence={recurrence}
-                          categories={categories}
-                          merchants={merchants}
-                          onDone={() => setEditing(null)}
-                          onProblem={setProblem}
-                        />
-                      </td>
-                    </tr>
-                  ) : (
-                    <tr
-                      key={recurrence.id}
-                      data-testid={`recurrence-${recurrence.id}`}
-                      data-status={recurrence.status}
-                      className={[
-                        recurrence.status === "paused" ? "muted" : "",
-                        highlighted === recurrence.id ? "highlighted" : "",
-                      ]
-                        .filter((name) => name !== "")
-                        .join(" ")}
-                    >
-                      <th scope="row">
-                        <span data-testid="name">{recurrenceName(recurrence)}</span>
-                        {recurrence.source === "manual" ? (
-                          <span className="chip manual">manual</span>
-                        ) : null}
-                        {recurrence.status === "paused" ? (
-                          <span className="chip paused">paused</span>
-                        ) : null}
-                        {recurrenceName(recurrence) === recurrence.normalized_description ? null : (
-                          <small className="bill-statement">
-                            {recurrence.normalized_description}
-                          </small>
+          <Card>
+            <CardHeader>
+              <CardTitle>Confirmed and paused</CardTitle>
+              <CardDescription>
+                Every recurrence the household keeps. A paused one is neither due nor counted.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {confirmedOrPaused.length === 0 ? (
+                <EmptyState
+                  icon={<Repeat />}
+                  title="Nothing recurring yet."
+                  description="Confirm a suggestion above, or mark a transaction as recurring from the transactions screen."
+                />
+              ) : (
+                <Table aria-label="All recurring">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead scope="col">Name</TableHead>
+                      <TableHead scope="col">Account</TableHead>
+                      <TableHead scope="col">Every</TableHead>
+                      <TableHead scope="col" className="text-right">
+                        Amount
+                      </TableHead>
+                      <TableHead scope="col">Next</TableHead>
+                      <TableHead scope="col">Category</TableHead>
+                      <TableHead scope="col">
+                        <span className="sr-only">Actions</span>
+                      </TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {confirmedOrPaused.map((recurrence) => (
+                      <TableRow
+                        key={recurrence.id}
+                        data-testid={`recurrence-${recurrence.id}`}
+                        data-status={recurrence.status}
+                        className={cn(
+                          recurrence.status === "paused" && "text-muted-foreground",
+                          // The class name is what marks a row found from the
+                          // calendar; the colour is what the eye lands on.
+                          highlighted === recurrence.id && "highlighted bg-accent/60",
                         )}
-                      </th>
-                      <td>{accountName(recurrence.account_id)}</td>
-                      <td data-testid="interval">{recurrence.interval}</td>
-                      <td className="amount" data-testid="amount">
-                        {formatMinorUnits(recurrence.expected_amount, recurrence.currency)}
-                      </td>
-                      <td data-testid="next">{recurrence.next_date}</td>
-                      <td data-testid="category">{categoryName(recurrence.category_id)}</td>
-                      <td className="actions">
-                        <button
-                          type="button"
-                          className="link"
-                          onClick={() => setEditing(recurrence.id)}
+                      >
+                        <TableHead
+                          scope="row"
+                          className="h-auto py-2 font-medium whitespace-normal text-current"
                         >
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          className="link"
-                          onClick={() =>
-                            void attempt(
-                              () =>
-                                app.writes?.pauseRecurrence(
-                                  recurrence.id,
-                                  recurrence.status !== "paused",
-                                ) ?? Promise.resolve(),
-                              "the recurrence could not be changed",
-                            )
-                          }
-                        >
-                          {recurrence.status === "paused" ? "Resume" : "Pause"}
-                        </button>
-                        <button
-                          type="button"
-                          className="link"
-                          onClick={() =>
-                            void attempt(
-                              () =>
-                                app.writes?.updateRecurrence(recurrence.id, {
-                                  status: "dismissed",
-                                }) ?? Promise.resolve(),
-                              "the recurrence could not be dismissed",
-                            )
-                          }
-                        >
-                          Dismiss
-                        </button>
-                      </td>
-                    </tr>
-                  ),
-                )}
-              </tbody>
-            </table>
-          )}
+                          <span className="inline-flex flex-wrap items-center gap-1.5">
+                            <span data-testid="name">{recurrenceName(recurrence)}</span>
+                            {recurrence.source === "manual" ? (
+                              <Badge variant="outline">manual</Badge>
+                            ) : null}
+                            {recurrence.status === "paused" ? (
+                              <Badge variant="secondary">paused</Badge>
+                            ) : null}
+                          </span>
+                          {recurrenceName(recurrence) ===
+                          recurrence.normalized_description ? null : (
+                            <small className="block text-xs font-normal text-muted-foreground">
+                              {recurrence.normalized_description}
+                            </small>
+                          )}
+                        </TableHead>
+                        <TableCell>{accountName(recurrence.account_id)}</TableCell>
+                        <TableCell data-testid="interval">{recurrence.interval}</TableCell>
+                        <TableCell className="money" data-testid="amount">
+                          {formatMinorUnits(recurrence.expected_amount, recurrence.currency)}
+                        </TableCell>
+                        <TableCell data-testid="next">{recurrence.next_date}</TableCell>
+                        <TableCell data-testid="category">
+                          {categoryName(recurrence.category_id)}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex justify-end gap-1">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setEditing(recurrence.id)}
+                            >
+                              <Pencil />
+                              Edit
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() =>
+                                void attempt(
+                                  () =>
+                                    app.writes?.pauseRecurrence(
+                                      recurrence.id,
+                                      recurrence.status !== "paused",
+                                    ) ?? Promise.resolve(),
+                                  "the recurrence could not be changed",
+                                )
+                              }
+                            >
+                              {recurrence.status === "paused" ? <Play /> : <Pause />}
+                              {recurrence.status === "paused" ? "Resume" : "Pause"}
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() =>
+                                void attempt(
+                                  () =>
+                                    app.writes?.updateRecurrence(recurrence.id, {
+                                      status: "dismissed",
+                                    }) ?? Promise.resolve(),
+                                  "the recurrence could not be dismissed",
+                                )
+                              }
+                            >
+                              <X />
+                              Dismiss
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+
+          <Dialog
+            open={editingRecurrence !== null}
+            onOpenChange={(open) => {
+              if (!open) setEditing(null);
+            }}
+          >
+            <DialogContent className="sm:max-w-xl">
+              <DialogHeader>
+                <DialogTitle>Edit recurrence</DialogTitle>
+                <DialogDescription>
+                  What it is called, how often, how much, and where it files. Its dates are the
+                  engine's to move: a payment advances them.
+                </DialogDescription>
+              </DialogHeader>
+              {editingRecurrence === null ? null : (
+                <RecurrenceEditor
+                  key={editingRecurrence.id}
+                  app={app}
+                  recurrence={editingRecurrence}
+                  categories={categories}
+                  merchants={merchants}
+                  onDone={() => setEditing(null)}
+                  onProblem={setProblem}
+                />
+              )}
+            </DialogContent>
+          </Dialog>
         </>
       )}
     </section>
+  );
+}
+
+/** One of the two views, drawn like a tab but carrying an address. */
+function ViewLink({
+  href,
+  active,
+  icon: Icon,
+  children,
+}: {
+  href: string;
+  active: boolean;
+  icon: LucideIcon;
+  children: ReactNode;
+}) {
+  return (
+    <a
+      href={href}
+      aria-current={active ? "page" : undefined}
+      className={cn(
+        "inline-flex h-full items-center gap-1.5 rounded-md px-3 text-sm font-medium no-underline transition-colors hover:no-underline",
+        active ? "bg-card text-foreground shadow-sm" : "text-foreground/70 hover:text-foreground",
+      )}
+    >
+      <Icon aria-hidden="true" className="size-4" />
+      {children}
+    </a>
   );
 }
 
@@ -478,38 +632,47 @@ function BillRow({
       ? undefined
       : transactions.find((transaction) => transaction.id === bill.paidBy)?.date;
   return (
-    <li data-testid={`bill-${recurrence.id}`} data-state={bill.state}>
-      <div className="bill-main">
-        <span className="bill-name">{name}</span>
+    <li
+      data-testid={`bill-${recurrence.id}`}
+      data-state={bill.state}
+      className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-5 gap-y-1 px-5 py-3 text-sm md:grid-cols-[minmax(0,1fr)_auto_auto_minmax(7rem,auto)]"
+    >
+      <div className="min-w-0">
+        <span className="block truncate font-medium">{name}</span>
         {name === recurrence.normalized_description ? null : (
-          <small className="bill-statement">{recurrence.normalized_description}</small>
+          <small className="block text-xs text-muted-foreground">
+            {recurrence.normalized_description}
+          </small>
         )}
       </div>
-      <span className="bill-amount" data-testid="amount">
+      <span className="money" data-testid="amount">
         {formatMinorUnits(recurrence.expected_amount, recurrence.currency)}
       </span>
-      <span className="bill-due">
+      <span className="grid justify-items-start gap-0.5 tabular-nums md:justify-items-end md:text-right">
         <time dateTime={bill.dueDate} data-testid="due">
           {bill.dueDate}
         </time>
-        <small data-testid="days">{daysText(bill.daysAway)}</small>
+        <small className="text-xs text-muted-foreground" data-testid="days">
+          {daysText(bill.daysAway)}
+        </small>
       </span>
-      <span className="bill-state">
+      <span className="grid justify-items-start gap-0.5 md:justify-items-end md:text-right">
+        {/* The badges judge: paid is good, due wants attention, late is a problem. */}
         {bill.state === "paid" ? (
-          <span className="chip paid" data-testid="state">
+          <Badge variant="positive" data-testid="state">
             paid{paidOn === undefined ? "" : ` ${paidOn}`}
-          </span>
+          </Badge>
         ) : bill.state === "late" ? (
-          <span className="chip late" data-testid="state">
+          <Badge variant="destructive" data-testid="state">
             late
-          </span>
+          </Badge>
         ) : bill.state === "due" ? (
-          <span className="chip due" data-testid="state">
+          <Badge variant="warning" data-testid="state">
             due
-          </span>
+          </Badge>
         ) : null}
         {bill.state !== "paid" && recurrence.last_date !== undefined ? (
-          <small className="bill-last-paid">last paid {recurrence.last_date}</small>
+          <small className="text-xs text-muted-foreground">last paid {recurrence.last_date}</small>
         ) : null}
       </span>
     </li>
@@ -538,33 +701,40 @@ function CalendarView({
   onReveal: (recurrenceId: string) => void;
 }) {
   return (
-    <div data-testid="recurring-calendar">
-      <div className="calendar-nav">
-        <button
-          type="button"
-          className="secondary"
+    <div data-testid="recurring-calendar" className="grid gap-4">
+      <div className="flex flex-wrap items-center gap-3">
+        <Button
+          variant="outline"
+          size="sm"
           aria-label="Previous month"
           onClick={() => onMonth(addMonths(month, -1))}
         >
           ‹ Previous
-        </button>
-        <h2 data-testid="calendar-month">{readoutLabel(month)}</h2>
-        <button
-          type="button"
-          className="secondary"
+        </Button>
+        <h2 data-testid="calendar-month" className="min-w-44 text-center text-lg">
+          {readoutLabel(month)}
+        </h2>
+        <Button
+          variant="outline"
+          size="sm"
           aria-label="Next month"
           onClick={() => onMonth(addMonths(month, 1))}
         >
           Next ›
-        </button>
-        <div className="totals calendar-totals">
+        </Button>
+        <div className="ml-auto flex flex-wrap gap-3">
           {(totals.length === 0 ? [{ currency, total: 0 }] : totals).map((total) => (
-            <div key={total.currency} className="total">
-              <span>Due in {readoutLabel(month)}</span>
-              <strong data-testid={`calendar-total-${total.currency}`}>
-                {formatMinorUnits(total.total, total.currency)}
-              </strong>
-            </div>
+            <Card key={total.currency} className="gap-0 py-2">
+              <CardContent className="grid gap-0.5 px-4">
+                <span className={EYEBROW}>Due in {readoutLabel(month)}</span>
+                <strong
+                  className="money justify-self-start text-lg font-semibold"
+                  data-testid={`calendar-total-${total.currency}`}
+                >
+                  {formatMinorUnits(total.total, total.currency)}
+                </strong>
+              </CardContent>
+            </Card>
           ))}
         </div>
       </div>
@@ -574,10 +744,14 @@ function CalendarView({
         ariaLabel={`Bills in ${readoutLabel(month)}`}
         renderDay={(cell) =>
           (byDate.get(cell.date) ?? []).map((bill) => (
-            <button
+            // A bill on a day: name and amount on one line, the name giving
+            // way first. The zero minimum matters: without it the day's grid
+            // track grows to the unwrapped text and runs into the next day.
+            <Button
               key={bill.recurrence.id}
-              type="button"
-              className="link calendar-bill"
+              variant="link"
+              size="sm"
+              className="h-auto w-full min-w-0 justify-between gap-1.5 px-1 py-0.5 text-left text-xs font-medium"
               data-testid={`calendar-bill-${bill.recurrence.id}`}
               title={`${recurrenceName(bill.recurrence)} · ${formatMinorUnits(
                 bill.amount,
@@ -585,11 +759,11 @@ function CalendarView({
               )}`}
               onClick={() => onReveal(bill.recurrence.id)}
             >
-              <span className="calendar-bill-name">{recurrenceName(bill.recurrence)}</span>
-              <span className="calendar-bill-amount">
+              <span className="min-w-0 truncate">{recurrenceName(bill.recurrence)}</span>
+              <span className="money font-normal text-muted-foreground">
                 {formatMinorUnits(bill.amount, bill.recurrence.currency)}
               </span>
-            </button>
+            </Button>
           ))
         }
       />
@@ -644,24 +818,24 @@ function RecurrenceEditor({
 
   return (
     <form
-      className="editor row-editor"
+      className="grid gap-4"
       aria-label="Edit recurrence"
       onSubmit={(event) => void submit(event)}
     >
-      <div className="grid">
-        <label>
-          Name
-          <input
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Name" htmlFor="recurrence-name">
+          <Input
+            id="recurrence-name"
             name="name"
             maxLength={200}
             placeholder={recurrenceName(recurrence)}
             value={name}
             onChange={(event) => setName(event.target.value)}
           />
-        </label>
-        <label>
-          Every
-          <select
+        </Field>
+        <Field label="Every" htmlFor="recurrence-interval">
+          <NativeSelect
+            id="recurrence-interval"
             name="interval"
             value={every}
             onChange={(event) => setEvery(event.target.value as RecurrenceInterval)}
@@ -671,21 +845,22 @@ function RecurrenceEditor({
                 {interval}
               </option>
             ))}
-          </select>
-        </label>
-        <label>
-          Expected amount ({recurrence.currency})
-          <input
+          </NativeSelect>
+        </Field>
+        <Field label={`Expected amount (${recurrence.currency})`} htmlFor="recurrence-amount">
+          <Input
+            id="recurrence-amount"
             name="expected_amount"
             inputMode="decimal"
             required
+            className="money"
             value={amount}
             onChange={(event) => setAmount(event.target.value)}
           />
-        </label>
-        <label>
-          Category
-          <select
+        </Field>
+        <Field label="Category" htmlFor="recurrence-category">
+          <NativeSelect
+            id="recurrence-category"
             name="category_id"
             value={categoryId}
             onChange={(event) => setCategoryId(event.target.value)}
@@ -696,11 +871,11 @@ function RecurrenceEditor({
                 {category.name}
               </option>
             ))}
-          </select>
-        </label>
-        <label>
-          Merchant
-          <select
+          </NativeSelect>
+        </Field>
+        <Field label="Merchant" htmlFor="recurrence-merchant">
+          <NativeSelect
+            id="recurrence-merchant"
             name="merchant_id"
             value={merchantId}
             onChange={(event) => setMerchantId(event.target.value)}
@@ -711,15 +886,15 @@ function RecurrenceEditor({
                 {merchant.name}
               </option>
             ))}
-          </select>
-        </label>
+          </NativeSelect>
+        </Field>
       </div>
-      <div className="actions">
-        <button type="submit">Save recurrence</button>
-        <button type="button" className="secondary" onClick={onDone}>
+      <DialogFooter>
+        <Button variant="outline" onClick={onDone}>
           Cancel
-        </button>
-      </div>
+        </Button>
+        <Button type="submit">Save recurrence</Button>
+      </DialogFooter>
     </form>
   );
 }

@@ -1,3 +1,32 @@
+import {
+  Alert,
+  AlertDescription,
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  EmptyState,
+  Field,
+  Input,
+  NativeSelect,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  cn,
+} from "@mako-cloud/ui";
+import { CircleAlert, CircleCheck, FolderPlus, Plus, Tags } from "lucide-react";
 import { type FormEvent, type KeyboardEvent, useState } from "react";
 
 import type { RationalApp } from "../data/rational.js";
@@ -16,7 +45,6 @@ import {
 import { memoizeLast } from "../selectors/memo.js";
 import { amountToText, parseAmount } from "../selectors/money.js";
 import { useBehavior, useQuery } from "./hooks.js";
-import "./styles/taxonomy.css";
 
 /**
  * Categories, in their groups.
@@ -118,6 +146,9 @@ function describeDeletion(
     "budget",
   )} removed, ${plural(outcome.rules, "rule")} updated.`;
 }
+
+/** A row's or a group's small actions share one compact look. */
+const ROW_ACTION = "h-7 px-2 text-xs";
 
 export function CategoriesScreen({
   app,
@@ -277,8 +308,9 @@ export function CategoriesScreen({
 
   const nameCell = (entry: TaxonomyEntry) =>
     renaming?.id === entry.id ? (
-      <input
+      <Input
         aria-label={`Rename ${entry.name}`}
+        className="h-8 w-56"
         value={renaming.name}
         onChange={(event) => setRenaming({ id: entry.id, name: event.target.value })}
         onKeyDown={renameKeys(entry)}
@@ -286,364 +318,440 @@ export function CategoriesScreen({
     ) : (
       <span data-testid="name">
         {entry.name}
-        {entry.archived === true ? <small> archived</small> : null}
+        {entry.archived === true ? (
+          <small className="text-xs font-normal text-muted-foreground"> archived</small>
+        ) : null}
       </span>
     );
 
   const renameButton = (entry: TaxonomyEntry) =>
     renaming?.id === entry.id ? (
-      <button type="button" className="link" onClick={() => void saveName(entry)}>
+      <Button variant="ghost" size="sm" className={ROW_ACTION} onClick={() => void saveName(entry)}>
         Save
-      </button>
+      </Button>
     ) : (
-      <button
-        type="button"
-        className="link"
+      <Button
+        variant="ghost"
+        size="sm"
+        className={ROW_ACTION}
         onClick={() => setRenaming({ id: entry.id, name: entry.name })}
       >
         Rename
-      </button>
+      </Button>
     );
 
   const selectedGroup = groups.find((group) => group.id === newGroupId) ?? null;
   const newCategoryKind = selectedGroup?.category_kind ?? newKind;
 
   return (
-    <section aria-labelledby="categories-title" data-testid="categories-screen">
-      <div className="heading">
-        <h1 id="categories-title">Categories</h1>
-        <div className="taxonomy-inline">
-          <button
-            type="button"
-            className={adding === "category" ? undefined : "secondary"}
+    <section
+      aria-labelledby="categories-title"
+      data-testid="categories-screen"
+      className="grid gap-6"
+    >
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="grid gap-1">
+          <h1 id="categories-title" className="text-2xl">
+            Categories
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            Where transactions are filed, in the groups the budget reads them by.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant={adding === "category" ? "default" : "outline"}
             onClick={() => setAdding(adding === "category" ? null : "category")}
           >
+            <Plus />
             New category
-          </button>
-          <button
-            type="button"
-            className={adding === "group" ? undefined : "secondary"}
+          </Button>
+          <Button
+            variant={adding === "group" ? "default" : "outline"}
             onClick={() => setAdding(adding === "group" ? null : "group")}
           >
+            <FolderPlus />
             New group
-          </button>
+          </Button>
         </div>
       </div>
       {error === null ? null : (
-        <p className="notice error" role="alert">
-          {error}
-        </p>
+        <Alert variant="destructive" role="alert">
+          <CircleAlert />
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
       )}
       {status === null ? null : (
-        <p className="taxonomy-status" role="status" data-testid="category-status">
-          {status}
-        </p>
+        <Alert variant="positive" role="status" data-testid="category-status">
+          <CircleCheck />
+          <AlertDescription>{status}</AlertDescription>
+        </Alert>
       )}
 
       {adding === "category" ? (
-        <form
-          className="editor"
-          aria-label="New category"
-          onSubmit={(event) => void createCategory(event)}
-        >
-          <div className="grid">
-            <label>
-              Name
-              <input name="name" required maxLength={200} />
-            </label>
-            <label>
-              Group
-              <select
-                name="group_id"
-                value={newGroupId}
-                onChange={(event) => setNewGroupId(event.target.value)}
-              >
-                <option value="">No group</option>
-                {groups.map((group) => (
-                  <option key={group.id} value={group.id}>
-                    {group.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {selectedGroup === null ? (
-              <label>
-                Kind
-                <select
-                  name="kind"
-                  value={newKind}
-                  onChange={(event) => setNewKind(event.target.value as CategoryKind)}
-                >
-                  {KINDS.map((entry) => (
-                    <option key={entry.kind} value={entry.kind}>
-                      {entry.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ) : null}
-            <label>
-              Icon
-              <input name="icon" maxLength={16} placeholder="🛒" />
-            </label>
-            {newCategoryKind === "expense" ? (
-              <label>
-                Budget bucket
-                <select name="budget_bucket" defaultValue="flexible">
-                  {BUCKETS.map((entry) => (
-                    <option key={entry.bucket} value={entry.bucket}>
-                      {entry.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ) : null}
-          </div>
-          <p className="hint">
-            {selectedGroup === null
-              ? "A category without a group is filed under Ungrouped."
-              : `${selectedGroup.name} holds ${selectedGroup.category_kind ?? "expense"} categories, so this one will be too.`}
-          </p>
-          <div className="actions">
-            <button type="submit">Add category</button>
-            <button type="button" className="secondary" onClick={() => setAdding(null)}>
-              Cancel
-            </button>
-          </div>
-        </form>
+        <Card>
+          <CardHeader>
+            <CardTitle>New category</CardTitle>
+            <CardDescription>
+              A category files transactions; its group decides whether they count as income,
+              spending, or a transfer.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form
+              className="grid gap-4"
+              aria-label="New category"
+              onSubmit={(event) => void createCategory(event)}
+            >
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                <Field label="Name" htmlFor="new-category-name">
+                  <Input id="new-category-name" name="name" required maxLength={200} />
+                </Field>
+                <Field label="Group" htmlFor="new-category-group">
+                  <NativeSelect
+                    id="new-category-group"
+                    name="group_id"
+                    value={newGroupId}
+                    onChange={(event) => setNewGroupId(event.target.value)}
+                  >
+                    <option value="">No group</option>
+                    {groups.map((group) => (
+                      <option key={group.id} value={group.id}>
+                        {group.name}
+                      </option>
+                    ))}
+                  </NativeSelect>
+                </Field>
+                {selectedGroup === null ? (
+                  <Field label="Kind" htmlFor="new-category-kind">
+                    <NativeSelect
+                      id="new-category-kind"
+                      name="kind"
+                      value={newKind}
+                      onChange={(event) => setNewKind(event.target.value as CategoryKind)}
+                    >
+                      {KINDS.map((entry) => (
+                        <option key={entry.kind} value={entry.kind}>
+                          {entry.label}
+                        </option>
+                      ))}
+                    </NativeSelect>
+                  </Field>
+                ) : null}
+                <Field label="Icon" htmlFor="new-category-icon">
+                  <Input id="new-category-icon" name="icon" maxLength={16} placeholder="🛒" />
+                </Field>
+                {newCategoryKind === "expense" ? (
+                  <Field label="Budget bucket" htmlFor="new-category-bucket">
+                    <NativeSelect
+                      id="new-category-bucket"
+                      name="budget_bucket"
+                      defaultValue="flexible"
+                    >
+                      {BUCKETS.map((entry) => (
+                        <option key={entry.bucket} value={entry.bucket}>
+                          {entry.label}
+                        </option>
+                      ))}
+                    </NativeSelect>
+                  </Field>
+                ) : null}
+              </div>
+              <p className="text-sm text-muted-foreground">
+                {selectedGroup === null
+                  ? "A category without a group is filed under Ungrouped."
+                  : `${selectedGroup.name} holds ${selectedGroup.category_kind ?? "expense"} categories, so this one will be too.`}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Button type="submit">Add category</Button>
+                <Button variant="outline" onClick={() => setAdding(null)}>
+                  Cancel
+                </Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
       ) : null}
 
       {adding === "group" ? (
-        <form
-          className="editor"
-          aria-label="New group"
-          onSubmit={(event) => void createGroup(event)}
-        >
-          <div className="grid">
-            <label>
-              Name
-              <input name="name" required maxLength={200} />
-            </label>
-            <label>
-              Kind
-              <select name="kind" defaultValue="expense">
-                {KINDS.map((entry) => (
-                  <option key={entry.kind} value={entry.kind}>
-                    {entry.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-          <div className="actions">
-            <button type="submit">Add group</button>
-            <button type="button" className="secondary" onClick={() => setAdding(null)}>
-              Cancel
-            </button>
-          </div>
-        </form>
+        <Card>
+          <CardHeader>
+            <CardTitle>New group</CardTitle>
+            <CardDescription>
+              A group gathers categories of one kind and gives the budget its headings.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form
+              className="grid gap-4"
+              aria-label="New group"
+              onSubmit={(event) => void createGroup(event)}
+            >
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                <Field label="Name" htmlFor="new-group-name">
+                  <Input id="new-group-name" name="name" required maxLength={200} />
+                </Field>
+                <Field label="Kind" htmlFor="new-group-kind">
+                  <NativeSelect id="new-group-kind" name="kind" defaultValue="expense">
+                    {KINDS.map((entry) => (
+                      <option key={entry.kind} value={entry.kind}>
+                        {entry.label}
+                      </option>
+                    ))}
+                  </NativeSelect>
+                </Field>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button type="submit">Add group</Button>
+                <Button variant="outline" onClick={() => setAdding(null)}>
+                  Cancel
+                </Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
       ) : null}
 
-      {deleting === null ? null : (
-        <form
-          className="editor taxonomy-dialog"
-          role="dialog"
-          aria-label={`Delete ${deleting.name}`}
-          onSubmit={(event) => void confirmDelete(event)}
-        >
-          <p>
-            Delete <strong>{deleting.name}</strong>? Its transactions, splits, rules, and budgets
-            are moved or removed first, so nothing is left pointing at it.
-          </p>
-          <div className="grid">
-            <label>
-              Move its transactions to
-              <select name="reassign_to" defaultValue="">
-                <option value="">Leave them uncategorized</option>
-                {sections.map((section) =>
-                  section.categories
-                    .filter((candidate) => candidate.id !== deleting.id)
-                    .map((candidate) => (
-                      <option key={candidate.id} value={candidate.id}>
-                        {section.group === null
-                          ? candidate.name
-                          : `${section.group.name} › ${candidate.name}`}
-                      </option>
-                    )),
-                )}
-              </select>
-            </label>
-          </div>
-          <div className="actions">
-            <button type="submit">Delete category</button>
-            <button type="button" className="secondary" onClick={() => setDeleting(null)}>
-              Cancel
-            </button>
-          </div>
-        </form>
-      )}
+      <Dialog
+        open={deleting !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeleting(null);
+        }}
+      >
+        <DialogContent>
+          {deleting === null ? null : (
+            <form className="grid gap-4" onSubmit={(event) => void confirmDelete(event)}>
+              <DialogHeader>
+                <DialogTitle>Delete {deleting.name}</DialogTitle>
+                <DialogDescription>
+                  Its transactions, splits, rules, and budgets are moved or removed first, so
+                  nothing is left pointing at it.
+                </DialogDescription>
+              </DialogHeader>
+              <Field label="Move its transactions to" htmlFor="reassign-to">
+                <NativeSelect id="reassign-to" name="reassign_to" defaultValue="">
+                  <option value="">Leave them uncategorized</option>
+                  {sections.map((section) =>
+                    section.categories
+                      .filter((candidate) => candidate.id !== deleting.id)
+                      .map((candidate) => (
+                        <option key={candidate.id} value={candidate.id}>
+                          {section.group === null
+                            ? candidate.name
+                            : `${section.group.name} › ${candidate.name}`}
+                        </option>
+                      )),
+                  )}
+                </NativeSelect>
+              </Field>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setDeleting(null)}>
+                  Cancel
+                </Button>
+                <Button type="submit" variant="destructive">
+                  Delete category
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
 
-      {sections.length === 0 ? <p className="muted">Setting up the default categories…</p> : null}
+      {sections.length === 0 ? (
+        <EmptyState icon={<Tags />} title="Setting up the default categories…" />
+      ) : null}
 
       {sections.map((section, sectionIndex) => {
         const group = section.group;
+        const groupName = group?.name ?? "Ungrouped";
         return (
-          <div
+          <Card
             key={group?.id ?? "ungrouped"}
-            className="taxonomy-group"
+            className="gap-3 py-4"
             data-testid={group === null ? "group-ungrouped" : `group-${group.id}`}
-            data-name={group?.name ?? "Ungrouped"}
+            data-name={groupName}
           >
-            <header>
-              <h2>{group === null ? "Ungrouped" : nameCell(group)}</h2>
-              <span className="chip">
+            <CardHeader className="flex flex-wrap items-center gap-3 px-4">
+              <h2 className="text-base">{group === null ? "Ungrouped" : nameCell(group)}</h2>
+              <Badge variant="secondary">
                 {group === null ? "no group" : (group.category_kind ?? "expense")}
-              </span>
+              </Badge>
               {group === null ? null : (
-                <div className="actions">
-                  <button
-                    type="button"
-                    className="link"
+                <div className="ml-auto flex flex-wrap gap-1">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className={ROW_ACTION}
                     disabled={sectionIndex === 0}
                     onClick={() => moveGroup(group, "up")}
                   >
                     Move up
-                  </button>
-                  <button
-                    type="button"
-                    className="link"
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className={ROW_ACTION}
                     disabled={sectionIndex >= groups.length - 1}
                     onClick={() => moveGroup(group, "down")}
                   >
                     Move down
-                  </button>
+                  </Button>
                   {renameButton(group)}
-                  <button type="button" className="link" onClick={() => deleteGroup(group)}>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className={cn(ROW_ACTION, "text-destructive hover:text-destructive")}
+                    onClick={() => deleteGroup(group)}
+                  >
                     Delete
-                  </button>
+                  </Button>
                 </div>
               )}
-            </header>
-            <table className="list" aria-label={`${group?.name ?? "Ungrouped"} categories`}>
-              <thead>
-                <tr>
-                  <th scope="col">Category</th>
-                  <th scope="col">Budget bucket</th>
-                  <th scope="col">
-                    <span className="visually-hidden">Actions</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {section.categories.length === 0 ? (
-                  <tr>
-                    <td colSpan={3} className="empty">
-                      No categories yet.
-                    </td>
-                  </tr>
-                ) : null}
-                {section.categories.map((category, index) => (
-                  <tr
-                    key={category.id}
-                    data-testid={`category-${category.id}`}
-                    data-name={category.name}
-                    className={category.archived === true ? "muted" : undefined}
-                  >
-                    <th scope="row">
-                      <span className="taxonomy-icon" aria-hidden="true">
-                        {category.icon ?? "·"}
-                      </span>
-                      {nameCell(category)}
-                      {group === null ? (
-                        <span className="chip">{category.category_kind ?? "expense"}</span>
-                      ) : null}
-                    </th>
-                    <td>
-                      {category.category_kind === "expense" ? (
-                        <span className="taxonomy-inline">
-                          <select
-                            className="bucket-select"
-                            aria-label={`${category.name} budget bucket`}
-                            value={category.budget_bucket ?? ""}
-                            onChange={(event) => {
-                              const bucket = event.target.value;
+            </CardHeader>
+            <CardContent className="px-2">
+              <Table aria-label={`${groupName} categories`}>
+                <TableHeader>
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead scope="col" className="w-2/5">
+                      Category
+                    </TableHead>
+                    <TableHead scope="col">Budget bucket</TableHead>
+                    <TableHead scope="col">
+                      <span className="sr-only">Actions</span>
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {section.categories.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={3} className="py-6 text-center text-muted-foreground">
+                        No categories yet.
+                      </TableCell>
+                    </TableRow>
+                  ) : null}
+                  {section.categories.map((category, index) => (
+                    <TableRow
+                      key={category.id}
+                      data-testid={`category-${category.id}`}
+                      data-name={category.name}
+                      className={category.archived === true ? "text-muted-foreground" : undefined}
+                    >
+                      <TableHead
+                        scope="row"
+                        className="h-auto py-2 font-medium whitespace-normal text-foreground"
+                      >
+                        <span className="inline-flex flex-wrap items-center gap-2">
+                          <span
+                            className="inline-grid size-7 shrink-0 place-items-center rounded-md bg-muted text-sm"
+                            aria-hidden="true"
+                          >
+                            {category.icon ?? "·"}
+                          </span>
+                          {nameCell(category)}
+                          {group === null ? (
+                            <Badge variant="outline">{category.category_kind ?? "expense"}</Badge>
+                          ) : null}
+                        </span>
+                      </TableHead>
+                      <TableCell className="whitespace-normal">
+                        {category.category_kind === "expense" ? (
+                          <span className="inline-flex flex-wrap items-center gap-2">
+                            <span className="w-36 shrink-0">
+                              <NativeSelect
+                                size="sm"
+                                aria-label={`${category.name} budget bucket`}
+                                value={category.budget_bucket ?? ""}
+                                onChange={(event) => {
+                                  const bucket = event.target.value;
+                                  void attempt(
+                                    (writes) =>
+                                      writes.updateCategory(category.id, {
+                                        budget_bucket: isBucket(bucket) ? bucket : null,
+                                      }),
+                                    "The budget bucket could not be saved.",
+                                  );
+                                }}
+                              >
+                                <option value="">—</option>
+                                {BUCKETS.map((entry) => (
+                                  <option key={entry.bucket} value={entry.bucket}>
+                                    {entry.label}
+                                  </option>
+                                ))}
+                              </NativeSelect>
+                            </span>
+                            {category.budget_bucket === "non_monthly" ? (
+                              <NonMonthlyTarget
+                                key={`${category.id}:${category.updated_at}`}
+                                category={category}
+                                currency={currency}
+                                onSave={(patch) =>
+                                  void attempt(
+                                    (writes) => writes.updateCategory(category.id, patch),
+                                    "The target could not be saved.",
+                                  )
+                                }
+                                onError={setError}
+                              />
+                            ) : null}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="whitespace-normal">
+                        <div className="flex flex-wrap justify-end gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className={ROW_ACTION}
+                            disabled={index === 0}
+                            onClick={() => moveCategory(section, category, "up")}
+                          >
+                            Move up
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className={ROW_ACTION}
+                            disabled={index >= section.categories.length - 1}
+                            onClick={() => moveCategory(section, category, "down")}
+                          >
+                            Move down
+                          </Button>
+                          {renameButton(category)}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className={ROW_ACTION}
+                            onClick={() =>
                               void attempt(
                                 (writes) =>
                                   writes.updateCategory(category.id, {
-                                    budget_bucket: isBucket(bucket) ? bucket : null,
+                                    archived: category.archived === true ? null : true,
                                   }),
-                                "The budget bucket could not be saved.",
-                              );
-                            }}
+                                "The category could not be changed.",
+                              )
+                            }
                           >
-                            <option value="">—</option>
-                            {BUCKETS.map((entry) => (
-                              <option key={entry.bucket} value={entry.bucket}>
-                                {entry.label}
-                              </option>
-                            ))}
-                          </select>
-                          {category.budget_bucket === "non_monthly" ? (
-                            <NonMonthlyTarget
-                              key={`${category.id}:${category.updated_at}`}
-                              category={category}
-                              currency={currency}
-                              onSave={(patch) =>
-                                void attempt(
-                                  (writes) => writes.updateCategory(category.id, patch),
-                                  "The target could not be saved.",
-                                )
-                              }
-                              onError={setError}
-                            />
-                          ) : null}
-                        </span>
-                      ) : (
-                        <span className="muted">—</span>
-                      )}
-                    </td>
-                    <td className="actions">
-                      <button
-                        type="button"
-                        className="link"
-                        disabled={index === 0}
-                        onClick={() => moveCategory(section, category, "up")}
-                      >
-                        Move up
-                      </button>
-                      <button
-                        type="button"
-                        className="link"
-                        disabled={index >= section.categories.length - 1}
-                        onClick={() => moveCategory(section, category, "down")}
-                      >
-                        Move down
-                      </button>
-                      {renameButton(category)}
-                      <button
-                        type="button"
-                        className="link"
-                        onClick={() =>
-                          void attempt(
-                            (writes) =>
-                              writes.updateCategory(category.id, {
-                                archived: category.archived === true ? null : true,
-                              }),
-                            "The category could not be changed.",
-                          )
-                        }
-                      >
-                        {category.archived === true ? "Restore" : "Archive"}
-                      </button>
-                      <button type="button" className="link" onClick={() => setDeleting(category)}>
-                        Delete
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                            {category.archived === true ? "Restore" : "Archive"}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className={cn(ROW_ACTION, "text-destructive hover:text-destructive")}
+                            onClick={() => setDeleting(category)}
+                          >
+                            Delete
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
         );
       })}
     </section>
@@ -698,9 +806,10 @@ function NonMonthlyTarget({
   };
 
   return (
-    <span className="target-inputs">
-      <input
+    <span className="inline-flex items-center gap-2 text-xs text-muted-foreground">
+      <Input
         aria-label={`${category.name} target amount`}
+        className="money h-8 w-28"
         inputMode="decimal"
         placeholder={amountToText(120_000, currency)}
         value={amount}
@@ -709,8 +818,9 @@ function NonMonthlyTarget({
         onKeyDown={onEnter}
       />
       every
-      <input
+      <Input
         aria-label={`${category.name} target months`}
+        className="h-8 w-20"
         type="number"
         min={1}
         max={60}

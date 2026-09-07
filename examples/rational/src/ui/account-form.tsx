@@ -1,4 +1,21 @@
-import { type FormEvent, useState } from "react";
+import {
+  Button,
+  Card,
+  CardContent,
+  Checkbox,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  Field,
+  Input,
+  Label,
+  NativeSelect,
+  cn,
+} from "@mako-cloud/ui";
+import { type ComponentProps, type FormEvent, type ReactNode, useId, useState } from "react";
 
 import type { RationalApp } from "../data/rational.js";
 import { ValidationError } from "../data/writes.js";
@@ -12,14 +29,20 @@ import {
   TRACKED_TYPES,
 } from "../model/types.js";
 import { HISTORY_RANGE_KEYS, type HistoryRangeKey } from "../selectors/history.js";
-import { amountToText, parseAmount } from "../selectors/money.js";
+import {
+  amountToText,
+  formatMinorUnits,
+  minorUnitDigits,
+  parseAmount,
+} from "../selectors/money.js";
 import { useQuery } from "./hooks.js";
 
 /**
  * What the account screens share: the editor an account is created and
- * changed with, the range picker every balance chart wears, and how a member
- * is named. The accounts list and an account's own page both open the same
- * editor, so a field added here is added everywhere an account is edited.
+ * changed with, the range picker every balance chart wears, the dialog every
+ * editor opens in, the tiles a total is shown on, and how a member is named.
+ * The accounts list and an account's own page both open the same editor, so
+ * a field added here is added everywhere an account is edited.
  */
 
 export function todayIso(): string {
@@ -29,6 +52,39 @@ export function todayIso(): string {
 /** The name a member is shown by: their address, or their id before one is known. */
 export function memberLabel(membership: Membership): string {
   return membership.email ?? membership.user_id;
+}
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** "2026-08-28" as "Aug 28": what fits under a chart's axis. */
+export function shortDate(value: string | number): string {
+  const text = String(value);
+  const month = Number(text.slice(5, 7));
+  const day = Number(text.slice(8, 10));
+  if (!Number.isInteger(month) || month < 1 || month > 12 || !Number.isInteger(day) || day < 1) {
+    return text;
+  }
+  return `${MONTHS[month - 1]} ${day}`;
+}
+
+/**
+ * Minor units as a chart reads them: to the cent below a thousand, and
+ * "$262.5K" above it, since an axis has room for neither eleven characters
+ * nor a wrong number.
+ */
+export function compactMoney(amount: number, currency: string): string {
+  const major = amount / 10 ** minorUnitDigits(currency);
+  if (Math.abs(major) < 1000) return formatMinorUnits(amount, currency);
+  try {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency,
+      notation: "compact",
+      maximumFractionDigits: 1,
+    }).format(major);
+  } catch {
+    return formatMinorUnits(amount, currency);
+  }
 }
 
 /**
@@ -51,6 +107,129 @@ export function useHouseholdMembers(app: RationalApp): readonly Membership[] {
   return app.state.memberships.filter((membership) => membership.household_id === householdId);
 }
 
+/** A screen's title, what it is about under it, and what can be done from it beside. */
+export function PageHeader({
+  id,
+  title,
+  subtitle,
+  actions,
+}: {
+  id: string;
+  title: string;
+  subtitle?: string;
+  actions?: ReactNode;
+}) {
+  return (
+    <div className="flex flex-wrap items-start justify-between gap-4">
+      <div className="grid gap-1">
+        <h1 id={id} className="m-0 text-2xl font-semibold tracking-tight">
+          {title}
+        </h1>
+        {subtitle === undefined ? null : (
+          <p className="m-0 text-sm text-muted-foreground">{subtitle}</p>
+        )}
+      </div>
+      {actions === undefined ? null : (
+        <div className="flex flex-wrap items-center justify-end gap-2">{actions}</div>
+      )}
+    </div>
+  );
+}
+
+/** One figure on a tile: what it is, the number, and a word about it. */
+export function Stat({
+  label,
+  value,
+  valueTestId,
+  note,
+  className,
+  ...rest
+}: {
+  label: string;
+  value: string;
+  valueTestId?: string;
+  note?: ReactNode;
+} & Omit<ComponentProps<typeof Card>, "children">) {
+  return (
+    <Card className={cn("gap-0 py-4", className)} {...rest}>
+      <CardContent className="grid gap-1 px-4">
+        <span className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">
+          {label}
+        </span>
+        <strong
+          data-testid={valueTestId}
+          className="text-2xl font-semibold tracking-tight tabular-nums"
+        >
+          {value}
+        </strong>
+        {note === undefined ? null : (
+          <small className="text-xs text-muted-foreground">{note}</small>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * The modal every editor opens in: a titled form with Cancel and the save
+ * beside each other at the foot. Escape, the close button, and Cancel all
+ * call `onDone`; the form's own submit is the only way to save.
+ */
+export function EditorDialog({
+  title,
+  description,
+  formLabel,
+  formTestId,
+  submitLabel,
+  onDone,
+  onSubmit,
+  children,
+}: {
+  title: string;
+  description?: string;
+  formLabel: string;
+  formTestId?: string;
+  submitLabel: string;
+  onDone: () => void;
+  onSubmit: (event: FormEvent) => void;
+  children: ReactNode;
+}) {
+  return (
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onDone();
+      }}
+    >
+      <DialogContent
+        className="sm:max-w-xl"
+        {...(description === undefined ? { "aria-describedby": undefined } : {})}
+      >
+        <form
+          aria-label={formLabel}
+          data-testid={formTestId}
+          className="grid gap-5"
+          onSubmit={onSubmit}
+        >
+          <DialogHeader>
+            <DialogTitle>{title}</DialogTitle>
+            {description === undefined ? null : (
+              <DialogDescription>{description}</DialogDescription>
+            )}
+          </DialogHeader>
+          {children}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onDone}>
+              Cancel
+            </Button>
+            <Button type="submit">{submitLabel}</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export function HistoryRangePicker({
   value,
   onChange,
@@ -61,18 +240,23 @@ export function HistoryRangePicker({
   label?: string;
 }) {
   return (
-    <fieldset className="range-picker">
-      <legend className="visually-hidden">{label}</legend>
+    <fieldset className="m-0 inline-flex min-w-0 items-center gap-0.5 rounded-lg border-0 bg-muted p-[3px]">
+      <legend className="sr-only">{label}</legend>
       {HISTORY_RANGE_KEYS.map((key) => (
-        <button
+        <Button
           key={key}
           type="button"
-          className="secondary"
+          variant="ghost"
+          size="sm"
           aria-pressed={key === value}
+          className={cn(
+            "h-7 px-2.5 text-xs text-muted-foreground tabular-nums hover:bg-transparent hover:text-foreground",
+            key === value && "bg-card text-foreground shadow-sm hover:bg-card",
+          )}
           onClick={() => onChange(key)}
         >
           {key}
-        </button>
+        </Button>
       ))}
     </fieldset>
   );
@@ -89,6 +273,7 @@ export function AccountForm({
   defaultCurrency: string;
   onDone: () => void;
 }) {
+  const id = useId();
   const members = useHouseholdMembers(app);
   const [name, setName] = useState(account?.name ?? "");
   const [type, setType] = useState<AccountType>(account?.type ?? "checking");
@@ -155,21 +340,26 @@ export function AccountForm({
   };
 
   return (
-    <form className="editor" onSubmit={(event) => void submit(event)} aria-label="Account editor">
-      <h2>{account === null ? "New account" : `Edit ${account.name}`}</h2>
-      <div className="grid">
-        <label>
-          Name
-          <input
+    <EditorDialog
+      title={account === null ? "New account" : `Edit ${account.name}`}
+      formLabel="Account editor"
+      submitLabel="Save account"
+      onDone={onDone}
+      onSubmit={(event) => void submit(event)}
+    >
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Name" htmlFor={`${id}-name`}>
+          <Input
+            id={`${id}-name`}
             name="name"
             required
             value={name}
             onChange={(event) => setName(event.target.value)}
           />
-        </label>
-        <label>
-          Type
-          <select
+        </Field>
+        <Field label="Type" htmlFor={`${id}-type`}>
+          <NativeSelect
+            id={`${id}-type`}
             name="type"
             value={type}
             onChange={(event) => setType(event.target.value as AccountType)}
@@ -179,48 +369,52 @@ export function AccountForm({
                 {ACCOUNT_TYPE_LABELS[candidate]}
               </option>
             ))}
-          </select>
-        </label>
-        <label>
-          Currency
-          <input
+          </NativeSelect>
+        </Field>
+        <Field label="Currency" htmlFor={`${id}-currency`}>
+          <Input
+            id={`${id}-currency`}
             name="currency"
             required
             maxLength={3}
             value={currency}
             onChange={(event) => setCurrency(event.target.value)}
           />
-        </label>
-        <label>
-          {tracked ? "Opening balance (current value)" : "Opening balance"}
-          <input
+        </Field>
+        <Field
+          label={tracked ? "Opening balance (current value)" : "Opening balance"}
+          htmlFor={`${id}-opening-balance`}
+        >
+          <Input
+            id={`${id}-opening-balance`}
             name="opening_balance"
             inputMode="decimal"
+            className="tabular-nums"
             value={openingBalance}
             onChange={(event) => setOpeningBalance(event.target.value)}
           />
-        </label>
-        <label>
-          Opening date
-          <input
+        </Field>
+        <Field label="Opening date" htmlFor={`${id}-opening-date`}>
+          <Input
+            id={`${id}-opening-date`}
             name="opening_date"
             type="date"
             required
             value={openingDate}
             onChange={(event) => setOpeningDate(event.target.value)}
           />
-        </label>
-        <label>
-          Institution
-          <input
+        </Field>
+        <Field label="Institution" htmlFor={`${id}-institution`}>
+          <Input
+            id={`${id}-institution`}
             name="institution"
             value={institution}
             onChange={(event) => setInstitution(event.target.value)}
           />
-        </label>
-        <label>
-          Owner
-          <select
+        </Field>
+        <Field label="Owner" htmlFor={`${id}-owner`}>
+          <NativeSelect
+            id={`${id}-owner`}
             name="owner_id"
             value={ownerId}
             onChange={(event) => setOwnerId(event.target.value)}
@@ -231,35 +425,29 @@ export function AccountForm({
                 {memberLabel(membership)}
               </option>
             ))}
-          </select>
-        </label>
+          </NativeSelect>
+        </Field>
       </div>
-      <label className="chip-option">
-        <input
-          type="checkbox"
+      <div className="flex items-center gap-2">
+        <Checkbox
+          id={`${id}-hidden`}
           name="hide_from_net_worth"
           checked={hidden}
-          onChange={(event) => setHidden(event.target.checked)}
+          onCheckedChange={(checked) => setHidden(checked === true)}
         />
-        Hide from net worth
-      </label>
+        <Label htmlFor={`${id}-hidden`}>Hide from net worth</Label>
+      </div>
       {tracked ? (
-        <p className="hint">
+        <p className="m-0 text-sm text-muted-foreground">
           A tracked account&apos;s value is set here and updated in place from its page; the changes
           never count as income or spending.
         </p>
       ) : null}
       {error === null ? null : (
-        <p className="error" role="alert">
+        <p className="m-0 text-sm text-destructive" role="alert">
           {error}
         </p>
       )}
-      <div className="actions">
-        <button type="submit">Save account</button>
-        <button type="button" className="secondary" onClick={onDone}>
-          Cancel
-        </button>
-      </div>
-    </form>
+    </EditorDialog>
   );
 }

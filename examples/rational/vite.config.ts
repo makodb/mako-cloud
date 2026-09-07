@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
+import tailwindcss from "@tailwindcss/vite";
 import { defineConfig, type ProxyOptions } from "vite";
 
 /**
@@ -29,6 +30,11 @@ interface RationalEnvFile {
 }
 
 function readEnvFile(): RationalEnvFile | null {
+  // The wire-mocked browser suite asks for the placeholder configuration
+  // explicitly, so a bootstrap file left by pointing this checkout at a real
+  // project never turns the hermetic suite into a live one. The published
+  // repository's own configuration honours the same switch.
+  if (process.env.RATIONAL_CONFIG === "example") return null;
   const path = fileURLToPath(new URL("./mako.env.json", import.meta.url));
   if (!existsSync(path)) return null;
   return JSON.parse(readFileSync(path, "utf8")) as RationalEnvFile;
@@ -75,8 +81,31 @@ export default defineConfig(({ command }) => {
     };
   }
   return {
+    plugins: [tailwindcss()],
+    // The design system is a linked workspace package, so its dependencies are
+    // not found by the dev server's first scan; naming them here has them
+    // pre-bundled up front instead of on the first request -- which would
+    // otherwise take a minute cold and reload the page mid-way through a test.
+    optimizeDeps: {
+      include: [
+        "react",
+        "react-dom",
+        "react-dom/client",
+        "recharts",
+        "radix-ui",
+        "lucide-react",
+        "clsx",
+        "tailwind-merge",
+        "class-variance-authority",
+      ],
+    },
     define: { __RATIONAL_ENV__: JSON.stringify(runtimeEnvironment) },
     build: { outDir: "web-dist", emptyOutDir: true },
-    server: Object.keys(proxy).length === 0 ? {} : { proxy },
+    // Suites running side by side write their artefacts next to the sources;
+    // a dev server must not reload every page each time one of them does.
+    server: {
+      watch: { ignored: ["**/test-results*/**", "**/playwright-report*/**"] },
+      ...(Object.keys(proxy).length === 0 ? {} : { proxy }),
+    },
   };
 });

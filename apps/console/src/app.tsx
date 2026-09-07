@@ -1,3 +1,4 @@
+import { Button, ThemeToggle, useTheme } from "@mako-cloud/ui";
 import { type ReactNode, useEffect } from "react";
 
 import { ApplicationUserScreen, ApplicationUsersScreen } from "./application-users.js";
@@ -490,8 +491,12 @@ function StagedEnvironmentLayout({
   );
 }
 
+/** The developer's theme preference lives under this key, per device. */
+export const CONSOLE_THEME_KEY = "mako.console.theme";
+
 function AuthenticatedShell({ children }: { readonly children: ReactNode }) {
   const { state, signOut } = useDeveloperAuth();
+  const { resolved, toggle } = useTheme(CONSOLE_THEME_KEY);
   if (state.status !== "authenticated") {
     return null;
   }
@@ -499,22 +504,34 @@ function AuthenticatedShell({ children }: { readonly children: ReactNode }) {
     return null;
   }
   return (
-    <div className="app-shell">
-      <a className="skip-link" href="#main-content">
+    <div className="app-shell min-h-screen bg-background text-foreground">
+      <a
+        className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-50 focus:rounded-md focus:bg-card focus:px-3 focus:py-2 focus:shadow-md"
+        href="#main-content"
+      >
         Skip to main content
       </a>
-      <header className="topbar">
-        <div>
-          <p className="eyebrow">Mako Cloud</p>
-          <a className="button-link" href="/" aria-label="Developer Console home">
+      <header className="flex h-14 items-center gap-4 border-b bg-card px-6">
+        <div className="flex items-baseline gap-3">
+          <p className="m-0 text-xs font-semibold tracking-[0.18em] text-primary uppercase">
+            Mako Cloud
+          </p>
+          <a
+            className="font-semibold text-foreground no-underline hover:underline"
+            href="/"
+            aria-label="Developer Console home"
+          >
             <strong>Developer Console</strong>
           </a>
         </div>
-        <div className="account">
-          <span>{state.session.profile.email}</span>
-          <button type="button" className="secondary" onClick={() => void signOut()}>
+        <div className="ml-auto flex items-center gap-2">
+          <span className="max-w-64 truncate text-sm text-muted-foreground">
+            {state.session.profile.email}
+          </span>
+          <ThemeToggle resolved={resolved} onToggle={toggle} data-testid="theme-toggle" />
+          <Button variant="outline" size="sm" onClick={() => void signOut()}>
             Sign out
-          </button>
+          </Button>
         </div>
       </header>
       <main className="workspace" id="main-content" tabIndex={-1}>

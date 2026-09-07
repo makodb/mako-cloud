@@ -1,4 +1,28 @@
-import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Alert,
+  AlertDescription,
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  Checkbox,
+  EmptyState,
+  Field,
+  Input,
+  Label,
+  NativeSelect,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  cn,
+} from "@mako-cloud/ui";
+import { Download, ListChecks, Plus, ReceiptText, Search } from "lucide-react";
+import { type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 
 import type { RationalApp } from "../data/rational.js";
 import type { ScopeSession } from "../data/scope.js";
@@ -35,8 +59,12 @@ import { validateSplits } from "../selectors/splits.js";
 import { selectAvailableMonths, sumAmounts } from "../selectors/transactions.js";
 import { useQuery } from "./hooks.js";
 import { type Route, transactionsHash } from "./router.js";
-import { CategoryOptions, ReceiptsPanel, TransactionPanel } from "./transaction-panel.js";
-import "./styles/transactions.css";
+import {
+  CategoryOptions,
+  MarkerBadge,
+  ReceiptsPanel,
+  TransactionPanel,
+} from "./transaction-panel.js";
 
 /**
  * The transactions screen: every filter in the address, a list grouped by day,
@@ -232,32 +260,39 @@ export function TransactionsScreen({
   };
   const allShownSelected =
     transactions.length > 0 && transactions.every((entry) => selected.has(entry.id));
+  const reviewing = query.review === "needs";
 
   return (
-    <section aria-labelledby="transactions-title" className="transactions-screen">
-      <div className="heading">
-        <h1 id="transactions-title">Transactions</h1>
-        <div className="heading-actions">
-          <button
-            type="button"
-            className={`secondary quick-filter${query.review === "needs" ? " active" : ""}`}
-            aria-pressed={query.review === "needs"}
+    <section aria-labelledby="transactions-title" className="grid gap-4">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="grid gap-1">
+          <h1 id="transactions-title" className="text-2xl">
+            Transactions
+          </h1>
+          <p className="m-0 text-sm text-muted-foreground">
+            Everything that moved money, grouped by day. Filters live in the address, so a view can
+            be shared.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="outline"
+            aria-pressed={reviewing}
             data-testid="needs-review-filter"
-            onClick={() => set("review", query.review === "needs" ? undefined : "needs")}
+            className={cn(reviewing && "border-primary bg-accent text-accent-foreground")}
+            onClick={() => set("review", reviewing ? undefined : "needs")}
           >
+            <ListChecks aria-hidden="true" />
             Needs review ({reviewCount})
-          </button>
-          <button
-            type="button"
-            className="secondary"
-            onClick={exportCsv}
-            disabled={transactions.length === 0}
-          >
+          </Button>
+          <Button variant="outline" onClick={exportCsv} disabled={transactions.length === 0}>
+            <Download aria-hidden="true" />
             Export CSV
-          </button>
-          <button type="button" onClick={() => setEditing("new")} disabled={accounts.length === 0}>
+          </Button>
+          <Button onClick={() => setEditing("new")} disabled={accounts.length === 0}>
+            <Plus aria-hidden="true" />
             New transaction
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -274,17 +309,10 @@ export function TransactionsScreen({
         filterCount={filterCount}
       />
 
-      <div className="list-summary">
-        <span className="summary" data-testid="transaction-summary">
-          {transactions.length} {transactions.length === 1 ? "transaction" : "transactions"} · net{" "}
-          {formatMinorUnits(total, listCurrency)}
-        </span>
-      </div>
-
       {problem === null ? null : (
-        <p className="notice error" role="alert">
-          {problem}
-        </p>
+        <Alert variant="destructive" role="alert">
+          <AlertDescription className="block">{problem}</AlertDescription>
+        </Alert>
       )}
 
       {editing === null ? null : (
@@ -300,6 +328,10 @@ export function TransactionsScreen({
         />
       )}
 
+      {attachingTo === null ? null : (
+        <ReceiptsPanel app={app} transaction={attachingTo} onClose={() => setAttaching(null)} />
+      )}
+
       {selectedIds.length === 0 ? null : (
         <BulkBar
           app={app}
@@ -312,221 +344,245 @@ export function TransactionsScreen({
         />
       )}
       {bulkOutcome === null ? null : (
-        <p className="hint" role="status" data-testid="bulk-outcome">
+        <p className="m-0 text-sm text-muted-foreground" role="status" data-testid="bulk-outcome">
           {bulkOutcome}
         </p>
       )}
 
-      <table className="list transactions" aria-label="Transactions">
-        <thead>
-          <tr>
-            <th scope="col" className="select">
-              <input
-                type="checkbox"
-                aria-label="Select all"
-                checked={allShownSelected}
-                disabled={transactions.length === 0}
-                onChange={(event) =>
-                  setSelected(
-                    event.target.checked
-                      ? new Set([...selected, ...transactions.map((entry) => entry.id)])
-                      : new Set(
-                          [...selected].filter(
-                            (id) => !transactions.some((entry) => entry.id === id),
+      <div className="flex justify-end">
+        <span
+          className="text-sm text-muted-foreground tabular-nums"
+          data-testid="transaction-summary"
+        >
+          {transactions.length} {transactions.length === 1 ? "transaction" : "transactions"} · net{" "}
+          {formatMinorUnits(total, listCurrency)}
+        </span>
+      </div>
+
+      <Card className="gap-0 overflow-hidden py-0">
+        <Table aria-label="Transactions">
+          <TableHeader>
+            <TableRow className="hover:bg-transparent">
+              <TableHead scope="col" className="w-10 pl-4">
+                <Checkbox
+                  aria-label="Select all"
+                  checked={allShownSelected}
+                  disabled={transactions.length === 0}
+                  onCheckedChange={(checked) =>
+                    setSelected(
+                      checked === true
+                        ? new Set([...selected, ...transactions.map((entry) => entry.id)])
+                        : new Set(
+                            [...selected].filter(
+                              (id) => !transactions.some((entry) => entry.id === id),
+                            ),
                           ),
-                        ),
-                  )
-                }
-              />
-            </th>
-            <th scope="col">Date</th>
-            <th scope="col">Description</th>
-            <th scope="col">Account</th>
-            <th scope="col">Category</th>
-            <th scope="col">Tags</th>
-            <th scope="col" className="amount">
-              Amount
-            </th>
-            <th scope="col">
-              <span className="visually-hidden">Actions</span>
-            </th>
-          </tr>
-        </thead>
-        {transactions.length === 0 ? (
-          <tbody>
-            <tr>
-              <td colSpan={8} className="empty">
-                {all.length === 0 ? "No transactions yet." : "No transactions match."}
-              </td>
-            </tr>
-          </tbody>
-        ) : null}
-        {shownGroups.map((group) => (
-          <tbody key={group.date} data-testid={`day-${group.date}`}>
-            <tr className="day">
-              <th scope="rowgroup" colSpan={6}>
-                {group.date}
-                <small className="muted">
-                  {" "}
-                  · {group.transactions.length}{" "}
-                  {group.transactions.length === 1 ? "transaction" : "transactions"}
-                </small>
-              </th>
-              <th scope="rowgroup" className="amount" data-testid="day-total">
-                {formatMinorUnits(group.total, listCurrency)}
-              </th>
-              <th scope="rowgroup" />
-            </tr>
-            {group.transactions.map((transaction) => {
-              const merchant = resolve(transaction);
-              const showMerchant =
-                merchant.id === null
-                  ? merchant.name.toLowerCase() !== transaction.description.trim().toLowerCase()
-                  : merchant.name !== transaction.description;
-              const isSelected = selected.has(transaction.id);
-              const icon = categoryIcon(transaction.category_id);
-              return (
-                <tr
-                  key={transaction.id}
-                  data-testid={`transaction-${transaction.id}`}
-                  data-description={transaction.description}
-                  data-selected={isSelected ? "true" : "false"}
-                  className={transaction.hidden === true ? "muted" : undefined}
+                    )
+                  }
+                />
+              </TableHead>
+              <TableHead scope="col">Date</TableHead>
+              <TableHead scope="col">Description</TableHead>
+              <TableHead scope="col">Account</TableHead>
+              <TableHead scope="col">Category</TableHead>
+              <TableHead scope="col">Tags</TableHead>
+              <TableHead scope="col" className="text-right">
+                Amount
+              </TableHead>
+              <TableHead scope="col" className="pr-4">
+                <span className="sr-only">Actions</span>
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          {transactions.length === 0 ? (
+            <TableBody>
+              <TableRow className="hover:bg-transparent">
+                <TableCell colSpan={8} className="p-4">
+                  <EmptyState
+                    icon={<ReceiptText aria-hidden="true" />}
+                    title={all.length === 0 ? "No transactions yet." : "No transactions match."}
+                    className="border-0"
+                  />
+                </TableCell>
+              </TableRow>
+            </TableBody>
+          ) : null}
+          {shownGroups.map((group) => (
+            <TableBody key={group.date} data-testid={`day-${group.date}`}>
+              <TableRow className="bg-muted/40 hover:bg-muted/40">
+                <TableHead
+                  scope="rowgroup"
+                  colSpan={6}
+                  className="h-9 pl-4 text-xs font-semibold text-foreground"
                 >
-                  <td className="select">
-                    <input
-                      type="checkbox"
-                      aria-label={`Select ${transaction.description}`}
-                      checked={isSelected}
-                      onChange={(event) => toggle(transaction.id, event.target.checked)}
-                    />
-                  </td>
-                  <td className="date">{transaction.date}</td>
-                  <td>
-                    {showMerchant ? (
-                      <span className="merchant-name" data-testid="merchant">
-                        {merchant.name}
-                      </span>
-                    ) : null}
-                    <span
-                      className={showMerchant ? "statement" : "merchant-name"}
-                      data-testid="description"
-                    >
-                      {transaction.description}
-                    </span>
-                    {transaction.notes === undefined ? null : (
-                      <small className="notes"> {transaction.notes}</small>
+                  {group.date}
+                  <small className="font-normal text-muted-foreground">
+                    {" "}
+                    · {group.transactions.length}{" "}
+                    {group.transactions.length === 1 ? "transaction" : "transactions"}
+                  </small>
+                </TableHead>
+                <TableHead
+                  scope="rowgroup"
+                  className="money h-9 text-xs font-semibold text-foreground"
+                  data-testid="day-total"
+                >
+                  {formatMinorUnits(group.total, listCurrency)}
+                </TableHead>
+                <TableHead scope="rowgroup" className="h-9" />
+              </TableRow>
+              {group.transactions.map((transaction) => {
+                const merchant = resolve(transaction);
+                const showMerchant =
+                  merchant.id === null
+                    ? merchant.name.toLowerCase() !== transaction.description.trim().toLowerCase()
+                    : merchant.name !== transaction.description;
+                const isSelected = selected.has(transaction.id);
+                const icon = categoryIcon(transaction.category_id);
+                const filedBy = ruleName(transaction.rule_id);
+                return (
+                  <TableRow
+                    key={transaction.id}
+                    data-testid={`transaction-${transaction.id}`}
+                    data-description={transaction.description}
+                    data-selected={isSelected ? "true" : "false"}
+                    className={cn(
+                      transaction.hidden === true && "text-muted-foreground",
+                      isSelected && "bg-accent/50 hover:bg-accent/50",
                     )}
-                    {transaction.splits.length === 0 ? null : (
-                      <ul className="splits" aria-label="Splits">
-                        {transaction.splits.map((split) => (
-                          <li key={split.id}>
-                            {categoryName(split.category_id) || "uncategorized"}{" "}
-                            {formatMinorUnits(split.amount, transaction.currency)}
-                            {split.note === undefined ? null : <small> {split.note}</small>}
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </td>
-                  <td>{accountName(transaction.account_id)}</td>
-                  <td>
-                    {transaction.splits.length > 0 ? (
-                      "split"
-                    ) : (
-                      <>
-                        {icon === null ? null : (
-                          <span className="category-icon" aria-hidden="true">
-                            {icon}{" "}
-                          </span>
-                        )}
-                        {categoryName(transaction.category_id)}
-                      </>
-                    )}
-                    {transaction.splits.length > 0 ||
-                    ruleName(transaction.rule_id) === null ? null : (
-                      <small className="muted" data-testid="filed-by">
-                        {" "}
-                        by {ruleName(transaction.rule_id)}
-                      </small>
-                    )}
-                  </td>
-                  <td>
-                    {transaction.tags.map((tagId) => (
-                      <span key={tagId} className="chip">
-                        {tagName(tagId)}
-                      </span>
-                    ))}
-                    {needsReview(transaction) ? (
-                      <span className="chip marker review" data-testid="marker-needs-review">
-                        needs review
-                      </span>
-                    ) : null}
-                    {transaction.hidden === true ? (
-                      <span className="chip marker hidden" data-testid="marker-hidden">
-                        hidden
-                      </span>
-                    ) : null}
-                    {transaction.transfer_id === undefined ? null : (
-                      <span className="chip marker transfer" data-testid="marker-transfer">
-                        transfer
-                      </span>
-                    )}
-                    {transaction.pending === true ? (
-                      <span className="chip marker pending" data-testid="marker-pending">
-                        pending
-                      </span>
-                    ) : null}
-                  </td>
-                  <td
-                    className={`amount${transaction.amount > 0 ? " positive" : ""}`}
-                    data-testid="amount"
                   >
-                    {formatMinorUnits(transaction.amount, transaction.currency)}
-                  </td>
-                  <td className="actions">
-                    <button
-                      type="button"
-                      className="link"
-                      onClick={() => openDetails(transaction.id)}
+                    <TableCell className="w-10 pl-4">
+                      <Checkbox
+                        aria-label={`Select ${transaction.description}`}
+                        checked={isSelected}
+                        onCheckedChange={(checked) => toggle(transaction.id, checked === true)}
+                      />
+                    </TableCell>
+                    <TableCell className="text-muted-foreground tabular-nums">
+                      {transaction.date}
+                    </TableCell>
+                    <TableCell className="max-w-md whitespace-normal">
+                      {showMerchant ? (
+                        <span className="block font-medium" data-testid="merchant">
+                          {merchant.name}
+                        </span>
+                      ) : null}
+                      <span
+                        className={cn(
+                          "block",
+                          showMerchant ? "text-xs text-muted-foreground" : "font-medium",
+                        )}
+                        data-testid="description"
+                      >
+                        {transaction.description}
+                      </span>
+                      {transaction.notes === undefined ? null : (
+                        <small className="block text-xs text-muted-foreground">
+                          {" "}
+                          {transaction.notes}
+                        </small>
+                      )}
+                      {transaction.splits.length === 0 ? null : (
+                        <ul
+                          className="m-0 mt-1 grid list-none gap-0.5 p-0 text-xs text-muted-foreground"
+                          aria-label="Splits"
+                        >
+                          {transaction.splits.map((split) => (
+                            <li key={split.id} className="tabular-nums">
+                              {categoryName(split.category_id) || "uncategorized"}{" "}
+                              {formatMinorUnits(split.amount, transaction.currency)}
+                              {split.note === undefined ? null : <small> {split.note}</small>}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {accountName(transaction.account_id)}
+                    </TableCell>
+                    <TableCell>
+                      {transaction.splits.length > 0 ? (
+                        "split"
+                      ) : (
+                        <>
+                          {icon === null ? null : (
+                            <span className="text-[0.95em]" aria-hidden="true">
+                              {icon}{" "}
+                            </span>
+                          )}
+                          {categoryName(transaction.category_id)}
+                        </>
+                      )}
+                      {transaction.splits.length > 0 || filedBy === null ? null : (
+                        <small className="text-xs text-muted-foreground" data-testid="filed-by">
+                          {" "}
+                          by {filedBy}
+                        </small>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex flex-wrap gap-1">
+                        {transaction.tags.map((tagId) => (
+                          <Badge key={tagId} variant="secondary">
+                            {tagName(tagId)}
+                          </Badge>
+                        ))}
+                        {needsReview(transaction) ? (
+                          <MarkerBadge kind="review" data-testid="marker-needs-review">
+                            needs review
+                          </MarkerBadge>
+                        ) : null}
+                        {transaction.hidden === true ? (
+                          <MarkerBadge kind="hidden" data-testid="marker-hidden">
+                            hidden
+                          </MarkerBadge>
+                        ) : null}
+                        {transaction.transfer_id === undefined ? null : (
+                          <MarkerBadge kind="transfer" data-testid="marker-transfer">
+                            transfer
+                          </MarkerBadge>
+                        )}
+                        {transaction.pending === true ? (
+                          <MarkerBadge kind="pending" data-testid="marker-pending">
+                            pending
+                          </MarkerBadge>
+                        ) : null}
+                      </div>
+                    </TableCell>
+                    <TableCell
+                      className={cn("money font-medium", transaction.amount > 0 && "text-positive")}
+                      data-testid="amount"
                     >
-                      Details
-                    </button>
-                    <button type="button" className="link" onClick={() => setEditing(transaction)}>
-                      Edit
-                    </button>
-                    <button
-                      type="button"
-                      className="link"
-                      onClick={() => openReceipts(transaction.id)}
-                    >
-                      Receipts
-                    </button>
-                    <button
-                      type="button"
-                      className="link"
-                      onClick={() => void deleteWithReceipts([transaction.id])}
-                    >
-                      Delete
-                    </button>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        ))}
-      </table>
+                      {formatMinorUnits(transaction.amount, transaction.currency)}
+                    </TableCell>
+                    <TableCell className="pr-3 text-right">
+                      <div className="flex justify-end gap-0.5">
+                        <RowAction onClick={() => openDetails(transaction.id)}>Details</RowAction>
+                        <RowAction onClick={() => setEditing(transaction)}>Edit</RowAction>
+                        <RowAction onClick={() => openReceipts(transaction.id)}>Receipts</RowAction>
+                        <RowAction
+                          className="hover:text-destructive"
+                          onClick={() => void deleteWithReceipts([transaction.id])}
+                        >
+                          Delete
+                        </RowAction>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          ))}
+        </Table>
+      </Card>
       {remaining > 0 ? (
-        <div className="actions">
-          <button type="button" className="secondary" onClick={() => setLimit(limit + PAGE)}>
+        <div className="flex justify-center">
+          <Button variant="outline" onClick={() => setLimit(limit + PAGE)}>
             Show {Math.min(remaining, PAGE)} more
-          </button>
+          </Button>
         </div>
       ) : null}
 
-      {attachingTo === null ? null : (
-        <ReceiptsPanel app={app} transaction={attachingTo} onClose={() => setAttaching(null)} />
-      )}
       {detail === null ? null : (
         <TransactionPanel
           key={detail.id}
@@ -544,6 +600,47 @@ export function TransactionsScreen({
         />
       )}
     </section>
+  );
+}
+
+/** One of the quiet text actions at the end of a row. */
+function RowAction({
+  className,
+  ...props
+}: {
+  className?: string;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      className={cn("h-7 px-2 text-xs text-muted-foreground hover:text-foreground", className)}
+      {...props}
+    />
+  );
+}
+
+/** A label over a control in a dense bar, quieter than a form's field. */
+function BarField({
+  id,
+  label,
+  className,
+  children,
+}: {
+  id: string;
+  label: string;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className={cn("grid gap-1", className)}>
+      <Label htmlFor={id} className="text-xs text-muted-foreground">
+        {label}
+      </Label>
+      {children}
+    </div>
   );
 }
 
@@ -593,247 +690,259 @@ function FilterBar({
     query.month !== undefined && !months.includes(query.month) ? [query.month, ...months] : months;
 
   return (
-    <div className="filter-bar" data-testid="filter-bar">
-      <label className="search">
-        Search
-        <input
-          type="search"
-          aria-label="Search transactions"
-          placeholder="Description, merchant, notes, or amount"
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-        />
-      </label>
-      <label>
-        Account
-        <select
-          aria-label="Filter by account"
-          value={query.accountId ?? ""}
-          onChange={(event) =>
-            set("accountId", event.target.value === "" ? undefined : event.target.value)
-          }
-        >
-          <option value="">All accounts</option>
-          {accounts.map((account) => (
-            <option key={account.id} value={account.id}>
-              {account.name}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label>
-        Category
-        <select
-          aria-label="Filter by category"
-          value={
-            query.categoryId === undefined
-              ? ""
-              : query.categoryId === ""
-                ? UNCATEGORIZED
-                : query.categoryId
-          }
-          onChange={(event) =>
-            set(
-              "categoryId",
-              event.target.value === ""
-                ? undefined
-                : event.target.value === UNCATEGORIZED
-                  ? ""
-                  : event.target.value,
-            )
-          }
-        >
-          <CategoryOptions
-            taxonomy={taxonomy}
-            blankLabel="All categories"
-            extra={[{ value: UNCATEGORIZED, label: "Uncategorized" }]}
+    <Card className="py-4" data-testid="filter-bar">
+      <CardContent className="grid grid-cols-[repeat(auto-fill,minmax(9.5rem,1fr))] items-end gap-x-3 gap-y-3 px-4">
+        <BarField id="filter-search" label="Search" className="col-span-full">
+          <div className="relative">
+            <Search
+              aria-hidden="true"
+              className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
+            />
+            <Input
+              id="filter-search"
+              type="search"
+              aria-label="Search transactions"
+              placeholder="Description, merchant, notes, or amount"
+              className="pl-8"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+            />
+          </div>
+        </BarField>
+        <BarField id="filter-account" label="Account">
+          <NativeSelect
+            id="filter-account"
+            aria-label="Filter by account"
+            value={query.accountId ?? ""}
+            onChange={(event) =>
+              set("accountId", event.target.value === "" ? undefined : event.target.value)
+            }
+          >
+            <option value="">All accounts</option>
+            {accounts.map((account) => (
+              <option key={account.id} value={account.id}>
+                {account.name}
+              </option>
+            ))}
+          </NativeSelect>
+        </BarField>
+        <BarField id="filter-category" label="Category">
+          <NativeSelect
+            id="filter-category"
+            aria-label="Filter by category"
+            value={
+              query.categoryId === undefined
+                ? ""
+                : query.categoryId === ""
+                  ? UNCATEGORIZED
+                  : query.categoryId
+            }
+            onChange={(event) =>
+              set(
+                "categoryId",
+                event.target.value === ""
+                  ? undefined
+                  : event.target.value === UNCATEGORIZED
+                    ? ""
+                    : event.target.value,
+              )
+            }
+          >
+            <CategoryOptions
+              taxonomy={taxonomy}
+              blankLabel="All categories"
+              extra={[{ value: UNCATEGORIZED, label: "Uncategorized" }]}
+            />
+          </NativeSelect>
+        </BarField>
+        <BarField id="filter-tag" label="Tag">
+          <NativeSelect
+            id="filter-tag"
+            aria-label="Filter by tag"
+            value={query.tagId ?? ""}
+            onChange={(event) =>
+              set("tagId", event.target.value === "" ? undefined : event.target.value)
+            }
+          >
+            <option value="">All tags</option>
+            {tags.map((tag) => (
+              <option key={tag.id} value={tag.id}>
+                {tag.name}
+              </option>
+            ))}
+          </NativeSelect>
+        </BarField>
+        <BarField id="filter-merchant" label="Merchant">
+          <NativeSelect
+            id="filter-merchant"
+            aria-label="Filter by merchant"
+            value={query.merchantId ?? ""}
+            onChange={(event) =>
+              set("merchantId", event.target.value === "" ? undefined : event.target.value)
+            }
+          >
+            <option value="">All merchants</option>
+            {merchants.map((merchant) => (
+              <option key={merchant.id} value={merchant.id}>
+                {merchant.name}
+              </option>
+            ))}
+          </NativeSelect>
+        </BarField>
+        <BarField id="filter-month" label="Month">
+          <NativeSelect
+            id="filter-month"
+            aria-label="Filter by month"
+            value={query.month ?? ""}
+            onChange={(event) =>
+              set("month", event.target.value === "" ? undefined : event.target.value)
+            }
+          >
+            <option value="">All months</option>
+            {monthOptions.map((month) => (
+              <option key={month} value={month}>
+                {month}
+              </option>
+            ))}
+          </NativeSelect>
+        </BarField>
+        <BarField id="filter-from" label="From">
+          <Input
+            id="filter-from"
+            type="date"
+            aria-label="From"
+            value={query.from ?? ""}
+            onChange={(event) =>
+              set("from", event.target.value === "" ? undefined : event.target.value)
+            }
           />
-        </select>
-      </label>
-      <label>
-        Tag
-        <select
-          aria-label="Filter by tag"
-          value={query.tagId ?? ""}
-          onChange={(event) =>
-            set("tagId", event.target.value === "" ? undefined : event.target.value)
-          }
-        >
-          <option value="">All tags</option>
-          {tags.map((tag) => (
-            <option key={tag.id} value={tag.id}>
-              {tag.name}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label>
-        Merchant
-        <select
-          aria-label="Filter by merchant"
-          value={query.merchantId ?? ""}
-          onChange={(event) =>
-            set("merchantId", event.target.value === "" ? undefined : event.target.value)
-          }
-        >
-          <option value="">All merchants</option>
-          {merchants.map((merchant) => (
-            <option key={merchant.id} value={merchant.id}>
-              {merchant.name}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label>
-        Month
-        <select
-          aria-label="Filter by month"
-          value={query.month ?? ""}
-          onChange={(event) =>
-            set("month", event.target.value === "" ? undefined : event.target.value)
-          }
-        >
-          <option value="">All months</option>
-          {monthOptions.map((month) => (
-            <option key={month} value={month}>
-              {month}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label>
-        From
-        <input
-          type="date"
-          aria-label="From"
-          value={query.from ?? ""}
-          onChange={(event) =>
-            set("from", event.target.value === "" ? undefined : event.target.value)
-          }
-        />
-      </label>
-      <label>
-        To
-        <input
-          type="date"
-          aria-label="To"
-          value={query.to ?? ""}
-          onChange={(event) =>
-            set("to", event.target.value === "" ? undefined : event.target.value)
-          }
-        />
-      </label>
-      <label className="amount-bound">
-        Min amount
-        <input
-          inputMode="decimal"
-          aria-label="Min amount"
-          placeholder="0.00"
-          value={min}
-          onChange={(event) => setMin(event.target.value)}
-        />
-      </label>
-      <label className="amount-bound">
-        Max amount
-        <input
-          inputMode="decimal"
-          aria-label="Max amount"
-          placeholder="any"
-          value={max}
-          onChange={(event) => setMax(event.target.value)}
-        />
-      </label>
-      <label>
-        Review
-        <select
-          aria-label="Review"
-          value={query.review ?? ""}
-          onChange={(event) =>
-            set(
-              "review",
-              event.target.value === "" ? undefined : (event.target.value as ReviewFilter),
-            )
-          }
-        >
-          <option value="">All</option>
-          <option value="needs">Needs review</option>
-          <option value="reviewed">Reviewed</option>
-        </select>
-      </label>
-      <label>
-        Hidden
-        <select
-          aria-label="Hidden"
-          value={query.hidden ?? ""}
-          onChange={(event) =>
-            set(
-              "hidden",
-              event.target.value === "" ? undefined : (event.target.value as HiddenFilter),
-            )
-          }
-        >
-          <option value="">Exclude hidden</option>
-          <option value="include">Include hidden</option>
-          <option value="only">Only hidden</option>
-        </select>
-      </label>
-      <label>
-        Transfers
-        <select
-          aria-label="Transfers"
-          value={query.transfers ?? ""}
-          onChange={(event) =>
-            set(
-              "transfers",
-              event.target.value === "" ? undefined : (event.target.value as TransferFilter),
-            )
-          }
-        >
-          <option value="">Include transfers</option>
-          <option value="exclude">Exclude transfers</option>
-          <option value="only">Only transfers</option>
-        </select>
-      </label>
-      <label>
-        Sort
-        <select
-          aria-label="Sort"
-          value={query.sort ?? "date_desc"}
-          onChange={(event) =>
-            set(
-              "sort",
-              event.target.value === "date_desc"
-                ? undefined
-                : (event.target.value as TransactionSort),
-            )
-          }
-        >
-          {TRANSACTION_SORTS.map((sort) => (
-            <option key={sort} value={sort}>
-              {SORT_LABELS[sort]}
-            </option>
-          ))}
-        </select>
-      </label>
-      <div className="filter-state" data-testid="filter-state">
-        {filterCount === 0 ? (
-          <span className="muted">No filters</span>
-        ) : (
-          <>
-            <span className="chip active-count" data-testid="active-filter-count">
-              {filterCount} {filterCount === 1 ? "filter" : "filters"}
-            </span>
-            <button
-              type="button"
-              className="link"
-              onClick={() => navigate(query.sort === undefined ? {} : { sort: query.sort })}
-            >
-              Clear filters
-            </button>
-          </>
-        )}
-      </div>
-    </div>
+        </BarField>
+        <BarField id="filter-to" label="To">
+          <Input
+            id="filter-to"
+            type="date"
+            aria-label="To"
+            value={query.to ?? ""}
+            onChange={(event) =>
+              set("to", event.target.value === "" ? undefined : event.target.value)
+            }
+          />
+        </BarField>
+        <BarField id="filter-min" label="Min amount">
+          <Input
+            id="filter-min"
+            inputMode="decimal"
+            aria-label="Min amount"
+            placeholder="0.00"
+            className="tabular-nums"
+            value={min}
+            onChange={(event) => setMin(event.target.value)}
+          />
+        </BarField>
+        <BarField id="filter-max" label="Max amount">
+          <Input
+            id="filter-max"
+            inputMode="decimal"
+            aria-label="Max amount"
+            placeholder="any"
+            className="tabular-nums"
+            value={max}
+            onChange={(event) => setMax(event.target.value)}
+          />
+        </BarField>
+        <BarField id="filter-review" label="Review">
+          <NativeSelect
+            id="filter-review"
+            aria-label="Review"
+            value={query.review ?? ""}
+            onChange={(event) =>
+              set(
+                "review",
+                event.target.value === "" ? undefined : (event.target.value as ReviewFilter),
+              )
+            }
+          >
+            <option value="">All</option>
+            <option value="needs">Needs review</option>
+            <option value="reviewed">Reviewed</option>
+          </NativeSelect>
+        </BarField>
+        <BarField id="filter-hidden" label="Hidden">
+          <NativeSelect
+            id="filter-hidden"
+            aria-label="Hidden"
+            value={query.hidden ?? ""}
+            onChange={(event) =>
+              set(
+                "hidden",
+                event.target.value === "" ? undefined : (event.target.value as HiddenFilter),
+              )
+            }
+          >
+            <option value="">Exclude hidden</option>
+            <option value="include">Include hidden</option>
+            <option value="only">Only hidden</option>
+          </NativeSelect>
+        </BarField>
+        <BarField id="filter-transfers" label="Transfers">
+          <NativeSelect
+            id="filter-transfers"
+            aria-label="Transfers"
+            value={query.transfers ?? ""}
+            onChange={(event) =>
+              set(
+                "transfers",
+                event.target.value === "" ? undefined : (event.target.value as TransferFilter),
+              )
+            }
+          >
+            <option value="">Include transfers</option>
+            <option value="exclude">Exclude transfers</option>
+            <option value="only">Only transfers</option>
+          </NativeSelect>
+        </BarField>
+        <BarField id="filter-sort" label="Sort">
+          <NativeSelect
+            id="filter-sort"
+            aria-label="Sort"
+            value={query.sort ?? "date_desc"}
+            onChange={(event) =>
+              set(
+                "sort",
+                event.target.value === "date_desc"
+                  ? undefined
+                  : (event.target.value as TransactionSort),
+              )
+            }
+          >
+            {TRANSACTION_SORTS.map((sort) => (
+              <option key={sort} value={sort}>
+                {SORT_LABELS[sort]}
+              </option>
+            ))}
+          </NativeSelect>
+        </BarField>
+        <div className="flex h-9 items-center gap-2 text-sm" data-testid="filter-state">
+          {filterCount === 0 ? (
+            <span className="text-muted-foreground">No filters</span>
+          ) : (
+            <>
+              <Badge variant="secondary" data-testid="active-filter-count">
+                {filterCount} {filterCount === 1 ? "filter" : "filters"}
+              </Badge>
+              <Button
+                variant="link"
+                size="sm"
+                className="h-auto p-0"
+                onClick={() => navigate(query.sort === undefined ? {} : { sort: query.sort })}
+              >
+                Clear filters
+              </Button>
+            </>
+          )}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -977,74 +1086,92 @@ function BulkBar({
   };
 
   return (
-    <form className="bulk-bar" data-testid="bulk-bar" aria-label="Bulk edit" onSubmit={apply}>
-      <strong data-testid="bulk-count">{ids.length} selected</strong>
-      <label>
-        Category
-        <select
-          aria-label="Bulk category"
-          value={category}
-          onChange={(event) => setCategory(event.target.value)}
-        >
-          <CategoryOptions
-            taxonomy={taxonomy}
-            blankLabel="Leave as is"
-            extra={[{ value: UNCATEGORIZED, label: "Uncategorized" }]}
-          />
-        </select>
-      </label>
-      <label>
-        Add tag
-        <select aria-label="Bulk tag" value={tag} onChange={(event) => setTag(event.target.value)}>
-          <option value="">None</option>
-          {tags.map((entry) => (
-            <option key={entry.id} value={entry.id}>
-              {entry.name}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label>
-        Review
-        <select
-          aria-label="Bulk review"
-          value={review}
-          onChange={(event) => setReview(event.target.value as BulkReview)}
-        >
-          <option value="">Leave as is</option>
-          <option value="reviewed">Mark reviewed</option>
-          <option value="unreviewed">Mark unreviewed</option>
-        </select>
-      </label>
-      <label>
-        Hidden
-        <select
-          aria-label="Bulk hidden"
-          value={hidden}
-          onChange={(event) => setHidden(event.target.value as BulkHidden)}
-        >
-          <option value="">Leave as is</option>
-          <option value="hide">Hide</option>
-          <option value="unhide">Unhide</option>
-        </select>
-      </label>
-      <div className="bulk-actions">
-        <button type="submit" disabled={busy || nothingChosen}>
-          Apply changes
-        </button>
-        <button type="button" className="secondary danger" disabled={busy} onClick={onDelete}>
-          Delete selected
-        </button>
-        <button type="button" className="link" onClick={onClear}>
-          Clear selection
-        </button>
-      </div>
-      {error === null ? null : (
-        <p className="error" role="alert">
-          {error}
-        </p>
-      )}
-    </form>
+    <Card className="sticky top-2 z-10 border-primary/50 py-3 shadow-md">
+      <form
+        className="flex flex-wrap items-end gap-3 px-4"
+        data-testid="bulk-bar"
+        aria-label="Bulk edit"
+        onSubmit={apply}
+      >
+        <strong className="min-w-24 self-center text-sm tabular-nums" data-testid="bulk-count">
+          {ids.length} selected
+        </strong>
+        <BarField id="bulk-category" label="Category" className="min-w-40">
+          <NativeSelect
+            id="bulk-category"
+            aria-label="Bulk category"
+            value={category}
+            onChange={(event) => setCategory(event.target.value)}
+          >
+            <CategoryOptions
+              taxonomy={taxonomy}
+              blankLabel="Leave as is"
+              extra={[{ value: UNCATEGORIZED, label: "Uncategorized" }]}
+            />
+          </NativeSelect>
+        </BarField>
+        <BarField id="bulk-tag" label="Add tag" className="min-w-36">
+          <NativeSelect
+            id="bulk-tag"
+            aria-label="Bulk tag"
+            value={tag}
+            onChange={(event) => setTag(event.target.value)}
+          >
+            <option value="">None</option>
+            {tags.map((entry) => (
+              <option key={entry.id} value={entry.id}>
+                {entry.name}
+              </option>
+            ))}
+          </NativeSelect>
+        </BarField>
+        <BarField id="bulk-review" label="Review" className="min-w-36">
+          <NativeSelect
+            id="bulk-review"
+            aria-label="Bulk review"
+            value={review}
+            onChange={(event) => setReview(event.target.value as BulkReview)}
+          >
+            <option value="">Leave as is</option>
+            <option value="reviewed">Mark reviewed</option>
+            <option value="unreviewed">Mark unreviewed</option>
+          </NativeSelect>
+        </BarField>
+        <BarField id="bulk-hidden" label="Hidden" className="min-w-36">
+          <NativeSelect
+            id="bulk-hidden"
+            aria-label="Bulk hidden"
+            value={hidden}
+            onChange={(event) => setHidden(event.target.value as BulkHidden)}
+          >
+            <option value="">Leave as is</option>
+            <option value="hide">Hide</option>
+            <option value="unhide">Unhide</option>
+          </NativeSelect>
+        </BarField>
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          <Button type="submit" disabled={busy || nothingChosen}>
+            Apply changes
+          </Button>
+          <Button
+            variant="outline"
+            className="border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
+            disabled={busy}
+            onClick={onDelete}
+          >
+            Delete selected
+          </Button>
+          <Button variant="link" onClick={onClear}>
+            Clear selection
+          </Button>
+        </div>
+        {error === null ? null : (
+          <p className="m-0 basis-full text-sm text-destructive" role="alert">
+            {error}
+          </p>
+        )}
+      </form>
+    </Card>
   );
 }
 
@@ -1159,203 +1286,228 @@ function TransactionForm({
   };
 
   return (
-    <form
-      className="editor"
-      onSubmit={(event) => void submit(event)}
-      aria-label="Transaction editor"
-    >
-      <h2>{transaction === null ? "New transaction" : "Edit transaction"}</h2>
-      <div className="grid">
-        <label>
-          Account
-          <select
-            name="account"
-            value={accountId}
-            onChange={(event) => setAccountId(event.target.value)}
-          >
-            {accounts.map((candidate) => (
-              <option key={candidate.id} value={candidate.id}>
-                {candidate.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Date
-          <input
-            name="date"
-            type="date"
-            required
-            value={date}
-            onChange={(event) => setDate(event.target.value)}
-          />
-        </label>
-        <label>
-          Amount ({currency})
-          <input
-            name="amount"
-            inputMode="decimal"
-            required
-            placeholder="-12.34"
-            value={amount}
-            onChange={(event) => setAmount(event.target.value)}
-          />
-        </label>
-        <label>
-          Description
-          <input
-            name="description"
-            required
-            value={description}
-            onChange={(event) => setDescription(event.target.value)}
-          />
-        </label>
-        <label>
-          Category
-          <select
-            name="category"
-            value={categoryId}
-            onChange={(event) => setCategoryId(event.target.value)}
-            disabled={splits.length > 0}
-          >
-            <CategoryOptions
-              taxonomy={taxonomy}
-              blankLabel={splits.length > 0 ? "split" : "Uncategorized"}
-            />
-          </select>
-        </label>
-        <label>
-          Merchant
-          <select
-            name="merchant"
-            value={merchantId}
-            onChange={(event) => setMerchantId(event.target.value)}
-          >
-            <option value="">Automatic</option>
-            {merchants.map((merchant) => (
-              <option key={merchant.id} value={merchant.id}>
-                {merchant.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Notes
-          <input name="notes" value={notes} onChange={(event) => setNotes(event.target.value)} />
-        </label>
-        <label className="chip-option hidden-option">
-          <input
-            type="checkbox"
-            name="hidden"
-            checked={hidden}
-            onChange={(event) => setHidden(event.target.checked)}
-          />
-          Hidden
-        </label>
-      </div>
-      <fieldset className="tags">
-        <legend>Tags</legend>
-        {tags.length === 0 ? <small>No tags yet.</small> : null}
-        {tags.map((tag) => (
-          <label key={tag.id} className="chip-option">
-            <input
-              type="checkbox"
-              name="tags"
-              value={tag.id}
-              checked={selectedTags.includes(tag.id)}
-              onChange={(event) =>
-                setSelectedTags(
-                  event.target.checked
-                    ? [...selectedTags, tag.id]
-                    : selectedTags.filter((candidate) => candidate !== tag.id),
-                )
-              }
-            />
-            {tag.name}
-          </label>
-        ))}
-      </fieldset>
-      <fieldset className="split-editor" data-testid="splits">
-        <legend>Splits</legend>
-        {splits.map((row, index) => (
-          <div key={row.id} className="split-row" data-testid="split-row">
-            <select
-              aria-label={`Split ${index + 1} category`}
-              value={row.categoryId}
-              onChange={(event) =>
-                setSplits(replaceRow(splits, index, { categoryId: event.target.value }))
-              }
-            >
-              <CategoryOptions taxonomy={taxonomy} blankLabel="Uncategorized" />
-            </select>
-            <input
-              aria-label={`Split ${index + 1} amount`}
-              inputMode="decimal"
-              value={row.amount}
-              onChange={(event) =>
-                setSplits(replaceRow(splits, index, { amount: event.target.value }))
-              }
-            />
-            <input
-              aria-label={`Split ${index + 1} note`}
-              placeholder="note"
-              value={row.note}
-              onChange={(event) =>
-                setSplits(replaceRow(splits, index, { note: event.target.value }))
-              }
-            />
-            <button
-              type="button"
-              className="link"
-              onClick={() => setSplits(splits.filter((_, candidate) => candidate !== index))}
-            >
-              Remove
-            </button>
+    <Card>
+      <CardHeader>
+        <CardTitle>{transaction === null ? "New transaction" : "Edit transaction"}</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <form
+          className="grid gap-5"
+          onSubmit={(event) => void submit(event)}
+          aria-label="Transaction editor"
+        >
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <Field label="Account" htmlFor="editor-account">
+              <NativeSelect
+                id="editor-account"
+                name="account"
+                value={accountId}
+                onChange={(event) => setAccountId(event.target.value)}
+              >
+                {accounts.map((candidate) => (
+                  <option key={candidate.id} value={candidate.id}>
+                    {candidate.name}
+                  </option>
+                ))}
+              </NativeSelect>
+            </Field>
+            <Field label="Date" htmlFor="editor-date">
+              <Input
+                id="editor-date"
+                name="date"
+                type="date"
+                required
+                value={date}
+                onChange={(event) => setDate(event.target.value)}
+              />
+            </Field>
+            <Field label={`Amount (${currency})`} htmlFor="editor-amount">
+              <Input
+                id="editor-amount"
+                name="amount"
+                inputMode="decimal"
+                required
+                placeholder="-12.34"
+                className="tabular-nums"
+                value={amount}
+                onChange={(event) => setAmount(event.target.value)}
+              />
+            </Field>
+            <Field label="Description" htmlFor="editor-description">
+              <Input
+                id="editor-description"
+                name="description"
+                required
+                value={description}
+                onChange={(event) => setDescription(event.target.value)}
+              />
+            </Field>
+            <Field label="Category" htmlFor="editor-category">
+              <NativeSelect
+                id="editor-category"
+                name="category"
+                value={categoryId}
+                onChange={(event) => setCategoryId(event.target.value)}
+                disabled={splits.length > 0}
+              >
+                <CategoryOptions
+                  taxonomy={taxonomy}
+                  blankLabel={splits.length > 0 ? "split" : "Uncategorized"}
+                />
+              </NativeSelect>
+            </Field>
+            <Field label="Merchant" htmlFor="editor-merchant">
+              <NativeSelect
+                id="editor-merchant"
+                name="merchant"
+                value={merchantId}
+                onChange={(event) => setMerchantId(event.target.value)}
+              >
+                <option value="">Automatic</option>
+                {merchants.map((merchant) => (
+                  <option key={merchant.id} value={merchant.id}>
+                    {merchant.name}
+                  </option>
+                ))}
+              </NativeSelect>
+            </Field>
+            <Field label="Notes" htmlFor="editor-notes">
+              <Input
+                id="editor-notes"
+                name="notes"
+                value={notes}
+                onChange={(event) => setNotes(event.target.value)}
+              />
+            </Field>
+            <div className="flex h-9 items-center gap-2 self-end">
+              <Checkbox
+                id="editor-hidden"
+                name="hidden"
+                checked={hidden}
+                onCheckedChange={(checked) => setHidden(checked === true)}
+              />
+              <Label htmlFor="editor-hidden">Hidden</Label>
+            </div>
           </div>
-        ))}
-        <div className="split-footer">
-          <button
-            type="button"
-            className="secondary"
-            onClick={() =>
-              setSplits([
-                ...splits,
-                {
-                  id: `split_${Date.now().toString(36)}_${splits.length}`,
-                  categoryId: "",
-                  amount: "",
-                  note: "",
-                },
-              ])
-            }
-          >
-            Add split
-          </button>
-          {splits.length === 0 ? null : (
-            <span
-              className={splitCheck.ok ? "hint" : "error"}
-              data-testid="split-difference"
-              role="status"
-            >
-              {splitCheck.ok
-                ? "Splits add up."
-                : `Splits ${describeDifference(splitCheck.difference, parsedAmount, currency)}.`}
-            </span>
+          <fieldset className="m-0 grid min-w-0 gap-2 border-0 p-0">
+            <legend className="mb-2 p-0 text-sm font-medium leading-none">Tags</legend>
+            {tags.length === 0 ? (
+              <small className="text-xs text-muted-foreground">No tags yet.</small>
+            ) : null}
+            <div className="flex flex-wrap gap-x-4 gap-y-2">
+              {tags.map((tag) => (
+                <div key={tag.id} className="flex items-center gap-2">
+                  <Checkbox
+                    id={`editor-tag-${tag.id}`}
+                    name="tags"
+                    value={tag.id}
+                    checked={selectedTags.includes(tag.id)}
+                    onCheckedChange={(checked) =>
+                      setSelectedTags(
+                        checked === true
+                          ? [...selectedTags, tag.id]
+                          : selectedTags.filter((candidate) => candidate !== tag.id),
+                      )
+                    }
+                  />
+                  <Label htmlFor={`editor-tag-${tag.id}`} className="font-normal">
+                    {tag.name}
+                  </Label>
+                </div>
+              ))}
+            </div>
+          </fieldset>
+          <fieldset className="m-0 grid min-w-0 gap-3 border-0 p-0" data-testid="splits">
+            <legend className="mb-2 p-0 text-sm font-medium leading-none">Splits</legend>
+            {splits.map((row, index) => (
+              <div
+                key={row.id}
+                className="grid items-center gap-2 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,2fr)_auto]"
+                data-testid="split-row"
+              >
+                <NativeSelect
+                  aria-label={`Split ${index + 1} category`}
+                  value={row.categoryId}
+                  onChange={(event) =>
+                    setSplits(replaceRow(splits, index, { categoryId: event.target.value }))
+                  }
+                >
+                  <CategoryOptions taxonomy={taxonomy} blankLabel="Uncategorized" />
+                </NativeSelect>
+                <Input
+                  aria-label={`Split ${index + 1} amount`}
+                  inputMode="decimal"
+                  className="tabular-nums"
+                  value={row.amount}
+                  onChange={(event) =>
+                    setSplits(replaceRow(splits, index, { amount: event.target.value }))
+                  }
+                />
+                <Input
+                  aria-label={`Split ${index + 1} note`}
+                  placeholder="note"
+                  value={row.note}
+                  onChange={(event) =>
+                    setSplits(replaceRow(splits, index, { note: event.target.value }))
+                  }
+                />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-muted-foreground hover:text-destructive"
+                  onClick={() => setSplits(splits.filter((_, candidate) => candidate !== index))}
+                >
+                  Remove
+                </Button>
+              </div>
+            ))}
+            <div className="flex flex-wrap items-center gap-3">
+              <Button
+                variant="secondary"
+                onClick={() =>
+                  setSplits([
+                    ...splits,
+                    {
+                      id: `split_${Date.now().toString(36)}_${splits.length}`,
+                      categoryId: "",
+                      amount: "",
+                      note: "",
+                    },
+                  ])
+                }
+              >
+                Add split
+              </Button>
+              {splits.length === 0 ? null : (
+                <span
+                  className={cn(
+                    "text-sm",
+                    splitCheck.ok ? "text-muted-foreground" : "text-destructive",
+                  )}
+                  data-testid="split-difference"
+                  role="status"
+                >
+                  {splitCheck.ok
+                    ? "Splits add up."
+                    : `Splits ${describeDifference(splitCheck.difference, parsedAmount, currency)}.`}
+                </span>
+              )}
+            </div>
+          </fieldset>
+          {error === null ? null : (
+            <Alert variant="destructive" role="alert" data-testid="form-error">
+              <AlertDescription className="block">{error}</AlertDescription>
+            </Alert>
           )}
-        </div>
-      </fieldset>
-      {error === null ? null : (
-        <p className="error" role="alert" data-testid="form-error">
-          {error}
-        </p>
-      )}
-      <div className="actions">
-        <button type="submit">Save transaction</button>
-        <button type="button" className="secondary" onClick={onDone}>
-          Cancel
-        </button>
-      </div>
-    </form>
+          <div className="flex flex-wrap gap-2">
+            <Button type="submit">Save transaction</Button>
+            <Button variant="secondary" onClick={onDone}>
+              Cancel
+            </Button>
+          </div>
+        </form>
+      </CardContent>
+    </Card>
   );
 }
 

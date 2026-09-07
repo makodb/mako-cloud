@@ -1,4 +1,42 @@
-import { type FormEvent, useMemo, useState } from "react";
+import {
+  BarChart,
+  Button,
+  type ButtonProps,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  type ChartSeries,
+  DonutChart,
+  type DonutSlice,
+  EmptyState,
+  Field,
+  Input,
+  LineChart,
+  Table,
+  TableBody,
+  TableCell,
+  TableFooter,
+  TableHead,
+  TableHeader,
+  TableRow,
+  Tabs,
+  TabsContent,
+  TabsLine,
+  TabsTrigger,
+  cn,
+} from "@mako-cloud/ui";
+import { ChevronLeft, ChevronRight, Download } from "lucide-react";
+import {
+  type ComponentProps,
+  type FormEvent,
+  memo,
+  type ReactNode,
+  useCallback,
+  useMemo,
+  useState,
+} from "react";
 
 import { isCounted } from "../../functions/shared/exclusions.js";
 import type { RationalApp } from "../data/rational.js";
@@ -31,10 +69,11 @@ import {
 import { csvDocument, transactionsCsv } from "../selectors/export.js";
 import { amountToText, formatMinorUnits } from "../selectors/money.js";
 import { isIsoDate, monthKey, sortTransactions } from "../selectors/transactions.js";
-import { BarChart, LineChart, Sankey, Treemap } from "./charts/index.js";
+import { compactMoney, shortMonthLabel } from "./charts/layout.js";
+import { Sankey } from "./charts/sankey.jsx";
+import { Treemap } from "./charts/treemap.jsx";
 import { useQuery } from "./hooks.js";
 import { type Route, routeHash, transactionsHash } from "./router.js";
-import "./styles/cash-flow.css";
 
 /**
  * Cash flow: what came in, what went out, and where it went, over a range the
@@ -64,6 +103,30 @@ const TREND_MIN_MONTHS = 12;
 
 /** The empty key is "Uncategorized"; the DOM wants a word where a test can find it. */
 const UNCATEGORIZED_KEY = "uncategorized";
+
+/** How many slices a donut shows on its own before the rest fold into "Other". */
+const DONUT_SLICES = 7;
+
+/**
+ * The kit's charts copy their data on every render, and Recharts keys its
+ * entry animation on that copy; a screen that re-renders on every sync tick
+ * would restart the reveal each time and a line or a donut would never finish
+ * appearing. Memoised, with props that keep their identity, they redraw only
+ * when what they show has changed.
+ */
+const StillBarChart = memo(BarChart);
+const StillLineChart = memo(LineChart);
+const StillDonutChart = memo(DonutChart);
+
+const MONTH_SERIES: ReadonlyArray<ChartSeries> = [
+  { key: "income", label: "Income", color: "var(--chart-2)" },
+  { key: "spending", label: "Spending", color: "var(--chart-1)" },
+];
+
+/** A month key on an axis: "Jun", and "Jan 26" where the year turns. */
+function axisMonth(value: string | number): string {
+  return shortMonthLabel(String(value));
+}
 
 function breakdownKey(view: string | undefined): BreakdownKey {
   return BREAKDOWNS.find((entry) => entry.key === view)?.key ?? "group";
@@ -144,6 +207,22 @@ function transactionsLink(
     case "account":
       return transactionsHash({ ...bounds, account: slice.key });
   }
+}
+
+/**
+ * A breakdown as a donut: the largest slices on their own and the tail as
+ * "Other", so a merchant list of forty does not become forty slivers. Only
+ * outflows are drawn; a net refund has no share of a whole.
+ */
+function donutSlices(slices: readonly SpendingSlice[]): DonutSlice[] {
+  const positive = slices.filter((slice) => slice.amount > 0);
+  const shown = positive
+    .slice(0, DONUT_SLICES)
+    .map((slice) => ({ name: slice.name, value: slice.amount }));
+  const rest = positive.slice(DONUT_SLICES).reduce((sum, slice) => sum + slice.amount, 0);
+  return rest > 0
+    ? [...shown, { name: "Other", value: rest, color: "var(--muted-foreground)" }]
+    : shown;
 }
 
 export function CashFlowScreen({
@@ -269,26 +348,65 @@ export function CashFlowScreen({
 
   const household = app.state.household;
   const nothingCounted = summary.income === 0 && summary.spending === 0;
+  const breakdownLabel = BREAKDOWNS.find((entry) => entry.key === view)?.label ?? view;
+  const breakdownTotal = breakdown.reduce((sum, slice) => sum + slice.amount, 0);
+  const money = useCallback(
+    (value: number) => formatMinorUnits(value, reportCurrency),
+    [reportCurrency],
+  );
+  const axisMoney = useCallback(
+    (value: number) => compactMoney(value, reportCurrency),
+    [reportCurrency],
+  );
+  // What the charts draw, held steady between renders so they animate once.
+  const monthRows = useMemo(
+    () =>
+      months.map((month) => ({
+        month: month.month,
+        income: month.income,
+        spending: month.spending,
+      })),
+    [months],
+  );
+  const trendRows = useMemo(
+    () => trend.map((point) => ({ month: point.month, amount: point.amount })),
+    [trend],
+  );
+  const trendSeries = useMemo<ReadonlyArray<ChartSeries>>(
+    () => [{ key: "amount", label: trendName ?? "Spending" }],
+    [trendName],
+  );
+  const slices = useMemo(() => donutSlices(breakdown), [breakdown]);
+  const donutCenter = useMemo(
+    () => ({ label: "spent", value: money(breakdownTotal) }),
+    [money, breakdownTotal],
+  );
 
   return (
-    <section className="cash-flow" aria-labelledby="cash-flow-title" data-testid="cash-flow-screen">
-      <div className="heading">
-        <div>
-          <h1 id="cash-flow-title">Cash Flow</h1>
-          <p className="muted stamp" data-testid="reports-stamp">
+    <section
+      className="grid gap-6"
+      aria-labelledby="cash-flow-title"
+      data-testid="cash-flow-screen"
+    >
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="grid gap-1">
+          <h1 id="cash-flow-title" className="text-2xl">
+            Cash Flow
+          </h1>
+          <p className="text-sm text-muted-foreground" data-testid="reports-stamp">
             {household === null || household.syncedAt === null
               ? "Not synced yet — these are your local records."
               : `As of the last sync, ${new Date(household.syncedAt).toLocaleTimeString()}.`}
           </p>
         </div>
-        <button
-          type="button"
-          className="secondary"
+        <Button
+          variant="outline"
           disabled={countedInRange.length === 0}
           onClick={exportTransactions}
         >
+          <Download />
           Export transactions CSV
-        </button>
+        </Button>
       </div>
 
       <RangeBar
@@ -300,97 +418,89 @@ export function CashFlowScreen({
 
       <SummaryTiles summaries={summaries} fallbackCurrency={currency} />
 
-      <section className="flow-card" aria-labelledby="months-title">
-        <div className="section-heading">
-          <h2 id="months-title">Income and spending by month</h2>
-        </div>
-        <BarChart
-          groups={months.map((month) => ({
-            key: month.month,
-            label: monthLabel(month.month),
-            values: [
-              { series: "income", value: month.income },
-              { series: "spending", value: month.spending },
-            ],
-          }))}
-          series={[
-            { key: "income", label: "Income" },
-            { key: "spending", label: "Spending" },
-          ]}
-          currency={reportCurrency}
-          height={220}
-          ariaLabel="Income and spending by month"
-          emptyMessage="Nothing counted in this range yet."
-        />
-        {months.length === 0 ? null : (
-          <details className="flow-twin">
-            <summary>Month by month</summary>
-            <div className="flow-scroll">
-              <table className="data-table" aria-label="Income and spending by month">
-                <thead>
-                  <tr>
-                    <th scope="col">Month</th>
-                    <th scope="col" className="amount">
-                      Income
-                    </th>
-                    <th scope="col" className="amount">
-                      Spending
-                    </th>
-                    <th scope="col" className="amount">
-                      Net
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
+      <Card aria-labelledby="months-title">
+        <CardHeader>
+          <CardTitle id="months-title">Income and spending by month</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-3">
+          {months.length === 0 ? (
+            <EmptyState title="Nothing counted in this range yet." className="py-6" />
+          ) : (
+            <StillBarChart
+              data={monthRows}
+              x="month"
+              series={MONTH_SERIES}
+              title="Income and spending by month"
+              height={220}
+              formatValue={axisMoney}
+              formatX={axisMonth}
+            />
+          )}
+          {months.length === 0 ? null : (
+            <details className="text-sm">
+              <summary className="cursor-pointer font-medium text-muted-foreground">
+                Month by month
+              </summary>
+              <Table aria-label="Income and spending by month" className="mt-3">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead scope="col">Month</TableHead>
+                    <MoneyHead scope="col">Income</MoneyHead>
+                    <MoneyHead scope="col">Spending</MoneyHead>
+                    <MoneyHead scope="col">Net</MoneyHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {months.map((month) => (
-                    <tr key={month.month} data-testid={`month-${month.month}`}>
-                      <th scope="row">{monthLabel(month.month)}</th>
-                      <td className="amount" data-testid="income">
+                    <TableRow key={month.month} data-testid={`month-${month.month}`}>
+                      <RowHead>{monthLabel(month.month)}</RowHead>
+                      <TableCell className="money text-positive" data-testid="income">
                         {formatMinorUnits(month.income, month.currency)}
-                      </td>
-                      <td className="amount" data-testid="spending">
+                      </TableCell>
+                      <TableCell className="money" data-testid="spending">
                         {formatMinorUnits(month.spending, month.currency)}
-                      </td>
-                      <td className="amount" data-testid="net">
+                      </TableCell>
+                      <TableCell
+                        className={cn("money", month.net < 0 && "text-destructive")}
+                        data-testid="net"
+                      >
                         {formatMinorUnits(month.net, month.currency)}
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
-            </div>
-          </details>
-        )}
-      </section>
+                </TableBody>
+              </Table>
+            </details>
+          )}
+        </CardContent>
+      </Card>
 
       {nothingCounted ? null : (
-        <section className="flow-card" aria-labelledby="flow-title" data-testid="flow-card">
-          <div className="section-heading">
-            <div>
-              <h2 id="flow-title">Where the money went</h2>
-              <p className="muted">
-                Income on the left, the groups it paid for in the middle, their categories and what
-                was left on the right.
-              </p>
-            </div>
-          </div>
-          <Sankey
-            graph={flows}
-            currency={reportCurrency}
-            height={440}
-            ariaLabel="Where the money went"
-          />
-        </section>
+        <Card aria-labelledby="flow-title" data-testid="flow-card">
+          <CardHeader>
+            <CardTitle id="flow-title">Where the money went</CardTitle>
+            <CardDescription>
+              Income on the left, the groups it paid for in the middle, their categories and what
+              was left on the right.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Sankey
+              graph={flows}
+              currency={reportCurrency}
+              height={440}
+              ariaLabel="Where the money went"
+            />
+          </CardContent>
+        </Card>
       )}
 
-      <section className="flow-card" aria-labelledby="categories-title">
-        <div className="section-heading">
-          <div>
-            <h2 id="categories-title">Spending by category</h2>
-            <p className="muted">Pick a category to trend it below.</p>
-          </div>
-        </div>
-        <div className="flow-split">
+      <Card aria-labelledby="categories-title">
+        <CardHeader>
+          <CardTitle id="categories-title">Spending by category</CardTitle>
+          <CardDescription>Pick a category to trend it below.</CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-5">
           <Treemap
             items={byCategory.map((slice) => ({
               key: slotKey(slice.key),
@@ -404,87 +514,104 @@ export function CashFlowScreen({
             ariaLabel="Spending by category as area"
             emptyMessage="Nothing spent in this range yet."
           />
-          <div className="flow-scroll">
-            <BreakdownTable
-              view="category"
-              label="Category"
-              slices={byCategory}
-              currency={reportCurrency}
-              range={range}
-              merchantIds={merchantIds}
-              selected={trendCategory}
-              onPick={setPicked}
-              detail={(slice) => groupOf.get(slice.key) ?? ""}
-            />
-          </div>
-        </div>
-      </section>
+          <BreakdownTable
+            view="category"
+            label="Category"
+            slices={byCategory}
+            currency={reportCurrency}
+            range={range}
+            merchantIds={merchantIds}
+            selected={trendCategory}
+            onPick={setPicked}
+            detail={(slice) => groupOf.get(slice.key) ?? ""}
+          />
+        </CardContent>
+      </Card>
 
-      <section className="flow-card" aria-labelledby="breakdown-title">
-        <div className="section-heading">
-          <h2 id="breakdown-title">
-            Spending by {BREAKDOWNS.find((entry) => entry.key === view)?.label.toLowerCase()}
-          </h2>
-          <button
-            type="button"
-            className="secondary"
+      <Card aria-labelledby="breakdown-title">
+        <CardHeader className="flex flex-wrap items-start justify-between gap-4">
+          <CardTitle id="breakdown-title">Spending by {breakdownLabel.toLowerCase()}</CardTitle>
+          <Button
+            variant="outline"
+            size="sm"
             disabled={breakdown.length === 0}
             onClick={exportBreakdown}
           >
+            <Download />
             Export breakdown CSV
-          </button>
-        </div>
-        <div className="flow-tabs" role="tablist" aria-label="Breakdown">
-          {BREAKDOWNS.map((entry) => (
-            <button
-              key={entry.key}
-              type="button"
-              role="tab"
-              id={`breakdown-tab-${entry.key}`}
-              aria-selected={entry.key === view}
-              data-testid={`breakdown-${entry.key}`}
-              onClick={() => navigate({ view: entry.key })}
+          </Button>
+        </CardHeader>
+        <CardContent>
+          <Tabs value={view} onValueChange={(value) => navigate({ view: breakdownKey(value) })}>
+            <TabsLine aria-label="Breakdown">
+              {BREAKDOWNS.map((entry) => (
+                <TabsTrigger
+                  key={entry.key}
+                  value={entry.key}
+                  id={`breakdown-tab-${entry.key}`}
+                  data-testid={`breakdown-${entry.key}`}
+                >
+                  {entry.label}
+                </TabsTrigger>
+              ))}
+            </TabsLine>
+            <TabsContent
+              value={view}
+              aria-labelledby={`breakdown-tab-${view}`}
+              className="grid gap-4 pt-2"
             >
-              {entry.label}
-            </button>
-          ))}
-        </div>
-        <div role="tabpanel" aria-labelledby={`breakdown-tab-${view}`}>
-          {view === "tag" ? (
-            <p className="hint">
-              A transaction with several tags counts once under each, so tags need not add up to the
-              total.
-            </p>
-          ) : null}
-          <div className="flow-scroll">
-            <BreakdownTable
-              view={view}
-              label={BREAKDOWNS.find((entry) => entry.key === view)?.label ?? view}
-              slices={breakdown}
-              currency={reportCurrency}
-              range={range}
-              merchantIds={merchantIds}
-            />
-          </div>
-        </div>
-      </section>
+              {view === "tag" ? (
+                <p className="text-sm text-muted-foreground">
+                  A transaction with several tags counts once under each, so tags need not add up to
+                  the total.
+                </p>
+              ) : null}
+              <div
+                className={cn(
+                  "grid items-start gap-5",
+                  breakdown.length > 0 && "lg:grid-cols-[14rem_minmax(0,1fr)]",
+                )}
+              >
+                {breakdown.length === 0 ? null : (
+                  <StillDonutChart
+                    data={slices}
+                    title={`Spending by ${breakdownLabel.toLowerCase()} as a share`}
+                    height={200}
+                    formatValue={money}
+                    center={donutCenter}
+                  />
+                )}
+                <BreakdownTable
+                  view={view}
+                  label={breakdownLabel}
+                  slices={breakdown}
+                  currency={reportCurrency}
+                  range={range}
+                  merchantIds={merchantIds}
+                />
+              </div>
+            </TabsContent>
+          </Tabs>
+        </CardContent>
+      </Card>
 
-      <section className="flow-card" aria-labelledby="trend-title">
-        <div className="section-heading">
-          <div>
-            <h2 id="trend-title" data-testid="trend-title">
+      <Card aria-labelledby="trend-title">
+        <CardHeader className="flex flex-wrap items-start justify-between gap-4">
+          <div className="grid gap-1">
+            <CardTitle id="trend-title" data-testid="trend-title">
               {trendName === null ? "Trend" : `Trend: ${trendName}`}
-            </h2>
-            <p className="muted">
+            </CardTitle>
+            <CardDescription>
               {trendMonths.length === 0
                 ? "Pick a category above to see it month by month."
                 : `Net spending by month, ${monthLabel(trendMonths[0] ?? "")} to ${monthLabel(
                     trendMonths[trendMonths.length - 1] ?? "",
                   )}; a range shorter than a year is shown with the months before it.`}
-            </p>
+            </CardDescription>
           </div>
           {trendCategory === null ? null : (
             <a
+              className="text-sm"
               href={transactionsHash({
                 ...(range === null ? {} : { from: range.start, to: range.end }),
                 ...(trendCategory === "" ? {} : { category: trendCategory }),
@@ -494,24 +621,77 @@ export function CashFlowScreen({
               See transactions
             </a>
           )}
-        </div>
-        <LineChart
-          points={trend.map((point) => ({ x: point.month, y: point.amount }))}
-          currency={reportCurrency}
-          height={200}
-          showArea
-          ariaLabel={trendName === null ? "Category trend" : `Monthly spending in ${trendName}`}
-          {...(trendName === null ? {} : { label: trendName })}
-          emptyMessage="Nothing spent in this range yet."
-        />
-      </section>
+        </CardHeader>
+        <CardContent>
+          {trend.length === 0 ? (
+            <EmptyState title="Nothing spent in this range yet." className="py-6" />
+          ) : (
+            <StillLineChart
+              data={trendRows}
+              x="month"
+              series={trendSeries}
+              title={trendName === null ? "Category trend" : `Monthly spending in ${trendName}`}
+              height={200}
+              formatValue={axisMoney}
+              formatX={axisMonth}
+            />
+          )}
+        </CardContent>
+      </Card>
 
-      <p className="hint footnote" data-testid="exclusions-note">
+      <p className="text-sm text-muted-foreground" data-testid="exclusions-note">
         Transfers between your own accounts, hidden transactions, and balance updates of tracked
         assets are left out of every figure on this page, as they are on the budget and the
         dashboard. The exports carry the same transactions the page counts.
       </p>
     </section>
+  );
+}
+
+/** A column header over money: right-aligned like the figures under it. */
+function MoneyHead({ className, ...props }: ComponentProps<"th">) {
+  return <TableHead className={cn("money text-right", className)} {...props} />;
+}
+
+/** A row's own heading cell: the kit's `th`, in the body's colour and weight. */
+function RowHead({ className, ...props }: ComponentProps<"th">) {
+  return (
+    <TableHead
+      scope="row"
+      className={cn("h-auto py-2 font-medium text-foreground", className)}
+      {...props}
+    />
+  );
+}
+
+/** One figure of the summary: what it is and the number. */
+function Tile({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <Card className="gap-0 py-4">
+      <CardContent className="grid gap-1 px-4">
+        <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          {label}
+        </span>
+        {children}
+      </CardContent>
+    </Card>
+  );
+}
+
+/** A range preset: a pill that shows which one the page is on. */
+function PresetButton({ pressed, className, ...props }: ButtonProps & { pressed: boolean }) {
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      aria-pressed={pressed}
+      className={cn(
+        "rounded-full",
+        pressed && "border-primary bg-accent text-accent-foreground hover:bg-accent",
+        className,
+      )}
+      {...props}
+    />
   );
 }
 
@@ -537,55 +717,53 @@ function RangeBar({
   const previous = shiftRange(rangeKey, -1);
   const next = shiftRange(rangeKey, 1);
   return (
-    <div className="range-bar" data-testid="range-bar">
-      <fieldset className="range-nav">
-        <legend className="visually-hidden">Period</legend>
-        <button
-          type="button"
-          className="secondary"
+    <div className="flex flex-wrap items-center gap-x-5 gap-y-3" data-testid="range-bar">
+      {/* The two control groups are fieldsets for what they mean, not for how
+          a fieldset looks. */}
+      <fieldset className="m-0 flex min-w-0 items-center gap-1 border-0 p-0">
+        <legend className="sr-only">Period</legend>
+        <Button
+          variant="outline"
+          size="icon-sm"
           aria-label="Previous period"
           disabled={previous === rangeKey}
           onClick={() => onChange(previous)}
         >
-          ‹
-        </button>
-        <span className="range-label" data-testid="range-label">
+          <ChevronLeft />
+        </Button>
+        <span
+          className="min-w-[9.5rem] text-center font-semibold tabular-nums"
+          data-testid="range-label"
+        >
           {rangeLabel(rangeKey)}
         </span>
-        <button
-          type="button"
-          className="secondary"
+        <Button
+          variant="outline"
+          size="icon-sm"
           aria-label="Next period"
           disabled={next === rangeKey}
           onClick={() => onChange(next)}
         >
-          ›
-        </button>
+          <ChevronRight />
+        </Button>
       </fieldset>
-      <fieldset className="range-presets">
-        <legend className="visually-hidden">Range presets</legend>
+      <fieldset className="m-0 flex min-w-0 flex-wrap gap-1.5 border-0 p-0">
+        <legend className="sr-only">Range presets</legend>
         {presets.map((preset) => (
-          <button
+          <PresetButton
             key={preset.key}
-            type="button"
-            className="secondary"
-            aria-pressed={preset.key === rangeKey}
+            pressed={preset.key === rangeKey}
             onClick={() => {
               setCustomOpen(false);
               onChange(preset.key);
             }}
           >
             {preset.label}
-          </button>
+          </PresetButton>
         ))}
-        <button
-          type="button"
-          className="secondary"
-          aria-pressed={isCustom || customOpen}
-          onClick={() => setCustomOpen(!customOpen)}
-        >
+        <PresetButton pressed={isCustom || customOpen} onClick={() => setCustomOpen(!customOpen)}>
           Custom
-        </button>
+        </PresetButton>
       </fieldset>
       {isCustom || customOpen ? (
         <CustomRange key={rangeKey} range={range} today={today} onApply={onChange} />
@@ -612,23 +790,34 @@ function CustomRange({
     onApply(customRangeKey(start <= end ? { start, end } : { start: end, end: start }));
   };
   return (
-    <form className="range-custom" aria-label="Custom range" onSubmit={submit}>
-      <label>
-        From
-        <input
+    <form
+      className="flex w-full flex-wrap items-end gap-3"
+      aria-label="Custom range"
+      onSubmit={submit}
+    >
+      <Field label="From" htmlFor="range-from">
+        <Input
+          id="range-from"
           type="date"
           name="from"
+          className="w-auto"
           value={start}
           onChange={(event) => setStart(event.target.value)}
         />
-      </label>
-      <label>
-        To
-        <input type="date" name="to" value={end} onChange={(event) => setEnd(event.target.value)} />
-      </label>
-      <button type="submit" disabled={!valid}>
+      </Field>
+      <Field label="To" htmlFor="range-to">
+        <Input
+          id="range-to"
+          type="date"
+          name="to"
+          className="w-auto"
+          value={end}
+          onChange={(event) => setEnd(event.target.value)}
+        />
+      </Field>
+      <Button type="submit" disabled={!valid}>
         Apply
-      </button>
+      </Button>
     </form>
   );
 }
@@ -647,34 +836,36 @@ function SummaryTiles({
       {shown.map((summary) => (
         <div
           key={summary.currency}
-          className="totals"
+          className="grid grid-cols-2 gap-4 lg:grid-cols-4"
           data-testid={`cash-flow-summary-${summary.currency}`}
         >
-          <div className="total">
-            <span>Income{shown.length > 1 ? ` (${summary.currency})` : ""}</span>
-            <strong data-testid="income">
+          <Tile label={`Income${shown.length > 1 ? ` (${summary.currency})` : ""}`}>
+            <strong data-testid="income" className="text-2xl font-semibold tabular-nums">
               {formatMinorUnits(summary.income, summary.currency)}
             </strong>
-          </div>
-          <div className="total">
-            <span>Spending{shown.length > 1 ? ` (${summary.currency})` : ""}</span>
-            <strong data-testid="spending">
+          </Tile>
+          <Tile label={`Spending${shown.length > 1 ? ` (${summary.currency})` : ""}`}>
+            <strong data-testid="spending" className="text-2xl font-semibold tabular-nums">
               {formatMinorUnits(summary.spending, summary.currency)}
             </strong>
-          </div>
-          <div className="total">
-            <span>Savings{shown.length > 1 ? ` (${summary.currency})` : ""}</span>
-            <strong data-testid="savings" className={summary.savings < 0 ? "negative" : undefined}>
+          </Tile>
+          <Tile label={`Savings${shown.length > 1 ? ` (${summary.currency})` : ""}`}>
+            <strong
+              data-testid="savings"
+              className={cn(
+                "text-2xl font-semibold tabular-nums",
+                summary.savings < 0 && "text-destructive",
+              )}
+            >
               {formatMinorUnits(summary.savings, summary.currency)}
             </strong>
-          </div>
-          <div className="total">
-            <span>Savings rate{shown.length > 1 ? ` (${summary.currency})` : ""}</span>
-            <strong data-testid="savings-rate">
+          </Tile>
+          <Tile label={`Savings rate${shown.length > 1 ? ` (${summary.currency})` : ""}`}>
+            <strong data-testid="savings-rate" className="text-2xl font-semibold tabular-nums">
               {summary.income > 0 ? `${Math.round(summary.savingsRate * 100)}%` : "—"}
             </strong>
-            <small>of income</small>
-          </div>
+            <small className="text-xs text-muted-foreground">of income</small>
+          </Tile>
         </div>
       ))}
     </>
@@ -711,74 +902,83 @@ function BreakdownTable({
   const total = slices.reduce((sum, slice) => sum + slice.amount, 0);
   const columns = 4 + (detail === undefined ? 0 : 1);
   return (
-    <table
-      className="data-table flow-table"
+    <Table
       aria-label={`Spending by ${label.toLowerCase()}`}
       data-testid={`breakdown-table-${view}`}
     >
-      <thead>
-        <tr>
-          <th scope="col">{label}</th>
-          {detail === undefined ? null : <th scope="col">Group</th>}
-          <th scope="col" className="amount">
-            Spent
-          </th>
-          <th scope="col" className="amount">
-            Share
-          </th>
-          <th scope="col">
-            <span className="visually-hidden">Transactions</span>
-          </th>
-        </tr>
-      </thead>
-      <tbody>
+      <TableHeader>
+        <TableRow>
+          <TableHead scope="col">{label}</TableHead>
+          {detail === undefined ? null : <TableHead scope="col">Group</TableHead>}
+          <MoneyHead scope="col">Spent</MoneyHead>
+          <MoneyHead scope="col">Share</MoneyHead>
+          <TableHead scope="col">
+            <span className="sr-only">Transactions</span>
+          </TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
         {slices.length === 0 ? (
-          <tr>
-            <td colSpan={columns} className="empty">
+          <TableRow>
+            <TableCell colSpan={columns} className="py-6 text-center text-muted-foreground">
               Nothing spent in this range yet.
-            </td>
-          </tr>
+            </TableCell>
+          </TableRow>
         ) : null}
         {slices.map((slice) => {
           const link = transactionsLink(view, slice, range, merchantIds);
+          // The picked row is marked both ways: the kit paints `data-state`,
+          // and the class is what the browser suite looks for.
+          const picked = selected !== undefined && selected === slice.key;
           return (
-            <tr
+            <TableRow
               key={slice.key}
               data-testid={`${view}-${slotKey(slice.key)}`}
-              className={selected !== undefined && selected === slice.key ? "selected" : undefined}
+              className={picked ? "selected" : undefined}
+              data-state={picked ? "selected" : undefined}
             >
-              <th scope="row">
+              <RowHead>
                 {onPick === undefined ? (
                   slice.name
                 ) : (
-                  <button type="button" className="link" onClick={() => onPick(slice.key)}>
+                  <Button
+                    variant="link"
+                    className="h-auto p-0 font-medium"
+                    onClick={() => onPick(slice.key)}
+                  >
                     {slice.name}
-                  </button>
+                  </Button>
                 )}
-              </th>
-              {detail === undefined ? null : <td className="muted">{detail(slice)}</td>}
-              <td className="amount" data-testid="amount">
+              </RowHead>
+              {detail === undefined ? null : (
+                <TableCell className="text-muted-foreground">{detail(slice)}</TableCell>
+              )}
+              <TableCell className="money" data-testid="amount">
                 {formatMinorUnits(slice.amount, slice.currency)}
-              </td>
-              <td className="amount muted">{percent(slice.amount, total)}</td>
-              <td className="actions">{link === null ? null : <a href={link}>Transactions</a>}</td>
-            </tr>
+              </TableCell>
+              <TableCell className="money text-muted-foreground">
+                {percent(slice.amount, total)}
+              </TableCell>
+              <TableCell className="text-right">
+                {link === null ? null : <a href={link}>Transactions</a>}
+              </TableCell>
+            </TableRow>
           );
         })}
-      </tbody>
+      </TableBody>
       {slices.length === 0 ? null : (
-        <tfoot>
-          <tr>
-            <th scope="row">Total</th>
-            {detail === undefined ? null : <td />}
-            <td className="amount" data-testid="total">
+        <TableFooter>
+          <TableRow>
+            <RowHead className="font-semibold">Total</RowHead>
+            {detail === undefined ? null : <TableCell />}
+            <TableCell className="money font-semibold" data-testid="total">
               {formatMinorUnits(total, currency)}
-            </td>
-            <td className="amount">{total > 0 ? "100%" : "—"}</td>
-            <td />
-          </tr>
-        </tfoot>
+            </TableCell>
+            <TableCell className="money">{total > 0 ? "100%" : "—"}</TableCell>
+            <TableCell />
+          </TableRow>
+        </TableFooter>
       )}
-    </table>
+    </Table>
   );
 }

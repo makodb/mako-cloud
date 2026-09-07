@@ -1,3 +1,20 @@
+import {
+  AreaChart,
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  Table,
+  TableBody,
+  TableCaption,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@mako-cloud/ui";
+import { Plus } from "lucide-react";
 import { type ReactNode, useMemo, useState } from "react";
 
 import type { RationalApp } from "../data/rational.js";
@@ -24,11 +41,17 @@ import {
 } from "../selectors/history.js";
 import { formatMinorUnits } from "../selectors/money.js";
 import type { NetWorthHistory } from "../selectors/reports.js";
-import { AccountForm, HistoryRangePicker, todayIso } from "./account-form.js";
-import { LineChart } from "./charts/index.js";
+import {
+  AccountForm,
+  HistoryRangePicker,
+  PageHeader,
+  Stat,
+  compactMoney,
+  shortDate,
+  todayIso,
+} from "./account-form.js";
 import { useBehavior, useQuery } from "./hooks.js";
 import { routeHash } from "./router.js";
-import "./styles/accounts.css";
 
 /**
  * Every account the household has, grouped by class with what each class adds
@@ -89,54 +112,70 @@ export function AccountsScreen({
   const canEdit = role === "owner" || role === "editor";
 
   return (
-    <section aria-labelledby="accounts-title">
-      <div className="heading">
-        <h1 id="accounts-title">Accounts</h1>
-        {canEdit ? (
-          <button type="button" onClick={() => setEditing("new")}>
-            New account
-          </button>
-        ) : null}
-      </div>
-      <div className="totals" data-testid="net-worth">
+    <section aria-labelledby="accounts-title" className="grid gap-6">
+      <PageHeader
+        id="accounts-title"
+        title="Accounts"
+        subtitle="Every account the household has, by class, and the net worth they make together."
+        actions={
+          canEdit ? (
+            <Button onClick={() => setEditing("new")}>
+              <Plus aria-hidden="true" />
+              New account
+            </Button>
+          ) : undefined
+        }
+      />
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3" data-testid="net-worth">
         {netWorth.length === 0 ? (
-          <div className="total" data-testid={`net-worth-${currency}`}>
-            <span>Net worth ({currency})</span>
-            <strong data-testid="net">{formatMinorUnits(0, currency)}</strong>
-            <small>No open accounts count towards it yet.</small>
-          </div>
+          <Stat
+            data-testid={`net-worth-${currency}`}
+            label={`Net worth (${currency})`}
+            value={formatMinorUnits(0, currency)}
+            valueTestId="net"
+            note="No open accounts count towards it yet."
+          />
         ) : (
           netWorth.map((total) => (
-            <div key={total.currency} className="total" data-testid={`net-worth-${total.currency}`}>
-              <span>Net worth ({total.currency})</span>
-              <strong data-testid="net">{formatMinorUnits(total.netWorth, total.currency)}</strong>
-              <small>
-                assets {formatMinorUnits(total.assets, total.currency)} · liabilities{" "}
-                {formatMinorUnits(total.liabilities, total.currency)}
-              </small>
-            </div>
+            <Stat
+              key={total.currency}
+              data-testid={`net-worth-${total.currency}`}
+              label={`Net worth (${total.currency})`}
+              value={formatMinorUnits(total.netWorth, total.currency)}
+              valueTestId="net"
+              note={
+                <>
+                  assets {formatMinorUnits(total.assets, total.currency)} · liabilities{" "}
+                  {formatMinorUnits(total.liabilities, total.currency)}
+                </>
+              }
+            />
           ))
         )}
       </div>
 
-      <div className="section-heading">
-        <h2>Net worth over time</h2>
-        <HistoryRangePicker value={rangeKey} onChange={setRangeKey} />
-      </div>
-      {snapshots.length === 0 ? (
-        <p className="muted" data-testid="net-worth-history-empty">
-          No snapshots yet. The nightly job records one a night, so this fills in from tomorrow.
-        </p>
-      ) : (
-        currencies.map((snapshotCurrency) => (
-          <NetWorthHistoryChart
-            key={snapshotCurrency}
-            snapshots={snapshots}
-            currency={snapshotCurrency}
-            range={range}
-          />
-        ))
-      )}
+      <Card>
+        <CardHeader className="flex flex-wrap items-center justify-between gap-3">
+          <CardTitle>Net worth over time</CardTitle>
+          <HistoryRangePicker value={rangeKey} onChange={setRangeKey} />
+        </CardHeader>
+        <CardContent className="grid gap-6">
+          {snapshots.length === 0 ? (
+            <p className="m-0 text-sm text-muted-foreground" data-testid="net-worth-history-empty">
+              No snapshots yet. The nightly job records one a night, so this fills in from tomorrow.
+            </p>
+          ) : (
+            currencies.map((snapshotCurrency) => (
+              <NetWorthHistoryChart
+                key={snapshotCurrency}
+                snapshots={snapshots}
+                currency={snapshotCurrency}
+                range={range}
+              />
+            ))
+          )}
+        </CardContent>
+      </Card>
 
       {editing === null ? null : (
         <AccountForm
@@ -149,10 +188,19 @@ export function AccountsScreen({
       )}
 
       {open.length === 0 ? (
-        <p className="empty-state" data-testid="accounts-empty">
+        <p
+          className="m-0 rounded-xl border border-dashed px-6 py-10 text-center text-sm text-muted-foreground"
+          data-testid="accounts-empty"
+        >
           No accounts yet. Add one with &ldquo;New account&rdquo;, or{" "}
-          <a href={routeHash({ name: "settings", page: "import" })}>import a statement</a> or{" "}
-          <a href={routeHash({ name: "settings", page: "connections" })}>connect an institution</a>.
+          <a className="text-primary" href={routeHash({ name: "settings", page: "import" })}>
+            import a statement
+          </a>{" "}
+          or{" "}
+          <a className="text-primary" href={routeHash({ name: "settings", page: "connections" })}>
+            connect an institution
+          </a>
+          .
         </p>
       ) : null}
       {shown.map(({ group, counted }) => (
@@ -178,7 +226,7 @@ export function AccountsScreen({
       {closed.length === 0 ? null : (
         <AccountTable
           label="Closed"
-          caption={<div className="class-caption">Closed</div>}
+          caption={<span className="font-semibold text-foreground">Closed</span>}
           accounts={closed}
           balances={balances}
           canEdit={canEdit}
@@ -207,7 +255,10 @@ function NetWorthHistoryChart({
   const history = selectNetWorthHistoryInRange(snapshots, currency, range);
   if (history === null) {
     return (
-      <p className="muted history" data-testid={`net-worth-history-${currency}`}>
+      <p
+        className="m-0 text-sm text-muted-foreground"
+        data-testid={`net-worth-history-${currency}`}
+      >
         <span data-testid="net-worth-history-out-of-range">
           No snapshots in this range for {currency}. Choose a longer range.
         </span>
@@ -215,16 +266,17 @@ function NetWorthHistoryChart({
     );
   }
   return (
-    <div className="history" data-testid={`net-worth-history-${currency}`}>
-      <LineChart
-        points={history.points.map((point) => ({ x: point.date, y: point.netWorth }))}
-        currency={currency}
-        ariaLabel={`Net worth in ${currency} over time`}
-        label={`Net worth (${currency})`}
-        showArea
-        height={180}
+    <div className="grid gap-2" data-testid={`net-worth-history-${currency}`}>
+      <AreaChart
+        data={history.points.map((point) => ({ date: point.date, netWorth: point.netWorth }))}
+        x="date"
+        series={[{ key: "netWorth", label: `Net worth (${currency})` }]}
+        title={`Net worth in ${currency} over time`}
+        height={200}
+        formatValue={(value) => compactMoney(value, currency)}
+        formatX={shortDate}
       />
-      <p className="muted" data-testid="net-worth-change">
+      <p className="m-0 text-sm text-muted-foreground tabular-nums" data-testid="net-worth-change">
         {historyCaption(history)}
       </p>
     </div>
@@ -258,15 +310,25 @@ function ClassCaption({
       ? formatMinorUnits(0, fallbackCurrency)
       : counted.map((total) => formatMinorUnits(total.total, total.currency)).join(" · ");
   return (
-    <div className="class-caption">
-      <span>{group.class.label}</span>
-      <span className="subtotal" data-testid="subtotal" title="What this class adds to net worth">
+    <>
+      <span className="font-semibold text-foreground">{group.class.label}</span>
+      <span
+        className="money font-medium text-muted-foreground"
+        data-testid="subtotal"
+        title="What this class adds to net worth"
+      >
         {text}
-        {hiddenCount === 0 ? null : <small> · {hiddenCount} hidden</small>}
+        {hiddenCount === 0 ? null : (
+          <small className="text-xs font-normal"> · {hiddenCount} hidden</small>
+        )}
       </span>
-    </div>
+    </>
   );
 }
+
+/** The table's cells sit flush with the card that holds it. */
+const TABLE_IN_CARD =
+  "caption-top [&_td:first-child]:pl-5 [&_td:last-child]:pr-5 [&_th:first-child]:pl-5 [&_th:last-child]:pr-5";
 
 function AccountTable({
   label,
@@ -288,68 +350,101 @@ function AccountTable({
   onReopen?: (account: Account) => void;
 }) {
   return (
-    <table className="list" aria-label={`${label} accounts`}>
-      <caption>{caption}</caption>
-      <thead>
-        <tr>
-          <th scope="col">Name</th>
-          <th scope="col">Type</th>
-          <th scope="col">Institution</th>
-          <th scope="col" className="amount">
-            Balance
-          </th>
-          {canEdit ? (
-            <th scope="col">
-              <span className="visually-hidden">Actions</span>
-            </th>
-          ) : null}
-        </tr>
-      </thead>
-      <tbody>
-        {accounts.map((account) => (
-          <tr
-            key={account.id}
-            data-testid={`account-${account.id}`}
-            data-name={account.name}
-            className={account.hide_from_net_worth === true ? "hidden-account" : undefined}
-          >
-            <td>
-              <a href={routeHash({ name: "account", accountId: account.id })}>{account.name}</a>
-              {account.hide_from_net_worth === true ? (
-                <span className="chip" title="Hidden from net worth">
-                  {" "}
-                  hidden
-                </span>
-              ) : null}
-            </td>
-            <td>{ACCOUNT_TYPE_LABELS[account.type]}</td>
-            <td>{account.institution ?? <span className="muted">—</span>}</td>
-            <td className="amount" data-testid="balance">
-              {formatMinorUnits(
-                balances.get(account.id) ?? account.opening_balance,
-                account.currency,
-              )}
-            </td>
+    <Card className="gap-0 overflow-hidden py-0">
+      <Table aria-label={`${label} accounts`} className={TABLE_IN_CARD}>
+        <TableCaption className="mt-0 px-5 pt-4 pb-3 text-left text-sm">
+          <div className="flex items-baseline justify-between gap-4">{caption}</div>
+        </TableCaption>
+        <TableHeader>
+          <TableRow>
+            <TableHead scope="col">Name</TableHead>
+            <TableHead scope="col">Type</TableHead>
+            <TableHead scope="col">Institution</TableHead>
+            <TableHead scope="col" className="money text-right">
+              Balance
+            </TableHead>
             {canEdit ? (
-              <td className="actions">
-                <button type="button" className="link" onClick={() => onEdit(account)}>
-                  Edit
-                </button>
-                {onClose === undefined ? null : (
-                  <button type="button" className="link" onClick={() => onClose(account)}>
-                    Close
-                  </button>
-                )}
-                {onReopen === undefined ? null : (
-                  <button type="button" className="link" onClick={() => onReopen(account)}>
-                    Reopen
-                  </button>
-                )}
-              </td>
+              <TableHead scope="col" className="text-right">
+                <span className="sr-only">Actions</span>
+              </TableHead>
             ) : null}
-          </tr>
-        ))}
-      </tbody>
-    </table>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {accounts.map((account) => (
+            <TableRow
+              key={account.id}
+              data-testid={`account-${account.id}`}
+              data-name={account.name}
+              className={account.hide_from_net_worth === true ? "text-muted-foreground" : undefined}
+            >
+              <TableCell>
+                <span className="inline-flex items-center gap-2">
+                  <a
+                    href={routeHash({ name: "account", accountId: account.id })}
+                    className={
+                      account.hide_from_net_worth === true
+                        ? "text-muted-foreground"
+                        : "font-medium text-primary"
+                    }
+                  >
+                    {account.name}
+                  </a>
+                  {account.hide_from_net_worth === true ? (
+                    <Badge variant="secondary" title="Hidden from net worth">
+                      hidden
+                    </Badge>
+                  ) : null}
+                </span>
+              </TableCell>
+              <TableCell>{ACCOUNT_TYPE_LABELS[account.type]}</TableCell>
+              <TableCell>
+                {account.institution ?? <span className="text-muted-foreground">—</span>}
+              </TableCell>
+              <TableCell className="money font-medium" data-testid="balance">
+                {formatMinorUnits(
+                  balances.get(account.id) ?? account.opening_balance,
+                  account.currency,
+                )}
+              </TableCell>
+              {canEdit ? (
+                <TableCell className="text-right">
+                  <span className="inline-flex items-center justify-end gap-1">
+                    <Button
+                      variant="link"
+                      size="sm"
+                      className="h-auto px-1"
+                      onClick={() => onEdit(account)}
+                    >
+                      Edit
+                    </Button>
+                    {onClose === undefined ? null : (
+                      <Button
+                        variant="link"
+                        size="sm"
+                        className="h-auto px-1"
+                        onClick={() => onClose(account)}
+                      >
+                        Close
+                      </Button>
+                    )}
+                    {onReopen === undefined ? null : (
+                      <Button
+                        variant="link"
+                        size="sm"
+                        className="h-auto px-1"
+                        onClick={() => onReopen(account)}
+                      >
+                        Reopen
+                      </Button>
+                    )}
+                  </span>
+                </TableCell>
+              ) : null}
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </Card>
   );
 }

@@ -1,3 +1,4 @@
+import { Button, Card, CardContent, CardHeader, Field, Input, Separator } from "@mako-cloud/ui";
 import { type FormEvent, useState } from "react";
 
 import type { SignInProviderSetting } from "../config.js";
@@ -46,99 +47,124 @@ export function SignInScreen({ app, state }: { app: RationalApp; state: AppState
   };
 
   return (
-    <main className="centered">
-      <section className="panel sign-in" aria-labelledby="sign-in-title">
-        <p className="eyebrow">Rational</p>
-        <h1 id="sign-in-title">Sign in</h1>
-        <p>Your money, kept on your device — and shared with the people you choose.</p>
-        <form onSubmit={(event) => void submit(event, "sign_in")}>
-          <label htmlFor="email">Email</label>
-          <input
-            id="email"
-            name="email"
-            type="email"
-            autoComplete="username"
-            required
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-          />
-          <label htmlFor="password">Password</label>
-          <input
-            id="password"
-            name="password"
-            type="password"
-            autoComplete="current-password"
-            required
-            minLength={8}
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-          />
-          {error === null ? null : (
-            <p className="error" role="alert">
-              {error}
-            </p>
-          )}
-          {message === null ? null : <p className="hint">{message}</p>}
-          <div className="actions">
-            <button type="submit" disabled={busy !== null}>
-              {busy === "sign_in" ? "Signing in…" : "Sign in"}
-            </button>
-            <button
-              type="button"
-              className="secondary"
-              disabled={busy !== null}
-              onClick={(event) => void submit(event, "sign_up")}
-            >
-              {busy === "sign_up" ? "Creating…" : "Create account"}
-            </button>
-          </div>
-        </form>
-
-        {settings.providers.length === 0 ? null : (
-          <section className="providers" aria-labelledby="providers-title">
-            <h2 id="providers-title" className="divider">
-              Or continue with
-            </h2>
-            <ul className="provider-list">
-              {settings.providers.map((provider) => (
-                <li key={provider.name}>
-                  <ProviderButton app={app} provider={provider} disabled={busy !== null} />
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
-
-        {!settings.magicLinks ? null : (
-          <section className="magic-link" aria-labelledby="magic-link-title">
-            <h2 id="magic-link-title" className="divider">
-              Or with a sign-in link
-            </h2>
-            {state.magicLinkSentTo === null ? (
-              <form onSubmit={(event) => void sendMagicLink(event)} aria-label="Magic link">
-                <p className="hint">
-                  We send a single-use link to the address above; opening it signs you in on this
-                  device.
-                </p>
-                <button
-                  type="submit"
-                  className="secondary"
-                  disabled={busy !== null || email.trim() === ""}
-                  data-testid="send-magic-link"
-                >
-                  {busy === "magic_link" ? "Sending…" : "Email me a link"}
-                </button>
-              </form>
-            ) : (
-              <p className="hint" role="status" data-testid="magic-link-sent">
-                Check your email: if {state.magicLinkSentTo} has an account, a sign-in link is on
-                its way.
+    <main className="flex min-h-screen items-center justify-center bg-background p-6">
+      <Card className="w-full max-w-md" aria-labelledby="sign-in-title">
+        <CardHeader className="gap-2">
+          <p className="text-xs font-semibold tracking-[0.18em] text-primary uppercase">Rational</p>
+          <h1 id="sign-in-title" className="text-2xl">
+            Sign in
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            Your money, kept on your device — and shared with the people you choose.
+          </p>
+        </CardHeader>
+        <CardContent className="grid gap-6">
+          <form className="grid gap-4" onSubmit={(event) => void submit(event, "sign_in")}>
+            <Field label="Email" htmlFor="email">
+              <Input
+                id="email"
+                name="email"
+                type="email"
+                autoComplete="username"
+                required
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+              />
+            </Field>
+            <Field label="Password" htmlFor="password">
+              <Input
+                id="password"
+                name="password"
+                type="password"
+                autoComplete="current-password"
+                required
+                minLength={8}
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+              />
+            </Field>
+            {error === null ? null : (
+              <p className="text-sm text-destructive" role="alert">
+                {error}
               </p>
             )}
-          </section>
-        )}
-      </section>
+            {message === null ? null : <p className="text-sm text-muted-foreground">{message}</p>}
+            <div className="flex flex-wrap gap-2">
+              <Button type="submit" disabled={busy !== null}>
+                {busy === "sign_in" ? "Signing in…" : "Sign in"}
+              </Button>
+              <Button
+                variant="secondary"
+                disabled={busy !== null}
+                onClick={(event) => void submit(event, "sign_up")}
+              >
+                {busy === "sign_up" ? "Creating…" : "Create account"}
+              </Button>
+            </div>
+          </form>
+
+          {settings.providers.length === 0 ? null : (
+            <section className="grid gap-3" aria-labelledby="providers-title">
+              <DividerHeading id="providers-title">Or continue with</DividerHeading>
+              <ul className="m-0 grid list-none gap-2 p-0">
+                {settings.providers.map((provider) => (
+                  <li key={provider.name}>
+                    <ProviderButton app={app} provider={provider} disabled={busy !== null} />
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          {!settings.magicLinks ? null : (
+            <section className="grid gap-3" aria-labelledby="magic-link-title">
+              <DividerHeading id="magic-link-title">Or with a sign-in link</DividerHeading>
+              {state.magicLinkSentTo === null ? (
+                <form
+                  className="grid gap-3"
+                  onSubmit={(event) => void sendMagicLink(event)}
+                  aria-label="Magic link"
+                >
+                  <p className="text-sm text-muted-foreground">
+                    We send a single-use link to the address above; opening it signs you in on this
+                    device.
+                  </p>
+                  <Button
+                    type="submit"
+                    variant="secondary"
+                    className="justify-self-start"
+                    disabled={busy !== null || email.trim() === ""}
+                    data-testid="send-magic-link"
+                  >
+                    {busy === "magic_link" ? "Sending…" : "Email me a link"}
+                  </Button>
+                </form>
+              ) : (
+                <p
+                  className="text-sm text-muted-foreground"
+                  role="status"
+                  data-testid="magic-link-sent"
+                >
+                  Check your email: if {state.magicLinkSentTo} has an account, a sign-in link is on
+                  its way.
+                </p>
+              )}
+            </section>
+          )}
+        </CardContent>
+      </Card>
     </main>
+  );
+}
+
+/** A section heading drawn as a rule with the words in the middle. */
+function DividerHeading({ id, children }: { id: string; children: string }) {
+  return (
+    <h2 id={id} className="flex items-center gap-3 text-xs font-medium text-muted-foreground">
+      <Separator className="flex-1" />
+      <span className="whitespace-nowrap">{children}</span>
+      <Separator className="flex-1" />
+    </h2>
   );
 }
 
@@ -154,24 +180,24 @@ function ProviderButton({
   const label = provider.label ?? provider.name;
   if (!provider.enabled) {
     return (
-      <span className="provider disabled" data-testid={`provider-${provider.name}`}>
-        <button type="button" className="secondary" disabled>
+      <span className="grid gap-1" data-testid={`provider-${provider.name}`}>
+        <Button variant="outline" className="w-full" disabled>
           Continue with {label}
-        </button>
-        <small>not enabled for this environment</small>
+        </Button>
+        <small className="text-xs text-muted-foreground">not enabled for this environment</small>
       </span>
     );
   }
   return (
-    <span className="provider" data-testid={`provider-${provider.name}`}>
-      <button
-        type="button"
-        className="secondary"
+    <span className="block" data-testid={`provider-${provider.name}`}>
+      <Button
+        variant="outline"
+        className="w-full"
         disabled={disabled}
         onClick={() => void app.signInWithProvider(provider.name)}
       >
         Continue with {label}
-      </button>
+      </Button>
     </span>
   );
 }

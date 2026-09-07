@@ -1,3 +1,13 @@
+import {
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@mako-cloud/ui";
+import { Download } from "lucide-react";
 import { useMemo } from "react";
 
 import type { RationalApp } from "../data/rational.js";
@@ -7,7 +17,6 @@ import { selectAccountBalances } from "../selectors/balances.js";
 import { accountsCsv, transactionsCsv } from "../selectors/export.js";
 import { sortTransactions } from "../selectors/transactions.js";
 import { useBehavior, useQuery } from "./hooks.js";
-import "./styles/settings-pages.css";
 
 /**
  * The way out: the household's accounts and transactions as CSV files.
@@ -59,43 +68,63 @@ export function DataScreen({
   };
 
   return (
-    <section aria-labelledby="data-title" data-testid="data-screen">
-      <div className="heading">
-        <h1 id="data-title">Data</h1>
+    <section aria-labelledby="data-title" data-testid="data-screen" className="grid gap-6">
+      <div className="grid gap-1">
+        <h1 id="data-title" className="text-2xl">
+          Data
+        </h1>
+        <p className="text-sm text-muted-foreground">
+          The way out: this household's accounts and transactions as CSV files, built on this
+          device.
+        </p>
       </div>
-      <p className="hint">
+      <p className="max-w-prose text-sm text-muted-foreground">
         Every row in these files belongs to {household?.name ?? "this household"} and to nobody
         else: a household's collections hold only its own documents, so there is nothing of anyone
         else's for a filter to leave out. Amounts are decimal text in each row's own currency — the
         household's is {currency} — and names stand in for ids.
       </p>
-      <div className="exports">
-        <div className="export-card" data-testid="export-transactions">
-          <h2>Transactions</h2>
-          <p className="hint">
-            One row per transaction: date, account, description, merchant, category and its group,
-            tags, amount, currency, notes, whether it is hidden, and the transfer it belongs to.
-          </p>
-          <p className="rows" data-testid="transactions-row-count">
-            {rowCount(orderedTransactions.length)}
-          </p>
-          <button type="button" onClick={exportTransactions} disabled={transactions.length === 0}>
-            Export transactions
-          </button>
-        </div>
-        <div className="export-card" data-testid="export-accounts">
-          <h2>Accounts</h2>
-          <p className="hint">
-            One row per account, closed ones included: name, class, type, currency, today's balance,
-            institution, and whether it is hidden from net worth or closed.
-          </p>
-          <p className="rows" data-testid="accounts-row-count">
-            {rowCount(orderedAccounts.length)}
-          </p>
-          <button type="button" onClick={exportAccounts} disabled={accounts.length === 0}>
-            Export accounts
-          </button>
-        </div>
+      <div className="grid gap-4 md:grid-cols-2">
+        <Card data-testid="export-transactions">
+          <CardHeader>
+            <CardTitle>Transactions</CardTitle>
+            <CardDescription>
+              One row per transaction: date, account, description, merchant, category and its group,
+              tags, amount, currency, notes, whether it is hidden, and the transfer it belongs to.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-semibold tabular-nums" data-testid="transactions-row-count">
+              {rowCount(orderedTransactions.length)}
+            </p>
+          </CardContent>
+          <CardFooter>
+            <Button onClick={exportTransactions} disabled={transactions.length === 0}>
+              <Download />
+              Export transactions
+            </Button>
+          </CardFooter>
+        </Card>
+        <Card data-testid="export-accounts">
+          <CardHeader>
+            <CardTitle>Accounts</CardTitle>
+            <CardDescription>
+              One row per account, closed ones included: name, class, type, currency, today's
+              balance, institution, and whether it is hidden from net worth or closed.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-semibold tabular-nums" data-testid="accounts-row-count">
+              {rowCount(orderedAccounts.length)}
+            </p>
+          </CardContent>
+          <CardFooter>
+            <Button onClick={exportAccounts} disabled={accounts.length === 0}>
+              <Download />
+              Export accounts
+            </Button>
+          </CardFooter>
+        </Card>
       </div>
     </section>
   );

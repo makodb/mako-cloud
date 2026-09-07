@@ -7,11 +7,16 @@
     "rootDir": ".",
     "outDir": "dist",
     "tsBuildInfoFile": "dist/.tsbuildinfo",
-    "types": ["vite/client"]
+    "types": [
+      "vite/client"
+    ]
   },
   "references": [
     {
       "path": "../../packages/rxdb-client/tsconfig.browser.json"
+    },
+    {
+      "path": "../../packages/ui"
     }
   ],
   "include": [

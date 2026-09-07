@@ -4,18 +4,7 @@ import type { ConsoleBootstrapOptions } from "./bootstrap.js";
 import { mountConsole } from "./bootstrap.js";
 import { HostedDeveloperAuthAdapter } from "./hosted-auth.js";
 import { HostedOperatorAuthAdapter } from "./hosted-operator-auth.js";
-import "./styles.css";
-import "./home.css";
-import "./project-home.css";
-import "./custom-domains.css";
-import "./surfaced.css";
-import "./usage-activity.css";
-import "./storage.css";
-import "./webhooks.css";
-import "./function-schedules.css";
-import "./auth.css";
-import "./api-docs.css";
-import "./allowed-origins.css";
+import "./app.css";
 
 declare global {
   interface Window {

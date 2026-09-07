@@ -1,3 +1,24 @@
+import {
+  Alert,
+  AlertDescription,
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  Field,
+  Input,
+  NativeSelect,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@mako-cloud/ui";
+import { Check, CircleAlert, FileUp } from "lucide-react";
 import { type ChangeEvent, useMemo, useState } from "react";
 
 import type { RationalApp } from "../data/rational.js";
@@ -15,7 +36,6 @@ import { formatMinorUnits } from "../selectors/money.js";
 import { applyRules } from "../selectors/rules.js";
 import { useQuery } from "./hooks.js";
 import { transactionsHash } from "./router.js";
-import "./styles/settings-pages.css";
 
 /**
  * Importing a bank's CSV export.
@@ -37,6 +57,9 @@ interface Outcome {
   readonly duplicates: number;
   readonly waiting: number;
 }
+
+/** The columns a mapping names, in the order the file usually has them. */
+const MAPPED_FIELDS = ["date", "description", "amount", "debit", "credit"] as const;
 
 export function ImportScreen({
   app,
@@ -137,137 +160,182 @@ export function ImportScreen({
   };
 
   return (
-    <section aria-labelledby="import-title" data-testid="import-screen">
-      <div className="heading">
-        <h1 id="import-title">Import</h1>
-      </div>
-      <p className="hint">
-        Nothing is written until you have seen what would be. Rows already in the account are
-        recognized by date, amount, and description and left alone; what is imported waits in Needs
-        review until somebody looks at it.
-      </p>
-      {problem === null ? null : (
-        <p className="notice error" role="alert">
-          {problem}
+    <section aria-labelledby="import-title" data-testid="import-screen" className="grid gap-6">
+      <div className="grid gap-1">
+        <h1 id="import-title" className="text-2xl">
+          Import
+        </h1>
+        <p className="text-sm text-muted-foreground">
+          A bank's CSV export, previewed before a single row is written.
         </p>
+      </div>
+      {problem === null ? null : (
+        <Alert variant="destructive">
+          <CircleAlert />
+          <AlertDescription className="block">{problem}</AlertDescription>
+        </Alert>
       )}
       {outcome === null ? null : (
-        <p className="notice success" role="status" data-testid="import-outcome">
-          Imported {outcome.created} of {outcome.rowCount} rows; {outcome.duplicates} were already
-          here.
-          {outcome.waiting === 0 ? null : (
-            <>
-              {" "}
-              {outcome.waiting} {outcome.waiting === 1 ? "is" : "are"} waiting in{" "}
-              <a href={transactionsHash({ review: "needs" })}>Needs review</a>.
-            </>
-          )}
-        </p>
+        <Alert variant="positive" role="status" data-testid="import-outcome">
+          <Check />
+          <AlertDescription className="block">
+            Imported {outcome.created} of {outcome.rowCount} rows; {outcome.duplicates} were already
+            here.
+            {outcome.waiting === 0 ? null : (
+              <>
+                {" "}
+                {outcome.waiting} {outcome.waiting === 1 ? "is" : "are"} waiting in{" "}
+                <a href={transactionsHash({ review: "needs" })}>Needs review</a>.
+              </>
+            )}
+          </AlertDescription>
+        </Alert>
       )}
 
-      <div className="editor">
-        <div className="grid">
-          <label>
-            Account
-            <select value={accountId} onChange={(event) => setAccountId(event.target.value)}>
-              <option value="">Choose an account</option>
-              {accounts.map((account) => (
-                <option key={account.id} value={account.id}>
-                  {account.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            CSV file
-            <input type="file" accept=".csv,text/csv" onChange={(event) => void choose(event)} />
-          </label>
-        </div>
-      </div>
+      <Card>
+        <CardHeader>
+          <CardDescription className="max-w-prose">
+            Nothing is written until you have seen what would be. Rows already in the account are
+            recognized by date, amount, and description and left alone; what is imported waits in
+            Needs review until somebody looks at it.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Account" htmlFor="import-account">
+              <NativeSelect
+                id="import-account"
+                value={accountId}
+                onChange={(event) => setAccountId(event.target.value)}
+              >
+                <option value="">Choose an account</option>
+                {accounts.map((account) => (
+                  <option key={account.id} value={account.id}>
+                    {account.name}
+                  </option>
+                ))}
+              </NativeSelect>
+            </Field>
+            <Field label="CSV file" htmlFor="import-file">
+              <Input
+                id="import-file"
+                type="file"
+                accept=".csv,text/csv"
+                onChange={(event) => void choose(event)}
+              />
+            </Field>
+          </div>
+        </CardContent>
+      </Card>
 
       {table === null || mapping === null ? null : (
-        <>
-          <h3>Columns</h3>
-          <div className="mapping" data-testid="mapping">
-            {(["date", "description", "amount", "debit", "credit"] as const).map((field) => (
-              <label key={field}>
-                {field}
-                <select
-                  value={mapping[field] ?? ""}
-                  onChange={(event) => setColumn(field, event.target.value)}
+        <Card>
+          <CardHeader>
+            <h3 className="text-base font-semibold leading-none">Columns</h3>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-4 sm:grid-cols-3" data-testid="mapping">
+              {MAPPED_FIELDS.map((field) => (
+                <Field key={field} label={field} htmlFor={`mapping-${field}`}>
+                  <NativeSelect
+                    id={`mapping-${field}`}
+                    value={mapping[field] ?? ""}
+                    onChange={(event) => setColumn(field, event.target.value)}
+                  >
+                    <option value="">—</option>
+                    {table.headers.map((header) => (
+                      <option key={header} value={header}>
+                        {header}
+                      </option>
+                    ))}
+                  </NativeSelect>
+                </Field>
+              ))}
+              <Field label="date order" htmlFor="mapping-date-order">
+                <NativeSelect
+                  id="mapping-date-order"
+                  value={mapping.dateOrder}
+                  onChange={(event) =>
+                    setMapping({
+                      ...mapping,
+                      dateOrder: event.target.value as ColumnMapping["dateOrder"],
+                    })
+                  }
                 >
-                  <option value="">—</option>
-                  {table.headers.map((header) => (
-                    <option key={header} value={header}>
-                      {header}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ))}
-            <label>
-              date order
-              <select
-                value={mapping.dateOrder}
-                onChange={(event) =>
-                  setMapping({
-                    ...mapping,
-                    dateOrder: event.target.value as ColumnMapping["dateOrder"],
-                  })
-                }
-              >
-                <option value="ISO">YYYY-MM-DD</option>
-                <option value="MDY">MM/DD/YYYY</option>
-                <option value="DMY">DD/MM/YYYY</option>
-              </select>
-            </label>
-          </div>
-        </>
+                  <option value="ISO">YYYY-MM-DD</option>
+                  <option value="MDY">MM/DD/YYYY</option>
+                  <option value="DMY">DD/MM/YYYY</option>
+                </NativeSelect>
+              </Field>
+            </div>
+          </CardContent>
+        </Card>
       )}
 
       {plan === null ? null : (
-        <>
-          <h3>Preview</h3>
-          <p data-testid="import-summary">
-            {plan.importable.length} to import, {plan.duplicates.size} already here,{" "}
-            {plan.unreadable.length} unreadable.
-          </p>
-          <table className="data-table" aria-label="Preview">
-            <thead>
-              <tr>
-                <th scope="col">Line</th>
-                <th scope="col">Date</th>
-                <th scope="col">Description</th>
-                <th scope="col" className="amount">
-                  Amount
-                </th>
-                <th scope="col">Outcome</th>
-              </tr>
-            </thead>
-            <tbody>
-              {plan.rows.slice(0, 20).map((row) => (
-                <tr key={row.line} data-testid={`preview-${row.line}`}>
-                  <td>{row.line}</td>
-                  <td>{row.date}</td>
-                  <td>{row.description}</td>
-                  <td className="amount">
-                    {row.problem === undefined ? formatMinorUnits(row.amount, currency) : "—"}
-                  </td>
-                  <td data-testid="outcome">
-                    {row.problem ?? (plan.duplicates.has(row.line) ? "already here" : "import")}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <button
-            type="button"
-            disabled={busy || plan.importable.length === 0}
-            onClick={() => void runImport()}
-          >
-            {busy ? "Importing…" : `Import ${plan.importable.length} transactions`}
-          </button>
-        </>
+        <Card>
+          <CardHeader>
+            <h3 className="text-base font-semibold leading-none">Preview</h3>
+            <CardDescription data-testid="import-summary">
+              {plan.importable.length} to import, {plan.duplicates.size} already here,{" "}
+              {plan.unreadable.length} unreadable.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Table aria-label="Preview">
+              <TableHeader>
+                <TableRow>
+                  <TableHead scope="col">Line</TableHead>
+                  <TableHead scope="col">Date</TableHead>
+                  <TableHead scope="col">Description</TableHead>
+                  <TableHead scope="col" className="text-right">
+                    Amount
+                  </TableHead>
+                  <TableHead scope="col">Outcome</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {plan.rows.slice(0, 20).map((row) => {
+                  const duplicate = plan.duplicates.has(row.line);
+                  return (
+                    <TableRow key={row.line} data-testid={`preview-${row.line}`}>
+                      <TableCell className="tabular-nums text-muted-foreground">
+                        {row.line}
+                      </TableCell>
+                      <TableCell className="tabular-nums">{row.date}</TableCell>
+                      <TableCell className="whitespace-normal">{row.description}</TableCell>
+                      <TableCell className="money">
+                        {row.problem === undefined ? formatMinorUnits(row.amount, currency) : "—"}
+                      </TableCell>
+                      <TableCell data-testid="outcome">
+                        <Badge
+                          variant={
+                            row.problem !== undefined
+                              ? "destructive"
+                              : duplicate
+                                ? "secondary"
+                                : "positive"
+                          }
+                        >
+                          {row.problem ?? (duplicate ? "already here" : "import")}
+                        </Badge>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </CardContent>
+          <CardFooter>
+            <Button
+              disabled={busy || plan.importable.length === 0}
+              onClick={() => void runImport()}
+            >
+              <FileUp />
+              {busy ? "Importing…" : `Import ${plan.importable.length} transactions`}
+            </Button>
+          </CardFooter>
+        </Card>
       )}
     </section>
   );

@@ -1,8 +1,8 @@
+import { cn, seriesColor } from "@mako-cloud/ui";
 import type { KeyboardEvent } from "react";
 
 import { formatMinorUnits } from "../../selectors/money.js";
 import { squarify } from "../../selectors/treemap.js";
-import { paletteClass } from "./bars.jsx";
 
 /**
  * Spending as area: the squarified layout from the selectors, drawn.
@@ -11,6 +11,10 @@ import { paletteClass } from "./bars.jsx";
  * so each rectangle decides from its own size, in viewBox units, whether it
  * has room for a label and a value, a label, or nothing; a rectangle that
  * says nothing still has a title, and every rectangle is in the hidden table.
+ * The cells wear the design system's series colours in order and are parted
+ * by a border-coloured stroke; the words on them are the colour the kit puts
+ * on its primary fill, which is legible on every series colour in both
+ * themes.
  */
 
 export interface TreemapEntry {
@@ -54,7 +58,7 @@ export function Treemap({
 }: TreemapProps) {
   const format = formatValue ?? ((value: number) => formatMinorUnits(value, currency));
   const rects = squarify(items, width, height);
-  if (rects.length === 0) return <p className="muted chart-empty">{emptyMessage}</p>;
+  if (rects.length === 0) return <p className="text-sm text-muted-foreground">{emptyMessage}</p>;
   const byKey = new Map(items.map((item) => [item.key, item]));
   const total = items.reduce((sum, item) => sum + Math.max(0, item.value), 0);
   const label =
@@ -66,8 +70,9 @@ export function Treemap({
       .join(", ")}`;
 
   return (
-    <figure className="chart treemap">
+    <figure className="m-0 w-full" data-slot="treemap">
       <svg
+        className="block h-auto w-full overflow-visible"
         viewBox={`0 0 ${width} ${height}`}
         preserveAspectRatio="xMidYMid meet"
         role="img"
@@ -86,14 +91,27 @@ export function Treemap({
             rect.height >= LABEL_SIZE + VALUE_SIZE + PAD * 3 &&
             rect.width >= textWidth(value, VALUE_SIZE) + PAD * 2;
           const title = `${item.label}: ${value}${share}`;
-          const className = `treemap-cell ${paletteClass("chart-fill", index)}`;
+          const className = cn(
+            "outline-none [&>rect]:transition-opacity",
+            onSelect !== undefined &&
+              "cursor-pointer [&:hover>rect]:opacity-85 [&:focus-visible>rect]:stroke-ring [&:focus-visible>rect]:[stroke-width:3]",
+          );
           const content = (
             <>
               <title>{title}</title>
-              <rect x={rect.x} y={rect.y} width={rect.width} height={rect.height} />
+              <rect
+                fill={seriesColor(index)}
+                stroke="var(--border)"
+                strokeWidth={2}
+                x={rect.x}
+                y={rect.y}
+                width={rect.width}
+                height={rect.height}
+              />
               {fitsLabel ? (
                 <text
-                  className="treemap-label"
+                  className="pointer-events-none text-[12px] font-semibold tabular-nums"
+                  fill="var(--primary-foreground)"
                   x={rect.x + PAD}
                   y={rect.y + PAD + LABEL_SIZE * 0.85}
                 >
@@ -102,7 +120,8 @@ export function Treemap({
               ) : null}
               {fitsValue ? (
                 <text
-                  className="treemap-value"
+                  className="pointer-events-none text-[11px] tabular-nums opacity-90"
+                  fill="var(--primary-foreground)"
                   x={rect.x + PAD}
                   y={rect.y + PAD * 2 + LABEL_SIZE + VALUE_SIZE * 0.85}
                 >
@@ -125,7 +144,7 @@ export function Treemap({
             }
           };
           return (
-            // biome-ignore lint/a11y/useSemanticElements: SVG has no <button>; a focusable <g> with the role is how a drawn rectangle becomes one.
+            // biome-ignore lint/a11y/useSemanticElements: SVG has no button element; a focusable <g> with the role is how a drawn rectangle becomes one.
             <g
               key={rect.key}
               className={className}
@@ -141,7 +160,7 @@ export function Treemap({
           );
         })}
       </svg>
-      <table className="visually-hidden">
+      <table className="sr-only">
         <caption>{label}</caption>
         <tbody>
           {rects.map((rect) => {

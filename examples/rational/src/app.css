@@ -1,0 +1,4 @@
+/* Rational's stylesheet entry: the design system, and nothing else. Layout
+   that is specific to a screen is written with the kit's utilities in the
+   screen. */
+@import "@mako-cloud/ui/styles.css";

@@ -19,6 +19,7 @@ changing this index or a published guide.
 | Public API | [API guide](api.md) | Versioned OpenAPI, generated clients, identity domains, errors, and idempotency |
 | RxDB | [RxDB client](rxdb-client.md) and [reference application](../examples/local-first/README.md) | Pull, push, live SSE, conflicts, tombstones, refresh, resets, and full resync |
 | Sample application | [Rational](rational.md) | A household money manager on the ordinary project surface, the findings loop that fixes what it exposes in the platform, and how to run and read it |
+| Design system | [Design system](design-system.md) | The one kit every web surface is dressed by: tokens with light and dark palettes, accessible components, icons, type, charts, how an app adopts it, and how a standalone export carries it |
 | Developer console | [Developer console](developer-console.md) | Home dashboard, onboarding, project home, the environment shell, and the areas shown as not yet available |
 | Developer data | [Developer data workspace](developer-data-workspace.md) | Explorer grants, policy preview, administration, jobs, Connect, sync diagnostics, and isolated recovery |
 | Document policies | [Policy guide](document-policies.md) | Default deny, state-aware writes, visibility changes, activation, and rollback |

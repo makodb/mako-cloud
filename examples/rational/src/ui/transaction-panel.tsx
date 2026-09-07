@@ -1,6 +1,31 @@
 import {
+  Alert,
+  AlertDescription,
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  CardHeader,
+  Checkbox,
+  Field,
+  Input,
+  Label,
+  NativeSelect,
+  Sheet,
+  SheetBody,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+  cn,
+} from "@mako-cloud/ui";
+import { Paperclip, Trash2 } from "lucide-react";
+import {
   type ChangeEvent,
+  type ComponentProps,
   type KeyboardEvent,
+  type ReactNode,
   useCallback,
   useEffect,
   useMemo,
@@ -51,6 +76,9 @@ const INTERVALS: ReadonlyArray<{ readonly value: Recurrence["interval"]; readonl
     { value: "quarterly", label: "Every quarter" },
     { value: "yearly", label: "Every year" },
   ];
+
+/** The small-caps label a screen puts over a group of things. */
+const EYEBROW = "m-0 text-xs font-semibold uppercase tracking-wider text-muted-foreground";
 
 export function TransactionPanel({
   app,
@@ -152,340 +180,440 @@ export function TransactionPanel({
   const split = transaction.splits.length > 0;
 
   return (
-    <aside
-      className="detail-panel"
-      aria-label="Transaction details"
-      data-testid="transaction-panel"
-      data-transaction-id={transaction.id}
+    <Sheet
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
     >
-      <div className="section-heading">
-        <div>
-          <h2 data-testid="panel-title">{merchant.name}</h2>
-          <p className="muted">
-            {account?.name ?? transaction.account_id} · {transaction.date}
-          </p>
-        </div>
-        <button type="button" className="link" onClick={onClose}>
-          Close
-        </button>
-      </div>
-      <p
-        className={`panel-amount${transaction.amount > 0 ? " positive" : ""}`}
-        data-testid="panel-amount"
+      <SheetContent
+        side="right"
+        aria-label="Transaction details"
+        data-testid="transaction-panel"
+        data-transaction-id={transaction.id}
+        className="gap-0 sm:max-w-lg"
       >
-        {formatMinorUnits(transaction.amount, transaction.currency)}
-      </p>
-      <div className="panel-markers">
-        {transaction.pending === true ? <span className="chip marker pending">pending</span> : null}
-        {transaction.transfer_id === undefined ? null : (
-          <span className="chip marker transfer">transfer</span>
-        )}
-        {transaction.hidden === true ? <span className="chip marker hidden">hidden</span> : null}
-        {transaction.adjustment === true ? (
-          <span className="chip marker adjustment">balance update</span>
-        ) : null}
-        {transaction.rule_id === undefined ? null : (
-          <span className="chip marker">filed by a rule</span>
-        )}
-      </div>
-      {problem === null ? null : (
-        <p className="notice error" role="alert" data-testid="panel-error">
-          {problem}
-        </p>
-      )}
-
-      <section aria-labelledby="panel-fields-title">
-        <h3 id="panel-fields-title">Details</h3>
-        <div className="field-grid">
-          <CommitField
-            label="Description"
-            value={transaction.description}
-            onCommit={(description) => void patch({ description })}
-          />
-          <label>
-            Date
-            <input
-              type="date"
-              value={transaction.date}
-              onChange={(event) => {
-                if (event.target.value !== "") void patch({ date: event.target.value });
-              }}
-            />
-          </label>
-          <CommitField
-            label={`Amount (${transaction.currency})`}
-            value={amountToText(transaction.amount, transaction.currency)}
-            inputMode="decimal"
-            onCommit={commitAmount}
-          />
-          <label>
-            Account
-            <select
-              value={transaction.account_id}
-              onChange={(event) => void patch({ account_id: event.target.value })}
+        <SheetHeader className="gap-3 border-b pr-12">
+          <div className="flex items-start justify-between gap-4">
+            <div className="grid min-w-0 gap-1">
+              <SheetTitle data-testid="panel-title" className="truncate text-lg">
+                {merchant.name}
+              </SheetTitle>
+              <SheetDescription>
+                {account?.name ?? transaction.account_id} · {transaction.date}
+              </SheetDescription>
+            </div>
+            <p
+              className={cn(
+                "money m-0 shrink-0 text-2xl font-semibold tracking-tight",
+                transaction.amount > 0 && "text-positive",
+              )}
+              data-testid="panel-amount"
             >
-              {accounts.map((candidate) => (
-                <option key={candidate.id} value={candidate.id}>
-                  {candidate.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Category
-            <select
-              value={split ? "" : (transaction.category_id ?? "")}
-              disabled={split}
-              onChange={(event) =>
-                void patch({ category_id: event.target.value === "" ? null : event.target.value })
-              }
-            >
-              <CategoryOptions taxonomy={taxonomy} blankLabel={split ? "split" : "Uncategorized"} />
-            </select>
-          </label>
-          <CommitField
-            label="Notes"
-            value={transaction.notes ?? ""}
-            onCommit={(notes) => void patch({ notes: notes.trim() === "" ? null : notes })}
-          />
-        </div>
-        <fieldset className="tags">
-          <legend>Tags</legend>
-          {tags.length === 0 ? <small>No tags yet.</small> : null}
-          {tags.map((tag) => (
-            <label key={tag.id} className="chip-option">
-              <input
-                type="checkbox"
-                checked={transaction.tags.includes(tag.id)}
-                onChange={(event) =>
-                  void patch({
-                    tags: event.target.checked
-                      ? [...transaction.tags, tag.id]
-                      : transaction.tags.filter((candidate) => candidate !== tag.id),
-                  })
-                }
-              />
-              {tag.name}
-            </label>
-          ))}
-        </fieldset>
-        {split ? (
-          <p className="hint">
-            Split {transaction.splits.length} ways; the splits are edited in the editor.
-          </p>
-        ) : null}
-        <div className="actions">
-          <button type="button" className="secondary" onClick={() => onEdit(transaction)}>
-            {split ? "Edit splits" : "Open in editor"}
-          </button>
-        </div>
-      </section>
-
-      <section aria-labelledby="panel-merchant-title">
-        <h3 id="panel-merchant-title">Merchant</h3>
-        <label>
-          Merchant
-          <select
-            aria-label="Merchant"
-            value={transaction.merchant_id ?? ""}
-            onChange={(event) =>
-              void run((writes) =>
-                writes.setMerchant(
-                  transaction.id,
-                  event.target.value === "" ? null : event.target.value,
-                ),
-              )
-            }
-          >
-            <option value="">
-              {merchant.id === null || transaction.merchant_id === undefined
-                ? `Automatic (${merchant.name})`
-                : "Automatic"}
-            </option>
-            {merchants.map((candidate) => (
-              <option key={candidate.id} value={candidate.id}>
-                {candidate.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        {merchant.id === null ? (
-          <div className="actions">
-            <button type="button" className="secondary" onClick={() => void createMerchant()}>
-              Create merchant from description
-            </button>
+              {formatMinorUnits(transaction.amount, transaction.currency)}
+            </p>
           </div>
-        ) : null}
-      </section>
+          {transaction.pending !== true &&
+          transaction.transfer_id === undefined &&
+          transaction.hidden !== true &&
+          transaction.adjustment !== true &&
+          transaction.rule_id === undefined ? null : (
+            <div className="flex flex-wrap gap-1.5">
+              {transaction.pending === true ? (
+                <MarkerBadge kind="pending">pending</MarkerBadge>
+              ) : null}
+              {transaction.transfer_id === undefined ? null : (
+                <MarkerBadge kind="transfer">transfer</MarkerBadge>
+              )}
+              {transaction.hidden === true ? <MarkerBadge kind="hidden">hidden</MarkerBadge> : null}
+              {transaction.adjustment === true ? (
+                <MarkerBadge kind="plain">balance update</MarkerBadge>
+              ) : null}
+              {transaction.rule_id === undefined ? null : (
+                <MarkerBadge kind="plain">filed by a rule</MarkerBadge>
+              )}
+            </div>
+          )}
+          {problem === null ? null : (
+            <Alert variant="destructive" role="alert" data-testid="panel-error">
+              <AlertDescription className="block">{problem}</AlertDescription>
+            </Alert>
+          )}
+        </SheetHeader>
 
-      <section aria-labelledby="panel-flags-title">
-        <h3 id="panel-flags-title">Review</h3>
-        <label className="chip-option">
-          <input
-            type="checkbox"
-            checked={transaction.reviewed === true}
-            onChange={(event) =>
-              void run((writes) => writes.markReviewed([transaction.id], event.target.checked))
-            }
-          />
-          Reviewed
-        </label>
-        <label className="chip-option">
-          <input
-            type="checkbox"
-            checked={transaction.hidden === true}
-            onChange={(event) =>
-              void run((writes) => writes.setHidden([transaction.id], event.target.checked))
-            }
-          />
-          Hidden from budgets and reports
-        </label>
-      </section>
+        <SheetBody className="gap-5 py-5">
+          <PanelSection id="panel-fields-title" title="Details" className="border-t-0 pt-0">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <CommitField
+                id="panel-description"
+                label="Description"
+                value={transaction.description}
+                onCommit={(description) => void patch({ description })}
+              />
+              <Field label="Date" htmlFor="panel-date">
+                <Input
+                  id="panel-date"
+                  type="date"
+                  value={transaction.date}
+                  onChange={(event) => {
+                    if (event.target.value !== "") void patch({ date: event.target.value });
+                  }}
+                />
+              </Field>
+              <CommitField
+                id="panel-amount-field"
+                label={`Amount (${transaction.currency})`}
+                value={amountToText(transaction.amount, transaction.currency)}
+                inputMode="decimal"
+                onCommit={commitAmount}
+              />
+              <Field label="Account" htmlFor="panel-account">
+                <NativeSelect
+                  id="panel-account"
+                  value={transaction.account_id}
+                  onChange={(event) => void patch({ account_id: event.target.value })}
+                >
+                  {accounts.map((candidate) => (
+                    <option key={candidate.id} value={candidate.id}>
+                      {candidate.name}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </Field>
+              <Field label="Category" htmlFor="panel-category">
+                <NativeSelect
+                  id="panel-category"
+                  value={split ? "" : (transaction.category_id ?? "")}
+                  disabled={split}
+                  onChange={(event) =>
+                    void patch({
+                      category_id: event.target.value === "" ? null : event.target.value,
+                    })
+                  }
+                >
+                  <CategoryOptions
+                    taxonomy={taxonomy}
+                    blankLabel={split ? "split" : "Uncategorized"}
+                  />
+                </NativeSelect>
+              </Field>
+              <CommitField
+                id="panel-notes"
+                label="Notes"
+                value={transaction.notes ?? ""}
+                onCommit={(notes) => void patch({ notes: notes.trim() === "" ? null : notes })}
+              />
+            </div>
+            <fieldset className="m-0 grid min-w-0 gap-2 border-0 p-0">
+              <legend className="mb-2 p-0 text-sm font-medium leading-none">Tags</legend>
+              {tags.length === 0 ? (
+                <small className="text-xs text-muted-foreground">No tags yet.</small>
+              ) : null}
+              <div className="flex flex-wrap gap-x-4 gap-y-2">
+                {tags.map((tag) => (
+                  <div key={tag.id} className="flex items-center gap-2">
+                    <Checkbox
+                      id={`panel-tag-${tag.id}`}
+                      checked={transaction.tags.includes(tag.id)}
+                      onCheckedChange={(checked) =>
+                        void patch({
+                          tags:
+                            checked === true
+                              ? [...transaction.tags, tag.id]
+                              : transaction.tags.filter((candidate) => candidate !== tag.id),
+                        })
+                      }
+                    />
+                    <Label htmlFor={`panel-tag-${tag.id}`} className="font-normal">
+                      {tag.name}
+                    </Label>
+                  </div>
+                ))}
+              </div>
+            </fieldset>
+            {split ? (
+              <p className="m-0 text-sm text-muted-foreground">
+                Split {transaction.splits.length} ways; the splits are edited in the editor.
+              </p>
+            ) : null}
+            <div className="flex flex-wrap gap-2">
+              <Button variant="secondary" onClick={() => onEdit(transaction)}>
+                {split ? "Edit splits" : "Open in editor"}
+              </Button>
+            </div>
+          </PanelSection>
 
-      <section aria-labelledby="panel-recurring-title">
-        <h3 id="panel-recurring-title">Recurring</h3>
-        {transaction.recurrence_id === undefined ? (
-          <div className="inline-controls">
-            <label>
-              Interval
-              <select
-                aria-label="Recurrence interval"
-                value={interval}
-                onChange={(event) => setInterval(event.target.value as Recurrence["interval"])}
+          <PanelSection id="panel-merchant-title" title="Merchant">
+            <Field label="Merchant" htmlFor="panel-merchant">
+              <NativeSelect
+                id="panel-merchant"
+                aria-label="Merchant"
+                value={transaction.merchant_id ?? ""}
+                onChange={(event) =>
+                  void run((writes) =>
+                    writes.setMerchant(
+                      transaction.id,
+                      event.target.value === "" ? null : event.target.value,
+                    ),
+                  )
+                }
               >
-                {INTERVALS.map((entry) => (
-                  <option key={entry.value} value={entry.value}>
-                    {entry.label}
+                <option value="">
+                  {merchant.id === null || transaction.merchant_id === undefined
+                    ? `Automatic (${merchant.name})`
+                    : "Automatic"}
+                </option>
+                {merchants.map((candidate) => (
+                  <option key={candidate.id} value={candidate.id}>
+                    {candidate.name}
                   </option>
                 ))}
-              </select>
-            </label>
-            <button
-              type="button"
-              className="secondary"
-              onClick={() => void run((writes) => writes.markRecurring(transaction, interval))}
-            >
-              Mark recurring
-            </button>
-          </div>
-        ) : (
-          <p className="hint" data-testid="panel-recurrence">
-            Part of a recurring bill.{" "}
-            <a href={routeHash({ name: "recurring" })}>See recurring charges</a>
-          </p>
-        )}
-      </section>
+              </NativeSelect>
+            </Field>
+            {merchant.id === null ? (
+              <div className="flex flex-wrap gap-2">
+                <Button variant="secondary" onClick={() => void createMerchant()}>
+                  Create merchant from description
+                </Button>
+              </div>
+            ) : null}
+          </PanelSection>
 
-      <section aria-labelledby="panel-transfer-title" data-testid="panel-transfer">
-        <h3 id="panel-transfer-title">Transfer</h3>
-        {transaction.transfer_id !== undefined ? (
-          <div>
-            {paired === null ? (
-              <p className="hint">The other leg of this transfer is not on this device.</p>
-            ) : (
-              <p data-testid="transfer-other-leg">
-                Paired with <strong>{paired.description}</strong> on{" "}
-                {accountName(paired.account_id)} · {paired.date} ·{" "}
-                {formatMinorUnits(paired.amount, paired.currency)}
-              </p>
-            )}
-            <div className="actions">
-              <button
-                type="button"
-                className="secondary"
-                onClick={() =>
-                  void run((writes) => writes.unpairTransfer(transaction.transfer_id ?? ""))
+          <PanelSection id="panel-flags-title" title="Review">
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="panel-reviewed"
+                checked={transaction.reviewed === true}
+                onCheckedChange={(checked) =>
+                  void run((writes) => writes.markReviewed([transaction.id], checked === true))
                 }
-              >
-                Unpair
-              </button>
+              />
+              <Label htmlFor="panel-reviewed" className="font-normal">
+                Reviewed
+              </Label>
             </div>
-          </div>
-        ) : (
-          <div>
-            {suggestions.length === 0 ? (
-              <p className="hint">No matching transaction within three days.</p>
-            ) : (
-              <ul className="suggestions" aria-label="Transfer suggestions">
-                {suggestions.map((suggestion) => {
-                  const otherId =
-                    suggestion.outflowId === transaction.id
-                      ? suggestion.inflowId
-                      : suggestion.outflowId;
-                  const other = transactions.find((candidate) => candidate.id === otherId);
-                  return (
-                    <li key={otherId} data-testid={`suggestion-${otherId}`}>
-                      <span>
-                        {other === undefined ? (
-                          otherId
-                        ) : (
-                          <>
-                            <strong>{other.description}</strong> on {accountName(other.account_id)}{" "}
-                            · {other.date} · {formatMinorUnits(other.amount, other.currency)}
-                          </>
-                        )}
-                        {suggestion.days === 0
-                          ? " · same day"
-                          : ` · ${suggestion.days} ${suggestion.days === 1 ? "day" : "days"} apart`}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => void pair(suggestion.outflowId, suggestion.inflowId)}
-                      >
-                        Pair
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-            {candidates.length === 0 ? null : (
-              <div className="inline-controls">
-                <label>
-                  Pair with
-                  <select
-                    aria-label="Pair with"
-                    value={pairWith}
-                    onChange={(event) => setPairWith(event.target.value)}
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="panel-hidden"
+                checked={transaction.hidden === true}
+                onCheckedChange={(checked) =>
+                  void run((writes) => writes.setHidden([transaction.id], checked === true))
+                }
+              />
+              <Label htmlFor="panel-hidden" className="font-normal">
+                Hidden from budgets and reports
+              </Label>
+            </div>
+          </PanelSection>
+
+          <PanelSection id="panel-recurring-title" title="Recurring">
+            {transaction.recurrence_id === undefined ? (
+              <div className="flex flex-wrap items-end gap-2">
+                <Field label="Interval" htmlFor="panel-interval" className="min-w-40 flex-1">
+                  <NativeSelect
+                    id="panel-interval"
+                    aria-label="Recurrence interval"
+                    value={interval}
+                    onChange={(event) => setInterval(event.target.value as Recurrence["interval"])}
                   >
-                    <option value="">Choose a transaction…</option>
-                    {candidates.map((candidate) => (
-                      <option key={candidate.id} value={candidate.id}>
-                        {candidate.date} · {accountName(candidate.account_id)} ·{" "}
-                        {formatMinorUnits(candidate.amount, candidate.currency)} ·{" "}
-                        {candidate.description}
+                    {INTERVALS.map((entry) => (
+                      <option key={entry.value} value={entry.value}>
+                        {entry.label}
                       </option>
                     ))}
-                  </select>
-                </label>
-                <button
-                  type="button"
-                  className="secondary"
-                  disabled={pairWith === ""}
-                  onClick={pairManually}
+                  </NativeSelect>
+                </Field>
+                <Button
+                  variant="secondary"
+                  onClick={() => void run((writes) => writes.markRecurring(transaction, interval))}
                 >
-                  Pair selected
-                </button>
+                  Mark recurring
+                </Button>
+              </div>
+            ) : (
+              <p className="m-0 text-sm text-muted-foreground" data-testid="panel-recurrence">
+                Part of a recurring bill.{" "}
+                <a href={routeHash({ name: "recurring" })}>See recurring charges</a>
+              </p>
+            )}
+          </PanelSection>
+
+          <PanelSection id="panel-transfer-title" title="Transfer" data-testid="panel-transfer">
+            {transaction.transfer_id !== undefined ? (
+              <div className="grid gap-3">
+                {paired === null ? (
+                  <p className="m-0 text-sm text-muted-foreground">
+                    The other leg of this transfer is not on this device.
+                  </p>
+                ) : (
+                  <p className="m-0 text-sm" data-testid="transfer-other-leg">
+                    Paired with <strong>{paired.description}</strong> on{" "}
+                    {accountName(paired.account_id)} · {paired.date} ·{" "}
+                    {formatMinorUnits(paired.amount, paired.currency)}
+                  </p>
+                )}
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    variant="secondary"
+                    onClick={() =>
+                      void run((writes) => writes.unpairTransfer(transaction.transfer_id ?? ""))
+                    }
+                  >
+                    Unpair
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="grid gap-3">
+                {suggestions.length === 0 ? (
+                  <p className="m-0 text-sm text-muted-foreground">
+                    No matching transaction within three days.
+                  </p>
+                ) : (
+                  <ul className="m-0 grid list-none gap-2 p-0" aria-label="Transfer suggestions">
+                    {suggestions.map((suggestion) => {
+                      const otherId =
+                        suggestion.outflowId === transaction.id
+                          ? suggestion.inflowId
+                          : suggestion.outflowId;
+                      const other = transactions.find((candidate) => candidate.id === otherId);
+                      return (
+                        <li
+                          key={otherId}
+                          data-testid={`suggestion-${otherId}`}
+                          className="flex items-center justify-between gap-3 rounded-lg border bg-muted/40 px-3 py-2 text-sm"
+                        >
+                          <span className="min-w-0">
+                            {other === undefined ? (
+                              otherId
+                            ) : (
+                              <>
+                                <strong>{other.description}</strong> on{" "}
+                                {accountName(other.account_id)} · {other.date} ·{" "}
+                                {formatMinorUnits(other.amount, other.currency)}
+                              </>
+                            )}
+                            {suggestion.days === 0
+                              ? " · same day"
+                              : ` · ${suggestion.days} ${suggestion.days === 1 ? "day" : "days"} apart`}
+                          </span>
+                          <Button
+                            size="sm"
+                            onClick={() => void pair(suggestion.outflowId, suggestion.inflowId)}
+                          >
+                            Pair
+                          </Button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+                {candidates.length === 0 ? null : (
+                  <div className="flex flex-wrap items-end gap-2">
+                    <Field label="Pair with" htmlFor="panel-pair-with" className="min-w-40 flex-1">
+                      <NativeSelect
+                        id="panel-pair-with"
+                        aria-label="Pair with"
+                        value={pairWith}
+                        onChange={(event) => setPairWith(event.target.value)}
+                      >
+                        <option value="">Choose a transaction…</option>
+                        {candidates.map((candidate) => (
+                          <option key={candidate.id} value={candidate.id}>
+                            {candidate.date} · {accountName(candidate.account_id)} ·{" "}
+                            {formatMinorUnits(candidate.amount, candidate.currency)} ·{" "}
+                            {candidate.description}
+                          </option>
+                        ))}
+                      </NativeSelect>
+                    </Field>
+                    <Button variant="secondary" disabled={pairWith === ""} onClick={pairManually}>
+                      Pair selected
+                    </Button>
+                  </div>
+                )}
               </div>
             )}
-          </div>
-        )}
-      </section>
+          </PanelSection>
 
-      <section aria-labelledby="panel-receipts-title">
-        <h3 id="panel-receipts-title">Receipts</h3>
-        <ReceiptsPanel app={app} transaction={transaction} />
-      </section>
+          <PanelSection id="panel-receipts-title" title="Receipts">
+            <ReceiptsPanel app={app} transaction={transaction} />
+          </PanelSection>
+        </SheetBody>
 
-      <div className="actions panel-footer">
-        <a className="button-link" href={ruleHash} data-testid="create-rule">
-          Create rule from this
-        </a>
-        <button type="button" className="secondary danger" onClick={() => void remove()}>
-          Delete
-        </button>
-      </div>
-    </aside>
+        <SheetFooter className="flex-row items-center justify-between">
+          <Button asChild variant="outline">
+            <a
+              className="no-underline hover:no-underline"
+              href={ruleHash}
+              data-testid="create-rule"
+            >
+              Create rule from this
+            </a>
+          </Button>
+          <Button
+            variant="outline"
+            className="border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
+            onClick={() => void remove()}
+          >
+            <Trash2 aria-hidden="true" />
+            Delete
+          </Button>
+        </SheetFooter>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+/** One of the panel's stacked sections: a small-caps title over its content. */
+function PanelSection({
+  id,
+  title,
+  className,
+  children,
+  ...rest
+}: ComponentProps<"section"> & { id: string; title: string; children: ReactNode }) {
+  return (
+    <section aria-labelledby={id} className={cn("grid gap-3 border-t pt-5", className)} {...rest}>
+      <h3 id={id} className={EYEBROW}>
+        {title}
+      </h3>
+      {children}
+    </section>
+  );
+}
+
+/**
+ * The words a row or the panel hangs on a transaction: what it waits for,
+ * what it is part of, what it is left out of. Each kind has one look so the
+ * list and the panel agree.
+ */
+export function MarkerBadge({
+  kind,
+  children,
+  ...rest
+}: ComponentProps<typeof Badge> & {
+  kind: "review" | "transfer" | "hidden" | "pending" | "plain";
+}) {
+  if (kind === "review") {
+    return (
+      <Badge variant="warning" {...rest}>
+        {children}
+      </Badge>
+    );
+  }
+  return (
+    <Badge
+      variant="outline"
+      className={cn(
+        "border-dashed",
+        kind === "transfer" && "border-primary/50 text-primary",
+        (kind === "hidden" || kind === "pending") && "text-muted-foreground",
+      )}
+      {...rest}
+    >
+      {children}
+    </Badge>
   );
 }
 
@@ -497,11 +625,13 @@ export function TransactionPanel({
  * another device looks like.
  */
 function CommitField({
+  id,
   label,
   value,
   onCommit,
   inputMode,
 }: {
+  id: string;
   label: string;
   value: string;
   onCommit: (value: string) => void;
@@ -521,16 +651,17 @@ function CommitField({
     }
   };
   return (
-    <label>
-      {label}
-      <input
+    <Field label={label} htmlFor={id}>
+      <Input
+        id={id}
         value={draft}
         {...(inputMode === undefined ? {} : { inputMode })}
+        className={inputMode === "decimal" ? "tabular-nums" : undefined}
         onChange={(event) => setDraft(event.target.value)}
         onBlur={commit}
         onKeyDown={onKeyDown}
       />
-    </label>
+    </Field>
   );
 }
 
@@ -660,51 +791,84 @@ export function ReceiptsPanel({
     globalThis.open(URL.createObjectURL(blob), "_blank", "noopener");
   };
 
-  return (
-    <div
-      className={onClose === undefined ? "receipts" : "panel receipts"}
-      data-testid="receipts-panel"
-    >
-      {onClose === undefined ? null : (
-        <div className="section-heading">
-          <h3>Receipts for {transaction.description}</h3>
-          <button type="button" className="link" onClick={onClose}>
-            Close
-          </button>
-        </div>
-      )}
+  const fileId = `receipt-file-${transaction.id}`;
+  const body = (
+    <>
       {problem === null ? null : (
-        <p className="notice error" role="alert">
-          {problem}
-        </p>
+        <Alert variant="destructive" role="alert">
+          <AlertDescription className="block">{problem}</AlertDescription>
+        </Alert>
       )}
-      <label>
-        Attach an image or a PDF
-        <input type="file" accept="image/*,application/pdf" disabled={busy} onChange={attach} />
-      </label>
+      <Field label="Attach an image or a PDF" htmlFor={fileId}>
+        <Input
+          id={fileId}
+          type="file"
+          accept="image/*,application/pdf"
+          disabled={busy}
+          onChange={attach}
+          className="cursor-pointer pt-1.5 text-muted-foreground"
+        />
+      </Field>
       {receipts === null ? (
-        <p role="status">Loading receipts…</p>
+        <p className="m-0 text-sm text-muted-foreground" role="status">
+          Loading receipts…
+        </p>
       ) : receipts.length === 0 ? (
-        <p className="muted">No receipts yet.</p>
+        <p className="m-0 text-sm text-muted-foreground">No receipts yet.</p>
       ) : (
-        <ul aria-label="Receipts">
+        <ul aria-label="Receipts" className="m-0 grid list-none gap-1 p-0">
           {receipts.map((receipt) => (
-            <li key={receipt.path} data-testid={`receipt-${receipt.name}`}>
-              <button type="button" className="link" onClick={() => void open(receipt.path)}>
+            <li
+              key={receipt.path}
+              data-testid={`receipt-${receipt.name}`}
+              className="flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-1.5 text-sm"
+            >
+              <Paperclip aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
+              <Button
+                variant="link"
+                size="sm"
+                className="h-auto min-w-0 justify-start truncate p-0 text-sm"
+                onClick={() => void open(receipt.path)}
+              >
                 {receipt.name}
-              </button>
-              <small> {Math.ceil(receipt.sizeBytes / 1024)} KB</small>
-              <button
-                type="button"
-                className="link"
+              </Button>
+              <small className="text-xs text-muted-foreground">
+                {" "}
+                {Math.ceil(receipt.sizeBytes / 1024)} KB
+              </small>
+              <Button
+                variant="link"
+                size="sm"
+                className="ml-auto h-auto p-0 text-xs text-muted-foreground hover:text-destructive"
                 onClick={() => void app.receipts?.remove(receipt.path).then(reload)}
               >
                 Remove
-              </button>
+              </Button>
             </li>
           ))}
         </ul>
       )}
-    </div>
+    </>
+  );
+
+  if (onClose === undefined) {
+    return (
+      <div className="grid gap-3" data-testid="receipts-panel">
+        {body}
+      </div>
+    );
+  }
+  return (
+    <Card data-testid="receipts-panel">
+      <CardHeader className="flex flex-row items-start justify-between gap-4">
+        <h3 className="m-0 text-base font-semibold leading-none">
+          Receipts for {transaction.description}
+        </h3>
+        <Button variant="ghost" size="sm" className="-my-1.5 shrink-0" onClick={onClose}>
+          Close
+        </Button>
+      </CardHeader>
+      <CardContent className="grid gap-3">{body}</CardContent>
+    </Card>
   );
 }

@@ -52,6 +52,16 @@ const pagesBase = `/${APPLICATION.name}/`;
 const siteDirectory = "web-dist";
 /** The published, installable form of the client. See scripts/publish-rxdb-client.mjs. */
 const clientSpecifier = "github:makodb/mako-rxdb#v0.2.0";
+/**
+ * The design system is a workspace package with no published form, so the
+ * export carries its sources: copied to `src/kit`, resolved there by a
+ * tsconfig `paths` entry and a Vite alias, with its dependencies written into
+ * the application's manifest at the exact versions the workspace pins.
+ */
+const KIT_PACKAGE = "@mako-cloud/ui";
+const KIT_SOURCE = join(repositoryRoot, "packages/ui/src");
+const KIT_DESTINATION = "src/kit";
+const kitManifest = JSON.parse(readFileSync(join(repositoryRoot, "packages/ui/package.json"), "utf8"));
 
 // Copied verbatim. Directories are copied whole, minus the names below.
 const COPIED = [
@@ -116,10 +126,17 @@ const PRESERVED = new Set([
 ]);
 
 /**
- * The environment file is named for the platform in this workspace and for the
- * application in its own repository. One substitution, reported file by file.
+ * What is spelled differently in the application's own repository: the
+ * environment file is named for the platform here and for the application
+ * there, and the kit's stylesheet is a package import here and a relative one
+ * there (Tailwind resolves its own `@import`s, so an alias would not reach
+ * it). Each substitution is reported file by file.
  */
 const ENVIRONMENT_FILE = { from: "mako.env.json", to: "rational.config.json" };
+const SUBSTITUTIONS = [
+  ENVIRONMENT_FILE,
+  { from: `"${KIT_PACKAGE}/styles.css"`, to: `"./kit/styles.css"` },
+];
 
 /**
  * Configuration that names no project. Kept identical to `PLACEHOLDER` in
@@ -175,22 +192,27 @@ const exported = [];
 for (const entry of COPIED) {
   exported.push(...copy(join(exampleRoot, entry), join(checkout, entry)));
 }
+exported.push(...copy(KIT_SOURCE, join(checkout, KIT_DESTINATION)));
 mkdirSync(join(checkout, "scripts"), { recursive: true });
 for (const entry of COPIED_SCRIPTS(readdirSync(join(exampleRoot, "scripts")).sort())) {
   exported.push(...copy(join(exampleRoot, "scripts", entry), join(checkout, "scripts", entry)));
 }
 
-// `src` and `scripts` name the environment file; nothing else does.
+// `src` and `scripts` name the environment file and the kit; nothing else does.
 const renamed = [];
 for (const path of exported) {
   if (!path.startsWith("src/") && !path.startsWith("scripts/")) continue;
   if (!TEXT.test(path)) continue;
   const absolute = join(checkout, path);
   const before = readFileSync(absolute, "utf8");
-  const occurrences = before.split(ENVIRONMENT_FILE.from).length - 1;
-  if (occurrences === 0) continue;
-  writeFileSync(absolute, before.split(ENVIRONMENT_FILE.from).join(ENVIRONMENT_FILE.to));
-  renamed.push({ path, occurrences });
+  let after = before;
+  for (const { from, to } of SUBSTITUTIONS) {
+    const occurrences = after.split(from).length - 1;
+    if (occurrences === 0) continue;
+    after = after.split(from).join(to);
+    renamed.push({ path, from, to, occurrences });
+  }
+  if (after !== before) writeFileSync(absolute, after);
 }
 
 for (const name of REWRITTEN_TSCONFIGS) {
@@ -206,9 +228,9 @@ verify(checkout, exported);
 
 process.stdout.write(`${exported.length} files exported to ${checkout}\n`);
 for (const path of exported) process.stdout.write(`  ${path}\n`);
-process.stdout.write(`renamed ${ENVIRONMENT_FILE.from} -> ${ENVIRONMENT_FILE.to} in:\n`);
+process.stdout.write("substituted:\n");
 for (const entry of renamed) {
-  process.stdout.write(`  ${entry.path} (${entry.occurrences})\n`);
+  process.stdout.write(`  ${entry.path}: ${entry.from} -> ${entry.to} (${entry.occurrences})\n`);
 }
 
 if (options.dryRun) {
@@ -257,9 +279,15 @@ function applicationManifest() {
     if (name === "test:browser-live") continue;
     scripts[name] = command;
   }
+  // The kit travels as sources under `src/kit`, so it is not a dependency
+  // there; what it depends on is.
   const dependencies = {};
   for (const [name, range] of Object.entries(manifest.dependencies)) {
+    if (name === KIT_PACKAGE) continue;
     dependencies[name] = name === "@mako-cloud/rxdb" ? clientSpecifier : range;
+  }
+  for (const [name, range] of Object.entries(kitManifest.dependencies)) {
+    dependencies[name] = range;
   }
   return {
     name: APPLICATION.name,
@@ -274,7 +302,7 @@ function applicationManifest() {
     bugs: { url: `https://github.com/${APPLICATION.owner}/${APPLICATION.name}/issues` },
     type: "module",
     scripts,
-    dependencies,
+    dependencies: sorted(dependencies),
     devDependencies: sorted({
       ...manifest.devDependencies,
       typescript: workspaceManifest.devDependencies.typescript,
@@ -290,9 +318,10 @@ function sorted(entries) {
 
 /**
  * The example's TypeScript configuration with the workspace taken out of it:
- * the shared base inlined, the project reference to the client package
- * dropped (there it is built from source, here it is an installed package),
- * and any file that is not exported dropped from `include`.
+ * the shared base inlined, the project references dropped (the client is an
+ * installed package there, the kit is source under `src/kit`), the kit's
+ * package name pointed at that source, and any file that is not exported
+ * dropped from `include`.
  */
 function standaloneTsconfig(name) {
   const source = JSON.parse(readFileSync(join(exampleRoot, name), "utf8"));
@@ -302,7 +331,14 @@ function standaloneTsconfig(name) {
   const { extends: _extends, references: _references, include, ...rest } = source;
   return {
     ...rest,
-    compilerOptions: { ...base.compilerOptions, ...source.compilerOptions },
+    compilerOptions: {
+      ...base.compilerOptions,
+      ...source.compilerOptions,
+      paths: {
+        [KIT_PACKAGE]: [`./${KIT_DESTINATION}/index.ts`],
+        [`${KIT_PACKAGE}/*`]: [`./${KIT_DESTINATION}/*`],
+      },
+    },
     ...(include === undefined
       ? {}
       : { include: include.filter((entry) => !NEVER.has(entry.split("/")[0])) }),
@@ -314,6 +350,7 @@ function viteConfig() {
   return `import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
+import tailwindcss from "@tailwindcss/vite";
 import { defineConfig, type ProxyOptions } from "vite";
 
 /**
@@ -405,6 +442,29 @@ export default defineConfig(({ command }) => {
   }
   return {
     base: "${pagesBase}",
+    plugins: [tailwindcss()],
+    // The design system travels with this repository as sources under
+    // \`src/kit\`; its package name resolves there.
+    resolve: {
+      alias: {
+        "${KIT_PACKAGE}": fileURLToPath(new URL("./${KIT_DESTINATION}/index.ts", import.meta.url)),
+      },
+    },
+    // Pre-bundled up front rather than on the first request, which would
+    // otherwise take a minute cold and reload the page mid-way through a test.
+    optimizeDeps: {
+      include: [
+        "react",
+        "react-dom",
+        "react-dom/client",
+        "recharts",
+        "radix-ui",
+        "lucide-react",
+        "clsx",
+        "tailwind-merge",
+        "class-variance-authority",
+      ],
+    },
     define: { __RATIONAL_ENV__: JSON.stringify(runtimeEnvironment) },
     build: { outDir: "${siteDirectory}", emptyOutDir: true },
     server: Object.keys(proxy).length === 0 ? {} : { proxy },
