@@ -10,7 +10,7 @@
   },
   "planHash": "d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073",
   "source": {
-    "digest": "0d99cb50e744f9d654df11e0bd0057a0c38a4c68ce6047c407dcd4bdd92dc22e",
+    "digest": "c390f48f22b448c46535b2f8f7c91662f814ec73c092641d6eeb868ca652ff78",
     "files": [
       {
         "path": ".env.example",
@@ -20,8 +20,8 @@
       },
       {
         "path": ".github/workflows/ci.yml",
-        "sha256": "f811f199c242b183c14fdf41fbf85d13f3d61860a1f2f2ed5368828f8fc4a34e",
-        "size": 9341,
+        "sha256": "366e892cfd260c836cac3334031abd75880a4c97b56e921fac9c808e05f490da",
+        "size": 9482,
         "mode": 420
       },
       {
@@ -746,8 +746,8 @@
       },
       {
         "path": "crates/mako-control-plane/src/collection.rs",
-        "sha256": "868dad3efe1af95ca4b9670bffe826dfbfeee1f4d36c5a57f5e544ccc8af4b3b",
-        "size": 59013,
+        "sha256": "9245b3d9f663d233c1b1c749fe0da24deadac68c819cf2c340a5c28816336bf5",
+        "size": 66290,
         "mode": 420
       },
       {
@@ -1957,15 +1957,21 @@
         "mode": 420
       },
       {
+        "path": "examples/rational/MONARCH-PARITY.md",
+        "sha256": "0ce42285d82f096927f85af3fe641cd81d0166c1840cde23f9a02083acac888b",
+        "size": 10836,
+        "mode": 420
+      },
+      {
         "path": "examples/rational/PLATFORM-FINDINGS.md",
-        "sha256": "294a72695eec124276c97661d5038a8c83a68827a8f5b764157e45ace269587c",
-        "size": 49835,
+        "sha256": "dcf09f6ed41f73eb76e21c6ad0871f4ac82e3ef581bd7d39773dafe38ed8129f",
+        "size": 56260,
         "mode": 420
       },
       {
         "path": "examples/rational/README.md",
-        "sha256": "718a6ee97c47b028eedfc9cb947f741d66c11f30a601da8d6fa36b27b3830e64",
-        "size": 24606,
+        "sha256": "182461e74fbe77ced62f30d9487d4bbb681efb7108d051dfa509a365e8314de4",
+        "size": 32116,
         "mode": 420
       },
       {
@@ -1976,7 +1982,7 @@
       },
       {
         "path": "examples/rational/functions/households/index.ts",
-        "sha256": "d21ffadc9aafbd127df81f821692cdd61744b215f9eca355626467fa8701d26e",
+        "sha256": "ea3967986f30ce7b9eeeb59132195d1839d2f813af992b15766d1270f503d4f9",
         "size": 17240,
         "mode": 420
       },
@@ -1988,8 +1994,8 @@
       },
       {
         "path": "examples/rational/functions/institution-sync/index.ts",
-        "sha256": "895320190404e26ef8306060604b2f81a59e5d12b2fa3e56f6c9005c8c2744ce",
-        "size": 29773,
+        "sha256": "da0a70e8c30df272827c25a0d2816600d630001c3104a2a6c6941fbfea97a65f",
+        "size": 34471,
         "mode": 420
       },
       {
@@ -2006,26 +2012,50 @@
       },
       {
         "path": "examples/rational/functions/nightly/index.ts",
-        "sha256": "40f97ac194043f966a9bc77a19973a57e7d2ee8889b1aa8b3fa120644ff76a82",
-        "size": 19178,
+        "sha256": "5269a4ba625c3e6baf183edcf53dfbbaf03a8cf36502658d15eee1a7378a6925",
+        "size": 24270,
         "mode": 420
       },
       {
         "path": "examples/rational/functions/shared/alerts.ts",
-        "sha256": "e701ce5cef375801e45ce91bf45f3ff2c8da719e498ad2b1019b66f747e176ae",
-        "size": 6856,
+        "sha256": "8de68b05eac8fb331bcd233510787a4d064ab3f6df8360162692f01fa9114744",
+        "size": 12298,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/functions/shared/balances.ts",
+        "sha256": "94258952d88c9fe6bd0527d8afe9239b28bd13dc0c69376691de37b4c73e29e9",
+        "size": 4603,
         "mode": 420
       },
       {
         "path": "examples/rational/functions/shared/budgets.ts",
-        "sha256": "e88bfcdc5612d52ea5eb8d5a179113bb090a097705b460d31fe1036b1d5f3bae",
-        "size": 5991,
+        "sha256": "9ab2c66a076457b52bbce9be19795d0174dc21168b2b0d33f7011f129dc5445a",
+        "size": 21123,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/functions/shared/exclusions.ts",
+        "sha256": "26e50ee82dd8a3af453387f39618138e6456531f5b125b9fcbada7501653fb91",
+        "size": 2280,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/functions/shared/goals.ts",
+        "sha256": "b6ee25ff4f620f9f4ad08e9d4bb3f5eaef6ab7b02d66c89e1048240746274e41",
+        "size": 7643,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/functions/shared/merchants.ts",
+        "sha256": "17a4dff364d66b998b7efa6dbd01110173095d19b9541fe26efe138ed4b5ec29",
+        "size": 4502,
         "mode": 420
       },
       {
         "path": "examples/rational/functions/shared/nightly.ts",
-        "sha256": "35da44e7ea90287571abcbb69dceda06927079451deee7a345f81f1f077ec50e",
-        "size": 5627,
+        "sha256": "61a321391503cacf868b4f4c6e754d8b05e6c24a0883da4d6f1c034d9f59558a",
+        "size": 13665,
         "mode": 420
       },
       {
@@ -2036,20 +2066,26 @@
       },
       {
         "path": "examples/rational/functions/shared/recurrences.ts",
-        "sha256": "f7f0873e5faf8c1a459d59db5d98b1992a4e6b20151f07e7e8d47c1dcd3bc223",
-        "size": 7876,
+        "sha256": "703a587391f2dbe199f733f48d1da28cc3bb1205a009cc04a0a21a8b090e3648",
+        "size": 17549,
         "mode": 420
       },
       {
         "path": "examples/rational/functions/shared/rules.ts",
-        "sha256": "e77a3ad8c9d939479e7badb82ea237bc615fff6eab69348f0d1da3bfae848617",
-        "size": 4321,
+        "sha256": "30f584536f135d3950e1e1129b4d541deedba59c3111c337a5bce7d7083bec3e",
+        "size": 8854,
         "mode": 420
       },
       {
         "path": "examples/rational/functions/shared/run-key.ts",
         "sha256": "0ea27a81ae00a0f4943efa36ddb459bff63e163a01aa317db062b1ca6e795e7e",
         "size": 1365,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/functions/shared/transfers.ts",
+        "sha256": "8a8a4180021509dcd05655e4ffff4ee0eba3e4ade36fd20637704dcac8ec3881",
+        "size": 4270,
         "mode": 420
       },
       {
@@ -2066,8 +2102,8 @@
       },
       {
         "path": "examples/rational/mako/collections.json",
-        "sha256": "e32ca2cc78ea82d25b6a14d01338ef53d080b6c5d8605e28f1a000b579dbf05b",
-        "size": 34164,
+        "sha256": "f5d3d77f2817fa1dd9e8d01e6aa24130bc17ade82d228cc9df0b22e5a3aa96c6",
+        "size": 42303,
         "mode": 420
       },
       {
@@ -2156,8 +2192,8 @@
       },
       {
         "path": "examples/rational/playwright.config.ts",
-        "sha256": "5bd760974a084f02defd4af07afc5abd2bc687034c7e8430c6a44040ed0d105a",
-        "size": 810,
+        "sha256": "6013e1b62ff6d740893814c5e1641eaa9a1f485f47a035786a8a9d3b4e35e9b2",
+        "size": 1086,
         "mode": 420
       },
       {
@@ -2168,32 +2204,44 @@
       },
       {
         "path": "examples/rational/scripts/bootstrap.mjs",
-        "sha256": "1d9231497dcac5767be00486c2e044cb4c242655e840dccbfac9db3bdd674ca8",
-        "size": 42525,
+        "sha256": "b73fa30e7a70aaec8a6a0c52b3f0822d158532fb4f5fec2f4df3ff01015e28d9",
+        "size": 43970,
         "mode": 493
       },
       {
+        "path": "examples/rational/scripts/default-taxonomy.d.mts",
+        "sha256": "46d0a07979d522d218b6a5f8617b1f2cc12999f59b25c9a3c7b73720b9863241",
+        "size": 765,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/scripts/default-taxonomy.mjs",
+        "sha256": "03dcb9ae2749686f32ecd658daea939d225fac6ff047dc6c6a6bce33cc074f33",
+        "size": 6995,
+        "mode": 420
+      },
+      {
         "path": "examples/rational/scripts/demo-data.d.mts",
-        "sha256": "e3dee7120ac03a082b282c082895a5876178ca3d3287ce182b3de8dfbc1168b1",
-        "size": 584,
+        "sha256": "46734cbb5820f05baeb4b7f1f9e925d7c79c0771f0927e7c3a9194baf9a9fd9d",
+        "size": 905,
         "mode": 420
       },
       {
         "path": "examples/rational/scripts/demo-data.mjs",
-        "sha256": "6636a52e2b7935b1fa5c6eb87694ce8b480bce8ae742f900c133440702aa53ce",
-        "size": 8943,
+        "sha256": "d419e48e3b509661e1c67f96ff94cd1e0feaf9012ad3be455ec906551db87802",
+        "size": 24926,
         "mode": 420
       },
       {
         "path": "examples/rational/scripts/seed.mjs",
-        "sha256": "8ffe2fb6a4e7c5bd590d85d8c5fb691e6179b8a9f7259c31a943eff042cc3384",
-        "size": 5315,
+        "sha256": "bb560d8d357094fab17fe8c6c88f88447e67ad90a922aaf838c7802ae9dfc90e",
+        "size": 5657,
         "mode": 493
       },
       {
         "path": "examples/rational/src/auth.ts",
-        "sha256": "b1082d2a257a1288efa78638a7c6d222c6e53fad11636afd0dd3788ed84d7223",
-        "size": 5721,
+        "sha256": "9a47b06cb63d9b91176641ad1f4b61fb73b33dc56490514928713a894fee6a2c",
+        "size": 7163,
         "mode": 420
       },
       {
@@ -2228,8 +2276,8 @@
       },
       {
         "path": "examples/rational/src/data/rational.ts",
-        "sha256": "20023339612428ac1dac7d29609748f282b5ff0e242f31cd7abc52654425af41",
-        "size": 29291,
+        "sha256": "e31396b6972c4c5101e806eb6c07a24eb80b890c900664362e3f081b1136e453",
+        "size": 34173,
         "mode": 420
       },
       {
@@ -2252,8 +2300,8 @@
       },
       {
         "path": "examples/rational/src/data/scope.ts",
-        "sha256": "9ee28fe92e0e47e1aa372f6ecce21b600f9937dc54b7d1de3c8c859d903c86ac",
-        "size": 19594,
+        "sha256": "8fcfb394ddc8588264e8f61b998ead1910c6fd1411815f8b5925899435b8a7a5",
+        "size": 19932,
         "mode": 420
       },
       {
@@ -2264,8 +2312,8 @@
       },
       {
         "path": "examples/rational/src/data/writes.ts",
-        "sha256": "263ab8107a7240cb1dc50bcbd43fc581b0b9665082e781b5dcf9e62077d17fbe",
-        "size": 25696,
+        "sha256": "3cacfff29819220c377c0703e541528c06dd9939ed0c3263ce3608f7e31f578e",
+        "size": 66594,
         "mode": 420
       },
       {
@@ -2288,20 +2336,26 @@
       },
       {
         "path": "examples/rational/src/model/types.ts",
-        "sha256": "64906866d74789b597c6943aa2a94f37aface120ce950979e42145dc33a7b0e6",
-        "size": 8539,
+        "sha256": "27be9e52516c757fc8077632ab1f1f387aaa7cf5a86cbb6bcfd9491406d9ef23",
+        "size": 14871,
         "mode": 420
       },
       {
         "path": "examples/rational/src/selectors/alerts.ts",
-        "sha256": "216807d025b1e9225252f2ad9951f9f9bc06516798055a99c2248c9226a83115",
-        "size": 2236,
+        "sha256": "5605e645802774fc2ef1ecc9c62e7cf8e252bdc96df57095b7eb5bc1260e030a",
+        "size": 2570,
         "mode": 420
       },
       {
         "path": "examples/rational/src/selectors/balances.ts",
-        "sha256": "7336bbbda62aecea0eb203ba65bf3ac189a0fba487248a7b8cf51a599c8c5e98",
-        "size": 2399,
+        "sha256": "77cd7df86d1b1b60ba5d89c4a4c1aed16aa1d67f82d60ca70174246d74c28284",
+        "size": 4982,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/src/selectors/budget-month.ts",
+        "sha256": "bbeef125e3a6a3142c03b6aee56ed90c350959decee3c0164751c2298dd1b34c",
+        "size": 2437,
         "mode": 420
       },
       {
@@ -2311,21 +2365,69 @@
         "mode": 420
       },
       {
+        "path": "examples/rational/src/selectors/calendar.ts",
+        "sha256": "b1f5bd56728e0576161dac17e3774fa4264a8d1d8db9dc5454a7e629b4d8c45c",
+        "size": 3788,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/src/selectors/cashflow.ts",
+        "sha256": "3d620d44e3995a380a3798b2761a19ef1e7e4a29ed30c06b87a10d3b27f95818",
+        "size": 23022,
+        "mode": 420
+      },
+      {
         "path": "examples/rational/src/selectors/csv.ts",
         "sha256": "fb55a7f30461c6e7c51572ce91c4be499bb64e5a4e27f43198928908962954c5",
         "size": 10370,
         "mode": 420
       },
       {
+        "path": "examples/rational/src/selectors/dashboard.ts",
+        "sha256": "3441309d792dd115daba80aa72a9495b5e7cb2963f44b1156cdb3a901b053dfa",
+        "size": 4437,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/src/selectors/export.ts",
+        "sha256": "108afc8f0fb2fc559f044023f9329b556e635253a7b45b130e1fe7989a5014c5",
+        "size": 4224,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/src/selectors/filters.ts",
+        "sha256": "2a03d5cbc1cffc9fb5a9ed728ff6768b44b91af57245192dccf83b81ebcfb301",
+        "size": 12316,
+        "mode": 420
+      },
+      {
         "path": "examples/rational/src/selectors/goals.ts",
-        "sha256": "86c59de0b8289cb054ba965f6950a0ab24fd6e6c747ca3d9631ab5f6c4c510e4",
-        "size": 3130,
+        "sha256": "8db044fae74444178f944feb44259adfd1490817876309948cb64a628b8d9836",
+        "size": 4163,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/src/selectors/history.ts",
+        "sha256": "6b8519b66e635aded25c2eaab3af212e309b25a08a44344dc443f83146f66197",
+        "size": 4024,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/src/selectors/holdings.ts",
+        "sha256": "4f056fdce40cdcc2bb1195724159e5cf2885c4089cd73440496f03e7ccc283ce",
+        "size": 3457,
         "mode": 420
       },
       {
         "path": "examples/rational/src/selectors/memo.ts",
         "sha256": "bba9ca10b8668719f25a789ad6bb4279276b473b2b194546f1cbceda78070f82",
         "size": 768,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/src/selectors/merchants.ts",
+        "sha256": "8358b7d13bd384e2769ba2a0b6a986e79b87b381b38d591adc767c582a17d9db",
+        "size": 5487,
         "mode": 420
       },
       {
@@ -2336,14 +2438,20 @@
       },
       {
         "path": "examples/rational/src/selectors/recurrences.ts",
-        "sha256": "86ed8fa7a15f0f6ddc822d6ce6d3fcb5e40321011bae70874f2a3217066b59e8",
-        "size": 2788,
+        "sha256": "ef08b66fd3c2f579353bcba4e61da100881c700aa0145b82d6da815e566b9c1d",
+        "size": 4080,
         "mode": 420
       },
       {
         "path": "examples/rational/src/selectors/reports.ts",
-        "sha256": "e6f2d9bc7d018e0899e7bc27fa8ee8d7a8c20984d287995184f4247db589d441",
-        "size": 8449,
+        "sha256": "c2a967e709df4dd4074b780c1a468366f55b3e8ce9fe6b10aac9f95f67a16c9f",
+        "size": 9084,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/src/selectors/review.ts",
+        "sha256": "1c5ace67a12c14b1bb5bb2a9d237ccac73656356fea32f7737580305f69b60d6",
+        "size": 1552,
         "mode": 420
       },
       {
@@ -2359,57 +2467,171 @@
         "mode": 420
       },
       {
+        "path": "examples/rational/src/selectors/tags.ts",
+        "sha256": "6744b2a00454e085a95badcf234c98722fac31a5d31490a3a1fbfba62d4684d9",
+        "size": 823,
+        "mode": 420
+      },
+      {
         "path": "examples/rational/src/selectors/transactions.ts",
         "sha256": "55723c2be95dd6e9d53f374612b188070a72fab1b391852295451fe7d467ab33",
         "size": 2411,
         "mode": 420
       },
       {
+        "path": "examples/rational/src/selectors/transfers.ts",
+        "sha256": "36ad01178707a1ab9d8dcfcba61d7862d540a223eaf984627e9bfee6eec64bf7",
+        "size": 3820,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/src/selectors/treemap.ts",
+        "sha256": "98b6c3212f62e8c285a851869a736ce855989544aa4490bb8f55b8faccca8919",
+        "size": 4070,
+        "mode": 420
+      },
+      {
         "path": "examples/rational/src/styles.css",
-        "sha256": "cc71c98f3406e2f96463ecf6773a2875d2e88e5bca342c5bf8563afe8607611d",
-        "size": 6376,
+        "sha256": "367a337e703c5597f9c9d0b71b4203ee1dcb7ca2e6eec1c7830d68d83cd5bfea",
+        "size": 11309,
         "mode": 420
       },
       {
         "path": "examples/rational/src/testing/fake-backend.ts",
-        "sha256": "681bb58f855814ad6c86676b085c538e2c9b40e66f7d86dd672b0f4552ce2899",
-        "size": 43212,
+        "sha256": "acb87d621cf535f49bee10365b0eb57b0858ae965ee74971706abd924ab90505",
+        "size": 44123,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/src/ui/account-form.tsx",
+        "sha256": "7dbe174ab5b32290b74b94c549d261f315b5d3af211eec387f6364293ec2c27c",
+        "size": 8501,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/src/ui/account.tsx",
+        "sha256": "c5f39f1fc96a6b65c7b9b62bea060473603c1eaa9ab5816752f71a0d7242fec4",
+        "size": 18854,
         "mode": 420
       },
       {
         "path": "examples/rational/src/ui/accounts.tsx",
-        "sha256": "726f0aeb37f5c7683e8e5e44c72b9d783aaa20e52078381cf6202a94dac2490a",
-        "size": 9153,
+        "sha256": "accf96c943ce0533c5d25f1fdd5a1fa6d85a5262349ffefed2e31e5df031bc4e",
+        "size": 12090,
         "mode": 420
       },
       {
         "path": "examples/rational/src/ui/alerts.tsx",
-        "sha256": "aaf568c899b6e19425f8dfd6361ae21a03f5023fba4a3a3929557ca4c27c4e60",
-        "size": 6316,
+        "sha256": "dc44ec8c4b4e3fe5e150783e3b169a26a131a82f615a5652b7dc16f7d1c8d501",
+        "size": 10045,
         "mode": 420
       },
       {
         "path": "examples/rational/src/ui/app.tsx",
-        "sha256": "cdc286ac7f5e464d93426aba7fdf6c8f9fa0519671e1cd065c53ff4792c5763a",
-        "size": 6330,
+        "sha256": "3217fd7a88421224f208f2f15de675754f98df2ee281c8407189668c30c3f7be",
+        "size": 6282,
         "mode": 420
       },
       {
-        "path": "examples/rational/src/ui/budgets.tsx",
-        "sha256": "f1ec054e8713fc92541f0ca2803ad1c576693ef0c3b09e8543c9b468f49f6a3f",
-        "size": 7036,
+        "path": "examples/rational/src/ui/budget.tsx",
+        "sha256": "715510ebd0ddce269249f936db3ba195f9ba7bf8e9e643707e021dc2de9b3bde",
+        "size": 36744,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/src/ui/cash-flow.tsx",
+        "sha256": "1d0c2265778acfdd30362ed075b93dd262e0856b1e7c7c72287acb03a47e1106",
+        "size": 27385,
         "mode": 420
       },
       {
         "path": "examples/rational/src/ui/categories.tsx",
-        "sha256": "8d9120f90a4bea16c33117535037cb12ac3612fe43e6cfc3f7b197add6ab7e32",
-        "size": 5007,
+        "sha256": "b2bb6675fd683e4ef7c9da365dde0d1830bead4b37ac22a322cbf7d1b64c28be",
+        "size": 26882,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/src/ui/charts/bars.tsx",
+        "sha256": "c7b55d9b08993921cb75aceced8b896fa48d6f0def286b235148dbe32503aed7",
+        "size": 10152,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/src/ui/charts/calendar.tsx",
+        "sha256": "cde121395e1bd680357d31dfd5e2feea5e194c9fe5ee02caa3521b21b86a60e3",
+        "size": 2487,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/src/ui/charts/donut.tsx",
+        "sha256": "6a9f4631744843cb953ada7dc223d35e3f546ddf1bad27f20debce08aab123f0",
+        "size": 4302,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/src/ui/charts/index.ts",
+        "sha256": "ddd8aae960d84983c3e33326fb89a68875a871a66c53c545916f972edb040adc",
+        "size": 872,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/src/ui/charts/layout.ts",
+        "sha256": "05290559236e0df58a0b8b8dc379b33ac48bd72ed4c5813278a500f5e1f85107",
+        "size": 18075,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/src/ui/charts/line.tsx",
+        "sha256": "f89ac7b09ddcfde7a83b93d820cbfa7c8f6e4d7b804e4400abdc9ccbdab93455",
+        "size": 8024,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/src/ui/charts/progress.tsx",
+        "sha256": "3f4c7f7d1d3ea8ab8ef99c377d3a206c9f3c3447951c5698710f7448bf579240",
+        "size": 2106,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/src/ui/charts/sankey.tsx",
+        "sha256": "c2a88768812aa0d1bae4398f8bcc09e2d02996568a5434642c0dd2e4faa92a0e",
+        "size": 5763,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/src/ui/charts/treemap.tsx",
+        "sha256": "9ea3db8f600719dd2b452f92932b53a0bfdaa60f6f2a2052c5aecd9f227ba454",
+        "size": 5453,
         "mode": 420
       },
       {
         "path": "examples/rational/src/ui/connections.tsx",
-        "sha256": "a1ffc44b7ef0bffb57b6aacd5145afe2384a3a953ed3eef8b87ebe28331213bf",
-        "size": 8415,
+        "sha256": "cf331da994f452f567ff1f9e27efb3321149d7433df017fea0e74a747c5d5e49",
+        "size": 11670,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/src/ui/dashboard.tsx",
+        "sha256": "dbb4cb3bfac1636a39e88f732ad167210da6016db22ca3d8f53dac5a061f6179",
+        "size": 28342,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/src/ui/data.tsx",
+        "sha256": "ea4742b07196c2e8eb46b32076845f6d0eb9bbbc78aa274b5bb3371788e7c40d",
+        "size": 5175,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/src/ui/goals.tsx",
+        "sha256": "84a9a1908964a9cc6555a5c1916d5cb5c86fee6a43b108c890629199714d2ce8",
+        "size": 28363,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/src/ui/holdings.tsx",
+        "sha256": "c8df1b78b7d39846462bff6d375b768925361585fbedbb8735f2151983d62beb",
+        "size": 14713,
         "mode": 420
       },
       {
@@ -2420,62 +2642,152 @@
       },
       {
         "path": "examples/rational/src/ui/household.tsx",
-        "sha256": "a81463312fd3203a20bdfdc7d6528dda616e57a6d50b4ad83cbb74e3ea9ce2c7",
-        "size": 9492,
+        "sha256": "ade355dc7c7095b768c0c005006907899c8fce0fb44daa00952ab3774d99c637",
+        "size": 9677,
         "mode": 420
       },
       {
         "path": "examples/rational/src/ui/import.tsx",
-        "sha256": "de577a214fd6b881355b22ff4bd806a3cd0257e3323d0dbb3fbff7abd3d2e0c6",
-        "size": 7974,
+        "sha256": "44db9a8e988b1388b7d534a3c6a924ccbd693c1f3991dbeb6f5c6814279fdf11",
+        "size": 9842,
         "mode": 420
       },
       {
-        "path": "examples/rational/src/ui/plan.tsx",
-        "sha256": "3cff5c0c15dcef507cf1d966a1f025e3e92e80d5e787b4166a972545c3072625",
-        "size": 10446,
+        "path": "examples/rational/src/ui/investments.tsx",
+        "sha256": "588974253a39f89ca8a82f0d3b749bcc224086368bdedd91c9bb903642c34af5",
+        "size": 8865,
         "mode": 420
       },
       {
-        "path": "examples/rational/src/ui/reports.tsx",
-        "sha256": "f0411921c4f3faee2c1d515a4507142abb86c05524c71d103f02f4c759dde908",
-        "size": 8340,
+        "path": "examples/rational/src/ui/merchants.tsx",
+        "sha256": "6d5e999fde14fff1f508fc4809d98c509a9522b0684a0ec9a45fadf6ce880c4e",
+        "size": 12426,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/src/ui/recurring.tsx",
+        "sha256": "7de101c0c1e6fcb346adec748782f67847b3049dfa3234358c6e351eacaa3f1b",
+        "size": 26831,
         "mode": 420
       },
       {
         "path": "examples/rational/src/ui/router.ts",
-        "sha256": "d4cfd94ade2ac00fe8fa0ce4851ecf891aab68dec1f8e76b2e87efca05b350d6",
-        "size": 3051,
+        "sha256": "731dde869e63e59698091c634bae568b75d5e730b3c58f83804d3e97d4aaad1c",
+        "size": 6292,
         "mode": 420
       },
       {
         "path": "examples/rational/src/ui/rules.tsx",
-        "sha256": "44a82e64ee13d699375ce12b2a08d042139f2a7dd5644bc18a490a8b05b4e9b0",
-        "size": 7702,
+        "sha256": "2b0c71d313932dffd69610381e3585e635656d73bb77e570eb235593d2725e5e",
+        "size": 27523,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/src/ui/settings.tsx",
+        "sha256": "089545859d2e3bb32c000049a87111019bdeb23b43e1cb838106e769ecaf8402",
+        "size": 7567,
         "mode": 420
       },
       {
         "path": "examples/rational/src/ui/shell.tsx",
-        "sha256": "e28046306ee8e340c95db36bf15ce020e0afd65c4dfb1323efddcfc0ce62d6d9",
-        "size": 4547,
+        "sha256": "4dcf7736492944be5b66337ae401923b881c5e51056c31337cf01e87db406b8f",
+        "size": 8971,
         "mode": 420
       },
       {
         "path": "examples/rational/src/ui/sign-in.tsx",
-        "sha256": "bb51a1dd71f84ff2ce2cc79de11187bcfdb3e090d2d8382b8d1a5b56693cf64b",
-        "size": 5903,
+        "sha256": "52a79289263a1a94ca775c772c9eaa740c014d1f0ddec27b3b8af45cd6e3e020",
+        "size": 5897,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/src/ui/styles/accounts.css",
+        "sha256": "9af3d01ab852b0c2f857fde56baa94092d578a20eb5fe832350944de9eb53185",
+        "size": 3524,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/src/ui/styles/budget.css",
+        "sha256": "ffa316015f5109d892141e99f794479e3986db1f5aff3f2c5d956ca3b32e41be",
+        "size": 4032,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/src/ui/styles/cash-flow.css",
+        "sha256": "c55815d3d9f2b26fb89ed82a9a573dbaaf50eaa86b81235396f86c979d0387af",
+        "size": 4315,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/src/ui/styles/charts.css",
+        "sha256": "a57b516b2be987f040bc9b8add1b9b6273a8a460ee697cb653702554002df277",
+        "size": 9966,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/src/ui/styles/dashboard.css",
+        "sha256": "2d4e6dfb5aeb11030baa73f219f1f4fb1753e9001df07069e8a04d7f5f8906fd",
+        "size": 7204,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/src/ui/styles/goals.css",
+        "sha256": "e8b95da1a56aa9b2c5dc3313646dee8207e54ea8f69ea6e3634204584d968610",
+        "size": 2489,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/src/ui/styles/recurring.css",
+        "sha256": "123081cdeb31772960d5bacfc9f113d2474f8aca32ec1d7276c09cda92c5d8e2",
+        "size": 4262,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/src/ui/styles/settings-pages.css",
+        "sha256": "1b32bb0cc1cfd743e43a357b9ea15d8b2fff13db67901c17ae8a50ce88639275",
+        "size": 3305,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/src/ui/styles/settings.css",
+        "sha256": "d77d4e1a40d0ce5ec14a10eedc45e0b26497c4b0e5511356f56945739397ebb7",
+        "size": 896,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/src/ui/styles/shell.css",
+        "sha256": "38ab416027c96d1bb18b2b69f9b75e58ce8e29d5362825da3fcf25c47807ed88",
+        "size": 3712,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/src/ui/styles/taxonomy.css",
+        "sha256": "efb0be7dcf2a0eea820134c8d195e7e13246479b5f4be96b8eb39f02c3ca026f",
+        "size": 3713,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/src/ui/styles/transactions.css",
+        "sha256": "0562e0b85016670b99fda293182754a79f5054cee06743624575957ccab45855",
+        "size": 7028,
         "mode": 420
       },
       {
         "path": "examples/rational/src/ui/tags.tsx",
-        "sha256": "f416b0a2f487ea6cba2ac99f925bd7956e9dba776621df3b99b6968b13f9f36a",
-        "size": 3311,
+        "sha256": "1e044193cfbcb52653925614a5ecb833d9ebf75a3ff0168bfd783f30897f0186",
+        "size": 4721,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/src/ui/transaction-panel.tsx",
+        "sha256": "e089eb0159081ac2c0cd264cc5b4af7ee6adb9462105fa564d5529cc63e1d75f",
+        "size": 24808,
         "mode": 420
       },
       {
         "path": "examples/rational/src/ui/transactions.tsx",
-        "sha256": "d19629461d3fa316f9072bb7ad4d60efa626290158c0fd169c34e108bc45b77a",
-        "size": 22716,
+        "sha256": "ab7a82f926cb44a29892a26a88a741b7a7ea51491c761636a028de1282e4a2b5",
+        "size": 48227,
         "mode": 420
       },
       {
@@ -2486,8 +2798,8 @@
       },
       {
         "path": "examples/rational/test-live/alerts.spec.ts",
-        "sha256": "108ff7e920fb90c4262496a02974b2faca518e8999eb5bf9ad73c5e051ded59c",
-        "size": 10384,
+        "sha256": "e2c4bb3f001f6d67c00becbb6040de1c262c9f403194545b46ff5c5f4549bf78",
+        "size": 10581,
         "mode": 420
       },
       {
@@ -2509,6 +2821,18 @@
         "mode": 420
       },
       {
+        "path": "examples/rational/test-live/institution-sync.spec.ts",
+        "sha256": "8f06119de0b3966c48131813fa75a0f7b637ffb2c134d28aea2f214ae17cd618",
+        "size": 6599,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/test-live/journey.spec.ts",
+        "sha256": "8d3dea26ed0cea782fd446f5b70981962e40f9216fe8e1e3431dea974aada27c",
+        "size": 10038,
+        "mode": 420
+      },
+      {
         "path": "examples/rational/test-live/live.spec.ts",
         "sha256": "29c9f19be37b467c3146b456ab3155e507c6b221fba24dec66759d0b05da0d9a",
         "size": 10649,
@@ -2516,31 +2840,67 @@
       },
       {
         "path": "examples/rational/test-live/plaid.spec.ts",
-        "sha256": "ff096f53743d4bf9bdee4ca62e37a202a786bcfc4e580eba103bb2fd65fc6ecd",
-        "size": 8881,
+        "sha256": "8bf0143561b3179bc91719dbae4795bfca0b291932ca6b128e619f193d399e45",
+        "size": 9767,
         "mode": 420
       },
       {
         "path": "examples/rational/test-support/browser-globals.d.ts",
-        "sha256": "07b7118558f11d7a0f7c97b89be45a9291a1f0ac0b4ef9777332a5d22796514d",
-        "size": 5914,
+        "sha256": "a3b31959bf59c2f25f4fc178685048279a5c5c4aca85685388da968f19367067",
+        "size": 8601,
         "mode": 420
       },
       {
         "path": "examples/rational/test-unit/alerts.test.mjs",
-        "sha256": "44389debd35e4aebbd11f781e9b1196eaadcbedd5a9c97b0379ac074d7264139",
-        "size": 4868,
+        "sha256": "ae4fafbf63e85247345a43c75d9a0001ac31e84b3295e691d392160339692ca7",
+        "size": 9026,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/test-unit/auth-retry.test.mjs",
+        "sha256": "4f368ff06edf730838fd660ce62b70360cc26986bc123762185494c11d92ba6e",
+        "size": 2246,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/test-unit/balances.test.mjs",
+        "sha256": "ce8ad123df47b891b5677ca706b98252774d7fa24b1d3e3aa00217cceeef3ba8",
+        "size": 3887,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/test-unit/budget-month.test.mjs",
+        "sha256": "ed2da8ea0c7f0697f9316242a1b78906037217c516ee31d8c138d683c303fd26",
+        "size": 4848,
         "mode": 420
       },
       {
         "path": "examples/rational/test-unit/budgets.test.mjs",
-        "sha256": "37080e5e78525bdbbed31bd4dbf9329ebf2dc4ece59760bc850378950679a2c4",
-        "size": 5238,
+        "sha256": "9167617c01bce729b01882ac6a895a5b9309d6edad41839b6b80c9976ebe2936",
+        "size": 15135,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/test-unit/calendar.test.mjs",
+        "sha256": "659d6c174a6a78c08cbeb04fb8eb4d49d49f170fa774bd7d8af693f1ce47b12f",
+        "size": 2705,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/test-unit/cashflow.test.mjs",
+        "sha256": "842129861869f63bb0beb4acad9d1c26c05d1e5f38b2381036d9fb331f16b750",
+        "size": 15191,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/test-unit/charts.test.mjs",
+        "sha256": "ebdde24e3bcb505a04bcfd2ea2ecda3d7fc5c79cbf5d7df1edc8c09ffa4ad535",
+        "size": 12791,
         "mode": 420
       },
       {
         "path": "examples/rational/test-unit/conflict.test.mjs",
-        "sha256": "38f80e741e5dab5cc5418a6274a6ebae46c1467fda339676f229d72f48da5288",
+        "sha256": "79f4f046706f73c68f3e02a21ed0f46eaa5cfac401e9b4d97d067e82055c59d2",
         "size": 2175,
         "mode": 420
       },
@@ -2551,9 +2911,57 @@
         "mode": 420
       },
       {
+        "path": "examples/rational/test-unit/dashboard.test.mjs",
+        "sha256": "9d8c1e945416c03d587b7756683bcc534b2901f950ea152ea479b2c2cc7735b8",
+        "size": 8341,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/test-unit/demo-data.test.mjs",
+        "sha256": "2d8ac040bf5a41bd0b5fb8817457ebf546eb23a797207d8d3b63ea7b10948c16",
+        "size": 10336,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/test-unit/exclusions.test.mjs",
+        "sha256": "de51f89ea3eac69c4840eb6f9bcee7e54d4192f84c950cbfdb07c3a7757f28f7",
+        "size": 1518,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/test-unit/export.test.mjs",
+        "sha256": "15cf86ceb2c0589b143335f38278e4afdcbfccd6b3eb3540e0687ecd6bb965ba",
+        "size": 3583,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/test-unit/filters.test.mjs",
+        "sha256": "dad6b678ba7fbfcc8532cdc65cf2a963ce99684e4d1f4da746337a1ba05effa9",
+        "size": 7650,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/test-unit/goal-math.test.mjs",
+        "sha256": "1171d2b4bcf58e2bde63364457209f25a9c7d35db85621d202b2f5898313e6c8",
+        "size": 5630,
+        "mode": 420
+      },
+      {
         "path": "examples/rational/test-unit/goals.test.mjs",
-        "sha256": "d49297f7c14fbd077bceed172b39c04a46f9296ea61d31c1b01738212b889a66",
-        "size": 2802,
+        "sha256": "577d9bd9a002f9602097129b715b99209bcc80e18c809f518a1e18194c864953",
+        "size": 4781,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/test-unit/history.test.mjs",
+        "sha256": "9b609d99129169b6c2b3f6bbc630a0d717452ba7570ba5acfc1c673e0cfbaa0f",
+        "size": 3226,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/test-unit/holdings.test.mjs",
+        "sha256": "33423981935c5deef818686bd504bebd79510475703f9362bdee75736eb83811",
+        "size": 2586,
         "mode": 420
       },
       {
@@ -2563,9 +2971,21 @@
         "mode": 420
       },
       {
+        "path": "examples/rational/test-unit/merchants-selectors.test.mjs",
+        "sha256": "7f4c210cfba464d18753c7623a9f327b86b47d37d40965aef653cacf8f183c56",
+        "size": 3817,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/test-unit/merchants.test.mjs",
+        "sha256": "90fb3f0a80c80b5dd05044c2e7e0c626daf4b6afb7b66a5ae4a69afd824aa296",
+        "size": 2980,
+        "mode": 420
+      },
+      {
         "path": "examples/rational/test-unit/nightly.test.mjs",
-        "sha256": "5e04ec6b90e337f768fa677bca3d29d01fdc228c7f0a42da2de3135522b9a0e0",
-        "size": 7675,
+        "sha256": "6412dc4b9fe6f708295ea3469de026112bb94f0e5b95c486758b53c531684921",
+        "size": 15128,
         "mode": 420
       },
       {
@@ -2575,87 +2995,177 @@
         "mode": 420
       },
       {
+        "path": "examples/rational/test-unit/recurrences-selectors.test.mjs",
+        "sha256": "af346d11dfcd0fca0dd1dcddd8c2cc1dcc566f94aea4007c345e6a0a9608532f",
+        "size": 2494,
+        "mode": 420
+      },
+      {
         "path": "examples/rational/test-unit/recurrences.test.mjs",
-        "sha256": "b24a58d0f81f42aa69839d501f22ebe5d8034ca1774fc1ee3b1242ed4ce99eed",
-        "size": 4346,
+        "sha256": "c6ef21dd094ddfe8d5c91773b84cffd540166096ff4fc825842cc18207fdc7ab",
+        "size": 10954,
         "mode": 420
       },
       {
         "path": "examples/rational/test-unit/reports.test.mjs",
-        "sha256": "afe9767f02cae22a9e8b48d534e136d6969cec889efcd8dfc27bf82c4cb46d22",
-        "size": 6055,
+        "sha256": "af079be1b05d3c17e16102bdc31fcb4285cfe9a581b088c0ebbe479a0e92b043",
+        "size": 7131,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/test-unit/review.test.mjs",
+        "sha256": "deca88a739abab65f27bab11ebddc604bdb287fe1fec18975a29aaad5fcf6cb6",
+        "size": 1547,
         "mode": 420
       },
       {
         "path": "examples/rational/test-unit/rules.test.mjs",
-        "sha256": "b3834af853eae7b28eae65139802c9db932a64dee07fb5927ff4b46e3d254085",
-        "size": 3831,
+        "sha256": "7a37a161c49b10cb5bb9c836f6e414e7c64d50065c555ca3ee5f7d1311478c75",
+        "size": 9339,
         "mode": 420
       },
       {
         "path": "examples/rational/test-unit/selectors.test.mjs",
-        "sha256": "d5a4b913d27f76a295256687d2f26eecf89a03ca5b9ec41712a1a541e053e7c0",
-        "size": 5129,
+        "sha256": "ec4a42032cf8c0b69dd90898c9dcd4d2e1fd19f57631aece155d4f7905e6bc6b",
+        "size": 7282,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/test-unit/tags.test.mjs",
+        "sha256": "e5f77e3e0d0ead753769c3f7560b37bac6e9814e9fdc65f1516656b8dd2cfbee",
+        "size": 1711,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/test-unit/transfers.test.mjs",
+        "sha256": "08f68f73e504d19be1c0398ebc25cd1b3166e44a90ca1e4ac0d42261b0820040",
+        "size": 2791,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/test-unit/treemap.test.mjs",
+        "sha256": "3fefe4c3a3fa07352603cde490000cb771456c6240ccad963b4c9ba3c41a6a10",
+        "size": 2994,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/test/accounts.spec.ts",
+        "sha256": "1c4d5f2fd8b212a6a0427b37f62458d886dd73de5d2a920b4a410df6650af42e",
+        "size": 11317,
         "mode": 420
       },
       {
         "path": "examples/rational/test/alerts.spec.ts",
-        "sha256": "ff20b2bf830198f86a9e68b0c41d8e18b91d52086176930a913692d196cdc48b",
-        "size": 5944,
+        "sha256": "e7f58489be611ac1c6d9aa4f0142c0f52883b28e094cd795bda8ba545205cab8",
+        "size": 7200,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/test/budget.spec.ts",
+        "sha256": "5e22d296dd3293f3e995f42daf4bc308b176a468c25eb28cb21eae7686357e98",
+        "size": 17730,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/test/cash-flow.spec.ts",
+        "sha256": "70906c7ac40295d71f613abffcc7701ae495f4cb1c9cdd94a1f6f941d6c4c707",
+        "size": 12543,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/test/dashboard.spec.ts",
+        "sha256": "74bd06255ac39f0e4d0e344ddc9f226fae0fd2b64567a8444c8e6041ba8e28cd",
+        "size": 9540,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/test/goals.spec.ts",
+        "sha256": "8ce3c4fba40d916713be79bf9a9a7afdd2fa658c7671af24dd87cdf566c0a26a",
+        "size": 14047,
         "mode": 420
       },
       {
         "path": "examples/rational/test/households.spec.ts",
-        "sha256": "27621c16857930f6027d794382850dae004dc98f602d610c5b2b6aa3998fc2ff",
-        "size": 5854,
+        "sha256": "c5b0be5175c965ff3c98fc09e092b8af16383d4bd68b8572d5363c2d046f5a34",
+        "size": 6319,
         "mode": 420
       },
       {
         "path": "examples/rational/test/import.spec.ts",
-        "sha256": "f6f6be5d42ce53ebf96504f08634f8e9d32c0230c623ee7c446bc23bf8269ee5",
-        "size": 5808,
+        "sha256": "8da2087fbb4e4d3b7a37037bc082c5afadd39c2e1ef02c674af226d834fccdfc",
+        "size": 7404,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/test/investments.spec.ts",
+        "sha256": "e4c6f2ab064ccf978cc3410498a0f760811edb99de47b3dc75792a6b7f481aef",
+        "size": 6001,
         "mode": 420
       },
       {
         "path": "examples/rational/test/nightly.spec.ts",
-        "sha256": "a14b4c03a138050c0539f812b56e91af5d07546d690695916c176fbb8e308798",
-        "size": 7075,
+        "sha256": "7ef17ea78aea70eabf63ae6807204991c4c5f0c4ce56783d6d28949a77552903",
+        "size": 7452,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/test/onboarding.spec.ts",
+        "sha256": "38b98b69c4b304923d62e5cb572cdfe77240824f5888ff16ccaa74693d3e2d15",
+        "size": 4235,
         "mode": 420
       },
       {
         "path": "examples/rational/test/plaid.spec.ts",
-        "sha256": "93e8cda82c5dab727314ce348fa63b749136f2d5238dea4a5c5d76fda41c34b6",
-        "size": 6355,
+        "sha256": "b84733e6ac465c1e7ecd581d49d522fced5f188878c15933b7607183319d6f0a",
+        "size": 8416,
         "mode": 420
       },
       {
         "path": "examples/rational/test/plan.spec.ts",
-        "sha256": "256d6662ad528c13bf0a675ea2b51ab9d186cc7f0fe1a1af25cc06d83c575e74",
-        "size": 5283,
+        "sha256": "56e38e8278e822e39a735e5da602fe7c019bd8714009518f480ecc4bf978f071",
+        "size": 14281,
         "mode": 420
       },
       {
         "path": "examples/rational/test/rational.spec.ts",
-        "sha256": "26537f24eb89e7090debe616408e47cf469cca8daf13d5f9673db8e09dcaf795",
-        "size": 13202,
+        "sha256": "711a16f4d2576e55690c2f29154b1983f6f87ade231015807062283716958e0c",
+        "size": 10676,
         "mode": 420
       },
       {
         "path": "examples/rational/test/receipts.spec.ts",
-        "sha256": "264c797749cecd8d04af45a412edcbdb0a2cffe54fc2c8aa2746ae6176a0b18a",
-        "size": 5236,
+        "sha256": "d17e4377c9c385aed7995489d9bc24a1b57565d639041b147c76eaf9b5e827c1",
+        "size": 5829,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/test/settings.spec.ts",
+        "sha256": "c2dfad627345e28f05a4617ed3f52cd9a912f56b8265d3f8970a0b100e8c76ce",
+        "size": 10560,
         "mode": 420
       },
       {
         "path": "examples/rational/test/sign-in.spec.ts",
-        "sha256": "d508e23c3df37a28710e3bd5e5c82806cdc424e23e1e13e799db8abf5bb591c1",
-        "size": 3214,
+        "sha256": "2822ba455605bf9ee86f05495d254af83b842ecefe29aa83e5c891b62386a1cd",
+        "size": 3465,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/test/taxonomy.spec.ts",
+        "sha256": "d35f5da5ec4434e9a4669e87adad31afb27dde01355430cccbb2bedc2354c183",
+        "size": 21525,
+        "mode": 420
+      },
+      {
+        "path": "examples/rational/test/transactions.spec.ts",
+        "sha256": "4345634c1ea318f07c1dba9e740480df2b18f2e7ddaadf726d888ca2a1a99f5e",
+        "size": 18871,
         "mode": 420
       },
       {
         "path": "examples/rational/tsconfig.json",
-        "sha256": "59effc8db936cd7c6de0d2dbe3e7a81655f4295a4f7389eea8f08d545cfab46a",
-        "size": 616,
+        "sha256": "c775fc7a51236bcd08435348b668a3f963ea3c9986471f5e51dc8b9efa7f4838",
+        "size": 797,
         "mode": 420
       },
       {
@@ -2804,8 +3314,8 @@
       },
       {
         "path": "infra/ansible/roles/dependencies/files/quadlet/mako-edge-runtime.container",
-        "sha256": "a24a8398aabb1a875e674e2edddebeb7b51ffb3c6e0165271a987f42aadc03b7",
-        "size": 3079,
+        "sha256": "bb8fec58a47f7b285da184aca0855ba2e7e5cc26475918bad0b747fc98113755",
+        "size": 3748,
         "mode": 420
       },
       {
@@ -3008,8 +3518,8 @@
       },
       {
         "path": "infra/ansible/roles/runtime/templates/mako-service.service.j2",
-        "sha256": "e0e52e324dabf1980ad5ca2ae96f306689b7fa8e7ff91a541fed7690028fda97",
-        "size": 4640,
+        "sha256": "482e217b56781c907da445dec12c10d067a63d855cd99aa182b6616ebed924eb",
+        "size": 5173,
         "mode": 420
       },
       {
@@ -3278,8 +3788,8 @@
       },
       {
         "path": "package.json",
-        "sha256": "549ea5183c67df751adc9fef51fb6ff5122007000c66b28b777dbbe501452bd4",
-        "size": 5095,
+        "sha256": "b878d6aea3ffafa830bc04bc197912ddd65fc0abc075ba32ce4f79d3877027eb",
+        "size": 5270,
         "mode": 420
       },
       {
@@ -3793,6 +4303,24 @@
         "mode": 420
       },
       {
+        "path": "packages/rxdb-client/.tsbuild/browser.tsbuildinfo",
+        "sha256": "2b7d5648744d60b6e52b0f98244bad287a7aea350d65bd548717e12a0d2c91c6",
+        "size": 130553,
+        "mode": 420
+      },
+      {
+        "path": "packages/rxdb-client/.tsbuild/conformance.tsbuildinfo",
+        "sha256": "86bd1486a333829d6d9742d77c25782902fcc7ab36856c313cd1280018962a04",
+        "size": 41394,
+        "mode": 420
+      },
+      {
+        "path": "packages/rxdb-client/.tsbuild/node.tsbuildinfo",
+        "sha256": "ad5edc8752967fdea93d0a7426b8458d15f7e74d7a45cc811556a1e0ffe992b0",
+        "size": 130544,
+        "mode": 420
+      },
+      {
         "path": "packages/rxdb-client/LICENSE",
         "sha256": "be66d5a00cc27356d3f48cb55fe0b0e2de7e8bec15c18a4752c43343be8c4dfc",
         "size": 11002,
@@ -4052,8 +4580,8 @@
       },
       {
         "path": "scripts/export-rational-app.mjs",
-        "sha256": "e15f740e3d17ba6f3d73836b57526de8fd5204a587b371aa4abf0c39293e18fd",
-        "size": 22081,
+        "sha256": "4f419226935af91cecf27c17cb92c2a72bbe5e4fc9161ff078a7d1b937bb4776",
+        "size": 22134,
         "mode": 420
       },
       {
@@ -4357,6 +4885,12 @@
         "mode": 420
       },
       {
+        "path": "scripts/test/validate-rational-parity.test.js",
+        "sha256": "6c78a1ff3d1c708788cf803f7cd80e479108ff5d4b46bbd587a36da53a29198e",
+        "size": 2909,
+        "mode": 420
+      },
+      {
         "path": "scripts/validate-documentation.js",
         "sha256": "95549d476d10d5eb0526a64c74d08353ff7d78e8ba87d4997b4028aee704bf5e",
         "size": 4690,
@@ -4426,6 +4960,12 @@
         "path": "scripts/validate-public-beta-services.js",
         "sha256": "3b02c05d15b03c9d5091d2a78ced68e79d299d7b39100d8a49b63f804667598d",
         "size": 1965,
+        "mode": 420
+      },
+      {
+        "path": "scripts/validate-rational-parity.js",
+        "sha256": "654c1f8081a0296d10d66f1efea513bb14d34b81b81f5fd69e828f8a98a33ea0",
+        "size": 5776,
         "mode": 420
       },
       {
@@ -4888,13 +5428,13 @@
     ]
   },
   "artifacts": {
-    "digest": "d1e972557a3af5f6fabfd2bf3aa3a1cf19c10eaf01847cd6669e5d77339d23bf",
+    "digest": "164da30e6f9259d3a5d79ccf5f58f32e6ff31e5aa3ff67f5172de66e0ae2706e",
     "files": [
       {
         "path": "bin/mako-control-plane",
         "source": "target/release/mako-control-plane",
-        "sha256": "c9135cc92c8389ad01db61e576f78bdcd0670b00aacbb92e111796d30ef353fe",
-        "size": 18179016,
+        "sha256": "2eb481aa4e0009aa16e216f924441c50e81bb6a358b936b051c9bfd93b8ab530",
+        "size": 18182856,
         "mode": 493
       },
       {
@@ -5011,10 +5551,10 @@
       }
     ]
   },
-  "releaseDigest": "9680415da0fbb25fa96d01b45b3a63faad333fac9f0744c95bf3c0b164e53626",
-  "generatedAt": "2026-09-01T00:47:59.148Z",
+  "releaseDigest": "d7e52bad05d3c47c4ca87acf2d568671bbbff0339f96ca5b88f01ce806274079",
+  "generatedAt": "2026-09-06T22:07:33.531Z",
   "candidateLayout": {
-    "root": ".local/public-beta-candidates/9680415da0fbb25fa96d01b45b3a63faad333fac9f0744c95bf3c0b164e53626",
+    "root": ".local/public-beta-candidates/d7e52bad05d3c47c4ca87acf2d568671bbbff0339f96ca5b88f01ce806274079",
     "manifest": "manifest.json",
     "binaries": "bin",
     "console": "console"

@@ -621,7 +621,7 @@ function validateCustomDomainInfrastructure({ caddyTemplate, guestFirewall, serv
     "\ttls {\n\t\ton_demand\n\t}",
     "respond @internal_rpc 404",
     "respond @service_credential_api 404",
-    "@custom_domain_function path_regexp custom_domain_function ^/functions/v1/[^/]+$",
+    "@custom_domain_function path_regexp custom_domain_function ^/functions/v1/[^/]+(?:/.*)?$",
     "header_up X-Mako-Custom-Domain {http.request.host}",
     "\trespond 404\n",
   ])

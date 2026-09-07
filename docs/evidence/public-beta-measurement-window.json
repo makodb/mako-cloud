@@ -6,25 +6,25 @@
   "address": "130.245.173.11",
   "publicOrigin": "https://cloud-test.makodb.com",
   "planHash": "d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073",
-  "releaseDigest": "9680415da0fbb25fa96d01b45b3a63faad333fac9f0744c95bf3c0b164e53626",
-  "startedAt": "2026-09-01T00:48:23Z",
-  "expectedCompleteAt": "2026-10-01T00:48:23Z",
+  "releaseDigest": "d7e52bad05d3c47c4ca87acf2d568671bbbff0339f96ca5b88f01ce806274079",
+  "startedAt": "2026-09-06T22:11:40Z",
+  "expectedCompleteAt": "2026-10-06T22:11:40Z",
   "completedAt": null,
   "completeDays": 0,
   "initialSnapshot": {
-    "guestUptimeSeconds": 1036287.86,
+    "guestUptimeSeconds": 1534696.67,
     "storageTotalBytes": 274875809792,
-    "storageUsedBytes": 37210947584,
-    "storageAvailableBytes": 235914674176,
-    "networkReceivedBytes": 55560044609,
-    "networkTransmittedBytes": 51288371675,
+    "storageUsedBytes": 82257575936,
+    "storageAvailableBytes": 191331106816,
+    "networkReceivedBytes": 141407442486,
+    "networkTransmittedBytes": 136221356343,
     "networkReceivedErrors": 0,
     "networkTransmittedErrors": 0,
     "servicesReady": 4,
     "dependenciesActive": 6,
     "backupRemoteVerified": 1,
-    "cpuBusyRatio": 0.01875862068961287,
-    "memoryUsedRatio": 0.10066996574969767,
+    "cpuBusyRatio": 0.07614852108244174,
+    "memoryUsedRatio": 0.11623239337591085,
     "publicAdmissionEnabled": false
   },
   "observed": {
@@ -33,7 +33,7 @@
       "thirtyDayMaximum": null
     },
     "capacity": {
-      "initialStorageAvailableBytes": 235914674176,
+      "initialStorageAvailableBytes": 191331106816,
       "headroomAtTargetLoadPercent": 50
     },
     "backup": {
@@ -51,8 +51,8 @@
     },
     "power": null,
     "network": {
-      "initialReceivedBytes": 156603803,
-      "initialTransmittedBytes": 41750233,
+      "initialReceivedBytes": 141407442486,
+      "initialTransmittedBytes": 136221356343,
       "thirtyDayDelta": null
     },
     "storage": {
