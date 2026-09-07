@@ -57,5 +57,5 @@
 
 ## 11. Verification and the beta
 
-- [ ] 11.1 Every local gate green: `npm run format:check`, `lint`, `typecheck`, `test:unit`, the Rational browser suite, `validate:docs`, `validate:traceability`, `validate:rational-parity`; the Rational smoke (`npm run test:rational-smoke`); the live suite where the stack is available; the 50 000-transaction report measurement repeated for the new selectors.
-- [ ] 11.2 The beta: publish schema version 3 and redeploy the functions with the bootstrap against the Rational project, verify a version-3 behavior live, regenerate the published site, and record anything the work exposed in `PLATFORM-FINDINGS.md`.
+- [x] 11.1 Every local gate green: `npm run format:check`, `lint`, `typecheck`, `test:unit`, the Rational browser suite, `validate:docs`, `validate:traceability`, `validate:rational-parity`; the Rational smoke (`npm run test:rational-smoke`); the live suite where the stack is available; the 50 000-transaction report measurement repeated for the new selectors.
+- [x] 11.2 The beta: publish schema version 3 and redeploy the functions with the bootstrap against the Rational project, verify a version-3 behavior live, regenerate the published site, and record anything the work exposed in `PLATFORM-FINDINGS.md`.
