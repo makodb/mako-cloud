@@ -48,6 +48,24 @@ export function CardTitle({
   );
 }
 
+/**
+ * The small line of capitals above a heading that says what kind of thing the
+ * page or card is: "Environment env_abc", "First run", "Net worth". Every
+ * surface was writing the same four utilities by hand.
+ */
+export function Eyebrow({ className, ...props }: ComponentProps<"p">) {
+  return (
+    <p
+      data-slot="eyebrow"
+      className={cn(
+        "m-0 text-xs font-semibold tracking-wider text-muted-foreground uppercase",
+        className,
+      )}
+      {...props}
+    />
+  );
+}
+
 export function CardDescription({ className, ...props }: ComponentProps<"p">) {
   return (
     <p

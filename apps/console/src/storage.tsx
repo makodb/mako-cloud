@@ -1,4 +1,29 @@
-import { type FormEvent, useCallback, useEffect, useState } from "react";
+import {
+  Alert,
+  AlertDescription,
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  EmptyState,
+  Eyebrow,
+  Field,
+  Input,
+  NativeSelect,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  Textarea,
+  cn,
+} from "@mako-cloud/ui";
+import { HardDrive } from "lucide-react";
+import { type FormEvent, type ReactNode, useCallback, useEffect, useId, useState } from "react";
 
 import {
   type CreateStorageBucketRequest,
@@ -22,6 +47,16 @@ const OBJECT_PAGE_SIZE = 100;
 const BUCKET_ID_PATTERN = "[a-z][a-z0-9-]{1,62}";
 const RULE_OPERATIONS = ["create", "read", "update", "delete"] as const;
 type RuleOperation = (typeof RULE_OPERATIONS)[number];
+
+/** A code snippet inline in prose or a cell: an identifier, a path, a pattern. */
+const CODE = "rounded bg-muted px-1 py-0.5 font-mono text-[0.85em]";
+/** A term in the totals list. */
+const TERM = "m-0 text-xs font-medium tracking-wide text-muted-foreground uppercase";
+/** Its definition. */
+const DEFINITION = "m-0 mt-0.5 text-sm font-medium break-words tabular-nums";
+/** The destructive action in a row: outlined, so the table stays quiet until it is needed. */
+const DANGER_OUTLINE =
+  "border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive";
 
 /** The owner-only policy `docs/file-storage.md` describes, as a starting point. */
 export const STARTER_RULES: readonly StorageBucketRule[] = [
@@ -86,6 +121,7 @@ function BucketListScreen({
   readonly onOpen: (bucketId: string) => void;
 }) {
   const client = useManagementClient();
+  const idField = useId();
   const [buckets, setBuckets] = useState<StorageBucket[] | null>(null);
   const [failure, setFailure] = useState<ConsoleApiFailure | null>(null);
   const [status, setStatus] = useState<string | null>(null);
@@ -193,114 +229,139 @@ function BucketListScreen({
   };
 
   return (
-    <section aria-labelledby="storage-title" className="storage-screen">
-      <div className="section-heading">
-        <div>
-          <p className="eyebrow">Environment {environmentId}</p>
-          <h1 id="storage-title">Storage</h1>
-          <p>
-            Buckets hold application files for project <code>{projectId}</code>, governed by the
-            same policy language as documents and metered like every other resource.
-          </p>
-        </div>
+    <section aria-labelledby="storage-title" className="grid gap-6">
+      <div className="grid gap-1">
+        <Eyebrow>Environment {environmentId}</Eyebrow>
+        <h1 id="storage-title" className="text-2xl">
+          Storage
+        </h1>
+        <p className="m-0 max-w-3xl text-sm text-muted-foreground">
+          Buckets hold application files for project <code className={CODE}>{projectId}</code>,
+          governed by the same policy language as documents and metered like every other resource.
+        </p>
       </div>
       <ApiFailureNotice failure={failure} />
-      {status === null ? null : (
-        <p className="notice success" role="status">
-          {status}
-        </p>
-      )}
-      <div className="split-grid">
-        <section className="panel" aria-labelledby="bucket-list-title">
-          <h2 id="bucket-list-title">Buckets</h2>
-          {buckets === null ? (
-            <p aria-live="polite">Loading buckets…</p>
-          ) : buckets.length === 0 ? (
-            <p>No buckets have been created in this environment.</p>
-          ) : (
-            <div className="table-scroll">
-              <table className="bucket-table">
-                <thead>
-                  <tr>
-                    <th scope="col">Bucket</th>
-                    <th scope="col">Access</th>
-                    <th scope="col" className="numeric">
+      {status === null ? null : <StatusNotice>{status}</StatusNotice>}
+      <div className="grid items-start gap-6">
+        <Card aria-labelledby="bucket-list-title">
+          <CardHeader>
+            <CardTitle id="bucket-list-title">Buckets</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {buckets === null ? (
+              <p className="m-0 text-sm text-muted-foreground" aria-live="polite">
+                Loading buckets…
+              </p>
+            ) : buckets.length === 0 ? (
+              <EmptyState
+                icon={<HardDrive aria-hidden="true" />}
+                title="No buckets have been created in this environment."
+                className="border-0 py-8"
+              />
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead scope="col">Bucket</TableHead>
+                    <TableHead scope="col">Access</TableHead>
+                    <TableHead scope="col" className="text-right">
                       Objects
-                    </th>
-                    <th scope="col" className="numeric">
+                    </TableHead>
+                    <TableHead scope="col" className="text-right">
                       Bytes
-                    </th>
-                    <th scope="col" className="numeric">
+                    </TableHead>
+                    <TableHead scope="col" className="text-right">
                       Max object size
-                    </th>
-                    <th scope="col">Content types</th>
-                    <th scope="col">Updated</th>
-                    <th scope="col">
-                      <span className="visually-hidden">Actions</span>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
+                    </TableHead>
+                    <TableHead scope="col">Content types</TableHead>
+                    <TableHead scope="col">Updated</TableHead>
+                    <TableHead scope="col" className="text-right">
+                      <span className="sr-only">Actions</span>
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {buckets.map((bucket) => (
-                    <tr key={bucket.id} data-bucket-id={bucket.id}>
-                      <th scope="row">
-                        <code>{bucket.id}</code>
-                      </th>
-                      <td>{bucket.access}</td>
-                      <td className="numeric">{bucket.objectCount.toLocaleString("en-US")}</td>
-                      <td className="numeric">{formatBytes(bucket.totalBytes)}</td>
-                      <td className="numeric">{formatBytes(bucket.maxObjectBytes)}</td>
-                      <td>{formatContentTypes(bucket.allowedContentTypes)}</td>
-                      <td>
-                        <time dateTime={bucket.updatedAt}>
-                          {new Date(bucket.updatedAt).toLocaleString()}
-                        </time>
-                      </td>
-                      <td>
-                        <div className="button-row">
-                          <button
-                            type="button"
-                            className="secondary"
+                    <TableRow key={bucket.id} data-bucket-id={bucket.id}>
+                      <TableHead scope="row">
+                        <code className={CODE}>{bucket.id}</code>
+                      </TableHead>
+                      <TableCell>
+                        <Badge variant="outline">{bucket.access}</Badge>
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {bucket.objectCount.toLocaleString("en-US")}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {formatBytes(bucket.totalBytes)}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {formatBytes(bucket.maxObjectBytes)}
+                      </TableCell>
+                      <TableCell className="font-mono text-xs">
+                        {formatContentTypes(bucket.allowedContentTypes)}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        <Timestamp value={bucket.updatedAt} />
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-1">
+                          <Button
+                            variant="outline"
+                            size="sm"
                             aria-label={`Open bucket ${bucket.id}`}
                             onClick={() => onOpen(bucket.id)}
                           >
                             Open
-                          </button>
-                          <button
-                            type="button"
-                            className="danger"
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className={DANGER_OUTLINE}
                             aria-label={`Delete bucket ${bucket.id}`}
                             disabled={deleting !== null}
                             onClick={() => void remove(bucket)}
                           >
                             {deleting === bucket.id ? "Deleting…" : "Delete"}
-                          </button>
+                          </Button>
                         </div>
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
-        <section className="panel" aria-labelledby="create-bucket-title">
-          <h2 id="create-bucket-title">Create bucket</h2>
-          <p>
-            A policy bucket with no rules refuses every request; rules that do not compile are
-            refused before the bucket is installed.
-          </p>
-          <form onSubmit={(event) => void create(event)}>
-            <label>
-              Bucket ID
-              <input name="id" required pattern={BUCKET_ID_PATTERN} spellCheck={false} />
-            </label>
-            <BucketSettingsFields />
-            <button type="submit" disabled={creating}>
-              {creating ? "Creating bucket…" : "Create bucket"}
-            </button>
-          </form>
-        </section>
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
+        <Card aria-labelledby="create-bucket-title" className="w-full max-w-3xl">
+          <CardHeader>
+            <CardTitle id="create-bucket-title">Create bucket</CardTitle>
+            <CardDescription>
+              A policy bucket with no rules refuses every request; rules that do not compile are
+              refused before the bucket is installed.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form className="grid gap-4" onSubmit={(event) => void create(event)}>
+              <Field label="Bucket ID" htmlFor={idField}>
+                <Input
+                  id={idField}
+                  name="id"
+                  required
+                  pattern={BUCKET_ID_PATTERN}
+                  spellCheck={false}
+                  className="font-mono"
+                />
+              </Field>
+              <BucketSettingsFields />
+              <div>
+                <Button type="submit" disabled={creating}>
+                  {creating ? "Creating bucket…" : "Create bucket"}
+                </Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
       </div>
     </section>
   );
@@ -318,6 +379,7 @@ function BucketScreen({
   readonly onBack: () => void;
 }) {
   const client = useManagementClient();
+  const prefixId = useId();
   const [bucket, setBucket] = useState<StorageBucket | null>(null);
   const [failure, setFailure] = useState<ConsoleApiFailure | null>(null);
   const [status, setStatus] = useState<string | null>(null);
@@ -448,139 +510,171 @@ function BucketScreen({
   };
 
   return (
-    <section aria-labelledby="bucket-title" className="storage-screen">
-      <button type="button" className="back-link" onClick={onBack}>
-        ← Buckets
-      </button>
-      <div className="section-heading">
-        <div>
-          <p className="eyebrow">Bucket</p>
-          <h1 id="bucket-title">{bucketId}</h1>
-          <p>
+    <section aria-labelledby="bucket-title" className="grid gap-6">
+      <div className="grid gap-2">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="-ml-2 w-fit text-muted-foreground hover:text-foreground"
+          onClick={onBack}
+        >
+          ← Buckets
+        </Button>
+        <div className="grid gap-1">
+          <Eyebrow>Bucket</Eyebrow>
+          <h1 id="bucket-title" className="font-mono text-2xl">
+            {bucketId}
+          </h1>
+          <p className="m-0 text-sm text-muted-foreground">
             Objects are served under{" "}
-            <code>
+            <code className={cn(CODE, "break-all")}>
               /v1/projects/{projectId}/environments/{environmentId}/storage/{bucketId}/objects/
             </code>
           </p>
         </div>
       </div>
       <ApiFailureNotice failure={failure} />
-      {status === null ? null : (
-        <p className="notice success" role="status">
-          {status}
-        </p>
-      )}
+      {status === null ? null : <StatusNotice>{status}</StatusNotice>}
       {bucket === null ? (
-        <p aria-live="polite">Loading bucket…</p>
+        <p className="m-0 text-sm text-muted-foreground" aria-live="polite">
+          Loading bucket…
+        </p>
       ) : (
-        <div className="split-grid">
-          <section className="panel" aria-labelledby="bucket-totals-title">
-            <h2 id="bucket-totals-title">Totals</h2>
-            <dl className="definition-grid bucket-totals">
-              <div>
-                <dt>Objects</dt>
-                <dd data-field="objectCount">{bucket.objectCount.toLocaleString("en-US")}</dd>
-              </div>
-              <div>
-                <dt>Stored bytes</dt>
-                <dd data-field="totalBytes">{formatBytes(bucket.totalBytes)}</dd>
-              </div>
-              <div>
-                <dt>Access</dt>
-                <dd data-field="access">{bucket.access}</dd>
-              </div>
-              <div>
-                <dt>Max object size</dt>
-                <dd data-field="maxObjectBytes">{formatBytes(bucket.maxObjectBytes)}</dd>
-              </div>
-              <div>
-                <dt>Version</dt>
-                <dd data-field="version">{bucket.version}</dd>
-              </div>
-              <div>
-                <dt>Created</dt>
-                <dd>
-                  <time dateTime={bucket.createdAt}>
-                    {new Date(bucket.createdAt).toLocaleString()}
-                  </time>
-                </dd>
-              </div>
-              <div>
-                <dt>Updated</dt>
-                <dd>
-                  <time dateTime={bucket.updatedAt}>
-                    {new Date(bucket.updatedAt).toLocaleString()}
-                  </time>
-                </dd>
-              </div>
-            </dl>
-          </section>
-          <section className="panel" aria-labelledby="bucket-settings-title">
-            <h2 id="bucket-settings-title">Settings</h2>
-            <p>Changes apply to every request that follows; stored objects are kept as they are.</p>
-            <form key={`settings-${bucket.version}`} onSubmit={(event) => void save(event)}>
-              <BucketSettingsFields bucket={bucket} />
-              <button type="submit" disabled={saving}>
-                {saving ? "Saving…" : "Save"}
-              </button>
-            </form>
-          </section>
-          <section className="panel full-span" aria-labelledby="bucket-objects-title">
-            <div className="button-row spread">
-              <h2 id="bucket-objects-title">Objects</h2>
-              <small>
+        <div className="grid items-start gap-6 lg:grid-cols-2">
+          <Card aria-labelledby="bucket-totals-title">
+            <CardHeader>
+              <CardTitle id="bucket-totals-title">Totals</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <dl className="m-0 grid gap-x-6 gap-y-4 sm:grid-cols-2">
+                <div>
+                  <dt className={TERM}>Objects</dt>
+                  <dd className={DEFINITION} data-field="objectCount">
+                    {bucket.objectCount.toLocaleString("en-US")}
+                  </dd>
+                </div>
+                <div>
+                  <dt className={TERM}>Stored bytes</dt>
+                  <dd className={DEFINITION} data-field="totalBytes">
+                    {formatBytes(bucket.totalBytes)}
+                  </dd>
+                </div>
+                <div>
+                  <dt className={TERM}>Access</dt>
+                  <dd className={DEFINITION} data-field="access">
+                    {bucket.access}
+                  </dd>
+                </div>
+                <div>
+                  <dt className={TERM}>Max object size</dt>
+                  <dd className={DEFINITION} data-field="maxObjectBytes">
+                    {formatBytes(bucket.maxObjectBytes)}
+                  </dd>
+                </div>
+                <div>
+                  <dt className={TERM}>Version</dt>
+                  <dd className={DEFINITION} data-field="version">
+                    {bucket.version}
+                  </dd>
+                </div>
+                <div>
+                  <dt className={TERM}>Created</dt>
+                  <dd className={DEFINITION}>
+                    <Timestamp value={bucket.createdAt} />
+                  </dd>
+                </div>
+                <div>
+                  <dt className={TERM}>Updated</dt>
+                  <dd className={DEFINITION}>
+                    <Timestamp value={bucket.updatedAt} />
+                  </dd>
+                </div>
+              </dl>
+            </CardContent>
+          </Card>
+          <Card aria-labelledby="bucket-settings-title">
+            <CardHeader>
+              <CardTitle id="bucket-settings-title">Settings</CardTitle>
+              <CardDescription>
+                Changes apply to every request that follows; stored objects are kept as they are.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form
+                key={`settings-${bucket.version}`}
+                className="grid gap-4"
+                onSubmit={(event) => void save(event)}
+              >
+                <BucketSettingsFields bucket={bucket} />
+                <div>
+                  <Button type="submit" disabled={saving}>
+                    {saving ? "Saving…" : "Save"}
+                  </Button>
+                </div>
+              </form>
+            </CardContent>
+          </Card>
+          <Card aria-labelledby="bucket-objects-title" className="lg:col-span-2">
+            <CardHeader>
+              <CardTitle id="bucket-objects-title">Objects</CardTitle>
+              <CardDescription>
                 {page === null
                   ? ""
                   : `Showing ${page.items.length.toLocaleString("en-US")} of ${bucket.objectCount.toLocaleString("en-US")} objects.`}
-              </small>
-            </div>
-            <form className="object-filter" onSubmit={applyPrefix}>
-              <label>
-                Path prefix
-                <input
-                  name="prefix"
-                  defaultValue={prefix}
-                  placeholder="avatars/"
-                  spellCheck={false}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-4">
+              <form className="flex flex-wrap items-end gap-3" onSubmit={applyPrefix}>
+                <Field label="Path prefix" htmlFor={prefixId} className="w-72">
+                  <Input
+                    id={prefixId}
+                    name="prefix"
+                    defaultValue={prefix}
+                    placeholder="avatars/"
+                    spellCheck={false}
+                    className="font-mono"
+                  />
+                </Field>
+                <Button type="submit" variant="outline">
+                  Apply prefix
+                </Button>
+              </form>
+              {loadingObjects && page === null ? (
+                <p className="m-0 text-sm text-muted-foreground" aria-live="polite">
+                  Loading objects…
+                </p>
+              ) : page === null || page.items.length === 0 ? (
+                <p className="m-0 text-sm text-muted-foreground">
+                  {prefix === ""
+                    ? "The bucket holds no objects."
+                    : `No objects start with ${prefix}.`}
+                </p>
+              ) : (
+                <ObjectTable
+                  objects={page.items}
+                  deletingPath={deletingPath}
+                  onDelete={(object) => void removeObject(object)}
                 />
-              </label>
-              <button type="submit" className="secondary">
-                Apply prefix
-              </button>
-            </form>
-            {loadingObjects && page === null ? (
-              <p aria-live="polite">Loading objects…</p>
-            ) : page === null || page.items.length === 0 ? (
-              <p className="object-empty">
-                {prefix === ""
-                  ? "The bucket holds no objects."
-                  : `No objects start with ${prefix}.`}
-              </p>
-            ) : (
-              <ObjectTable
-                objects={page.items}
-                deletingPath={deletingPath}
-                onDelete={(object) => void removeObject(object)}
-              />
-            )}
-            <div className="button-row spread">
-              <small>
-                {page === null || page.nextCursor === null
-                  ? "Every matching object is listed."
-                  : "More objects match."}
-              </small>
-              <button
-                type="button"
-                className="secondary"
-                disabled={
-                  page === null || page.nextCursor === null || loadingObjects || loadingMore
-                }
-                onClick={() => void loadMore()}
-              >
-                {loadingMore ? "Loading…" : "Load more"}
-              </button>
-            </div>
-          </section>
+              )}
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <small className="text-xs text-muted-foreground">
+                  {page === null || page.nextCursor === null
+                    ? "Every matching object is listed."
+                    : "More objects match."}
+                </small>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={
+                    page === null || page.nextCursor === null || loadingObjects || loadingMore
+                  }
+                  onClick={() => void loadMore()}
+                >
+                  {loadingMore ? "Loading…" : "Load more"}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
         </div>
       )}
     </section>
@@ -597,69 +691,74 @@ function ObjectTable({
   readonly onDelete: (object: StorageObject) => void;
 }) {
   return (
-    <div className="table-scroll">
-      <table className="object-table">
-        <thead>
-          <tr>
-            <th scope="col">Path</th>
-            <th scope="col">Content type</th>
-            <th scope="col" className="numeric">
-              Size
-            </th>
-            <th scope="col">Owner</th>
-            <th scope="col">Updated</th>
-            <th scope="col">
-              <span className="visually-hidden">Actions</span>
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {objects.map((object) => (
-            <tr key={object.path} data-object-path={object.path}>
-              <th scope="row">
-                <code className="object-path">{object.path}</code>
-              </th>
-              <td>{object.contentType}</td>
-              <td className="numeric">{formatBytes(object.sizeBytes)}</td>
-              <td>{object.ownerId === null ? <em>none</em> : <code>{object.ownerId}</code>}</td>
-              <td>
-                <time dateTime={object.updatedAt}>
-                  {new Date(object.updatedAt).toLocaleString()}
-                </time>
-              </td>
-              <td>
-                <button
-                  type="button"
-                  className="danger"
-                  aria-label={`Delete object ${object.path}`}
-                  disabled={deletingPath !== null}
-                  onClick={() => onDelete(object)}
-                >
-                  {deletingPath === object.path ? "Deleting…" : "Delete"}
-                </button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <Table>
+      <TableHeader>
+        <TableRow className="hover:bg-transparent">
+          <TableHead scope="col">Path</TableHead>
+          <TableHead scope="col">Content type</TableHead>
+          <TableHead scope="col" className="text-right">
+            Size
+          </TableHead>
+          <TableHead scope="col">Owner</TableHead>
+          <TableHead scope="col">Updated</TableHead>
+          <TableHead scope="col" className="text-right">
+            <span className="sr-only">Actions</span>
+          </TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {objects.map((object) => (
+          <TableRow key={object.path} data-object-path={object.path}>
+            <TableHead scope="row" className="whitespace-normal">
+              <code className={cn(CODE, "break-all")}>{object.path}</code>
+            </TableHead>
+            <TableCell className="font-mono text-xs">{object.contentType}</TableCell>
+            <TableCell className="text-right tabular-nums">
+              {formatBytes(object.sizeBytes)}
+            </TableCell>
+            <TableCell>
+              {object.ownerId === null ? (
+                <em className="text-muted-foreground">none</em>
+              ) : (
+                <code className={CODE}>{object.ownerId}</code>
+              )}
+            </TableCell>
+            <TableCell className="text-muted-foreground">
+              <Timestamp value={object.updatedAt} />
+            </TableCell>
+            <TableCell className="text-right">
+              <Button
+                variant="outline"
+                size="sm"
+                className={DANGER_OUTLINE}
+                aria-label={`Delete object ${object.path}`}
+                disabled={deletingPath !== null}
+                onClick={() => onDelete(object)}
+              >
+                {deletingPath === object.path ? "Deleting…" : "Delete"}
+              </Button>
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
   );
 }
 
 /** The editable bucket settings, shared by the create form and the bucket's settings form. */
 function BucketSettingsFields({ bucket }: { readonly bucket?: StorageBucket }) {
+  const id = useId();
   return (
     <>
-      <label>
-        Access
-        <select name="access" defaultValue={bucket?.access ?? "policy"}>
+      <Field label="Access" htmlFor={`${id}-access`}>
+        <NativeSelect id={`${id}-access`} name="access" defaultValue={bucket?.access ?? "policy"}>
           <option value="policy">policy · every request is evaluated against the rules</option>
           <option value="public">public · reads need no session; writes are still evaluated</option>
-        </select>
-      </label>
-      <label>
-        Max object bytes
-        <input
+        </NativeSelect>
+      </Field>
+      <Field label="Max object bytes" htmlFor={`${id}-max-bytes`}>
+        <Input
+          id={`${id}-max-bytes`}
           name="maxObjectBytes"
           type="number"
           min="1"
@@ -668,39 +767,59 @@ function BucketSettingsFields({ bucket }: { readonly bucket?: StorageBucket }) {
           required
           defaultValue={bucket?.maxObjectBytes ?? DEFAULT_MAX_OBJECT_BYTES}
         />
-      </label>
-      <small className="field-hint">
-        Up to {formatBytes(MAX_OBJECT_BYTES_CEILING)} (
-        {MAX_OBJECT_BYTES_CEILING.toLocaleString("en-US")} bytes).
-      </small>
-      <label>
-        Allowed content types
-        <input
+        <p className="m-0 text-sm text-muted-foreground">
+          Up to {formatBytes(MAX_OBJECT_BYTES_CEILING)} (
+          {MAX_OBJECT_BYTES_CEILING.toLocaleString("en-US")} bytes).
+        </p>
+      </Field>
+      <Field label="Allowed content types" htmlFor={`${id}-content-types`}>
+        <Input
+          id={`${id}-content-types`}
           name="allowedContentTypes"
           placeholder="image/*, application/pdf"
           spellCheck={false}
           defaultValue={bucket?.allowedContentTypes.join(", ") ?? ""}
+          className="font-mono"
         />
-      </label>
-      <small className="field-hint">
-        Media types or <code>type/*</code> patterns, separated by commas or spaces; leave empty to
-        allow every type.
-      </small>
-      <label>
-        Rules (JSON)
-        <textarea
+        <p className="m-0 text-sm text-muted-foreground">
+          Media types or <code className={CODE}>type/*</code> patterns, separated by commas or
+          spaces; leave empty to allow every type.
+        </p>
+      </Field>
+      <Field label="Rules (JSON)" htmlFor={`${id}-rules`}>
+        <Textarea
+          id={`${id}-rules`}
           name="rules"
           rows={12}
           spellCheck={false}
           defaultValue={JSON.stringify(bucket?.rules ?? STARTER_RULES, null, 2)}
+          className="font-mono text-xs"
         />
-      </label>
-      <small className="field-hint">
-        Expressions see the object document — <code>new.*</code> on create and update,{" "}
-        <code>old.*</code> on read, update, and delete — plus <code>identity.*</code>,{" "}
-        <code>claims.*</code>, and <code>request.*</code>.
-      </small>
+        <p className="m-0 text-sm text-muted-foreground">
+          Expressions see the object document — <code className={CODE}>new.*</code> on create and
+          update, <code className={CODE}>old.*</code> on read, update, and delete — plus{" "}
+          <code className={CODE}>identity.*</code>, <code className={CODE}>claims.*</code>, and{" "}
+          <code className={CODE}>request.*</code>.
+        </p>
+      </Field>
     </>
+  );
+}
+
+/** What the last action did, in the page's own words. */
+function StatusNotice({ children }: { readonly children: ReactNode }) {
+  return (
+    <Alert variant="positive" role="status">
+      <AlertDescription className="block text-foreground">{children}</AlertDescription>
+    </Alert>
+  );
+}
+
+function Timestamp({ value }: { readonly value: string }) {
+  return (
+    <time dateTime={value} className="whitespace-nowrap tabular-nums">
+      {new Date(value).toLocaleString()}
+    </time>
   );
 }
 

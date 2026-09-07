@@ -24,29 +24,29 @@
 - [x] 2.9 Re-skin settings hub and pages (household, members, categories with drag order, merchants, rules with preview, tags, connections, notifications, import wizard, data export); delete `settings.css`, `settings-pages.css`, `taxonomy.css`
 - [x] 2.10 Remove `src/ui/charts/{line,bars,donut,progress}.tsx` and `charts.css`; keep `sankey`, `treemap`, `calendar` restyled with tokens; delete what is left of `styles.css` beyond screen layout
 - [x] 2.11 Browser suites (`test/` and `test-live/`), unit tests, typecheck, lint, and `validate:rational-parity` green; screenshot pass per screen in both themes
-- [ ] 2.12 Add traceability rows for the Rational scenarios (theme dresses every screen, money table, parity unchanged) and the design-system scenarios they cover
+- [x] 2.12 Add traceability rows for the Rational scenarios (theme dresses every screen, money table, parity unchanged) and the design-system scenarios they cover
 
 ## 3. The export carries the kit
 
 - [x] 3.1 `scripts/export-rational-app.mjs`: copy `packages/ui/src` to `src/kit`; add `paths` for `@mako-cloud/ui` and `@mako-cloud/ui/*` to the rewritten tsconfigs; add a matching `resolve.alias` and the Tailwind plugin to the generated `vite.config.ts`; add the kit's dependencies with exact versions from the workspace lock to the generated `package.json`
 - [x] 3.2 Unit test the export's manifest, tsconfig, and Vite config generation for the kit
-- [ ] 3.3 Export, run `npm install` in the checkout to refresh its lock file, build and run its browser suite there, push, confirm the Pages workflow
-- [ ] 3.4 Traceability row for "the exported application builds alone"
+- [x] 3.3 Export, run `npm install` in the checkout to refresh its lock file, build and run its browser suite there, push, confirm the Pages workflow
+- [x] 3.4 Traceability row for "the exported application builds alone"
 
 ## 4. The console on the kit
 
 - [x] 4.1 Add the project reference, Vite plugin, stylesheet import; add `useTheme()` with `mako.console.theme` and a toggle in the shell header
-- [ ] 4.2 Re-skin the navigation shell (destinations with icons, unavailable state, context header, deep links); delete `styles.css` shell rules
-- [ ] 4.3 Re-skin the home dashboard, onboarding, project home, and settings; delete `home.css`, `project-home.css`
-- [ ] 4.4 Re-skin Database (collections, schemas, indexes), Explorer, Auth (users, providers), Storage; delete `storage.css`, `auth.css`
-- [ ] 4.5 Re-skin Functions (deployments, secrets, schedules), Sync (replication, webhooks), Logs, Observability; keep the classes the e2e suite selects; delete `function-schedules.css`, `webhooks.css`, `usage-activity.css`, `surfaced.css`
-- [ ] 4.6 Re-skin API & Keys, API docs, Backups, custom domains, allowed origins, billing; delete `api-docs.css`, `custom-domains.css`, `allowed-origins.css`
-- [ ] 4.7 Re-skin the operator control centre and operator auth screens
-- [ ] 4.8 Remove the console allow-list from `validate:ui-kit`; wire `validate:ui-kit` into CI
-- [ ] 4.9 Console e2e, unit tests, typecheck, lint green; split vendor chunks and record bundle sizes before and after in `docs/design-system.md`
-- [ ] 4.10 Traceability rows for "the console follows the developer's theme" and the remaining design-system scenarios
+- [x] 4.2 Re-skin the navigation shell (destinations with icons, unavailable state, context header, deep links); delete `styles.css` shell rules
+- [x] 4.3 Re-skin the home dashboard, onboarding, project home, and settings; delete `home.css`, `project-home.css`
+- [x] 4.4 Re-skin Database (collections, schemas, indexes), Explorer, Auth (users, providers), Storage; delete `storage.css`, `auth.css`
+- [x] 4.5 Re-skin Functions (deployments, secrets, schedules), Sync (replication, webhooks), Logs, Observability; keep the classes the e2e suite selects; delete `function-schedules.css`, `webhooks.css`, `usage-activity.css`, `surfaced.css`
+- [x] 4.6 Re-skin API & Keys, API docs, Backups, custom domains, allowed origins, billing; delete `api-docs.css`, `custom-domains.css`, `allowed-origins.css`
+- [x] 4.7 Re-skin the operator control centre and operator auth screens
+- [x] 4.8 Remove the console allow-list from `validate:ui-kit`; wire `validate:ui-kit` into CI
+- [x] 4.9 Console e2e, unit tests, typecheck, lint green; split vendor chunks and record bundle sizes before and after in `docs/design-system.md`
+- [x] 4.10 Traceability rows for "the console follows the developer's theme" and the remaining design-system scenarios
 
 ## 5. Ship
 
-- [ ] 5.1 Update `docs/rational.md` and `examples/rational/README.md` for the new look and the kit
+- [x] 5.1 Update `docs/rational.md` and `examples/rational/README.md` for the new look and the kit
 - [ ] 5.2 Build a public-beta release, deploy, run the hosted and operator browser qualification, refresh evidence, commit

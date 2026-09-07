@@ -1,8 +1,32 @@
-import { type FormEvent, useCallback, useEffect, useState } from "react";
+import {
+  Alert,
+  AlertDescription,
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  EmptyState,
+  Field,
+  Input,
+  NativeSelect,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  cn,
+} from "@mako-cloud/ui";
+import { Copy, Globe } from "lucide-react";
+import { type FormEvent, type ReactNode, useCallback, useEffect, useState } from "react";
 
 import type { CustomDomain, Environment } from "@mako-cloud/management-sdk";
 
-import { ApiFailureNotice, type ConsoleApiFailure, toConsoleApiFailure } from "./api-error.js";
+import { type ConsoleApiFailure, toConsoleApiFailure } from "./api-error.js";
+import { RequestId } from "./error-boundary.js";
 import { useManagementClient } from "./management.js";
 import { confirmDestructiveAction } from "./safety.js";
 
@@ -136,169 +160,191 @@ export function CustomDomainsScreen({
     environments.find((environment) => environment.state === "active") ?? environments[0];
 
   return (
-    <>
-      <section
-        className="panel full-span project-home-panel custom-domains"
-        aria-labelledby="custom-domains-title"
-      >
-        <div className="section-heading">
-          <div>
-            <h2 id="custom-domains-title">Custom domains</h2>
-            <p>
-              Serve an environment's API and functions on your own name with a certificate the
-              platform obtains and renews. A domain is served only while its DNS verification record
-              is in place.
+    <div className="grid gap-4">
+      <Card aria-labelledby="custom-domains-title">
+        <CardHeader>
+          <CardTitle id="custom-domains-title">Custom domains</CardTitle>
+          <CardDescription>
+            Serve an environment's API and functions on your own name with a certificate the
+            platform obtains and renews. A domain is served only while its DNS verification record
+            is in place.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4">
+          <FailureNotice failure={failure} />
+          {status === null ? null : (
+            <Alert variant="positive" role="status">
+              <AlertDescription className="text-foreground">{status}</AlertDescription>
+            </Alert>
+          )}
+          {domains === null ? (
+            <p className="m-0 text-sm text-muted-foreground" aria-live="polite">
+              Loading domains…
             </p>
-          </div>
-        </div>
-        <ApiFailureNotice failure={failure} />
-        {status === null ? null : (
-          <p className="notice success" role="status">
-            {status}
-          </p>
-        )}
-        {domains === null ? (
-          <p aria-live="polite">Loading domains…</p>
-        ) : domains.length === 0 ? (
-          <p>
-            No custom domains yet. Add one to serve an environment's API and functions on a name you
-            own.
-          </p>
-        ) : (
-          <div className="table-scroll">
-            <table className="domain-table">
-              <thead>
-                <tr>
-                  <th scope="col">Hostname</th>
-                  <th scope="col">Environment</th>
-                  <th scope="col">State</th>
-                  <th scope="col">Verified</th>
-                  <th scope="col">Last checked</th>
-                  <th scope="col">
-                    <span className="visually-hidden">Actions</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {domains.map((domain) => {
-                  const shown = shownRecord === domain.id;
-                  return [
-                    <tr key={domain.id} data-domain-id={domain.id} data-state={domain.state}>
-                      <th scope="row">
-                        <code className="domain-hostname">{domain.hostname}</code>
-                        <small className="domain-id">{domain.id}</small>
-                      </th>
-                      <td>{environmentName(domain.environmentId)}</td>
-                      <td>
-                        <DomainState domain={domain} />
-                      </td>
-                      <td>
-                        {domain.verifiedAt === null ? (
-                          <em>never</em>
-                        ) : (
-                          <Timestamp value={domain.verifiedAt} />
-                        )}
-                      </td>
-                      <td>
-                        {domain.lastCheckedAt === null ? (
-                          <em>not yet</em>
-                        ) : (
-                          <Timestamp value={domain.lastCheckedAt} />
-                        )}
-                      </td>
-                      <td>
-                        <div className="button-row">
-                          <button
-                            type="button"
-                            className="secondary"
-                            aria-expanded={shown}
-                            onClick={() => setShownRecord(shown ? null : domain.id)}
-                          >
-                            {shown ? "Hide DNS record" : "Show DNS record"}
-                          </button>
-                          <button
-                            type="button"
-                            className="secondary"
-                            disabled={busy}
-                            onClick={() => void verify(domain)}
-                          >
-                            {acting?.id === domain.id && acting.action === "verify"
-                              ? "Checking…"
-                              : "Verify now"}
-                          </button>
-                          <button
-                            type="button"
-                            className="danger-link"
-                            disabled={busy}
-                            onClick={() => void remove(domain)}
-                          >
-                            {acting?.id === domain.id && acting.action === "remove"
-                              ? "Removing…"
-                              : "Remove"}
-                          </button>
-                        </div>
-                      </td>
-                    </tr>,
-                    shown ? (
-                      <tr key={`${domain.id}-record`} className="domain-record-row">
-                        <td colSpan={6}>
-                          <DnsRecord domain={domain} />
-                        </td>
-                      </tr>
-                    ) : null,
-                  ];
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-      <section
-        className="panel full-span project-home-panel custom-domains"
-        aria-labelledby="add-domain-title"
-      >
-        <h2 id="add-domain-title">Add a domain</h2>
-        <p>
-          The name must be one you control. The answer carries a TXT record to create at your DNS
-          provider; the platform checks it on request and on its own, and serves nothing on the name
-          before it has seen the record.
-        </p>
-        {environments.length === 0 ? (
-          <p>Create an environment first; a domain serves exactly one.</p>
-        ) : (
-          <form
-            className="inline-form project-home-form domain-form"
-            onSubmit={(event) => void add(event)}
-          >
-            <label>
-              Hostname
-              <input
-                name="hostname"
-                required
-                maxLength={MAX_HOSTNAME_LENGTH}
-                placeholder="api.example.com"
-                autoComplete="off"
-                spellCheck={false}
-              />
-            </label>
-            <label>
-              Environment
-              <select name="environmentId" required defaultValue={defaultEnvironment?.id ?? ""}>
-                {environments.map((environment) => (
-                  <option key={environment.id} value={environment.id}>
-                    {environment.name}
-                    {environment.state === "active" ? "" : ` (${environment.state})`}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button type="submit" disabled={adding}>
-              {adding ? "Adding…" : "Add domain"}
-            </button>
-          </form>
-        )}
-      </section>
-    </>
+          ) : domains.length === 0 ? (
+            <EmptyState
+              icon={<Globe aria-hidden="true" />}
+              title="No custom domains yet."
+              description="Add one to serve an environment's API and functions on a name you own."
+            />
+          ) : (
+            <div className="overflow-hidden rounded-lg border">
+              <Table>
+                <TableHeader>
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead scope="col">Hostname</TableHead>
+                    <TableHead scope="col">Environment</TableHead>
+                    <TableHead scope="col">State</TableHead>
+                    <TableHead scope="col">Verified</TableHead>
+                    <TableHead scope="col">Last checked</TableHead>
+                    <TableHead scope="col">
+                      <span className="sr-only">Actions</span>
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {domains.map((domain) => {
+                    const shown = shownRecord === domain.id;
+                    return [
+                      <TableRow
+                        key={domain.id}
+                        data-domain-id={domain.id}
+                        data-state={domain.state}
+                      >
+                        <TableHead scope="row" className="align-top">
+                          <code className="font-mono text-sm whitespace-nowrap">
+                            {domain.hostname}
+                          </code>
+                          <small className="mt-1 block font-mono text-xs font-normal text-muted-foreground">
+                            {domain.id}
+                          </small>
+                        </TableHead>
+                        <TableCell className="align-top">
+                          {environmentName(domain.environmentId)}
+                        </TableCell>
+                        <TableCell className="min-w-40 align-top whitespace-normal">
+                          <DomainState domain={domain} />
+                        </TableCell>
+                        <TableCell className="align-top tabular-nums">
+                          {domain.verifiedAt === null ? (
+                            <em className="text-muted-foreground">never</em>
+                          ) : (
+                            <Timestamp value={domain.verifiedAt} />
+                          )}
+                        </TableCell>
+                        <TableCell className="align-top tabular-nums">
+                          {domain.lastCheckedAt === null ? (
+                            <em className="text-muted-foreground">not yet</em>
+                          ) : (
+                            <Timestamp value={domain.lastCheckedAt} />
+                          )}
+                        </TableCell>
+                        <TableCell className="align-top">
+                          <div className="flex justify-end gap-1 whitespace-nowrap">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              aria-expanded={shown}
+                              onClick={() => setShownRecord(shown ? null : domain.id)}
+                            >
+                              {shown ? "Hide DNS record" : "Show DNS record"}
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={busy}
+                              onClick={() => void verify(domain)}
+                            >
+                              {acting?.id === domain.id && acting.action === "verify"
+                                ? "Checking…"
+                                : "Verify now"}
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                              disabled={busy}
+                              onClick={() => void remove(domain)}
+                            >
+                              {acting?.id === domain.id && acting.action === "remove"
+                                ? "Removing…"
+                                : "Remove"}
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>,
+                      shown ? (
+                        <TableRow
+                          key={`${domain.id}-record`}
+                          className="bg-muted/40 hover:bg-muted/40"
+                        >
+                          <TableCell colSpan={6} className="whitespace-normal p-4">
+                            <DnsRecord domain={domain} />
+                          </TableCell>
+                        </TableRow>
+                      ) : null,
+                    ];
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+      <Card aria-labelledby="add-domain-title">
+        <CardHeader>
+          <CardTitle id="add-domain-title">Add a domain</CardTitle>
+          <CardDescription>
+            The name must be one you control. The answer carries a TXT record to create at your DNS
+            provider; the platform checks it on request and on its own, and serves nothing on the
+            name before it has seen the record.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {environments.length === 0 ? (
+            <p className="m-0 text-sm text-muted-foreground">
+              Create an environment first; a domain serves exactly one.
+            </p>
+          ) : (
+            <form
+              className="grid items-end gap-4 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_auto]"
+              onSubmit={(event) => void add(event)}
+            >
+              <Field label="Hostname" htmlFor="custom-domain-hostname">
+                <Input
+                  id="custom-domain-hostname"
+                  name="hostname"
+                  required
+                  maxLength={MAX_HOSTNAME_LENGTH}
+                  placeholder="api.example.com"
+                  autoComplete="off"
+                  spellCheck={false}
+                  className="font-mono"
+                />
+              </Field>
+              <Field label="Environment" htmlFor="custom-domain-environment">
+                <NativeSelect
+                  id="custom-domain-environment"
+                  name="environmentId"
+                  required
+                  defaultValue={defaultEnvironment?.id ?? ""}
+                >
+                  {environments.map((environment) => (
+                    <option key={environment.id} value={environment.id}>
+                      {environment.name}
+                      {environment.state === "active" ? "" : ` (${environment.state})`}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </Field>
+              <Button type="submit" disabled={adding}>
+                {adding ? "Adding…" : "Add domain"}
+              </Button>
+            </form>
+          )}
+        </CardContent>
+      </Card>
+    </div>
   );
 }
 
@@ -310,13 +356,26 @@ function DomainState({ domain }: { readonly domain: CustomDomain }) {
     domain.state === "verified" ? "Verified" : domain.state === "failed" ? "Failed" : "Pending";
   return (
     <>
-      <span className={`status-badge ${tone}`}>{label}</span>
+      <Badge
+        className={cn("status-badge", tone)}
+        variant={
+          domain.state === "verified"
+            ? "positive"
+            : domain.state === "failed"
+              ? "destructive"
+              : "warning"
+        }
+      >
+        {label}
+      </Badge>
       {domain.state === "failed" ? (
-        <small className="domain-error">
+        <small className="domain-error mt-1 block text-xs text-destructive">
           Serving stopped: {domain.lastError === null ? "re-verification failed" : reason(domain)}.
         </small>
       ) : domain.state === "pending" && domain.lastError !== null ? (
-        <small className="domain-error">Not verified: {reason(domain)}.</small>
+        <small className="domain-error mt-1 block text-xs text-destructive">
+          Not verified: {reason(domain)}.
+        </small>
       ) : null}
     </>
   );
@@ -335,48 +394,48 @@ function DnsRecord({ domain }: { readonly domain: CustomDomain }) {
   };
   const { recordName, recordType, recordValue } = domain.verification;
   return (
-    <section className="domain-record" aria-label={`DNS record for ${domain.hostname}`}>
-      <p>
-        Create this record at the DNS provider for <code>{domain.hostname}</code>, then choose
+    <section className="grid gap-3 text-sm" aria-label={`DNS record for ${domain.hostname}`}>
+      <p className="m-0">
+        Create this record at the DNS provider for <Code>{domain.hostname}</Code>, then choose
         Verify now. Keep it in place: the platform re-checks it and stops serving the domain if it
         goes missing.
       </p>
-      <dl className="definition-grid">
-        <div>
-          <dt>Name</dt>
-          <dd>
-            <code data-field="recordName">{recordName}</code>
-            <button
-              type="button"
-              className="secondary"
-              onClick={() => void copy("name", recordName)}
-            >
+      <dl className="m-0 grid gap-x-6 gap-y-3 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,2fr)]">
+        <div className="grid min-w-0 content-start gap-1.5">
+          <dt className="text-xs font-medium text-muted-foreground">Name</dt>
+          <dd className="m-0 grid justify-items-start gap-1.5">
+            <code className="font-mono wrap-anywhere" data-field="recordName">
+              {recordName}
+            </code>
+            <Button variant="outline" size="sm" onClick={() => void copy("name", recordName)}>
+              <Copy aria-hidden="true" className="size-3.5" />
               Copy name
-            </button>
+            </Button>
           </dd>
         </div>
-        <div>
-          <dt>Type</dt>
-          <dd>
-            <code data-field="recordType">{recordType}</code>
+        <div className="grid min-w-0 content-start gap-1.5">
+          <dt className="text-xs font-medium text-muted-foreground">Type</dt>
+          <dd className="m-0">
+            <code className="font-mono" data-field="recordType">
+              {recordType}
+            </code>
           </dd>
         </div>
-        <div>
-          <dt>Value</dt>
-          <dd>
-            <code data-field="recordValue">{recordValue}</code>
-            <button
-              type="button"
-              className="secondary"
-              onClick={() => void copy("value", recordValue)}
-            >
+        <div className="grid min-w-0 content-start gap-1.5">
+          <dt className="text-xs font-medium text-muted-foreground">Value</dt>
+          <dd className="m-0 grid justify-items-start gap-1.5">
+            <code className="font-mono wrap-anywhere" data-field="recordValue">
+              {recordValue}
+            </code>
+            <Button variant="outline" size="sm" onClick={() => void copy("value", recordValue)}>
+              <Copy aria-hidden="true" className="size-3.5" />
               Copy value
-            </button>
+            </Button>
           </dd>
         </div>
       </dl>
       {copyStatus === "" ? null : (
-        <p className="copy-status" aria-live="polite" aria-atomic="true">
+        <p className="m-0 text-xs text-muted-foreground" aria-live="polite" aria-atomic="true">
           {copyStatus}
         </p>
       )}
@@ -385,7 +444,31 @@ function DnsRecord({ domain }: { readonly domain: CustomDomain }) {
 }
 
 function Timestamp({ value }: { readonly value: string }) {
-  return <time dateTime={value}>{new Date(value).toLocaleString()}</time>;
+  return (
+    <time dateTime={value} className="whitespace-nowrap">
+      {new Date(value).toLocaleString()}
+    </time>
+  );
+}
+
+/** An identifier or a hostname inside a sentence: monospace on a quiet chip. */
+function Code({ children }: { readonly children: ReactNode }) {
+  return <code className="rounded bg-muted px-1 py-0.5 font-mono text-[0.85em]">{children}</code>;
+}
+
+/** A failed request, with its request id when the API gave one. */
+function FailureNotice({ failure }: { readonly failure: ConsoleApiFailure | null }) {
+  if (failure === null) {
+    return null;
+  }
+  return (
+    <Alert variant="destructive" role="alert">
+      <AlertDescription>
+        <p className="m-0">{failure.message}</p>
+        <RequestId value={failure.requestId} />
+      </AlertDescription>
+    </Alert>
+  );
 }
 
 /** The API's outcome code with its meaning when the console knows it. */

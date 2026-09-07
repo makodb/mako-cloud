@@ -1,4 +1,31 @@
-import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  Checkbox,
+  Eyebrow,
+  Field,
+  Input,
+  Label,
+  NativeSelect,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  Textarea,
+  cn,
+} from "@mako-cloud/ui";
+import { AlertTriangle, CheckCircle2, Info, RefreshCw, ShieldAlert } from "lucide-react";
+import { type FormEvent, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 
 import type {
   ApplicationUserSummary,
@@ -29,6 +56,13 @@ const ADMIN_OPERATIONS = [
   "simulate",
   "mutate",
 ] as const;
+
+/** JSON that is read: a bordered, scrolling block in the code face. */
+const JSON_BLOCK =
+  "m-0 overflow-x-auto rounded-md border bg-muted/40 p-3 font-mono text-xs leading-5";
+/** JSON that is written: the same face inside a textarea. */
+const JSON_FIELD = "min-h-40 max-h-[32rem] font-mono text-xs leading-5 md:text-xs";
+const CODE = "break-all font-mono text-xs";
 
 type PageSource =
   | { readonly kind: "browse"; readonly includeRetainedTombstones: boolean }
@@ -333,16 +367,19 @@ export function DataExplorer({
 
   const currentCollection = collections?.find((collection) => collection.id === collectionId);
   return (
-    <div className="explorer-stack">
-      <header className="section-heading">
-        <div>
-          <p className="eyebrow">Data explorer</p>
-          <h2>Documents</h2>
-          <p>Browse through a short-lived, collection-scoped access grant.</p>
+    <div className="grid gap-6">
+      <header className="flex flex-wrap items-end justify-between gap-4">
+        <div className="grid gap-1">
+          <Eyebrow>Data explorer</Eyebrow>
+          <h2 className="m-0 text-2xl font-semibold tracking-tight">Documents</h2>
+          <p className="m-0 text-sm text-muted-foreground">
+            Browse through a short-lived, collection-scoped access grant.
+          </p>
         </div>
-        <label>
-          Collection
-          <select
+        <Field label="Collection" htmlFor="explorer-collection" className="min-w-48">
+          <NativeSelect
+            id="explorer-collection"
+            className="font-mono"
             value={collectionId}
             onChange={(event) => switchCollection(event.currentTarget.value)}
           >
@@ -351,16 +388,19 @@ export function DataExplorer({
                 {collection.id}
               </option>
             ))}
-          </select>
-        </label>
+          </NativeSelect>
+        </Field>
       </header>
       <ApiFailureNotice failure={failure} />
       {collections === null ? (
-        <p>Loading collections…</p>
+        <p className="m-0 text-sm text-muted-foreground">Loading collections…</p>
       ) : collections.length === 0 ? (
-        <p className="notice">
-          Create and activate a collection schema before opening the explorer.
-        </p>
+        <Alert>
+          <Info aria-hidden="true" />
+          <AlertDescription>
+            Create and activate a collection schema before opening the explorer.
+          </AlertDescription>
+        </Alert>
       ) : null}
       {grant === null && collectionId !== "" ? (
         <GrantForm users={users} adminEnabled={adminEnabled} onSubmit={issueGrant} />
@@ -369,35 +409,49 @@ export function DataExplorer({
       ) : null}
       {grant !== null ? (
         <>
-          <div className="explorer-tools">
-            <section className="panel">
-              <h3>Canonical browse</h3>
-              <p>Snapshot-consistent primary-key order; hidden policy rows are not counted.</p>
-              <div className="button-row">
-                <button type="button" onClick={() => void browse(null, false)}>
-                  Browse documents
-                </button>
+          <div className="grid items-start gap-4 md:grid-cols-2">
+            <Card>
+              <CardHeader>
+                <CardTitle as="h3">Canonical browse</CardTitle>
+                <CardDescription>
+                  Snapshot-consistent primary-key order; hidden policy rows are not counted.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="flex flex-wrap items-center gap-2">
+                <Button onClick={() => void browse(null, false)}>Browse documents</Button>
                 {grant.mode === "administrative" ? (
-                  <button
-                    type="button"
-                    className="secondary"
-                    onClick={() => void browse(null, true)}
-                  >
+                  <Button variant="outline" onClick={() => void browse(null, true)}>
                     Include retained tombstones
-                  </button>
+                  </Button>
                 ) : null}
-              </div>
-            </section>
-            <section className="panel">
-              <h3>Exact primary key</h3>
-              <form className="inline-form" onSubmit={(event) => void lookup(event)}>
-                <label>
-                  Document ID
-                  <input name="documentId" required maxLength={512} />
-                </label>
-                <button type="submit">Get</button>
-              </form>
-            </section>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader>
+                <CardTitle as="h3">Exact primary key</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <form
+                  className="flex flex-wrap items-end gap-2"
+                  onSubmit={(event) => void lookup(event)}
+                >
+                  <Field
+                    label="Document ID"
+                    htmlFor="lookup-document-id"
+                    className="min-w-0 flex-1"
+                  >
+                    <Input
+                      id="lookup-document-id"
+                      name="documentId"
+                      required
+                      maxLength={512}
+                      className="font-mono"
+                    />
+                  </Field>
+                  <Button type="submit">Get</Button>
+                </form>
+              </CardContent>
+            </Card>
           </div>
           <QueryBuilder
             onSubmit={(form) => void executeQuery(form)}
@@ -439,9 +493,12 @@ export function DataExplorer({
             />
           ) : null}
           {auditReference !== null ? (
-            <p className="notice">
-              Audit reference <code>{auditReference}</code>
-            </p>
+            <Alert>
+              <Info aria-hidden="true" />
+              <AlertDescription className="block">
+                Audit reference <code className={CODE}>{auditReference}</code>
+              </AlertDescription>
+            </Alert>
           ) : null}
           {jobsEnabled ? (
             <DataJobs
@@ -467,55 +524,75 @@ function GrantForm({
 }) {
   const [mode, setMode] = useState("policy_preview");
   return (
-    <section className="panel" aria-labelledby="grant-title">
-      <h3 id="grant-title">Create scoped access</h3>
-      <form onSubmit={onSubmit}>
-        <label>
-          Mode
-          <select name="mode" value={mode} onChange={(event) => setMode(event.currentTarget.value)}>
-            <option value="policy_preview">Policy preview (read and simulate)</option>
-            {adminEnabled ? (
-              <option value="administrative">Administrative data access</option>
-            ) : null}
-          </select>
-        </label>
-        {mode === "policy_preview" ? (
-          users.length === 0 ? (
-            <p className="notice warning">
-              No active application user is available for policy preview.
-            </p>
+    <Card aria-labelledby="grant-title">
+      <CardHeader>
+        <CardTitle as="h3" id="grant-title">
+          Create scoped access
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <form className="grid max-w-xl gap-4" onSubmit={onSubmit}>
+          <Field label="Mode" htmlFor="grant-mode">
+            <NativeSelect
+              id="grant-mode"
+              name="mode"
+              value={mode}
+              onChange={(event) => setMode(event.currentTarget.value)}
+            >
+              <option value="policy_preview">Policy preview (read and simulate)</option>
+              {adminEnabled ? (
+                <option value="administrative">Administrative data access</option>
+              ) : null}
+            </NativeSelect>
+          </Field>
+          {mode === "policy_preview" ? (
+            users.length === 0 ? (
+              <Alert variant="warning">
+                <AlertTriangle aria-hidden="true" />
+                <AlertDescription>
+                  No active application user is available for policy preview.
+                </AlertDescription>
+              </Alert>
+            ) : (
+              <Field label="Application user" htmlFor="grant-application-user">
+                <NativeSelect id="grant-application-user" name="applicationUserId" required>
+                  {users.map((user) => (
+                    <option key={user.id} value={user.id}>
+                      {user.email ?? user.id}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </Field>
+            )
           ) : (
-            <label>
-              Application user
-              <select name="applicationUserId" required>
-                {users.map((user) => (
-                  <option key={user.id} value={user.id}>
-                    {user.email ?? user.id}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )
-        ) : (
-          <>
-            <p className="notice warning">
-              Administrative mode bypasses document policies. Every use is audited.
-            </p>
-            <label>
-              Access reason
-              <textarea name="reason" required maxLength={500} />
-            </label>
-            <label className="checkbox-label">
-              <input name="confirm" type="checkbox" required />I understand this access bypasses
-              application document policies.
-            </label>
-          </>
-        )}
-        <button type="submit" disabled={mode === "policy_preview" && users.length === 0}>
-          Create access grant
-        </button>
-      </form>
-    </section>
+            <>
+              <Alert variant="warning">
+                <ShieldAlert aria-hidden="true" />
+                <AlertDescription>
+                  Administrative mode bypasses document policies. Every use is audited.
+                </AlertDescription>
+              </Alert>
+              <Field label="Access reason" htmlFor="grant-reason">
+                <Textarea id="grant-reason" name="reason" required maxLength={500} />
+              </Field>
+              {/* The submit handler checks the box itself so a missing confirmation
+                  is reported as a visible failure rather than blocked silently. */}
+              <div className="flex items-start gap-2">
+                <Checkbox id="grant-confirm" name="confirm" className="mt-0.5" />
+                <Label htmlFor="grant-confirm" className="leading-snug font-normal">
+                  I understand this access bypasses application document policies.
+                </Label>
+              </div>
+            </>
+          )}
+          <div>
+            <Button type="submit" disabled={mode === "policy_preview" && users.length === 0}>
+              Create access grant
+            </Button>
+          </div>
+        </form>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -529,25 +606,26 @@ function GrantBanner({
   readonly onRevoke: () => void;
 }) {
   const preview = users.find((user) => user.id === grant.applicationUserId);
+  const administrative = grant.mode === "administrative";
   return (
-    <aside
-      className={`notice ${grant.mode === "administrative" ? "warning" : "success"}`}
-      aria-live="polite"
-    >
-      <strong>
-        {grant.mode === "administrative"
-          ? "Administrative policy bypass active"
-          : "Policy preview active"}
-      </strong>
-      <p>
-        {grant.mode === "administrative"
-          ? "Document operations are privileged and audited."
-          : `Evaluating policies as ${preview?.email ?? grant.applicationUserId ?? "selected user"}. This is not a user session.`}{" "}
-        Expires {new Date(grant.expiresAtUnixSeconds * 1000).toLocaleTimeString()}.
-      </p>
-      <button type="button" className="secondary" onClick={onRevoke}>
-        End access
-      </button>
+    <aside aria-live="polite">
+      <Alert variant={administrative ? "warning" : "positive"}>
+        {administrative ? <ShieldAlert aria-hidden="true" /> : <CheckCircle2 aria-hidden="true" />}
+        <AlertTitle>
+          {administrative ? "Administrative policy bypass active" : "Policy preview active"}
+        </AlertTitle>
+        <AlertDescription>
+          <p className="m-0">
+            {administrative
+              ? "Document operations are privileged and audited."
+              : `Evaluating policies as ${preview?.email ?? grant.applicationUserId ?? "selected user"}. This is not a user session.`}{" "}
+            Expires {new Date(grant.expiresAtUnixSeconds * 1000).toLocaleTimeString()}.
+          </p>
+          <Button variant="outline" size="sm" className="mt-1" onClick={onRevoke}>
+            End access
+          </Button>
+        </AlertDescription>
+      </Alert>
     </aside>
   );
 }
@@ -564,95 +642,127 @@ function QueryBuilder({
   const nextPredicateId = useRef(2);
   const [predicateRows, setPredicateRows] = useState(["predicate-1"]);
   return (
-    <section className="panel">
-      <h3>Indexed query</h3>
-      <form
-        onSubmit={(event) => {
-          event.preventDefault();
-          onSubmit(event.currentTarget);
-        }}
-      >
-        {predicateRows.map((rowId, index) => (
-          <fieldset className="query-row" key={rowId}>
-            <legend>Predicate {index + 1}</legend>
-            <label>
-              Field
-              <input name="predicateField" required />
-            </label>
-            <label>
-              Operator
-              <select name="predicateOperator" defaultValue="equal">
-                <option value="equal">equals</option>
-                <option value="greater_than">greater than</option>
-                <option value="greater_than_or_equal">at least</option>
-                <option value="less_than">less than</option>
-                <option value="less_than_or_equal">at most</option>
-              </select>
-            </label>
-            <label>
-              JSON value
-              <input name="predicateValue" defaultValue='"value"' required />
-            </label>
-          </fieldset>
-        ))}
-        <div className="button-row">
-          <button
-            type="button"
-            className="secondary"
-            disabled={predicateRows.length >= 8}
-            onClick={() => {
-              const id = nextPredicateId.current;
-              nextPredicateId.current += 1;
-              setPredicateRows((rows) => [...rows, `predicate-${id}`]);
-            }}
-          >
-            Add predicate
-          </button>
-          <button
-            type="button"
-            className="secondary"
-            disabled={predicateRows.length <= 1}
-            onClick={() => setPredicateRows((rows) => rows.slice(0, -1))}
-          >
-            Remove predicate
-          </button>
-        </div>
-        <div className="query-row">
-          <label>
-            Sort field
-            <input name="sortField" />
-          </label>
-          <label>
-            Direction
-            <select name="sortDirection">
-              <option value="ascending">Ascending</option>
-              <option value="descending">Descending</option>
-            </select>
-          </label>
-          <label>
-            Limit
-            <input name="limit" type="number" min="1" max="100" defaultValue="25" required />
-          </label>
-        </div>
-        <button type="submit">Plan and run query</button>
-      </form>
-      {plan !== null ? (
-        plan.supported ? (
-          <p className="notice success">
-            Using index <strong>{plan.indexName}</strong>; effective limit {plan.effectiveLimit}.
-          </p>
-        ) : (
-          <div className="notice warning">
-            <p>This query needs an active index. No collection scan was attempted.</p>
-            <code>{JSON.stringify(plan.requiredIndex)}</code>
-            <br />
-            <button type="button" onClick={onCreateIndex}>
-              Review index creation
-            </button>
+    <Card>
+      <CardHeader>
+        <CardTitle as="h3">Indexed query</CardTitle>
+      </CardHeader>
+      <CardContent className="grid gap-4">
+        <form
+          className="grid gap-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            onSubmit(event.currentTarget);
+          }}
+        >
+          {predicateRows.map((rowId, index) => (
+            <fieldset
+              className="m-0 grid min-w-0 gap-3 rounded-md border px-3 pt-1 pb-3 sm:grid-cols-3"
+              key={rowId}
+            >
+              <legend className="px-1 text-xs font-medium text-muted-foreground">
+                Predicate {index + 1}
+              </legend>
+              <Field label="Field" htmlFor={`${rowId}-field`}>
+                <Input id={`${rowId}-field`} name="predicateField" required className="font-mono" />
+              </Field>
+              <Field label="Operator" htmlFor={`${rowId}-operator`}>
+                <NativeSelect
+                  id={`${rowId}-operator`}
+                  name="predicateOperator"
+                  defaultValue="equal"
+                >
+                  <option value="equal">equals</option>
+                  <option value="greater_than">greater than</option>
+                  <option value="greater_than_or_equal">at least</option>
+                  <option value="less_than">less than</option>
+                  <option value="less_than_or_equal">at most</option>
+                </NativeSelect>
+              </Field>
+              <Field label="JSON value" htmlFor={`${rowId}-value`}>
+                <Input
+                  id={`${rowId}-value`}
+                  name="predicateValue"
+                  defaultValue='"value"'
+                  required
+                  className="font-mono"
+                />
+              </Field>
+            </fieldset>
+          ))}
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={predicateRows.length >= 8}
+              onClick={() => {
+                const id = nextPredicateId.current;
+                nextPredicateId.current += 1;
+                setPredicateRows((rows) => [...rows, `predicate-${id}`]);
+              }}
+            >
+              Add predicate
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={predicateRows.length <= 1}
+              onClick={() => setPredicateRows((rows) => rows.slice(0, -1))}
+            >
+              Remove predicate
+            </Button>
           </div>
-        )
-      ) : null}
-    </section>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <Field label="Sort field" htmlFor="query-sort-field">
+              <Input id="query-sort-field" name="sortField" className="font-mono" />
+            </Field>
+            <Field label="Direction" htmlFor="query-sort-direction">
+              <NativeSelect id="query-sort-direction" name="sortDirection">
+                <option value="ascending">Ascending</option>
+                <option value="descending">Descending</option>
+              </NativeSelect>
+            </Field>
+            <Field label="Limit" htmlFor="query-limit">
+              <Input
+                id="query-limit"
+                name="limit"
+                type="number"
+                min="1"
+                max="100"
+                defaultValue="25"
+                required
+              />
+            </Field>
+          </div>
+          <div>
+            <Button type="submit">Plan and run query</Button>
+          </div>
+        </form>
+        {plan !== null ? (
+          plan.supported ? (
+            <Alert variant="positive">
+              <CheckCircle2 aria-hidden="true" />
+              <AlertDescription className="block">
+                Using index <strong className="font-mono">{plan.indexName}</strong>; effective limit{" "}
+                {plan.effectiveLimit}.
+              </AlertDescription>
+            </Alert>
+          ) : (
+            <Alert variant="warning">
+              <AlertTriangle aria-hidden="true" />
+              <AlertDescription>
+                <p className="m-0">
+                  This query needs an active index. No collection scan was attempted.
+                </p>
+                <code className={CODE}>{JSON.stringify(plan.requiredIndex)}</code>
+                <Button size="sm" className="mt-1" onClick={onCreateIndex}>
+                  Review index creation
+                </Button>
+              </AlertDescription>
+            </Alert>
+          )
+        ) : null}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -670,66 +780,64 @@ function DocumentResults({
   readonly onNext: () => void;
 }) {
   return (
-    <section className="panel">
-      <div className="section-heading">
+    <Card>
+      <CardHeader>
+        <CardTitle as="h3">Results</CardTitle>
+        <CardDescription>
+          <small className="text-xs">
+            Snapshot <span className="font-mono">{page.snapshot}</span>
+          </small>
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-4">
+        {page.items.length === 0 ? (
+          <p className="m-0 text-sm text-muted-foreground">No authorized documents matched.</p>
+        ) : (
+          <div className="overflow-hidden rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow className="hover:bg-transparent">
+                  <TableHead scope="col">Primary key</TableHead>
+                  <TableHead scope="col">Revision</TableHead>
+                  <TableHead scope="col">State</TableHead>
+                  <TableHead scope="col">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {page.items.map((document) => (
+                  <TableRow key={`${document.documentId}:${document.revision}`}>
+                    <TableCell>
+                      <code className={CODE}>{document.documentId}</code>
+                    </TableCell>
+                    <TableCell>
+                      <code className={CODE}>{document.revision}</code>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={document.deleted ? "secondary" : "outline"}>
+                        {document.deleted ? "retained tombstone" : "current"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex flex-wrap gap-1">
+                        <RowAction onClick={() => onSelect(document)}>View JSON</RowAction>
+                        {canViewHistory ? (
+                          <RowAction onClick={() => onHistory(document)}>History</RowAction>
+                        ) : null}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
         <div>
-          <h3>Results</h3>
-          <small>Snapshot {page.snapshot}</small>
+          <Button variant="outline" disabled={page.nextCursor === null} onClick={onNext}>
+            Next page
+          </Button>
         </div>
-      </div>
-      {page.items.length === 0 ? (
-        <p>No authorized documents matched.</p>
-      ) : (
-        <div className="table-scroll">
-          <table>
-            <thead>
-              <tr>
-                <th>Primary key</th>
-                <th>Revision</th>
-                <th>State</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {page.items.map((document) => (
-                <tr key={`${document.documentId}:${document.revision}`}>
-                  <td>
-                    <code>{document.documentId}</code>
-                  </td>
-                  <td>
-                    <code>{document.revision}</code>
-                  </td>
-                  <td>{document.deleted ? "retained tombstone" : "current"}</td>
-                  <td>
-                    <div className="button-row">
-                      <button
-                        type="button"
-                        className="secondary"
-                        onClick={() => onSelect(document)}
-                      >
-                        View JSON
-                      </button>
-                      {canViewHistory ? (
-                        <button
-                          type="button"
-                          className="secondary"
-                          onClick={() => onHistory(document)}
-                        >
-                          History
-                        </button>
-                      ) : null}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-      <button type="button" disabled={page.nextCursor === null} onClick={onNext}>
-        Next page
-      </button>
-    </section>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -741,49 +849,54 @@ function DocumentDetail({
   readonly history: ExplorerRevision[] | null;
 }) {
   return (
-    <section className="panel">
-      <h3>
-        {document.deleted ? "Deleted document" : "Current document"}: {document.documentId}
-      </h3>
-      <pre className="json-view">{JSON.stringify(document.content, null, 2)}</pre>
-      {history !== null ? (
-        <div>
-          <h4>Retained revision metadata</h4>
-          <div className="table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th>Revision</th>
-                  <th>Schema</th>
-                  <th>Committed</th>
-                  <th>State / retention</th>
-                </tr>
-              </thead>
-              <tbody>
-                {history.map((entry) => (
-                  <tr key={entry.revision}>
-                    <td>
-                      <code>{entry.revision}</code>
-                    </td>
-                    <td>v{entry.schemaVersion}</td>
-                    <td>
-                      {entry.committedAtUnixSeconds === null
-                        ? "unknown"
-                        : new Date(entry.committedAtUnixSeconds * 1000).toLocaleString()}
-                    </td>
-                    <td>
-                      {entry.deleted
-                        ? `deleted; retained until ${formatTime(entry.retainedUntilUnixSeconds)}`
-                        : "historical/current"}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+    <Card>
+      <CardHeader>
+        <CardTitle as="h3" className="leading-snug">
+          {document.deleted ? "Deleted document" : "Current document"}:{" "}
+          <span className="font-mono">{document.documentId}</span>
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="grid gap-4">
+        <pre className={JSON_BLOCK}>{JSON.stringify(document.content, null, 2)}</pre>
+        {history !== null ? (
+          <div className="grid gap-2">
+            <h4 className="m-0 text-sm font-medium">Retained revision metadata</h4>
+            <div className="overflow-hidden rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead scope="col">Revision</TableHead>
+                    <TableHead scope="col">Schema</TableHead>
+                    <TableHead scope="col">Committed</TableHead>
+                    <TableHead scope="col">State / retention</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {history.map((entry) => (
+                    <TableRow key={entry.revision}>
+                      <TableCell>
+                        <code className={CODE}>{entry.revision}</code>
+                      </TableCell>
+                      <TableCell>v{entry.schemaVersion}</TableCell>
+                      <TableCell>
+                        {entry.committedAtUnixSeconds === null
+                          ? "unknown"
+                          : new Date(entry.committedAtUnixSeconds * 1000).toLocaleString()}
+                      </TableCell>
+                      <TableCell className="whitespace-normal">
+                        {entry.deleted
+                          ? `deleted; retained until ${formatTime(entry.retainedUntilUnixSeconds)}`
+                          : "historical/current"}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           </div>
-        </div>
-      ) : null}
-    </section>
+        ) : null}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -802,112 +915,120 @@ function MutationEditor({
 }) {
   const formRef = useRef<HTMLFormElement>(null);
   const [kind, setKind] = useState<ExplorerMutationRequest["kind"]>("update");
+  const accepted = simulation?.allowed === true && simulation.schemaValid;
   return (
-    <section className="panel">
-      <h3>Document mutation</h3>
-      <p>
-        {canCommit
-          ? "Administrative commits use conditional revision and idempotency checks."
-          : "Policy preview only evaluates this draft; it cannot write."}
-      </p>
-      <form ref={formRef} onSubmit={(event) => onSubmit(event, false)}>
-        <label>
-          Action
-          <select
-            name="kind"
-            value={kind}
-            onChange={(event) =>
-              setKind(event.currentTarget.value as ExplorerMutationRequest["kind"])
-            }
-          >
-            <option value="create">Create</option>
-            <option value="update">Update</option>
-            <option value="delete">Delete</option>
-          </select>
-        </label>
-        <label>
-          Document ID
-          <input
-            name="documentId"
-            required
-            defaultValue={selected?.documentId ?? ""}
-            key={`id:${selected?.documentId ?? ""}`}
-          />
-        </label>
-        <label>
-          Expected revision
-          <input
-            name="expectedRevision"
-            defaultValue={selected?.revision ?? ""}
-            key={`rev:${selected?.revision ?? ""}`}
-            placeholder="Required for update/delete"
-          />
-        </label>
-        <label>
-          Schema version
-          <input
-            name="schemaVersion"
-            type="number"
-            min="1"
-            required
-            defaultValue={selected?.schemaVersion ?? collection?.schemaVersion ?? 1}
-            key={`schema:${selected?.schemaVersion ?? collection?.schemaVersion ?? 1}`}
-          />
-        </label>
-        {kind !== "delete" ? (
-          <label>
-            JSON document
-            <textarea
-              name="content"
-              rows={12}
-              required
-              defaultValue={JSON.stringify(selected?.content ?? {}, null, 2)}
-              key={`content:${selected?.revision ?? "new"}`}
-            />
-          </label>
-        ) : null}
-        <div className="button-row">
-          <button
-            type="button"
-            onClick={() => {
-              const form = formRef.current;
-              if (form === null || !form.reportValidity()) return;
-              const synthetic = {
-                preventDefault() {},
-                currentTarget: form,
-              } as FormEvent<HTMLFormElement>;
-              onSubmit(synthetic, true);
-            }}
-          >
-            Parse, validate, and simulate
-          </button>
-          {canCommit ? <button type="submit">Commit conditionally</button> : null}
-        </div>
-      </form>
-      {simulation !== null ? (
-        <div
-          className={`notice ${simulation.allowed && simulation.schemaValid ? "success" : "warning"}`}
-        >
-          <strong>
-            {simulation.allowed && simulation.schemaValid
-              ? "Simulation allowed"
-              : "Simulation rejected"}
-          </strong>
-          <p>
-            {simulation.wouldConflict
-              ? "The current revision would conflict."
-              : "No current revision conflict was detected."}
-          </p>
-          {simulation.diagnostics.length > 0 ? (
-            <ul>
-              {simulation.diagnostics.map((item) => (
-                <li key={item}>{item}</li>
-              ))}
-            </ul>
+    <Card>
+      <CardHeader>
+        <CardTitle as="h3">Document mutation</CardTitle>
+        <CardDescription>
+          {canCommit
+            ? "Administrative commits use conditional revision and idempotency checks."
+            : "Policy preview only evaluates this draft; it cannot write."}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-4">
+        <form ref={formRef} className="grid gap-4" onSubmit={(event) => onSubmit(event, false)}>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <Field label="Action" htmlFor="mutation-kind">
+              <NativeSelect
+                id="mutation-kind"
+                name="kind"
+                value={kind}
+                onChange={(event) =>
+                  setKind(event.currentTarget.value as ExplorerMutationRequest["kind"])
+                }
+              >
+                <option value="create">Create</option>
+                <option value="update">Update</option>
+                <option value="delete">Delete</option>
+              </NativeSelect>
+            </Field>
+            <Field label="Document ID" htmlFor="mutation-document-id">
+              <Input
+                id="mutation-document-id"
+                name="documentId"
+                required
+                defaultValue={selected?.documentId ?? ""}
+                key={`id:${selected?.documentId ?? ""}`}
+                className="font-mono"
+              />
+            </Field>
+            <Field label="Expected revision" htmlFor="mutation-expected-revision">
+              <Input
+                id="mutation-expected-revision"
+                name="expectedRevision"
+                defaultValue={selected?.revision ?? ""}
+                key={`rev:${selected?.revision ?? ""}`}
+                placeholder="Required for update/delete"
+                className="font-mono"
+              />
+            </Field>
+            <Field label="Schema version" htmlFor="mutation-schema-version">
+              <Input
+                id="mutation-schema-version"
+                name="schemaVersion"
+                type="number"
+                min="1"
+                required
+                defaultValue={selected?.schemaVersion ?? collection?.schemaVersion ?? 1}
+                key={`schema:${selected?.schemaVersion ?? collection?.schemaVersion ?? 1}`}
+              />
+            </Field>
+          </div>
+          {kind !== "delete" ? (
+            <Field label="JSON document" htmlFor="mutation-content">
+              <Textarea
+                id="mutation-content"
+                name="content"
+                rows={12}
+                required
+                defaultValue={JSON.stringify(selected?.content ?? {}, null, 2)}
+                key={`content:${selected?.revision ?? "new"}`}
+                spellCheck={false}
+                className={JSON_FIELD}
+              />
+            </Field>
           ) : null}
-        </div>
-      ) : null}
-    </section>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant={canCommit ? "outline" : "default"}
+              onClick={() => {
+                const form = formRef.current;
+                if (form === null || !form.reportValidity()) return;
+                const synthetic = {
+                  preventDefault() {},
+                  currentTarget: form,
+                } as FormEvent<HTMLFormElement>;
+                onSubmit(synthetic, true);
+              }}
+            >
+              Parse, validate, and simulate
+            </Button>
+            {canCommit ? <Button type="submit">Commit conditionally</Button> : null}
+          </div>
+        </form>
+        {simulation !== null ? (
+          <Alert variant={accepted ? "positive" : "warning"}>
+            {accepted ? <CheckCircle2 aria-hidden="true" /> : <AlertTriangle aria-hidden="true" />}
+            <AlertTitle>{accepted ? "Simulation allowed" : "Simulation rejected"}</AlertTitle>
+            <AlertDescription>
+              <p className="m-0">
+                {simulation.wouldConflict
+                  ? "The current revision would conflict."
+                  : "No current revision conflict was detected."}
+              </p>
+              {simulation.diagnostics.length > 0 ? (
+                <ul className="m-0 list-disc pl-4">
+                  {simulation.diagnostics.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              ) : null}
+            </AlertDescription>
+          </Alert>
+        ) : null}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -923,33 +1044,38 @@ function ConflictComparison({
   readonly onPrepare: () => void;
 }) {
   return (
-    <section className="panel conflict-panel" role="alert">
-      <h3>Revision conflict—no automatic merge was attempted</h3>
-      <div className="comparison-grid">
-        <JsonColumn label="Original" value={conflict.original?.content ?? null} />
-        <JsonColumn label="Proposed" value={conflict.proposed.content} />
-        <JsonColumn label="Current" value={conflict.current?.content ?? null} />
-      </div>
-      <div className="button-row">
-        <button type="button" onClick={onReload}>
-          Reload current
-        </button>
-        <button type="button" className="secondary" onClick={onPrepare}>
-          Prepare a new update
-        </button>
-        <button type="button" className="secondary" onClick={onCancel}>
-          Cancel
-        </button>
-      </div>
-    </section>
+    <Card role="alert" className="border-destructive/40">
+      <CardHeader>
+        <CardTitle as="h3" className="flex items-center gap-2 leading-snug text-destructive">
+          <AlertTriangle aria-hidden="true" className="size-4 shrink-0" />
+          Revision conflict—no automatic merge was attempted
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="grid gap-4">
+        <div className="grid gap-4 md:grid-cols-3">
+          <JsonColumn label="Original" value={conflict.original?.content ?? null} />
+          <JsonColumn label="Proposed" value={conflict.proposed.content} />
+          <JsonColumn label="Current" value={conflict.current?.content ?? null} />
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button onClick={onReload}>Reload current</Button>
+          <Button variant="outline" onClick={onPrepare}>
+            Prepare a new update
+          </Button>
+          <Button variant="outline" onClick={onCancel}>
+            Cancel
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
 function JsonColumn({ label, value }: { readonly label: string; readonly value: unknown }) {
   return (
-    <div>
-      <h4>{label}</h4>
-      <pre className="json-view">{JSON.stringify(value, null, 2)}</pre>
+    <div className="grid min-w-0 gap-2">
+      <h4 className="m-0 text-sm font-medium">{label}</h4>
+      <pre className={JSON_BLOCK}>{JSON.stringify(value, null, 2)}</pre>
     </div>
   );
 }
@@ -1128,160 +1254,200 @@ function DataJobs({
     }
   };
   return (
-    <section className="panel">
-      <div className="section-heading">
-        <div>
-          <h3>Import and export jobs</h3>
-          <p>Imports require a dry run. Cancellation never rolls back rows already committed.</p>
+    <Card>
+      <CardHeader className="flex flex-wrap items-start justify-between gap-4">
+        <div className="grid gap-1">
+          <CardTitle as="h3">Import and export jobs</CardTitle>
+          <CardDescription>
+            Imports require a dry run. Cancellation never rolls back rows already committed.
+          </CardDescription>
         </div>
-        <div>
-          <label className="checkbox-label">
-            <input
-              type="checkbox"
+        <div className="grid gap-2">
+          <div className="flex items-start gap-2">
+            <Checkbox
+              id="export-scope-confirmed"
+              className="mt-0.5"
               checked={exportScopeConfirmed}
-              onChange={(event) => setExportScopeConfirmed(event.currentTarget.checked)}
-            />{" "}
-            Export the full authorized collection snapshot
-          </label>
-          <button type="button" disabled={!exportScopeConfirmed} onClick={() => void startExport()}>
-            Create export
-          </button>
+              onCheckedChange={(checked) => setExportScopeConfirmed(checked === true)}
+            />
+            <Label htmlFor="export-scope-confirmed" className="leading-snug font-normal">
+              Export the full authorized collection snapshot
+            </Label>
+          </div>
+          <div>
+            <Button size="sm" disabled={!exportScopeConfirmed} onClick={() => void startExport()}>
+              Create export
+            </Button>
+          </div>
         </div>
-      </div>
-      <ApiFailureNotice failure={failure} />
-      <form className="job-create-form" onSubmit={(event) => void uploadImport(event)}>
-        <label>
-          JSON Lines file
-          <input name="file" type="file" accept=".jsonl,.ndjson,application/x-ndjson" required />
-        </label>
-        <label>
-          Schema version
-          <input name="schemaVersion" type="number" min="1" defaultValue="1" required />
-        </label>
-        <label>
-          Conflict strategy
-          <select name="strategy">
-            <option value="create_only">Create only</option>
-            <option value="update_existing">Update existing</option>
-            <option value="upsert">Upsert</option>
-          </select>
-        </label>
-        <button type="submit">Upload and dry run</button>
-      </form>
-      {pendingConfirmation === null ? null : (
-        <aside className="notice warning">
-          <h4>Confirm import execution</h4>
-          <p>
-            Job <code>{pendingConfirmation.jobId}</code> will apply{" "}
-            {pendingConfirmation.manifest?.rowCount ?? 0} rows using{" "}
-            <strong>{pendingConfirmation.conflictStrategy}</strong>. Manifest{" "}
-            <code>{manifestDigest(pendingConfirmation)}</code>.
-          </p>
-          <form onSubmit={(event) => void confirm(event, pendingConfirmation)}>
-            <label className="checkbox-label">
-              <input
-                name="acknowledgePartialImportCancellation"
-                type="checkbox"
-                value="yes"
-                required
-              />{" "}
-              I understand cancellation stops future rows and does not roll back committed rows.
-            </label>
-            <div className="button-row">
-              <button type="submit">Confirm execution</button>
-              <button
-                type="button"
-                className="secondary"
-                onClick={() => setPendingConfirmation(null)}
-              >
-                Cancel
-              </button>
-            </div>
-          </form>
-        </aside>
-      )}
-      {jobs.length === 0 ? (
-        <p>No data jobs for this collection.</p>
-      ) : (
-        <div className="table-scroll">
-          <table>
-            <thead>
-              <tr>
-                <th>Job</th>
-                <th>Type / state</th>
-                <th>Progress</th>
-                <th>Errors / manifest</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {jobs.map((job) => (
-                <tr key={job.jobId}>
-                  <td>
-                    <code>{job.jobId}</code>
-                  </td>
-                  <td>
-                    {job.kind} / {job.state}
-                  </td>
-                  <td>
-                    {Object.entries(job.progress)
-                      .map(([key, value]) => `${key}: ${value}`)
-                      .join(", ") || "not started"}
-                  </td>
-                  <td>{job.errors.slice(0, 5).join("; ") || (manifestDigest(job) ?? "—")}</td>
-                  <td>
-                    <div className="button-row">
-                      <button
-                        type="button"
-                        className="secondary"
-                        aria-label={`Details for ${job.jobId}`}
-                        onClick={() => void openDetail(job.jobId)}
-                      >
-                        Details
-                      </button>
-                      {job.state === "awaiting_confirmation" ? (
-                        <button type="button" onClick={() => setPendingConfirmation(job)}>
-                          Review execution
-                        </button>
-                      ) : null}
-                      {cancellable(job) ? (
-                        <button
-                          type="button"
-                          className="secondary"
-                          onClick={() => void cancel(job)}
+      </CardHeader>
+      <CardContent className="grid gap-4">
+        <ApiFailureNotice failure={failure} />
+        <form
+          className="grid items-end gap-3 rounded-md border p-3 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_auto]"
+          onSubmit={(event) => void uploadImport(event)}
+        >
+          <Field label="JSON Lines file" htmlFor="import-file">
+            <Input
+              id="import-file"
+              name="file"
+              type="file"
+              accept=".jsonl,.ndjson,application/x-ndjson"
+              required
+            />
+          </Field>
+          <Field label="Schema version" htmlFor="import-schema-version">
+            <Input
+              id="import-schema-version"
+              name="schemaVersion"
+              type="number"
+              min="1"
+              defaultValue="1"
+              required
+            />
+          </Field>
+          <Field label="Conflict strategy" htmlFor="import-strategy">
+            <NativeSelect id="import-strategy" name="strategy">
+              <option value="create_only">Create only</option>
+              <option value="update_existing">Update existing</option>
+              <option value="upsert">Upsert</option>
+            </NativeSelect>
+          </Field>
+          <Button type="submit" variant="outline">
+            Upload and dry run
+          </Button>
+        </form>
+        {pendingConfirmation === null ? null : (
+          <aside>
+            <Alert variant="warning">
+              <AlertTriangle aria-hidden="true" />
+              <h4 className="col-start-2 m-0 text-sm font-medium tracking-tight">
+                Confirm import execution
+              </h4>
+              <AlertDescription>
+                <p className="m-0">
+                  Job <code className={CODE}>{pendingConfirmation.jobId}</code> will apply{" "}
+                  {pendingConfirmation.manifest?.rowCount ?? 0} rows using{" "}
+                  <strong>{pendingConfirmation.conflictStrategy}</strong>. Manifest{" "}
+                  <code className={CODE}>{manifestDigest(pendingConfirmation)}</code>.
+                </p>
+                <form
+                  className="grid w-full gap-3"
+                  onSubmit={(event) => void confirm(event, pendingConfirmation)}
+                >
+                  {/* The submit handler checks the acknowledgement itself and reports
+                      a missing one as a visible failure. */}
+                  <div className="flex items-start gap-2">
+                    <Checkbox
+                      id="acknowledge-partial-cancellation"
+                      name="acknowledgePartialImportCancellation"
+                      value="yes"
+                      className="mt-0.5"
+                    />
+                    <Label
+                      htmlFor="acknowledge-partial-cancellation"
+                      className="leading-snug font-normal"
+                    >
+                      I understand cancellation stops future rows and does not roll back committed
+                      rows.
+                    </Label>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button type="submit" size="sm">
+                      Confirm execution
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setPendingConfirmation(null)}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </form>
+              </AlertDescription>
+            </Alert>
+          </aside>
+        )}
+        {jobs.length === 0 ? (
+          <p className="m-0 text-sm text-muted-foreground">No data jobs for this collection.</p>
+        ) : (
+          <div className="overflow-hidden rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow className="hover:bg-transparent">
+                  <TableHead scope="col">Job</TableHead>
+                  <TableHead scope="col">Type / state</TableHead>
+                  <TableHead scope="col">Progress</TableHead>
+                  <TableHead scope="col">Errors / manifest</TableHead>
+                  <TableHead scope="col">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {jobs.map((job) => (
+                  <TableRow key={job.jobId}>
+                    <TableCell>
+                      <code className={CODE}>{job.jobId}</code>
+                    </TableCell>
+                    <TableCell>
+                      {job.kind} / {job.state}
+                    </TableCell>
+                    <TableCell className="whitespace-normal text-xs text-muted-foreground">
+                      {Object.entries(job.progress)
+                        .map(([key, value]) => `${key}: ${value}`)
+                        .join(", ") || "not started"}
+                    </TableCell>
+                    <TableCell className="max-w-xs whitespace-normal text-xs">
+                      <span className={cn(job.errors.length === 0 && "font-mono")}>
+                        {job.errors.slice(0, 5).join("; ") || (manifestDigest(job) ?? "—")}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex flex-wrap gap-1">
+                        <RowAction
+                          aria-label={`Details for ${job.jobId}`}
+                          onClick={() => void openDetail(job.jobId)}
                         >
-                          Cancel
-                        </button>
-                      ) : null}
-                      {job.kind === "export" && job.state === "succeeded" ? (
-                        <button type="button" onClick={() => void download(job)}>
-                          Download and verify
-                        </button>
-                      ) : null}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-      {detail === null ? null : (
-        <DataJobDetail
-          job={detail}
-          uploadGrant={uploadGrant}
-          onRefresh={() => void openDetail(detail.jobId)}
-          onClose={() => {
-            setDetail(null);
-            setUploadGrant(null);
-          }}
-          onReview={() => setPendingConfirmation(detail)}
-          onCancel={() => void cancel(detail)}
-          onDownload={() => void download(detail)}
-          onIssueUploadGrant={() => void issueUploadGrant(detail)}
-        />
-      )}
-    </section>
+                          Details
+                        </RowAction>
+                        {job.state === "awaiting_confirmation" ? (
+                          <RowAction emphasis onClick={() => setPendingConfirmation(job)}>
+                            Review execution
+                          </RowAction>
+                        ) : null}
+                        {cancellable(job) ? (
+                          <RowAction onClick={() => void cancel(job)}>Cancel</RowAction>
+                        ) : null}
+                        {job.kind === "export" && job.state === "succeeded" ? (
+                          <RowAction emphasis onClick={() => void download(job)}>
+                            Download and verify
+                          </RowAction>
+                        ) : null}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+        {detail === null ? null : (
+          <DataJobDetail
+            job={detail}
+            uploadGrant={uploadGrant}
+            onRefresh={() => void openDetail(detail.jobId)}
+            onClose={() => {
+              setDetail(null);
+              setUploadGrant(null);
+            }}
+            onReview={() => setPendingConfirmation(detail)}
+            onCancel={() => void cancel(detail)}
+            onDownload={() => void download(detail)}
+            onIssueUploadGrant={() => void issueUploadGrant(detail)}
+          />
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -1307,118 +1473,156 @@ function DataJobDetail({
   readonly onIssueUploadGrant: () => void;
 }) {
   const diagnostics = job.errors.map((message, position) => ({ id: `${position}`, message }));
+  // `job-detail` is not decoration: it is the handle the jobs scenario opens
+  // this panel by.
   return (
-    <article className="workflow-card job-detail" aria-labelledby="job-detail-title">
-      <div className="button-row spread">
-        <h4 id="job-detail-title">Job {job.jobId}</h4>
-        <div className="button-row">
-          <button type="button" className="secondary" onClick={onRefresh}>
-            Refresh
-          </button>
-          <button type="button" className="secondary" onClick={onClose}>
-            Close
-          </button>
-        </div>
-      </div>
-      <dl className="definition-grid">
-        <div>
-          <dt>Status</dt>
-          <dd>{job.state.replaceAll("_", " ")}</dd>
-        </div>
-        <div>
-          <dt>Kind</dt>
-          <dd>{job.kind}</dd>
-        </div>
-        <div>
-          <dt>Collection</dt>
-          <dd>
-            <code>{job.collectionId}</code>
-          </dd>
-        </div>
-        <div>
-          <dt>Conflict strategy</dt>
-          <dd>{job.conflictStrategy === null ? "—" : job.conflictStrategy.replaceAll("_", " ")}</dd>
-        </div>
-        <div>
-          <dt>Created by</dt>
-          <dd>
-            <code>{job.creatorId}</code>
-          </dd>
-        </div>
-        <div>
-          <dt>Created</dt>
-          <dd>{formatTime(job.createdAtUnixSeconds)}</dd>
-        </div>
-        <div>
-          <dt>Updated</dt>
-          <dd>{formatTime(job.updatedAtUnixSeconds)}</dd>
-        </div>
-        <div>
-          <dt>Expires</dt>
-          <dd>{formatTime(job.expiresAtUnixSeconds)}</dd>
-        </div>
-      </dl>
-      <h5>Counts</h5>
-      <dl className="definition-grid">
-        {Object.entries(job.progress).map(([key, value]) => (
-          <div key={key}>
-            <dt>{key}</dt>
-            <dd>{value.toLocaleString()}</dd>
+    <Card
+      as="article"
+      aria-labelledby="job-detail-title"
+      className="job-detail gap-4 bg-muted/20 py-4"
+    >
+      <CardContent className="grid gap-4 px-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h4 id="job-detail-title" className="m-0 text-sm font-semibold">
+            Job <span className="font-mono">{job.jobId}</span>
+          </h4>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="outline" size="sm" onClick={onRefresh}>
+              <RefreshCw aria-hidden="true" />
+              Refresh
+            </Button>
+            <Button variant="outline" size="sm" onClick={onClose}>
+              Close
+            </Button>
           </div>
-        ))}
-      </dl>
-      {job.manifest === null ? null : (
-        <p>
-          Manifest: {job.manifest.rowCount.toLocaleString()} rows,{" "}
-          {job.manifest.byteCount.toLocaleString()} bytes, schema version{" "}
-          {job.manifest.schemaVersion}, digest <code>{job.manifest.digest}</code>, finalized{" "}
-          {formatTime(job.manifest.finalizedAtUnixSeconds)}.
-        </p>
-      )}
-      {diagnostics.length > 0 ? (
-        <div className="notice error" role="status">
-          <strong>Failure diagnostic</strong>
-          <ul className="job-errors">
-            {diagnostics.map((diagnostic) => (
-              <li key={diagnostic.id}>{diagnostic.message}</li>
-            ))}
-          </ul>
         </div>
-      ) : job.state === "failed" ? (
-        <p className="notice error" role="status">
-          The job failed without a retained diagnostic.
-        </p>
-      ) : null}
-      <div className="button-row">
-        {job.kind === "import" && job.state === "awaiting_upload" ? (
-          <button type="button" onClick={onIssueUploadGrant}>
-            Issue upload grant
-          </button>
+        <dl className="m-0 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <MetaItem term="Status">{job.state.replaceAll("_", " ")}</MetaItem>
+          <MetaItem term="Kind">{job.kind}</MetaItem>
+          <MetaItem term="Collection">
+            <code className={CODE}>{job.collectionId}</code>
+          </MetaItem>
+          <MetaItem term="Conflict strategy">
+            {job.conflictStrategy === null ? "—" : job.conflictStrategy.replaceAll("_", " ")}
+          </MetaItem>
+          <MetaItem term="Created by">
+            <code className={CODE}>{job.creatorId}</code>
+          </MetaItem>
+          <MetaItem term="Created">{formatTime(job.createdAtUnixSeconds)}</MetaItem>
+          <MetaItem term="Updated">{formatTime(job.updatedAtUnixSeconds)}</MetaItem>
+          <MetaItem term="Expires">{formatTime(job.expiresAtUnixSeconds)}</MetaItem>
+        </dl>
+        <div className="grid gap-2">
+          <h5 className="m-0 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Counts
+          </h5>
+          <dl className="m-0 grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
+            {Object.entries(job.progress).map(([key, value]) => (
+              <MetaItem key={key} term={key}>
+                <span className="tabular-nums">{value.toLocaleString()}</span>
+              </MetaItem>
+            ))}
+          </dl>
+        </div>
+        {job.manifest === null ? null : (
+          <p className="m-0 text-sm text-muted-foreground">
+            Manifest: {job.manifest.rowCount.toLocaleString()} rows,{" "}
+            {job.manifest.byteCount.toLocaleString()} bytes, schema version{" "}
+            {job.manifest.schemaVersion}, digest <code className={CODE}>{job.manifest.digest}</code>
+            , finalized {formatTime(job.manifest.finalizedAtUnixSeconds)}.
+          </p>
+        )}
+        {diagnostics.length > 0 ? (
+          <Alert variant="destructive" role="status">
+            <AlertTriangle aria-hidden="true" />
+            <AlertTitle>Failure diagnostic</AlertTitle>
+            <AlertDescription>
+              <ul className="m-0 list-disc pl-4">
+                {diagnostics.map((diagnostic) => (
+                  <li key={diagnostic.id}>{diagnostic.message}</li>
+                ))}
+              </ul>
+            </AlertDescription>
+          </Alert>
+        ) : job.state === "failed" ? (
+          <Alert variant="destructive" role="status">
+            <AlertTriangle aria-hidden="true" />
+            <AlertDescription>The job failed without a retained diagnostic.</AlertDescription>
+          </Alert>
         ) : null}
-        {job.kind === "export" && job.state === "succeeded" ? (
-          <button type="button" onClick={onDownload}>
-            Download and verify
-          </button>
-        ) : null}
-        {job.state === "awaiting_confirmation" ? (
-          <button type="button" onClick={onReview}>
-            Review execution
-          </button>
-        ) : null}
-        {cancellable(job) ? (
-          <button type="button" className="secondary" onClick={onCancel}>
-            Cancel job
-          </button>
-        ) : null}
-      </div>
-      {uploadGrant === null ? null : (
-        <p className="notice" role="status">
-          Upload grant: <code>{uploadGrant.method}</code> <code>{uploadGrant.url}</code>, expires{" "}
-          {formatTime(uploadGrant.expiresAtUnixSeconds)}. Send the JSON Lines file with a{" "}
-          <code>Digest: sha-256=…</code> header, then run the dry run.
-        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          {job.kind === "import" && job.state === "awaiting_upload" ? (
+            <Button size="sm" onClick={onIssueUploadGrant}>
+              Issue upload grant
+            </Button>
+          ) : null}
+          {job.kind === "export" && job.state === "succeeded" ? (
+            <Button size="sm" onClick={onDownload}>
+              Download and verify
+            </Button>
+          ) : null}
+          {job.state === "awaiting_confirmation" ? (
+            <Button size="sm" onClick={onReview}>
+              Review execution
+            </Button>
+          ) : null}
+          {cancellable(job) ? (
+            <Button size="sm" variant="outline" onClick={onCancel}>
+              Cancel job
+            </Button>
+          ) : null}
+        </div>
+        {uploadGrant === null ? null : (
+          <Alert role="status">
+            <Info aria-hidden="true" />
+            <AlertDescription className="block">
+              Upload grant: <code className={CODE}>{uploadGrant.method}</code>{" "}
+              <code className={CODE}>{uploadGrant.url}</code>, expires{" "}
+              {formatTime(uploadGrant.expiresAtUnixSeconds)}. Send the JSON Lines file with a{" "}
+              <code className={CODE}>Digest: sha-256=…</code> header, then run the dry run.
+            </AlertDescription>
+          </Alert>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/** One of the quiet text actions at the end of a table row; `emphasis` marks the primary one. */
+function RowAction({
+  emphasis = false,
+  className,
+  ...props
+}: {
+  readonly emphasis?: boolean;
+  readonly className?: string;
+  readonly "aria-label"?: string;
+  readonly onClick: () => void;
+  readonly children: ReactNode;
+}) {
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      className={cn(
+        "h-7 px-2 text-xs",
+        emphasis
+          ? "text-primary hover:text-primary"
+          : "text-muted-foreground hover:text-foreground",
+        className,
       )}
-    </article>
+      {...props}
+    />
+  );
+}
+
+/** One term and its value in a metadata list. */
+function MetaItem({ term, children }: { readonly term: string; readonly children: ReactNode }) {
+  return (
+    <div className="grid gap-0.5">
+      <dt className="text-xs font-medium uppercase tracking-wider text-muted-foreground">{term}</dt>
+      <dd className="m-0 text-sm">{children}</dd>
+    </div>
   );
 }
 

@@ -330,12 +330,13 @@ Run `npm run validate:traceability` whenever a scenario or row changes. The vali
 | DC-05 | A developer opens a project | `apps/console/test-e2e/project-home.spec.ts::a project with two environments shows both with readiness and the selected environment's keys and quickstart` (mocked backend) | Automated |
 | DC-06 | Every destination is one click away | `apps/console/test-e2e/console-shell.spec.ts::a deep link opens inside the shell with its context and every destination` (mocked backend) | Automated |
 | DC-07 | A deep link opens inside the shell | `apps/console/test-e2e/console-shell.spec.ts::a deep link opens inside the shell with its context and every destination` (mocked backend) | Automated |
-| DC-08 | A developer reads retained logs | `apps/console/test-e2e/surfaced-capabilities.spec.ts::retained logs list newest first, filter by level and source, and page through the window` (mocked backend) | Automated |
-| DC-09 | A developer renames a team | `apps/console/test-e2e/surfaced-capabilities.spec.ts::a team administrator renames the team and the name follows everywhere` (mocked backend) | Automated |
-| DC-10 | A developer checks a project's usage | `apps/console/test-e2e/usage-activity.spec.ts::project usage lists every environment and the team's bill with a negative balance marked` (mocked backend) | Automated |
-| DC-11 | A developer reviews recent activity | `apps/console/test-e2e/usage-activity.spec.ts::the activity feed lists newest first, filters by outcome and action, and loads more` (mocked backend) | Automated |
-| DC-12 | A developer transfers a project to a team | `apps/console/test-e2e/project-home.spec.ts::transferring a personal project to a team confirms, posts the team, and shows the new owner` (mocked backend) and `crates/mako-smoke/tests/project_transfer.rs::a_project_is_transferred_between_a_personal_space_and_a_team` (end-to-end) | Automated |
-| DC-13 | A developer deletes a project | `apps/console/test-e2e/project-home.spec.ts::settings shows identifiers and owner and offers deletion with grace` (mocked backend) | Automated |
+| DC-08 | The console follows the developer's theme | `apps/console/test-e2e/design-system.spec.ts::the console follows the developer's theme and remembers it on the device` (mocked backend) | Automated |
+| DC-09 | A developer reads retained logs | `apps/console/test-e2e/surfaced-capabilities.spec.ts::retained logs list newest first, filter by level and source, and page through the window` (mocked backend) | Automated |
+| DC-10 | A developer renames a team | `apps/console/test-e2e/surfaced-capabilities.spec.ts::a team administrator renames the team and the name follows everywhere` (mocked backend) | Automated |
+| DC-11 | A developer checks a project's usage | `apps/console/test-e2e/usage-activity.spec.ts::project usage lists every environment and the team's bill with a negative balance marked` (mocked backend) | Automated |
+| DC-12 | A developer reviews recent activity | `apps/console/test-e2e/usage-activity.spec.ts::the activity feed lists newest first, filters by outcome and action, and loads more` (mocked backend) | Automated |
+| DC-13 | A developer transfers a project to a team | `apps/console/test-e2e/project-home.spec.ts::transferring a personal project to a team confirms, posts the team, and shows the new owner` (mocked backend) and `crates/mako-smoke/tests/project_transfer.rs::a_project_is_transferred_between_a_personal_space_and_a_team` (end-to-end) | Automated |
+| DC-14 | A developer deletes a project | `apps/console/test-e2e/project-home.spec.ts::settings shows identifiers and owner and offers deletion with grace` (mocked backend) | Automated |
 
 ## Samples / Rational money app
 
@@ -396,4 +397,14 @@ Run `npm run validate:traceability` whenever a scenario or row changes. The vali
 | RA-53 | The household's transactions are exported | `examples/rational/test/settings.spec.ts::the household's transactions and accounts are exported as CSV files` (mocked backend) and `examples/rational/test-unit/export.test.mjs` | Automated |
 | RA-54 | The household switches budget mode | `examples/rational/test/settings.spec.ts::the household switches budget mode from its settings and back` (mocked backend) | Automated |
 | RA-55 | Parity is at least ninety percent | `scripts/test/validate-rational-parity.test.js::the repository's own matrix parses and clears the promised coverage` and `scripts/validate-rational-parity.js` over `examples/rational/MONARCH-PARITY.md` | Automated |
+| RA-56 | The theme preference dresses every screen | `examples/rational/test/design-system.spec.ts::the theme preference dresses every screen and is remembered on the device` (mocked backend) | Automated |
+| RA-57 | A money table reads at a glance | `examples/rational/test/design-system.spec.ts::a money table reads at a glance: tabular, right-aligned, signed and coloured` (mocked backend) | Automated |
+| RA-58 | The parity measure is unchanged by the re-skin | `scripts/test/validate-rational-parity.test.js::the repository's own matrix parses and clears the promised coverage` | Automated |
+| DS-01 | Tokens follow the theme | `packages/ui/test/tokens.test.mjs::text stays readable on its surface in both themes (AA, 4.5:1)` | Automated |
+| DS-02 | An application adopts the kit with one import | `packages/ui/test/tokens.test.mjs::one import brings the framework, the typeface, the kit's own classes, and the base` | Automated |
+| DS-03 | A raw control slips into an application | `scripts/test/validate-ui-kit.test.js::a raw control in an application source is refused by file and line` | Automated |
+| DS-04 | A dialog is opened from the keyboard | `examples/rational/test/design-system.spec.ts::a dialog is opened from the keyboard, closes on Escape, and gives focus back` (mocked backend) | Automated |
+| DS-05 | A series is shown | `examples/rational/test/design-system.spec.ts::a chart names what it shows and explains the point under the pointer` (mocked backend) | Automated |
+| DS-06 | A chart comes to rest | `examples/rational/test/design-system.spec.ts::a chart settles instead of redrawing itself forever` (mocked backend) | Automated |
+| DS-07 | The exported application builds alone | `scripts/test/export-rational-app.test.js::the export vendors the kit and resolves its package name to the vendored copy` | Automated |
 

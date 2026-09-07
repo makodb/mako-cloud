@@ -93,4 +93,15 @@ and one palette. The chunks:
 | `primitives` | Radix primitives | 30 KB |
 
 The Inter variable font adds 48 KB for Latin, with the other scripts loaded only when a page
-uses them. The console's numbers are recorded when its re-skin lands.
+uses them.
+
+The console, same build, same units. Before the re-skin it shipped one script of 168 KB with 7 KB
+of hand-written CSS; on the kit it ships 223 KB in four chunks and 12 KB of CSS. It draws no
+charts, so it pays for the primitives and not for Recharts:
+
+| Chunk | What is in it | Gzipped |
+| --- | --- | --- |
+| `index` | The console's own screens and its management SDK | 128 KB |
+| `react` | React and the scheduler | 59 KB |
+| `primitives` | Radix primitives | 19 KB |
+| `vendor` | Lucide icons in use, Tailwind runtime helpers, everything else | 18 KB |

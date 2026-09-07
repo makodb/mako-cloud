@@ -1,17 +1,43 @@
-import { type FormEvent, useCallback, useEffect, useState } from "react";
-
 import type {
   AuthProviderKind,
   AuthProviderView,
   AuthSettings,
   AuthSettingsUpdate,
 } from "@mako-cloud/management-sdk";
+import {
+  Alert,
+  AlertDescription,
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  Checkbox,
+  Eyebrow,
+  Field,
+  Input,
+  Label,
+  NativeSelect,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  Textarea,
+} from "@mako-cloud/ui";
+import { CircleCheck, Plus } from "lucide-react";
+import { type FormEvent, useCallback, useEffect, useState } from "react";
 
 import { ApiFailureNotice, type ConsoleApiFailure, toConsoleApiFailure } from "./api-error.js";
 import { useManagementClient } from "./management.js";
 
 const PROVIDER_NAME_PATTERN = "[a-z][a-z0-9-]{1,63}";
 const DEFAULT_LINK_TTL_SECONDS = 900;
+
+/** An identifier the developer will copy: a name, a client id, a URL. */
+const MONO = "rounded-sm bg-muted px-1 py-0.5 font-mono text-[0.85em]";
 
 /** A provider as the developer is editing it: the installed view plus a
  * secret typed this session, which is sent once and never shown again. */
@@ -160,230 +186,304 @@ export function AuthProvidersScreen({
   };
 
   return (
-    <section aria-labelledby="auth-providers-title" className="auth-providers-screen">
-      <div className="section-heading">
-        <div>
-          <p className="eyebrow">Environment {environmentId}</p>
-          <h1 id="auth-providers-title">Auth providers</h1>
-          <p>
+    <section aria-labelledby="auth-providers-title" className="grid gap-6">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="grid max-w-3xl gap-1">
+          <Eyebrow>Environment {environmentId}</Eyebrow>
+          <h1 id="auth-providers-title" className="text-2xl">
+            Auth providers
+          </h1>
+          <p className="m-0 text-sm text-muted-foreground">
             How your application's users sign in besides email and password: external OpenID Connect
             and GitHub providers, the pages the sign-in flow may return to, and magic links. Client
             secrets are sealed on save and never shown again.
           </p>
         </div>
-        {installed === null ? null : <p className="muted">Installed version {installed.version}</p>}
+        {installed === null ? null : (
+          <p className="m-0 text-sm text-muted-foreground tabular-nums">
+            Installed version {installed.version}
+          </p>
+        )}
       </div>
       {failure === null ? null : <ApiFailureNotice failure={failure} />}
       {status === null ? null : (
-        <p role="status" className="notice success">
-          {status}
-        </p>
+        <Alert variant="positive" role="status">
+          <CircleCheck aria-hidden="true" />
+          <AlertDescription>{status}</AlertDescription>
+        </Alert>
       )}
       {installed === null && failure === null ? (
-        <p role="status">Loading sign-in settings…</p>
+        <p role="status" className="m-0 text-sm text-muted-foreground">
+          Loading sign-in settings…
+        </p>
       ) : null}
 
-      <h2 id="providers-heading">Sign-in providers</h2>
-      {providers.length === 0 ? (
-        <p className="muted">No external providers yet. Add one below.</p>
-      ) : (
-        <table aria-labelledby="providers-heading" className="data-table">
-          <thead>
-            <tr>
-              <th scope="col">Provider</th>
-              <th scope="col">Kind</th>
-              <th scope="col">Client ID</th>
-              <th scope="col">Scopes</th>
-              <th scope="col">Secret</th>
-              <th scope="col">Enabled</th>
-              <th scope="col">
-                <span className="visually-hidden">Actions</span>
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {providers.map((provider) => (
-              <tr key={provider.name}>
-                <th scope="row">
-                  <code>{provider.name}</code>
-                </th>
-                <td>{describeKind(provider.kind)}</td>
-                <td>
-                  <code>{provider.clientId}</code>
-                </td>
-                <td>{provider.scopes.length === 0 ? "—" : provider.scopes.join(" ")}</td>
-                <td>
-                  <label className="visually-hidden" htmlFor={`secret-${provider.name}`}>
-                    New client secret for {provider.name}
-                  </label>
-                  <input
-                    id={`secret-${provider.name}`}
-                    type="password"
-                    autoComplete="off"
-                    placeholder={provider.hasSecret ? "Stored — enter to replace" : "Required"}
-                    value={provider.newSecret ?? ""}
-                    onChange={(event) => {
-                      const secret = event.currentTarget.value;
-                      edit((current) =>
-                        current.map((candidate) =>
-                          candidate.name === provider.name
-                            ? { ...candidate, newSecret: secret === "" ? null : secret }
-                            : candidate,
-                        ),
-                      );
-                    }}
-                  />
-                  <span className="muted">
-                    {provider.newSecret !== null
-                      ? " will be replaced on save"
-                      : provider.hasSecret
-                        ? " stored"
-                        : " none yet"}
-                  </span>
-                </td>
-                <td>
-                  <input
-                    type="checkbox"
-                    aria-label={`${provider.name} enabled`}
-                    checked={provider.enabled}
-                    onChange={(event) => {
-                      const enabled = event.currentTarget.checked;
-                      edit((current) =>
-                        current.map((candidate) =>
-                          candidate.name === provider.name ? { ...candidate, enabled } : candidate,
-                        ),
-                      );
-                    }}
-                  />
-                </td>
-                <td>
-                  <button
-                    type="button"
-                    className="link-button"
-                    onClick={() =>
-                      edit((current) =>
-                        current.filter((candidate) => candidate.name !== provider.name),
-                      )
-                    }
-                  >
-                    Remove {provider.name}
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-      <p className="muted">
-        Register this callback with each provider:{" "}
-        <code>
-          {`{api}`}/v1/projects/{projectId}/environments/{environmentId}/auth/providers/{"{"}
-          name{"}"}/callback
-        </code>
-        , where <code>{`{api}`}</code> is the environment's API URL shown on Connect.
-      </p>
+      <Card>
+        <CardHeader>
+          <CardTitle id="providers-heading">Sign-in providers</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-4">
+          {providers.length === 0 ? (
+            <p className="m-0 text-sm text-muted-foreground">
+              No external providers yet. Add one below.
+            </p>
+          ) : (
+            <Table aria-labelledby="providers-heading">
+              <TableHeader>
+                <TableRow className="hover:bg-transparent">
+                  <TableHead scope="col">Provider</TableHead>
+                  <TableHead scope="col">Kind</TableHead>
+                  <TableHead scope="col">Client ID</TableHead>
+                  <TableHead scope="col">Scopes</TableHead>
+                  <TableHead scope="col">Secret</TableHead>
+                  <TableHead scope="col">Enabled</TableHead>
+                  <TableHead scope="col">
+                    <span className="sr-only">Actions</span>
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {providers.map((provider) => (
+                  <TableRow key={provider.name}>
+                    <TableHead scope="row">
+                      <code className="font-mono text-sm">{provider.name}</code>
+                    </TableHead>
+                    <TableCell className="whitespace-normal">
+                      {describeKind(provider.kind)}
+                    </TableCell>
+                    <TableCell>
+                      <code className="font-mono text-xs">{provider.clientId}</code>
+                    </TableCell>
+                    <TableCell className="whitespace-normal font-mono text-xs text-muted-foreground">
+                      {provider.scopes.length === 0 ? "—" : provider.scopes.join(" ")}
+                    </TableCell>
+                    <TableCell className="whitespace-normal">
+                      <Label className="sr-only" htmlFor={`secret-${provider.name}`}>
+                        New client secret for {provider.name}
+                      </Label>
+                      <Input
+                        id={`secret-${provider.name}`}
+                        type="password"
+                        autoComplete="off"
+                        className="w-60"
+                        placeholder={provider.hasSecret ? "Stored — enter to replace" : "Required"}
+                        value={provider.newSecret ?? ""}
+                        onChange={(event) => {
+                          const secret = event.currentTarget.value;
+                          edit((current) =>
+                            current.map((candidate) =>
+                              candidate.name === provider.name
+                                ? { ...candidate, newSecret: secret === "" ? null : secret }
+                                : candidate,
+                            ),
+                          );
+                        }}
+                      />
+                      <span className="block text-xs text-muted-foreground">
+                        {provider.newSecret !== null
+                          ? " will be replaced on save"
+                          : provider.hasSecret
+                            ? " stored"
+                            : " none yet"}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      <Checkbox
+                        aria-label={`${provider.name} enabled`}
+                        checked={provider.enabled}
+                        onCheckedChange={(checked) => {
+                          const enabled = checked === true;
+                          edit((current) =>
+                            current.map((candidate) =>
+                              candidate.name === provider.name
+                                ? { ...candidate, enabled }
+                                : candidate,
+                            ),
+                          );
+                        }}
+                      />
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-muted-foreground hover:text-destructive"
+                        onClick={() =>
+                          edit((current) =>
+                            current.filter((candidate) => candidate.name !== provider.name),
+                          )
+                        }
+                      >
+                        Remove {provider.name}
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+          <p className="m-0 text-sm text-muted-foreground">
+            Register this callback with each provider:{" "}
+            <code className={`${MONO} break-all`}>
+              {`{api}`}/v1/projects/{projectId}/environments/{environmentId}/auth/providers/{"{"}
+              name{"}"}/callback
+            </code>
+            , where <code className={MONO}>{`{api}`}</code> is the environment's API URL shown on
+            Connect.
+          </p>
+        </CardContent>
+      </Card>
 
-      <form className="stacked-form" onSubmit={addProvider} aria-labelledby="add-provider-heading">
-        <h3 id="add-provider-heading">Add a provider</h3>
-        <label>
-          Name
-          <input
-            name="name"
-            required
-            pattern={PROVIDER_NAME_PATTERN}
-            placeholder="google"
-            autoComplete="off"
+      <Card>
+        <CardHeader>
+          <CardTitle as="h3" id="add-provider-heading">
+            Add a provider
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <form
+            className="grid gap-4"
+            onSubmit={addProvider}
+            aria-labelledby="add-provider-heading"
+          >
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Name" htmlFor="add-provider-name">
+                <Input
+                  id="add-provider-name"
+                  name="name"
+                  required
+                  pattern={PROVIDER_NAME_PATTERN}
+                  placeholder="google"
+                  autoComplete="off"
+                  className="font-mono"
+                />
+              </Field>
+              <Field label="Kind" htmlFor="add-provider-kind">
+                <NativeSelect id="add-provider-kind" name="kind" defaultValue="oidc">
+                  <option value="oidc">OpenID Connect</option>
+                  <option value="git_hub">GitHub</option>
+                </NativeSelect>
+              </Field>
+              <Field label="Issuer (OpenID Connect only)" htmlFor="add-provider-issuer">
+                <Input
+                  id="add-provider-issuer"
+                  name="issuer"
+                  type="url"
+                  placeholder="https://accounts.google.com"
+                  className="font-mono"
+                />
+              </Field>
+              <Field label="Client ID" htmlFor="add-provider-client-id">
+                <Input
+                  id="add-provider-client-id"
+                  name="clientId"
+                  required
+                  autoComplete="off"
+                  className="font-mono"
+                />
+              </Field>
+              <Field label="Client secret" htmlFor="add-provider-client-secret">
+                <Input
+                  id="add-provider-client-secret"
+                  name="clientSecret"
+                  type="password"
+                  autoComplete="off"
+                />
+              </Field>
+              <Field label="Scopes (space separated)" htmlFor="add-provider-scopes">
+                <Input
+                  id="add-provider-scopes"
+                  name="scopes"
+                  placeholder="openid email profile"
+                  className="font-mono"
+                />
+              </Field>
+            </div>
+            <div className="flex items-center gap-2">
+              <Checkbox id="add-provider-enabled" name="enabled" defaultChecked />
+              <Label htmlFor="add-provider-enabled">Enabled</Label>
+            </div>
+            <Button type="submit" variant="secondary" className="justify-self-start">
+              <Plus aria-hidden="true" />
+              Add provider
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle id="redirects-heading">Redirect URLs</CardTitle>
+          <CardDescription>
+            One per line. A sign-in may only return users to a page listed here; anything else is
+            refused before the provider is contacted. Use <code className={MONO}>https</code>, or{" "}
+            <code className={MONO}>http</code> on localhost for development.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Label className="sr-only" htmlFor="redirect-urls">
+            Redirect URLs
+          </Label>
+          <Textarea
+            id="redirect-urls"
+            aria-labelledby="redirects-heading"
+            rows={4}
+            className="min-h-24 font-mono text-xs leading-relaxed"
+            value={redirectUrls}
+            onChange={(event) => {
+              setRedirectUrls(event.currentTarget.value);
+              setDirty(true);
+              setStatus(null);
+            }}
           />
-        </label>
-        <label>
-          Kind
-          <select name="kind" defaultValue="oidc">
-            <option value="oidc">OpenID Connect</option>
-            <option value="git_hub">GitHub</option>
-          </select>
-        </label>
-        <label>
-          Issuer (OpenID Connect only)
-          <input name="issuer" type="url" placeholder="https://accounts.google.com" />
-        </label>
-        <label>
-          Client ID
-          <input name="clientId" required autoComplete="off" />
-        </label>
-        <label>
-          Client secret
-          <input name="clientSecret" type="password" autoComplete="off" />
-        </label>
-        <label>
-          Scopes (space separated)
-          <input name="scopes" placeholder="openid email profile" />
-        </label>
-        <label>
-          <input name="enabled" type="checkbox" defaultChecked /> Enabled
-        </label>
-        <button type="submit">Add provider</button>
-      </form>
+        </CardContent>
+      </Card>
 
-      <h2 id="redirects-heading">Redirect URLs</h2>
-      <p className="muted">
-        One per line. A sign-in may only return users to a page listed here; anything else is
-        refused before the provider is contacted. Use <code>https</code>, or <code>http</code> on
-        localhost for development.
-      </p>
-      <label>
-        <span className="visually-hidden">Redirect URLs</span>
-        <textarea
-          aria-labelledby="redirects-heading"
-          rows={4}
-          value={redirectUrls}
-          onChange={(event) => {
-            setRedirectUrls(event.currentTarget.value);
-            setDirty(true);
-            setStatus(null);
-          }}
-        />
-      </label>
+      <Card>
+        <CardHeader>
+          <CardTitle id="magic-links-heading">Magic links</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-4">
+          <div className="flex items-center gap-2">
+            <Checkbox
+              id="magic-links-enabled"
+              checked={magicLinks.enabled}
+              onCheckedChange={(checked) => {
+                const enabled = checked === true;
+                setMagicLinks((current) => ({ ...current, enabled }));
+                setDirty(true);
+                setStatus(null);
+              }}
+            />
+            <Label htmlFor="magic-links-enabled">Let users sign in by emailed link</Label>
+          </div>
+          <Field label="Link lifetime (seconds)" htmlFor="magic-link-ttl" className="max-w-xs">
+            <Input
+              id="magic-link-ttl"
+              type="number"
+              min={60}
+              max={3600}
+              value={magicLinks.linkTtlSeconds}
+              onChange={(event) => {
+                const linkTtlSeconds = Number(event.currentTarget.value);
+                setMagicLinks((current) => ({ ...current, linkTtlSeconds }));
+                setDirty(true);
+                setStatus(null);
+              }}
+            />
+          </Field>
+          <p className="m-0 text-sm text-muted-foreground">
+            The email a magic link goes out in is the environment's magic-link template.
+          </p>
+        </CardContent>
+      </Card>
 
-      <h2 id="magic-links-heading">Magic links</h2>
-      <label>
-        <input
-          type="checkbox"
-          checked={magicLinks.enabled}
-          onChange={(event) => {
-            const enabled = event.currentTarget.checked;
-            setMagicLinks((current) => ({ ...current, enabled }));
-            setDirty(true);
-            setStatus(null);
-          }}
-        />{" "}
-        Let users sign in by emailed link
-      </label>
-      <label>
-        Link lifetime (seconds)
-        <input
-          type="number"
-          min={60}
-          max={3600}
-          value={magicLinks.linkTtlSeconds}
-          onChange={(event) => {
-            const linkTtlSeconds = Number(event.currentTarget.value);
-            setMagicLinks((current) => ({ ...current, linkTtlSeconds }));
-            setDirty(true);
-            setStatus(null);
-          }}
-        />
-      </label>
-      <p className="muted">
-        The email a magic link goes out in is the environment's magic-link template.
-      </p>
-
-      <div className="form-actions">
-        <button type="button" onClick={() => void save()} disabled={saving || !dirty}>
+      <div className="flex flex-wrap gap-2">
+        <Button onClick={() => void save()} disabled={saving || !dirty}>
           {saving ? "Saving…" : "Save sign-in settings"}
-        </button>
-        <button
-          type="button"
-          className="secondary"
+        </Button>
+        <Button
+          variant="outline"
           disabled={saving || !dirty || installed === null}
           onClick={() => {
             if (installed !== null) {
@@ -393,7 +493,7 @@ export function AuthProvidersScreen({
           }}
         >
           Discard changes
-        </button>
+        </Button>
       </div>
     </section>
   );

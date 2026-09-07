@@ -4,7 +4,29 @@
 // actor, action, target, outcome, and time rendered. A project's feed unions
 // its environments' feeds client-side and is bounded; an environment's feed
 // pages through its cursor. Record details are rendered as text only.
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  Alert,
+  AlertDescription,
+  Badge,
+  Button,
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  Eyebrow,
+  Field,
+  Input,
+  NativeSelect,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@mako-cloud/ui";
+import { useCallback, useEffect, useId, useMemo, useState } from "react";
 
 import type {
   Environment,
@@ -24,6 +46,13 @@ const OUTCOMES: readonly Outcome[] = ["allowed", "denied", "failed"];
 const PAGE_LIMIT = 100;
 /** A project's union is bounded to this many rows; the bound is stated. */
 const PROJECT_FEED_BOUND = 100;
+
+/** How an outcome is coloured: quiet when allowed, amber when refused, red when it broke. */
+const OUTCOME_VARIANTS: Readonly<Record<Outcome, "outline" | "warning" | "destructive">> = {
+  allowed: "outline",
+  denied: "warning",
+  failed: "destructive",
+};
 
 export interface ActivityRow {
   readonly id: string;
@@ -69,6 +98,7 @@ export function ActivityScreen({
   const [moreFailure, setMoreFailure] = useState<ConsoleApiFailure | null>(null);
   const [outcome, setOutcome] = useState<OutcomeFilter>("all");
   const [actionText, setActionText] = useState("");
+  const filterId = useId();
 
   useEffect(() => {
     let active = true;
@@ -124,98 +154,108 @@ export function ActivityScreen({
   );
 
   return (
-    <section
-      className="activity-screen panel"
-      data-state={state.status}
-      aria-labelledby="activity-title"
-    >
-      <div className="button-row spread usage-section-heading">
-        <div>
-          <p className="eyebrow">
-            {environmentId === undefined ? `Project ${projectId}` : `Environment ${environmentId}`}
+    <Card className="activity-screen" data-state={state.status} aria-labelledby="activity-title">
+      <CardHeader>
+        <Eyebrow>
+          {environmentId === undefined ? "Project " : "Environment "}
+          <span className="font-mono tracking-normal normal-case">
+            {environmentId === undefined ? projectId : environmentId}
+          </span>
+        </Eyebrow>
+        <CardTitle as="h1" id="activity-title" className="text-2xl">
+          Recent activity
+        </CardTitle>
+        <CardDescription>
+          Audited actions, newest first, as the audit trail retains them for what your memberships
+          allow you to read.
+        </CardDescription>
+        <CardAction>
+          <FeedStateBadge state={state.status} />
+        </CardAction>
+      </CardHeader>
+      <CardContent className="grid gap-4">
+        {state.status === "unavailable" ? <ApiFailureNotice failure={state.failure} /> : null}
+        {state.status === "ready" ? (
+          <FeedProvenance feed={state.feed} project={environmentId === undefined} />
+        ) : null}
+        <form
+          className="grid gap-3 sm:grid-cols-[minmax(0,12rem)_minmax(0,20rem)]"
+          aria-label="Activity filters"
+          onSubmit={(event) => event.preventDefault()}
+        >
+          <Field label="Outcome" htmlFor={`${filterId}-outcome`}>
+            <NativeSelect
+              id={`${filterId}-outcome`}
+              name="outcome"
+              value={outcome}
+              onChange={(event) => setOutcome(event.currentTarget.value as OutcomeFilter)}
+            >
+              <option value="all">All outcomes</option>
+              {OUTCOMES.map((value) => (
+                <option key={value} value={value}>
+                  {value}
+                </option>
+              ))}
+            </NativeSelect>
+          </Field>
+          <Field label="Action" htmlFor={`${filterId}-action`}>
+            <Input
+              id={`${filterId}-action`}
+              name="action"
+              type="search"
+              value={actionText}
+              placeholder="e.g. policy.activate"
+              onChange={(event) => setActionText(event.currentTarget.value)}
+            />
+          </Field>
+        </form>
+        {state.status === "loading" ? (
+          <p className="m-0 text-sm text-muted-foreground" aria-live="polite">
+            Loading recent activity…
           </p>
-          <h1 id="activity-title">Recent activity</h1>
+        ) : state.status === "ready" ? (
+          <ActivityTable rows={visibleRows} showEnvironment={environmentId === undefined} />
+        ) : null}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <small className="text-xs text-muted-foreground" aria-live="polite">
+            Showing {visibleRows.length} of {rows.length} loaded events
+            {environmentId === undefined && state.status === "ready"
+              ? ` (the ${PROJECT_FEED_BOUND} most recent across ${state.feed.environmentCount} environments)`
+              : ""}
+            .
+          </small>
+          {environmentId === undefined ? null : (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={state.status !== "ready" || state.feed.nextCursor === null || loadingMore}
+              onClick={() => void loadMore()}
+            >
+              {loadingMore ? "Loading…" : "Load more"}
+            </Button>
+          )}
         </div>
-        <span className={`status-pill ${state.status === "ready" ? "current" : state.status}`}>
-          {state.status === "ready"
-            ? "Current"
-            : state.status === "loading"
-              ? "Loading"
-              : "Unavailable"}
-        </span>
-      </div>
-      <p>
-        Audited actions, newest first, as the audit trail retains them for what your memberships
-        allow you to read.
-      </p>
-      {state.status === "unavailable" ? <ApiFailureNotice failure={state.failure} /> : null}
-      {state.status === "ready" ? (
-        <FeedProvenance feed={state.feed} project={environmentId === undefined} />
-      ) : null}
-      <form
-        className="filter-grid activity-filters"
-        aria-label="Activity filters"
-        onSubmit={(event) => event.preventDefault()}
-      >
-        <label>
-          Outcome
-          <select
-            name="outcome"
-            value={outcome}
-            onChange={(event) => setOutcome(event.currentTarget.value as OutcomeFilter)}
-          >
-            <option value="all">All outcomes</option>
-            {OUTCOMES.map((value) => (
-              <option key={value} value={value}>
-                {value}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Action
-          <input
-            name="action"
-            type="search"
-            value={actionText}
-            placeholder="e.g. policy.activate"
-            onChange={(event) => setActionText(event.currentTarget.value)}
-          />
-        </label>
-      </form>
-      {state.status === "loading" ? (
-        <p aria-live="polite">Loading recent activity…</p>
-      ) : state.status === "ready" ? (
-        <ActivityTable rows={visibleRows} showEnvironment={environmentId === undefined} />
-      ) : null}
-      <div className="button-row spread">
-        <small aria-live="polite">
-          Showing {visibleRows.length} of {rows.length} loaded events
-          {environmentId === undefined && state.status === "ready"
-            ? ` (the ${PROJECT_FEED_BOUND} most recent across ${state.feed.environmentCount} environments)`
-            : ""}
-          .
-        </small>
-        {environmentId === undefined ? null : (
-          <button
-            type="button"
-            className="secondary"
-            disabled={state.status !== "ready" || state.feed.nextCursor === null || loadingMore}
-            onClick={() => void loadMore()}
-          >
-            {loadingMore ? "Loading…" : "Load more"}
-          </button>
-        )}
-      </div>
-      <ApiFailureNotice failure={moreFailure} />
-    </section>
+        <ApiFailureNotice failure={moreFailure} />
+      </CardContent>
+    </Card>
+  );
+}
+
+/** Whether the feed is current, still loading, or could not be read. */
+function FeedStateBadge({ state }: { readonly state: FeedState["status"] }) {
+  return (
+    <Badge
+      variant={state === "ready" ? "positive" : state === "loading" ? "secondary" : "destructive"}
+    >
+      {state === "ready" ? "Current" : state === "loading" ? "Loading" : "Unavailable"}
+    </Badge>
   );
 }
 
 function FeedProvenance({ feed, project }: { readonly feed: Feed; readonly project: boolean }) {
   return (
     <>
-      <p className="observed-at">
+      <p className="m-0 text-sm text-muted-foreground">
         {feed.observedAt === null ? (
           "No retained audit records were observed."
         ) : (
@@ -232,16 +272,20 @@ function FeedProvenance({ feed, project }: { readonly feed: Feed; readonly proje
         )}
       </p>
       {project && feed.partial.length > 0 ? (
-        <div className="notice warning" role="status">
-          <p>Activity from some environments could not be read; the feed below is partial.</p>
-          <ul>
-            {feed.partial.map((entry) => (
-              <li key={entry.environmentId}>
-                {entry.environmentName}: {entry.failure.message}
-              </li>
-            ))}
-          </ul>
-        </div>
+        <Alert variant="warning" role="status">
+          <AlertDescription className="block">
+            <p className="m-0">
+              Activity from some environments could not be read; the feed below is partial.
+            </p>
+            <ul className="m-0 mt-1 list-disc pl-5">
+              {feed.partial.map((entry) => (
+                <li key={entry.environmentId}>
+                  {entry.environmentName}: {entry.failure.message}
+                </li>
+              ))}
+            </ul>
+          </AlertDescription>
+        </Alert>
       ) : null}
     </>
   );
@@ -255,61 +299,66 @@ function ActivityTable({
   readonly showEnvironment: boolean;
 }) {
   if (rows.length === 0) {
-    return <p>No audited actions match these filters.</p>;
+    return (
+      <p className="m-0 text-sm text-muted-foreground">No audited actions match these filters.</p>
+    );
   }
+  // `activity-table` is the hook the browser suite selects on.
   return (
-    <div className="table-scroll">
-      <table className="activity-table">
-        <thead>
-          <tr>
-            <th scope="col">Time</th>
-            {showEnvironment ? <th scope="col">Environment</th> : null}
-            <th scope="col">Actor</th>
-            <th scope="col">Action</th>
-            <th scope="col">Target</th>
-            <th scope="col">Outcome</th>
-            <th scope="col">Details</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr key={row.id} data-outcome={row.payload.outcome}>
-              <td>
-                <time dateTime={row.timestamp}>{localTime(row.timestamp)}</time>
-              </td>
-              {showEnvironment ? <td>{row.environmentName}</td> : null}
-              <td>
-                <code>{row.payload.actorId}</code>
-              </td>
-              <td>{humanizeAction(row.payload.action)}</td>
-              <td>
-                <code>{row.payload.target}</code>
-              </td>
-              <td>
-                <span className={`outcome-badge outcome-${row.payload.outcome}`}>
-                  {row.payload.outcome}
-                </span>
-              </td>
-              <td className="activity-details">
-                {/* Details are operator-written free text: rendered as a text
-                    node, never as markup. */}
-                {row.payload.details === null || row.payload.details === "" ? (
-                  "—"
-                ) : (
-                  <>
-                    {row.payload.details}
-                    <small>
-                      {" "}
-                      · request <code>{row.payload.requestId}</code>
-                    </small>
-                  </>
-                )}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <Table className="activity-table">
+      <TableHeader>
+        <TableRow className="hover:bg-transparent">
+          <TableHead scope="col">Time</TableHead>
+          {showEnvironment ? <TableHead scope="col">Environment</TableHead> : null}
+          <TableHead scope="col">Actor</TableHead>
+          <TableHead scope="col">Action</TableHead>
+          <TableHead scope="col">Target</TableHead>
+          <TableHead scope="col">Outcome</TableHead>
+          <TableHead scope="col">Details</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {rows.map((row) => (
+          <TableRow key={row.id} data-outcome={row.payload.outcome} className="align-top">
+            <TableCell className="align-top text-muted-foreground tabular-nums">
+              <time dateTime={row.timestamp}>{localTime(row.timestamp)}</time>
+            </TableCell>
+            {showEnvironment ? (
+              <TableCell className="align-top">{row.environmentName}</TableCell>
+            ) : null}
+            <TableCell className="align-top">
+              <code className="font-mono text-xs">{row.payload.actorId}</code>
+            </TableCell>
+            <TableCell className="align-top font-medium">
+              {humanizeAction(row.payload.action)}
+            </TableCell>
+            <TableCell className="align-top">
+              <code className="font-mono text-xs break-all whitespace-normal">
+                {row.payload.target}
+              </code>
+            </TableCell>
+            <TableCell className="align-top">
+              <Badge variant={OUTCOME_VARIANTS[row.payload.outcome]}>{row.payload.outcome}</Badge>
+            </TableCell>
+            <TableCell className="max-w-96 align-top break-words whitespace-pre-wrap">
+              {/* Details are operator-written free text: rendered as a text
+                  node, never as markup. */}
+              {row.payload.details === null || row.payload.details === "" ? (
+                "—"
+              ) : (
+                <>
+                  {row.payload.details}
+                  <small className="text-xs text-muted-foreground">
+                    {" "}
+                    · request <code className="font-mono">{row.payload.requestId}</code>
+                  </small>
+                </>
+              )}
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
   );
 }
 

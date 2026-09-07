@@ -1,10 +1,24 @@
-import { useCallback, useEffect, useState } from "react";
-
 import type {
   EmailTemplate,
   EmailTemplateKind,
   EmailTemplateRender,
 } from "@mako-cloud/management-sdk";
+import {
+  Alert,
+  AlertDescription,
+  Button,
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  cn,
+  Eyebrow,
+  Field,
+  Input,
+  Textarea,
+} from "@mako-cloud/ui";
+import { CircleCheck } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 
 import { ApiFailureNotice, type ConsoleApiFailure, toConsoleApiFailure } from "./api-error.js";
 import { useManagementClient } from "./management.js";
@@ -30,6 +44,9 @@ export const TEMPLATE_KINDS: readonly {
 ];
 
 const COMMON_VARIABLES = ["link", "expires_at", "email", "project_name", "environment_name"];
+
+/** A `{{variable}}` placeholder as it appears in a template. */
+const VARIABLE = "rounded-sm bg-muted px-1 py-0.5 font-mono text-[0.85em]";
 
 export function variablesFor(kind: EmailTemplateKind): readonly string[] {
   return kind === "invitation" ? [...COMMON_VARIABLES, "inviter"] : COMMON_VARIABLES;
@@ -148,130 +165,149 @@ export function EmailTemplatesScreen({
   };
 
   return (
-    <section aria-labelledby="email-templates-title" className="email-templates-screen">
-      <div className="section-heading">
-        <div>
-          <p className="eyebrow">Environment {environmentId}</p>
-          <h1 id="email-templates-title">Email templates</h1>
-          <p>
-            The emails this environment sends its users. Plain text with{" "}
-            <code>{"{{variable}}"}</code> placeholders; no HTML, scripts, or remote content. Each
-            kind has a built-in default until you save your own.
-          </p>
-        </div>
+    <section aria-labelledby="email-templates-title" className="grid gap-6">
+      <div className="grid max-w-3xl gap-1">
+        <Eyebrow>Environment {environmentId}</Eyebrow>
+        <h1 id="email-templates-title" className="text-2xl">
+          Email templates
+        </h1>
+        <p className="m-0 text-sm text-muted-foreground">
+          The emails this environment sends its users. Plain text with{" "}
+          <code className={VARIABLE}>{"{{variable}}"}</code> placeholders; no HTML, scripts, or
+          remote content. Each kind has a built-in default until you save your own.
+        </p>
       </div>
       {failure === null ? null : <ApiFailureNotice failure={failure} />}
       {status === null ? null : (
-        <p className="notice success" role="status">
-          {status}
-        </p>
+        <Alert variant="positive" role="status">
+          <CircleCheck aria-hidden="true" />
+          <AlertDescription>{status}</AlertDescription>
+        </Alert>
       )}
-      {templates === null && failure === null ? <p role="status">Loading templates…</p> : null}
+      {templates === null && failure === null ? (
+        <p role="status" className="m-0 text-sm text-muted-foreground">
+          Loading templates…
+        </p>
+      ) : null}
 
-      <div className="template-layout">
-        <nav aria-label="Template kinds" className="template-kinds">
-          <ul>
+      <div className="grid items-start gap-6 lg:grid-cols-[16rem_minmax(0,1fr)]">
+        <nav aria-label="Template kinds">
+          <ul className="m-0 grid list-none gap-1 p-0">
             {TEMPLATE_KINDS.map((entry) => {
               const template = templates?.find((candidate) => candidate.kind === entry.kind);
+              const active = entry.kind === selected;
               return (
                 <li key={entry.kind}>
-                  <button
-                    type="button"
-                    className={entry.kind === selected ? "active" : ""}
-                    aria-current={entry.kind === selected ? "true" : undefined}
+                  <Button
+                    variant="ghost"
+                    className={cn(
+                      "h-auto w-full justify-start whitespace-normal px-3 py-2 text-left font-normal text-muted-foreground",
+                      active && "bg-accent font-medium text-accent-foreground",
+                    )}
+                    aria-current={active ? "true" : undefined}
                     onClick={() => setSelected(entry.kind)}
                   >
                     {entry.label}
-                    <span className="muted">
+                    <span className="text-xs text-muted-foreground">
                       {template === undefined
                         ? ""
                         : template.isDefault
                           ? " · default"
                           : ` · customized v${template.version}`}
                     </span>
-                  </button>
+                  </Button>
                 </li>
               );
             })}
           </ul>
         </nav>
 
-        <div className="template-editor">
-          <h2 id="template-editor-heading">{labelFor(selected)}</h2>
-          <p className="muted">
-            Sent {TEMPLATE_KINDS.find((entry) => entry.kind === selected)?.sentWhen}. Variables:{" "}
-            {variablesFor(selected).map((variable, index) => (
-              <span key={variable}>
-                {index === 0 ? "" : ", "}
-                <code>{`{{${variable}}}`}</code>
-              </span>
-            ))}
-            .
-          </p>
-          {current === null ? null : (
-            <p className="muted" data-testid="template-state">
-              {current.isDefault
-                ? "Using the built-in default."
-                : `Customized (version ${current.version}${current.updatedAt === null ? "" : `, saved ${current.updatedAt}`}).`}
+        <Card>
+          <CardHeader>
+            <CardTitle id="template-editor-heading">{labelFor(selected)}</CardTitle>
+            <p className="m-0 text-sm text-muted-foreground">
+              Sent {TEMPLATE_KINDS.find((entry) => entry.kind === selected)?.sentWhen}. Variables:{" "}
+              {variablesFor(selected).map((variable, index) => (
+                <span key={variable}>
+                  {index === 0 ? "" : ", "}
+                  <code className={VARIABLE}>{`{{${variable}}}`}</code>
+                </span>
+              ))}
+              .
             </p>
-          )}
-          <label>
-            Subject
-            <input
-              value={subject}
-              maxLength={200}
-              onChange={(event) => {
-                setSubject(event.currentTarget.value);
-                setDirty(true);
-                setStatus(null);
-              }}
-            />
-          </label>
-          <label>
-            Body
-            <textarea
-              rows={12}
-              value={textBody}
-              maxLength={32768}
-              onChange={(event) => {
-                setTextBody(event.currentTarget.value);
-                setDirty(true);
-                setStatus(null);
-              }}
-            />
-          </label>
-          <div className="button-row">
-            <button type="button" onClick={() => void save()} disabled={busy !== null || !dirty}>
-              {busy === "save" ? "Saving…" : "Save template"}
-            </button>
-            <button
-              type="button"
-              className="secondary"
-              onClick={() => void render()}
-              disabled={busy !== null}
-            >
-              {busy === "preview" ? "Rendering…" : "Preview"}
-            </button>
-            <button
-              type="button"
-              className="secondary danger"
-              onClick={() => void reset()}
-              disabled={busy !== null || current === null || current.isDefault}
-            >
-              {busy === "reset" ? "Resetting…" : "Reset to default"}
-            </button>
-          </div>
-          {preview === null ? null : (
-            <section aria-labelledby="template-preview-heading" className="template-preview">
-              <h3 id="template-preview-heading">Preview with placeholder data</h3>
-              <p>
-                <strong>Subject:</strong>{" "}
-                <span data-testid="preview-subject">{preview.subject}</span>
+            {current === null ? null : (
+              <p className="m-0 text-sm text-muted-foreground" data-testid="template-state">
+                {current.isDefault
+                  ? "Using the built-in default."
+                  : `Customized (version ${current.version}${current.updatedAt === null ? "" : `, saved ${current.updatedAt}`}).`}
               </p>
-              <pre data-testid="preview-body">{preview.textBody}</pre>
-            </section>
-          )}
-        </div>
+            )}
+          </CardHeader>
+          <CardContent className="grid gap-4">
+            <Field label="Subject" htmlFor="template-subject">
+              <Input
+                id="template-subject"
+                value={subject}
+                maxLength={200}
+                onChange={(event) => {
+                  setSubject(event.currentTarget.value);
+                  setDirty(true);
+                  setStatus(null);
+                }}
+              />
+            </Field>
+            <Field label="Body" htmlFor="template-body">
+              <Textarea
+                id="template-body"
+                rows={12}
+                value={textBody}
+                maxLength={32768}
+                className="min-h-64 font-mono text-xs leading-relaxed"
+                onChange={(event) => {
+                  setTextBody(event.currentTarget.value);
+                  setDirty(true);
+                  setStatus(null);
+                }}
+              />
+            </Field>
+            <div className="flex flex-wrap gap-2">
+              <Button onClick={() => void save()} disabled={busy !== null || !dirty}>
+                {busy === "save" ? "Saving…" : "Save template"}
+              </Button>
+              <Button variant="outline" onClick={() => void render()} disabled={busy !== null}>
+                {busy === "preview" ? "Rendering…" : "Preview"}
+              </Button>
+              <Button
+                variant="outline"
+                className="text-destructive hover:text-destructive"
+                onClick={() => void reset()}
+                disabled={busy !== null || current === null || current.isDefault}
+              >
+                {busy === "reset" ? "Resetting…" : "Reset to default"}
+              </Button>
+            </div>
+            {preview === null ? null : (
+              <section
+                aria-labelledby="template-preview-heading"
+                className="grid gap-3 rounded-lg border bg-muted/30 p-4"
+              >
+                <h3 id="template-preview-heading" className="text-sm">
+                  Preview with placeholder data
+                </h3>
+                <p className="m-0 text-sm">
+                  <strong>Subject:</strong>{" "}
+                  <span data-testid="preview-subject">{preview.subject}</span>
+                </p>
+                <pre
+                  data-testid="preview-body"
+                  className="m-0 whitespace-pre-wrap rounded-md border bg-card p-3 font-mono text-xs leading-relaxed"
+                >
+                  {preview.textBody}
+                </pre>
+              </section>
+            )}
+          </CardContent>
+        </Card>
       </div>
     </section>
   );

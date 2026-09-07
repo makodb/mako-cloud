@@ -1,4 +1,62 @@
-import { type FormEvent, type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  Alert,
+  AlertDescription,
+  Badge,
+  Button,
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  Checkbox,
+  Eyebrow,
+  Field,
+  Input,
+  Label,
+  NativeSelect,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  Textarea,
+  ThemeToggle,
+  cn,
+  useTheme,
+} from "@mako-cloud/ui";
+import {
+  Activity,
+  ArrowLeft,
+  Building2,
+  ChevronLeft,
+  ChevronRight,
+  DatabaseBackup,
+  ExternalLink,
+  FolderSync,
+  HardDrive,
+  Inbox,
+  LayoutDashboard,
+  LoaderCircle,
+  type LucideIcon,
+  RefreshCw,
+  Search,
+  Server,
+  ShieldCheck,
+  Siren,
+  UserCheck,
+  Wrench,
+} from "lucide-react";
+import {
+  type FormEvent,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useState,
+} from "react";
 
 import type {
   CreateOperatorRecoveryJobRequest,
@@ -49,21 +107,38 @@ interface NavigationItem {
   readonly section: Exclude<OperatorSection, "tenant">;
   readonly label: string;
   readonly permission?: string;
+  readonly icon: LucideIcon;
 }
 
 const NAVIGATION: readonly NavigationItem[] = [
-  { section: "overview", label: "Overview", permission: "overview_read" },
-  { section: "tenants", label: "Tenants", permission: "tenant_read" },
-  { section: "operations", label: "Operations", permission: "operations_read" },
-  { section: "incidents", label: "Incidents", permission: "incident_read" },
-  { section: "backups", label: "Backups & recovery", permission: "backup_read" },
-  { section: "sync", label: "RxDB sync", permission: "fleet_read" },
-  { section: "fleet", label: "Fleet", permission: "fleet_read" },
-  { section: "storage", label: "Storage", permission: "fleet_read" },
-  { section: "security", label: "Security", permission: "security_read" },
-  { section: "activity", label: "Activity", permission: "activity_read" },
-  { section: "waitlist", label: "Developer wait list", permission: "waitlist_review" },
+  { section: "overview", label: "Overview", permission: "overview_read", icon: LayoutDashboard },
+  { section: "tenants", label: "Tenants", permission: "tenant_read", icon: Building2 },
+  { section: "operations", label: "Operations", permission: "operations_read", icon: Wrench },
+  { section: "incidents", label: "Incidents", permission: "incident_read", icon: Siren },
+  {
+    section: "backups",
+    label: "Backups & recovery",
+    permission: "backup_read",
+    icon: DatabaseBackup,
+  },
+  { section: "sync", label: "RxDB sync", permission: "fleet_read", icon: FolderSync },
+  { section: "fleet", label: "Fleet", permission: "fleet_read", icon: Server },
+  { section: "storage", label: "Storage", permission: "fleet_read", icon: HardDrive },
+  { section: "security", label: "Security", permission: "security_read", icon: ShieldCheck },
+  { section: "activity", label: "Activity", permission: "activity_read", icon: Activity },
+  {
+    section: "waitlist",
+    label: "Developer wait list",
+    permission: "waitlist_review",
+    icon: UserCheck,
+  },
 ];
+
+/**
+ * The same per-device key the developer console uses, so a person who flips
+ * the theme on one surface finds the other already following it.
+ */
+const OPERATOR_THEME_KEY = "mako.console.theme";
 
 export function OperatorWorkspaceScreen({
   section,
@@ -72,6 +147,7 @@ export function OperatorWorkspaceScreen({
   onExit,
 }: OperatorWorkspaceProps) {
   const { state, signOut } = useOperatorAuth();
+  const { resolved, toggle } = useTheme(OPERATOR_THEME_KEY);
   if (state.status !== "authenticated") return null;
   const { session } = state;
   const permissions = new Set(session.permissions);
@@ -87,54 +163,85 @@ export function OperatorWorkspaceScreen({
       : section;
   const selected = effectiveSection === "tenant" ? "tenants" : effectiveSection;
   return (
-    <div className="operator-workspace-shell">
-      <a className="skip-link" href="#operator-main-content">
+    <div className="flex min-h-screen flex-col bg-background text-foreground">
+      <a
+        className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-50 focus:rounded-md focus:bg-card focus:px-3 focus:py-2 focus:shadow-md"
+        href="#operator-main-content"
+      >
         Skip to operator workspace
       </a>
-      <header className="operator-topbar operator-control-topbar">
-        <div>
-          <p className="eyebrow">Audited platform administration</p>
-          <strong>Mako Cloud Control Center</strong>
+      <header className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b bg-card px-4 py-3 sm:px-6">
+        <div className="flex min-w-0 items-center gap-3">
+          <ShieldCheck aria-hidden="true" className="size-5 shrink-0 text-primary" />
+          <div className="grid min-w-0 leading-tight">
+            <Eyebrow>Audited platform administration</Eyebrow>
+            <strong className="truncate text-sm">Mako Cloud Control Center</strong>
+          </div>
+          <Badge variant="outline" className="border-warning/50 bg-warning/10">
+            Operator
+          </Badge>
         </div>
-        <div className="account operator-session-summary">
-          <span>{session.profile.email}</span>
+        <div className="ml-auto flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-muted-foreground">
+          <span className="max-w-56 truncate">{session.profile.email}</span>
           <span title={session.expiresAt}>Session expires {formatRelative(session.expiresAt)}</span>
           <SupportModeStatus />
-          <button type="button" className="secondary" onClick={onExit}>
-            Developer site
-          </button>
-          <button type="button" onClick={() => void signOut()}>
-            Sign out
-          </button>
+          <div className="flex items-center gap-2">
+            <ThemeToggle resolved={resolved} onToggle={toggle} data-testid="theme-toggle" />
+            <Button variant="outline" size="sm" onClick={onExit}>
+              Developer site
+            </Button>
+            <Button size="sm" onClick={() => void signOut()}>
+              Sign out
+            </Button>
+          </div>
         </div>
       </header>
-      <aside className="operator-sidebar" aria-label="Operator workspace">
-        <nav>
-          {visibleNavigation.map((item) => (
-            <button
-              key={item.section}
-              type="button"
-              className={selected === item.section ? "operator-nav-active" : "operator-nav-item"}
-              aria-current={selected === item.section ? "page" : undefined}
-              onClick={() => navigate(`/operator/${item.section}`)}
-            >
-              {item.label}
-            </button>
-          ))}
-        </nav>
-        <p className="operator-boundary-note">
-          Routine pages expose metadata and aggregate signals only. Document content requires a
-          separately verified, scoped support session.
-        </p>
-      </aside>
-      <main className="operator-main" id="operator-main-content" tabIndex={-1}>
-        <OperatorRoute
-          section={effectiveSection}
-          projectId={projectId}
-          navigate={navigate}
-          permissions={permissions}
-        />
-      </main>
+      <div className="flex flex-1 flex-col md:grid md:grid-cols-[15rem_minmax(0,1fr)]">
+        <aside
+          className="border-b bg-sidebar text-sidebar-foreground md:border-r md:border-b-0"
+          aria-label="Operator workspace"
+        >
+          <div className="flex flex-col gap-4 px-3 py-3 md:sticky md:top-0 md:max-h-screen md:overflow-y-auto md:py-5">
+            <nav className="flex gap-1 overflow-x-auto md:grid md:overflow-visible">
+              {visibleNavigation.map((item) => {
+                const active = selected === item.section;
+                const Icon = item.icon;
+                return (
+                  <Button
+                    key={item.section}
+                    variant="ghost"
+                    className={cn(
+                      "h-9 shrink-0 justify-start gap-3 px-3 font-medium text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground md:w-full",
+                      active && "bg-sidebar-accent text-sidebar-foreground",
+                    )}
+                    aria-current={active ? "page" : undefined}
+                    onClick={() => navigate(`/operator/${item.section}`)}
+                  >
+                    <Icon aria-hidden="true" className="size-4 shrink-0" />
+                    {item.label}
+                  </Button>
+                );
+              })}
+            </nav>
+            <p className="m-0 border-t px-3 pt-4 text-xs leading-relaxed text-muted-foreground">
+              Routine pages expose metadata and aggregate signals only. Document content requires a
+              separately verified, scoped support session.
+            </p>
+          </div>
+        </aside>
+        <main
+          className="min-w-0 flex-1 px-4 py-6 outline-none sm:px-6 lg:px-8"
+          id="operator-main-content"
+          tabIndex={-1}
+        >
+          <OperatorRoute
+            section={effectiveSection}
+            projectId={projectId}
+            navigate={navigate}
+            permissions={permissions}
+          />
+        </main>
+      </div>
     </div>
   );
 }
@@ -144,21 +251,25 @@ function SupportModeStatus() {
   const loader = useCallback(() => client.listCurrentOperatorSupportSessions(25), [client]);
   const resource = useResource(loader);
   if (resource.status === "loading") {
-    return <span className="status-pill unknown">Support mode: checking</span>;
+    return (
+      <Badge variant="outline" className="text-muted-foreground">
+        Support mode: checking
+      </Badge>
+    );
   }
   if (resource.status === "error") {
-    return <span className="status-pill unavailable">Support mode: unknown</span>;
+    return <Badge variant="destructive">Support mode: unknown</Badge>;
   }
   if (resource.value.length === 0) {
-    return <span className="status-pill unknown">Support mode: inactive</span>;
+    return <Badge variant="secondary">Support mode: inactive</Badge>;
   }
   const scopes = resource.value.map((grant) =>
     grant.environmentId === null ? grant.projectId : `${grant.projectId}/${grant.environmentId}`,
   );
   return (
-    <span className="status-pill stale" title={scopes.join(", ")}>
+    <Badge variant="warning" title={scopes.join(", ")}>
       Support mode: active ({resource.value.length})
-    </span>
+    </Badge>
   );
 }
 
@@ -203,7 +314,11 @@ function OperatorRoute({
   }
   return (
     <WorkspacePage title="Operator page unavailable" eyebrow="Safe direct-route failure">
-      <p role="alert">This route is not available to the current operator entitlement.</p>
+      <Alert variant="destructive" role="alert">
+        <AlertDescription className="block">
+          This route is not available to the current operator entitlement.
+        </AlertDescription>
+      </Alert>
     </WorkspacePage>
   );
 }
@@ -223,7 +338,7 @@ function OverviewPage() {
         <LoadingState label="Loading bounded platform summaries…" />
       ) : (
         <>
-          <div className="operator-stat-grid">
+          <div className="grid gap-4 sm:grid-cols-3">
             <StatCard label="Active tenants" value={resource.value.activeTenants} tone="current" />
             <StatCard
               label="Need attention"
@@ -245,6 +360,7 @@ function OverviewPage() {
 
 function TenantDirectoryPage({ navigate }: { readonly navigate: (path: string) => void }) {
   const client = useOperatorClient();
+  const id = useId();
   const [query, setQuery] = useState("");
   const [submittedQuery, setSubmittedQuery] = useState("");
   const [cursor, setCursor] = useState<string | undefined>();
@@ -271,67 +387,83 @@ function TenantDirectoryPage({ navigate }: { readonly navigate: (path: string) =
       eyebrow="Bounded global inventory"
       actions={<ReloadButton reload={resource.reload} pending={resource.status === "loading"} />}
     >
-      <form className="operator-filter-bar" onSubmit={submit}>
-        <label>
-          Team, project, environment, region, developer email, or identifier
-          <input
+      <form className="flex flex-wrap items-end gap-3" onSubmit={submit}>
+        <Field
+          label="Team, project, environment, region, developer email, or identifier"
+          htmlFor={`${id}-query`}
+          className="min-w-0 flex-1 basis-72"
+        >
+          <Input
+            id={`${id}-query`}
             type="search"
             value={query}
             maxLength={200}
             onChange={(event) => setQuery(event.currentTarget.value)}
           />
-        </label>
-        <button type="submit">Search</button>
+        </Field>
+        <Button type="submit">
+          <Search aria-hidden="true" />
+          Search
+        </Button>
       </form>
       <ResourceFailure resource={resource} />
       {resource.status !== "ready" ? (
         <LoadingState label="Loading a bounded tenant page…" />
       ) : resource.value.items.length === 0 ? (
-        <EmptyState title="No tenants match this bounded page" />
+        <WorkspaceEmptyState title="No tenants match this bounded page" />
       ) : (
         <>
-          <div className="operator-table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th scope="col">Project</th>
-                  <th scope="col">Team</th>
-                  <th scope="col">Lifecycle</th>
-                  <th scope="col">Region</th>
-                  <th scope="col">Environments</th>
-                  <th scope="col">Health</th>
-                  <th scope="col">Action</th>
-                </tr>
-              </thead>
-              <tbody>
+          <Card className="gap-0 overflow-hidden py-0">
+            <Table>
+              <TableHeader>
+                <TableRow className="hover:bg-transparent">
+                  <TableHead scope="col" className="pl-4">
+                    Project
+                  </TableHead>
+                  <TableHead scope="col">Team</TableHead>
+                  <TableHead scope="col">Lifecycle</TableHead>
+                  <TableHead scope="col">Region</TableHead>
+                  <TableHead scope="col">Environments</TableHead>
+                  <TableHead scope="col">Health</TableHead>
+                  <TableHead scope="col" className="pr-4 text-right">
+                    Action
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {resource.value.items.map((tenant) => (
-                  <tr key={tenant.projectId}>
-                    <td>
-                      <strong>{tenant.projectName}</strong>
-                      <br />
-                      <code>{tenant.projectId}</code>
-                    </td>
-                    <td>{tenant.teamName ?? tenant.teamId}</td>
-                    <td>{humanize(tenant.lifecycle)}</td>
-                    <td>{tenant.region}</td>
-                    <td>{tenant.environmentCount}</td>
-                    <td>
+                  <TableRow key={tenant.projectId}>
+                    <TableCell className="pl-4">
+                      <div className="grid gap-0.5">
+                        <strong className="font-medium">{tenant.projectName}</strong>
+                        <code className="font-mono text-xs text-muted-foreground">
+                          {tenant.projectId}
+                        </code>
+                      </div>
+                    </TableCell>
+                    <TableCell>{tenant.teamName ?? tenant.teamId}</TableCell>
+                    <TableCell>
+                      <LifecycleBadge value={tenant.lifecycle} />
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">{tenant.region}</TableCell>
+                    <TableCell className="tabular-nums">{tenant.environmentCount}</TableCell>
+                    <TableCell>
                       <FreshnessBadge value={tenant.health} />
-                    </td>
-                    <td>
-                      <button
-                        type="button"
-                        className="secondary"
+                    </TableCell>
+                    <TableCell className="pr-4 text-right">
+                      <Button
+                        variant="outline"
+                        size="sm"
                         onClick={() => navigate(`/operator/tenants/${tenant.projectId}`)}
                       >
                         Open Tenant 360
-                      </button>
-                    </td>
-                  </tr>
+                      </Button>
+                    </TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
-          </div>
+              </TableBody>
+            </Table>
+          </Card>
           <CursorControls
             canPrevious={cursorHistory.length > 0}
             canNext={resource.value.nextCursor !== null}
@@ -365,12 +497,15 @@ function Tenant360Page({
   return (
     <WorkspacePage
       title="Tenant 360"
-      eyebrow={projectId}
+      eyebrow={
+        <span className="font-mono font-medium tracking-normal normal-case">{projectId}</span>
+      }
       actions={
-        <div className="button-row">
-          <button type="button" className="secondary" onClick={() => navigate("/operator/tenants")}>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" size="sm" onClick={() => navigate("/operator/tenants")}>
+            <ArrowLeft aria-hidden="true" />
             Back to tenants
-          </button>
+          </Button>
           <ReloadButton reload={resource.reload} pending={resource.status === "loading"} />
         </div>
       }
@@ -388,54 +523,53 @@ function Tenant360Page({
 function Tenant360Content({ value }: { readonly value: OperatorTenant360 }) {
   return (
     <>
-      <section className="panel operator-tenant-identity">
-        <div>
-          <p className="eyebrow">{value.project.teamName ?? value.project.teamId}</p>
-          <h2>{value.project.projectName}</h2>
-          <code>{value.project.projectId}</code>
-        </div>
-        <dl className="operator-definition-grid">
-          <div>
-            <dt>Lifecycle</dt>
-            <dd>{humanize(value.project.lifecycle)}</dd>
-          </div>
-          <div>
-            <dt>Region</dt>
-            <dd>{value.project.region}</dd>
-          </div>
-          <div>
-            <dt>Plan</dt>
-            <dd>{value.project.plan}</dd>
-          </div>
-          <div>
-            <dt>Health</dt>
-            <dd>
+      <Card>
+        <CardHeader>
+          <Eyebrow>{value.project.teamName ?? value.project.teamId}</Eyebrow>
+          <CardTitle className="text-xl">{value.project.projectName}</CardTitle>
+          <code className="font-mono text-xs text-muted-foreground">{value.project.projectId}</code>
+        </CardHeader>
+        <CardContent>
+          <dl className="m-0 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <Definition term="Lifecycle">
+              <LifecycleBadge value={value.project.lifecycle} />
+            </Definition>
+            <Definition term="Region">{value.project.region}</Definition>
+            <Definition term="Plan">{value.project.plan}</Definition>
+            <Definition term="Health">
               <FreshnessBadge value={value.project.health} />
-            </dd>
-          </div>
-        </dl>
-      </section>
+            </Definition>
+          </dl>
+        </CardContent>
+      </Card>
       {value.partial ? (
-        <p className="notice warning" role="status">
-          One or more providers are unavailable. Successful sections remain visible and unavailable
-          sections do not imply healthy state.
-        </p>
+        <Alert variant="warning" role="status">
+          <AlertDescription className="block">
+            One or more providers are unavailable. Successful sections remain visible and
+            unavailable sections do not imply healthy state.
+          </AlertDescription>
+        </Alert>
       ) : null}
-      <section className="panel">
-        <h2>Topology</h2>
-        {value.environments.length === 0 ? (
-          <p>No environments exist.</p>
-        ) : (
-          <ul className="operator-topology-list">
-            {value.environments.map((environment) => (
-              <li key={environment.id}>
-                <strong>{environment.name}</strong> <code>{environment.id}</code>{" "}
-                <span>{humanize(environment.state)}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      <Card>
+        <CardHeader>
+          <CardTitle>Topology</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {value.environments.length === 0 ? (
+            <p className="m-0 text-sm text-muted-foreground">No environments exist.</p>
+          ) : (
+            <ul className="m-0 grid list-none gap-2 p-0">
+              {value.environments.map((environment) => (
+                <li key={environment.id} className="flex flex-wrap items-center gap-2 text-sm">
+                  <strong>{environment.name}</strong>{" "}
+                  <code className="font-mono text-xs text-muted-foreground">{environment.id}</code>{" "}
+                  <LifecycleBadge value={environment.state} />
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
       <SectionGrid sections={Object.values(value.sections)} />
     </>
   );
@@ -457,6 +591,7 @@ function InventoryPage({
   readonly permissions: ReadonlySet<string>;
 }) {
   const client = useOperatorClient();
+  const id = useId();
   const [projectId, setProjectId] = useState("");
   const [scope, setScope] = useState<string | undefined>();
   const loader = useCallback(
@@ -468,26 +603,31 @@ function InventoryPage({
     <WorkspacePage
       title={title}
       eyebrow="Bounded aggregate view"
+      subtitle={description}
       actions={<ReloadButton reload={resource.reload} pending={resource.status === "loading"} />}
     >
-      <p>{description}</p>
       <form
-        className="operator-filter-bar"
+        className="flex flex-wrap items-end gap-3"
         onSubmit={(event) => {
           event.preventDefault();
           setScope(projectId.trim() === "" ? undefined : projectId.trim());
         }}
       >
-        <label>
-          Optional project scope
-          <input
+        <Field
+          label="Optional project scope"
+          htmlFor={`${id}-scope`}
+          className="min-w-0 flex-1 basis-72 sm:max-w-md"
+        >
+          <Input
+            id={`${id}-scope`}
             value={projectId}
             pattern="prj_[A-Za-z0-9_-]{8,64}"
             placeholder="prj_…"
+            className="font-mono"
             onChange={(event) => setProjectId(event.currentTarget.value)}
           />
-        </label>
-        <button type="submit">Apply scope</button>
+        </Field>
+        <Button type="submit">Apply scope</Button>
       </form>
       <ResourceFailure resource={resource} />
       {resource.status !== "ready" ? (
@@ -543,30 +683,35 @@ function ContextualOperationsPanel({
   const resource = useResource(loader);
   if (projectId === undefined)
     return (
-      <section className="panel">
-        <h2>Contextual workflows</h2>
-        <p>
-          Apply an exact project scope above before loading or changing provisioning, quota, abuse,
-          or support state.
-        </p>
-      </section>
+      <Card>
+        <CardHeader>
+          <CardTitle>Contextual workflows</CardTitle>
+          <CardDescription>
+            Apply an exact project scope above before loading or changing provisioning, quota,
+            abuse, or support state.
+          </CardDescription>
+        </CardHeader>
+      </Card>
     );
   return (
-    <section className="full-span" aria-label="Contextual operational workflows">
+    <section className="grid gap-4" aria-label="Contextual operational workflows">
       <ApiFailureNotice failure={failure} />
       {resource.status !== "ready" || resource.value === null ? (
         <LoadingState label="Loading exact-project workflow history…" />
       ) : (
         <>
-          <section className="panel">
-            <h2>Selected tenant workflow inventory</h2>
-            <p>
-              <code>{projectId}</code> · {resource.value.workflows.length} provisioning ·{" "}
-              {resource.value.quotas.length} quota · {resource.value.abuseResponses.length} abuse ·{" "}
-              {resource.value.supportSessions.length} support records.
-            </p>
-          </section>
-          <div className="split-grid stacked-section">
+          <Card>
+            <CardHeader>
+              <CardTitle>Selected tenant workflow inventory</CardTitle>
+              <CardDescription>
+                <code className="font-mono text-xs text-foreground">{projectId}</code> ·{" "}
+                {resource.value.workflows.length} provisioning · {resource.value.quotas.length}{" "}
+                quota · {resource.value.abuseResponses.length} abuse ·{" "}
+                {resource.value.supportSessions.length} support records.
+              </CardDescription>
+            </CardHeader>
+          </Card>
+          <div className="grid gap-4 lg:grid-cols-2">
             {permissions.has("provisioning_repair") ? (
               <RepairPanel
                 workflow={workflow}
@@ -668,129 +813,131 @@ function RecoveryJobsPanel() {
       ? (resource.value.items.find((candidate) => candidate.id === selected) ?? null)
       : null;
   return (
-    <section className="panel full-span">
-      <div className="section-heading">
-        <div>
-          <p className="eyebrow">Durable state machine</p>
-          <h2>Recovery jobs</h2>
-        </div>
-        <ReloadButton reload={resource.reload} pending={resource.status === "loading"} />
-      </div>
-      <ResourceFailure resource={resource} />
-      {message === null ? null : <p role="status">{message}</p>}
-      {resource.status !== "ready" ? (
-        <LoadingState label="Loading recovery jobs…" />
-      ) : resource.value.items.length === 0 ? (
-        <p>No recovery jobs are recorded.</p>
-      ) : (
-        <div className="operator-table-scroll">
-          <table>
-            <thead>
-              <tr>
-                <th scope="col">Job</th>
-                <th scope="col">Project</th>
-                <th scope="col">Backup</th>
-                <th scope="col">State</th>
-                <th scope="col">Verified</th>
-                <th scope="col">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {resource.value.items.map((candidate) => (
-                <tr key={candidate.id}>
-                  <td>
-                    <code>{candidate.id}</code>
-                  </td>
-                  <td>
-                    <code>{candidate.projectId}</code>
-                  </td>
-                  <td>{candidate.backupId}</td>
-                  <td>{humanize(candidate.state)}</td>
-                  <td>{candidate.verificationSucceeded ? "Yes" : "No"}</td>
-                  <td>
-                    <button
-                      type="button"
-                      className="secondary"
-                      onClick={() => setSelected(candidate.id)}
-                    >
-                      Review
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-      {job === null ? null : (
-        <div className="operator-recovery-detail">
-          <h3>
-            Reviewed recovery job <code>{job.id}</code>
-          </h3>
-          <dl className="operator-definition-grid">
-            <div>
-              <dt>Protected target</dt>
-              <dd>{job.target}</dd>
+    <Card>
+      <CardHeader>
+        <Eyebrow>Durable state machine</Eyebrow>
+        <CardTitle>Recovery jobs</CardTitle>
+        <CardAction>
+          <ReloadButton reload={resource.reload} pending={resource.status === "loading"} />
+        </CardAction>
+      </CardHeader>
+      <CardContent className="grid gap-4">
+        <ResourceFailure resource={resource} />
+        {message === null ? null : (
+          <Alert role="status">
+            <AlertDescription className="block text-foreground">{message}</AlertDescription>
+          </Alert>
+        )}
+        {resource.status !== "ready" ? (
+          <LoadingState label="Loading recovery jobs…" />
+        ) : resource.value.items.length === 0 ? (
+          <p className="m-0 text-sm text-muted-foreground">No recovery jobs are recorded.</p>
+        ) : (
+          <div className="overflow-hidden rounded-lg border">
+            <Table>
+              <TableHeader>
+                <TableRow className="hover:bg-transparent">
+                  <TableHead scope="col" className="pl-3">
+                    Job
+                  </TableHead>
+                  <TableHead scope="col">Project</TableHead>
+                  <TableHead scope="col">Backup</TableHead>
+                  <TableHead scope="col">State</TableHead>
+                  <TableHead scope="col">Verified</TableHead>
+                  <TableHead scope="col" className="pr-3 text-right">
+                    Action
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {resource.value.items.map((candidate) => (
+                  <TableRow key={candidate.id}>
+                    <TableCell className="pl-3">
+                      <code className="font-mono text-xs">{candidate.id}</code>
+                    </TableCell>
+                    <TableCell>
+                      <code className="font-mono text-xs">{candidate.projectId}</code>
+                    </TableCell>
+                    <TableCell>{candidate.backupId}</TableCell>
+                    <TableCell>
+                      <Badge variant="secondary">{humanize(candidate.state)}</Badge>
+                    </TableCell>
+                    <TableCell>{candidate.verificationSucceeded ? "Yes" : "No"}</TableCell>
+                    <TableCell className="pr-3 text-right">
+                      <Button variant="outline" size="sm" onClick={() => setSelected(candidate.id)}>
+                        Review
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+        {job === null ? null : (
+          <div className="grid gap-4 border-t pt-5">
+            <h3 className="text-base">
+              Reviewed recovery job <code className="font-mono text-sm">{job.id}</code>
+            </h3>
+            <dl className="m-0 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <Definition term="Protected target">{job.target}</Definition>
+              <Definition term="Version">
+                <span className="tabular-nums">{job.version}</span>
+              </Definition>
+              <Definition term="Expires">{formatDate(job.expiresAt)}</Definition>
+              <Definition term="Verification">
+                {job.verificationSucceeded ? "Succeeded" : "Pending"}
+              </Definition>
+            </dl>
+            <Alert variant="warning" role="note">
+              <AlertDescription className="block">
+                Restore verification and promotion can run only through the approved server
+                executor. The browser cannot claim verification or submit an arbitrary command or
+                path.
+              </AlertDescription>
+            </Alert>
+            <div className="flex flex-wrap gap-2">
+              {job.state === "promoted" ||
+              job.state === "failed" ||
+              job.state === "cancelled" ? null : (
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    void guardedInput(
+                      "recovery_advance",
+                      job.id,
+                      job.version,
+                      "Cancel reviewed recovery job without promotion",
+                      state.session.passwordVerifiedAt,
+                    )
+                      .then((guard) =>
+                        client.advanceOperatorRecoveryJob(job.id, {
+                          state: "cancelled",
+                          verificationSucceeded: false,
+                          errorClass: null,
+                          guard,
+                        }),
+                      )
+                      .then((updated) =>
+                        setMessage(`Recovery job is now ${humanize(updated.state)}.`),
+                      )
+                      .then(resource.reload)
+                      .catch((error: unknown) => setMessage(toConsoleApiFailure(error).message));
+                  }}
+                >
+                  Cancel recovery job
+                </Button>
+              )}
+              {job.state === "promotion_ready" ? (
+                <Button disabled title="Approved recovery executor and promotion gate required">
+                  Promotion confirmation unavailable until executor qualification
+                </Button>
+              ) : null}
             </div>
-            <div>
-              <dt>Version</dt>
-              <dd>{job.version}</dd>
-            </div>
-            <div>
-              <dt>Expires</dt>
-              <dd>{formatDate(job.expiresAt)}</dd>
-            </div>
-            <div>
-              <dt>Verification</dt>
-              <dd>{job.verificationSucceeded ? "Succeeded" : "Pending"}</dd>
-            </div>
-          </dl>
-          <p className="notice warning">
-            Restore verification and promotion can run only through the approved server executor.
-            The browser cannot claim verification or submit an arbitrary command or path.
-          </p>
-          {job.state === "promoted" ||
-          job.state === "failed" ||
-          job.state === "cancelled" ? null : (
-            <button
-              type="button"
-              className="secondary"
-              onClick={() => {
-                void guardedInput(
-                  "recovery_advance",
-                  job.id,
-                  job.version,
-                  "Cancel reviewed recovery job without promotion",
-                  state.session.passwordVerifiedAt,
-                )
-                  .then((guard) =>
-                    client.advanceOperatorRecoveryJob(job.id, {
-                      state: "cancelled",
-                      verificationSucceeded: false,
-                      errorClass: null,
-                      guard,
-                    }),
-                  )
-                  .then((updated) => setMessage(`Recovery job is now ${humanize(updated.state)}.`))
-                  .then(resource.reload)
-                  .catch((error: unknown) => setMessage(toConsoleApiFailure(error).message));
-              }}
-            >
-              Cancel recovery job
-            </button>
-          )}
-          {job.state === "promotion_ready" ? (
-            <button
-              type="button"
-              disabled
-              title="Approved recovery executor and promotion gate required"
-            >
-              Promotion confirmation unavailable until executor qualification
-            </button>
-          ) : null}
-        </div>
-      )}
-    </section>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -825,7 +972,7 @@ function IncidentsPage({ permissions }: { readonly permissions: ReadonlySet<stri
       {resource.status !== "ready" ? (
         <LoadingState label="Loading incidents…" />
       ) : resource.value.items.length === 0 ? (
-        <EmptyState title="No durable incidents are recorded" />
+        <WorkspaceEmptyState title="No durable incidents are recorded" />
       ) : (
         <IncidentTable value={resource.value} onSelect={setSelected} onNext={setCursor} />
       )}
@@ -845,65 +992,83 @@ function IncidentsPage({ permissions }: { readonly permissions: ReadonlySet<stri
 
 function CurrentAlertTable({ value }: { readonly value: OperatorAlertPage }) {
   return (
-    <section className="panel full-span">
-      <div className="section-heading">
-        <div>
-          <p className="eyebrow">Observed state</p>
-          <h2>Current alerts</h2>
-        </div>
-        <FreshnessBadge
-          value={
-            value.items.some((alert) => alert.freshness === "unavailable")
-              ? "unavailable"
-              : value.items.some((alert) => alert.freshness !== "current")
-                ? "stale"
-                : "current"
-          }
-        />
-      </div>
+    <Card className="overflow-hidden pb-0">
+      <CardHeader>
+        <Eyebrow>Observed state</Eyebrow>
+        <CardTitle>Current alerts</CardTitle>
+        <CardAction>
+          <FreshnessBadge
+            value={
+              value.items.some((alert) => alert.freshness === "unavailable")
+                ? "unavailable"
+                : value.items.some((alert) => alert.freshness !== "current")
+                  ? "stale"
+                  : "current"
+            }
+          />
+        </CardAction>
+      </CardHeader>
       {value.items.length === 0 ? (
-        <p>No current provider exceptions are visible.</p>
+        <CardContent className="pb-5">
+          <p className="m-0 text-sm text-muted-foreground">
+            No current provider exceptions are visible.
+          </p>
+        </CardContent>
       ) : (
-        <div className="operator-table-scroll">
-          <table>
-            <thead>
-              <tr>
-                <th scope="col">Fingerprint</th>
-                <th scope="col">Severity</th>
-                <th scope="col">Scope</th>
-                <th scope="col">Freshness</th>
-                <th scope="col">Observed</th>
-                <th scope="col">Runbook</th>
-              </tr>
-            </thead>
-            <tbody>
+        <div className="border-t">
+          <Table>
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead scope="col" className="pl-5">
+                  Fingerprint
+                </TableHead>
+                <TableHead scope="col">Severity</TableHead>
+                <TableHead scope="col">Scope</TableHead>
+                <TableHead scope="col">Freshness</TableHead>
+                <TableHead scope="col">Observed</TableHead>
+                <TableHead scope="col" className="pr-5">
+                  Runbook
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {value.items.map((alert) => (
-                <tr key={alert.fingerprint}>
-                  <td>
-                    <code>{alert.fingerprint}</code>
-                  </td>
-                  <td>{alert.severity}</td>
-                  <td>{alert.affectedScope}</td>
-                  <td>
+                <TableRow key={alert.fingerprint}>
+                  <TableCell className="pl-5">
+                    <code className="font-mono text-xs">{alert.fingerprint}</code>
+                  </TableCell>
+                  <TableCell>
+                    <SeverityBadge value={alert.severity} />
+                  </TableCell>
+                  <TableCell>{alert.affectedScope}</TableCell>
+                  <TableCell>
                     <FreshnessBadge value={alert.freshness} />
-                  </td>
-                  <td>{formatDate(alert.lastObservedAt)}</td>
-                  <td>
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {formatDate(alert.lastObservedAt)}
+                  </TableCell>
+                  <TableCell className="pr-5">
                     {alert.runbook === null ? (
-                      "Not configured"
+                      <span className="text-muted-foreground">Not configured</span>
                     ) : (
-                      <a href={alert.runbook.url} target="_blank" rel="noreferrer">
+                      <a
+                        className="inline-flex items-center gap-1"
+                        href={alert.runbook.url}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
                         Open
+                        <ExternalLink aria-hidden="true" className="size-3.5" />
                       </a>
                     )}
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       )}
-    </section>
+    </Card>
   );
 }
 
@@ -914,25 +1079,31 @@ function CreateIncidentPanel({
 }) {
   const client = useOperatorClient();
   const { state } = useOperatorAuth();
+  const id = useId();
   const [failure, setFailure] = useState<ConsoleApiFailure | null>(null);
   const [pending, setPending] = useState(false);
   if (state.status !== "authenticated") return null;
   return (
-    <details className="panel operator-workflow-panel">
-      <summary>Create incident</summary>
+    <Disclosure summary="Create incident">
       <ApiFailureNotice failure={failure} />
       <form
-        className="operator-form-grid"
+        className="grid gap-4 sm:grid-cols-2"
         onSubmit={(event) => {
           event.preventDefault();
           const data = new FormData(event.currentTarget);
-          const id = `inc_${crypto.randomUUID().replaceAll("-", "")}`;
+          const incidentId = `inc_${crypto.randomUUID().replaceAll("-", "")}`;
           const reason = required(data, "reason");
           setPending(true);
-          void guardedInput("incident_create", id, 0, reason, state.session.passwordVerifiedAt)
+          void guardedInput(
+            "incident_create",
+            incidentId,
+            0,
+            reason,
+            state.session.passwordVerifiedAt,
+          )
             .then((guard) =>
               client.createOperatorIncident({
-                id,
+                id: incidentId,
                 fingerprint: required(data, "fingerprint"),
                 title: required(data, "title"),
                 severity: required(data, "severity") as "critical" | "high" | "medium" | "low",
@@ -946,36 +1117,44 @@ function CreateIncidentPanel({
             .finally(() => setPending(false));
         }}
       >
-        <label>
-          Title
-          <input name="title" required maxLength={200} />
-        </label>
-        <label>
-          Alert fingerprint
-          <input name="fingerprint" required maxLength={128} />
-        </label>
-        <label>
-          Severity
-          <select name="severity" defaultValue="medium">
+        <Field label="Title" htmlFor={`${id}-title`}>
+          <Input id={`${id}-title`} name="title" required maxLength={200} />
+        </Field>
+        <Field label="Alert fingerprint" htmlFor={`${id}-fingerprint`}>
+          <Input
+            id={`${id}-fingerprint`}
+            name="fingerprint"
+            required
+            maxLength={128}
+            className="font-mono"
+          />
+        </Field>
+        <Field label="Severity" htmlFor={`${id}-severity`}>
+          <NativeSelect id={`${id}-severity`} name="severity" defaultValue="medium">
             <option>critical</option>
             <option>high</option>
             <option>medium</option>
             <option>low</option>
-          </select>
-        </label>
-        <label>
-          Optional project ID
-          <input name="projectId" pattern="prj_[A-Za-z0-9_-]{8,64}" />
-        </label>
-        <label className="full-span">
-          Reason / case context
-          <textarea name="reason" required minLength={8} maxLength={1024} />
-        </label>
-        <button type="submit" disabled={pending}>
-          {pending ? "Creating…" : "Review and create"}
-        </button>
+          </NativeSelect>
+        </Field>
+        <Field label="Optional project ID" htmlFor={`${id}-project`}>
+          <Input
+            id={`${id}-project`}
+            name="projectId"
+            pattern="prj_[A-Za-z0-9_-]{8,64}"
+            className="font-mono"
+          />
+        </Field>
+        <Field label="Reason / case context" htmlFor={`${id}-reason`} className="sm:col-span-2">
+          <Textarea id={`${id}-reason`} name="reason" required minLength={8} maxLength={1024} />
+        </Field>
+        <div className="sm:col-span-2">
+          <Button type="submit" disabled={pending}>
+            {pending ? "Creating…" : "Review and create"}
+          </Button>
+        </div>
       </form>
-    </details>
+    </Disclosure>
   );
 }
 
@@ -990,42 +1169,56 @@ function IncidentTable({
 }) {
   return (
     <>
-      <div className="operator-table-scroll">
-        <table>
-          <thead>
-            <tr>
-              <th scope="col">Incident</th>
-              <th scope="col">Severity</th>
-              <th scope="col">State</th>
-              <th scope="col">Updated</th>
-              <th scope="col">Action</th>
-            </tr>
-          </thead>
-          <tbody>
+      <Card className="gap-0 overflow-hidden py-0">
+        <Table>
+          <TableHeader>
+            <TableRow className="hover:bg-transparent">
+              <TableHead scope="col" className="pl-4">
+                Incident
+              </TableHead>
+              <TableHead scope="col">Severity</TableHead>
+              <TableHead scope="col">State</TableHead>
+              <TableHead scope="col">Updated</TableHead>
+              <TableHead scope="col" className="pr-4 text-right">
+                Action
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {value.items.map((incident) => (
-              <tr key={incident.id}>
-                <td>
-                  <strong>{incident.title}</strong>
-                  <br />
-                  <code>{incident.id}</code>
-                </td>
-                <td>{incident.severity}</td>
-                <td>{humanize(incident.state)}</td>
-                <td>{formatDate(incident.updatedAt)}</td>
-                <td>
-                  <button type="button" className="secondary" onClick={() => onSelect(incident)}>
+              <TableRow key={incident.id}>
+                <TableCell className="pl-4">
+                  <div className="grid gap-0.5">
+                    <strong className="font-medium">{incident.title}</strong>
+                    <code className="font-mono text-xs text-muted-foreground">{incident.id}</code>
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <SeverityBadge value={incident.severity} />
+                </TableCell>
+                <TableCell>
+                  <Badge variant="secondary">{humanize(incident.state)}</Badge>
+                </TableCell>
+                <TableCell className="text-muted-foreground">
+                  {formatDate(incident.updatedAt)}
+                </TableCell>
+                <TableCell className="pr-4 text-right">
+                  <Button variant="outline" size="sm" onClick={() => onSelect(incident)}>
                     Open
-                  </button>
-                </td>
-              </tr>
+                  </Button>
+                </TableCell>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
-      </div>
+          </TableBody>
+        </Table>
+      </Card>
       {value.nextCursor === null ? null : (
-        <button type="button" className="secondary" onClick={() => onNext(value.nextCursor ?? "")}>
-          Next incident page
-        </button>
+        <div className="flex justify-end">
+          <Button variant="outline" size="sm" onClick={() => onNext(value.nextCursor ?? "")}>
+            Next incident page
+            <ChevronRight aria-hidden="true" />
+          </Button>
+        </div>
       )}
     </>
   );
@@ -1042,6 +1235,7 @@ function IncidentDetail({
 }) {
   const client = useOperatorClient();
   const { state } = useOperatorAuth();
+  const id = useId();
   const [failure, setFailure] = useState<ConsoleApiFailure | null>(null);
   const [pending, setPending] = useState(false);
   if (state.status !== "authenticated") return null;
@@ -1072,80 +1266,88 @@ function IncidentDetail({
       .finally(() => setPending(false));
   };
   return (
-    <section className="panel operator-incident-detail" aria-labelledby="incident-detail-title">
-      <p className="eyebrow">Version {incident.version}</p>
-      <h2 id="incident-detail-title">{incident.title}</h2>
-      <ApiFailureNotice failure={failure} />
-      <ol className="operator-timeline">
-        {incident.timeline.map((event) => (
-          <li key={event.sequence}>
-            <strong>{humanize(event.action)}</strong> by {event.actorId} at{" "}
-            {formatDate(event.timestamp)}
-            {event.note === null ? null : <p>{event.note}</p>}
-          </li>
-        ))}
-      </ol>
-      {!canManage || incident.state === "resolved" ? null : (
-        <form className="operator-form-grid" onSubmit={submit}>
-          <label>
-            Action
-            <select name="action">
-              <option value="acknowledge">Acknowledge</option>
-              <option value="assign">Assign</option>
-              <option value="annotate">Annotate</option>
-              <option value="resolve">Resolve</option>
-            </select>
-          </label>
-          <label>
-            Assignee
-            <input name="assignee" maxLength={200} />
-          </label>
-          <label className="full-span">
-            Timeline note
-            <textarea name="note" maxLength={1024} />
-          </label>
-          <label className="full-span">
-            Reason / case context
-            <textarea name="reason" required minLength={8} maxLength={1024} />
-          </label>
-          <button type="submit" disabled={pending}>
-            {pending ? "Applying…" : "Review and apply"}
-          </button>
-        </form>
-      )}
-    </section>
+    <Card aria-labelledby="incident-detail-title">
+      <CardHeader>
+        <Eyebrow>Version {incident.version}</Eyebrow>
+        <CardTitle id="incident-detail-title">{incident.title}</CardTitle>
+      </CardHeader>
+      <CardContent className="grid gap-5">
+        <ApiFailureNotice failure={failure} />
+        <ol className="m-0 grid list-none gap-3 p-0">
+          {incident.timeline.map((event) => (
+            <li key={event.sequence} className="border-l-2 pl-4 text-sm">
+              <strong>{humanize(event.action)}</strong> by {event.actorId} at{" "}
+              {formatDate(event.timestamp)}
+              {event.note === null ? null : (
+                <p className="m-0 mt-1 text-muted-foreground">{event.note}</p>
+              )}
+            </li>
+          ))}
+        </ol>
+        {!canManage || incident.state === "resolved" ? null : (
+          <form className="grid gap-4 border-t pt-5 sm:grid-cols-2" onSubmit={submit}>
+            <Field label="Action" htmlFor={`${id}-action`}>
+              <NativeSelect id={`${id}-action`} name="action">
+                <option value="acknowledge">Acknowledge</option>
+                <option value="assign">Assign</option>
+                <option value="annotate">Annotate</option>
+                <option value="resolve">Resolve</option>
+              </NativeSelect>
+            </Field>
+            <Field label="Assignee" htmlFor={`${id}-assignee`}>
+              <Input id={`${id}-assignee`} name="assignee" maxLength={200} />
+            </Field>
+            <Field label="Timeline note" htmlFor={`${id}-note`} className="sm:col-span-2">
+              <Textarea id={`${id}-note`} name="note" maxLength={1024} />
+            </Field>
+            <Field label="Reason / case context" htmlFor={`${id}-reason`} className="sm:col-span-2">
+              <Textarea id={`${id}-reason`} name="reason" required minLength={8} maxLength={1024} />
+            </Field>
+            <div className="sm:col-span-2">
+              <Button type="submit" disabled={pending}>
+                {pending ? "Applying…" : "Review and apply"}
+              </Button>
+            </div>
+          </form>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
 function RecoveryRequestPanel() {
   const client = useOperatorClient();
   const { state } = useOperatorAuth();
+  const id = useId();
   const [result, setResult] = useState<string | null>(null);
   const [failure, setFailure] = useState<ConsoleApiFailure | null>(null);
   const [pending, setPending] = useState(false);
   if (state.status !== "authenticated") return null;
   return (
-    <details className="panel operator-workflow-panel">
-      <summary>Request a gated recovery job</summary>
-      <p>Creation and promotion have independent server-side feature gates.</p>
+    <Disclosure summary="Request a gated recovery job">
+      <p className="m-0 text-sm text-muted-foreground">
+        Creation and promotion have independent server-side feature gates.
+      </p>
       <ApiFailureNotice failure={failure} />
       {result === null ? null : (
-        <p role="status">
-          Created recovery job <code>{result}</code>.
-        </p>
+        <Alert role="status">
+          <AlertDescription className="block text-foreground">
+            Created recovery job <code className="font-mono text-xs">{result}</code>.
+          </AlertDescription>
+        </Alert>
       )}
       <form
-        className="operator-form-grid"
+        className="grid gap-4 sm:grid-cols-2"
         onSubmit={(event) => {
           event.preventDefault();
           const data = new FormData(event.currentTarget);
-          const id = `rcv_${crypto.randomUUID().replaceAll("-", "")}`;
+          const jobId = `rcv_${crypto.randomUUID().replaceAll("-", "")}`;
           const reason = required(data, "reason");
           setPending(true);
-          void guardedInput("recovery_create", id, 0, reason, state.session.passwordVerifiedAt)
+          void guardedInput("recovery_create", jobId, 0, reason, state.session.passwordVerifiedAt)
             .then((guard) => {
               const input: CreateOperatorRecoveryJobRequest = {
-                id,
+                id: jobId,
                 projectId: required(data, "projectId"),
                 backupId: required(data, "backupId"),
                 target: required(data, "target"),
@@ -1161,40 +1363,52 @@ function RecoveryRequestPanel() {
             .finally(() => setPending(false));
         }}
       >
-        <label>
-          Project ID
-          <input name="projectId" required pattern="prj_[A-Za-z0-9_-]{8,64}" />
-        </label>
-        <label>
-          Verified backup ID
-          <input name="backupId" required maxLength={128} />
-        </label>
-        <label>
-          Protected restore target
-          <input name="target" required maxLength={256} />
-        </label>
-        <label className="checkbox-row">
-          <input type="checkbox" name="backupVerified" required /> Backup evidence reviewed and
-          verified
-        </label>
-        <label className="full-span">
-          Impact preview
-          <textarea name="impactPreview" required maxLength={2048} />
-        </label>
-        <label className="full-span">
-          Reason / case context
-          <textarea name="reason" required minLength={8} maxLength={1024} />
-        </label>
-        <button type="submit" disabled={pending}>
-          {pending ? "Requesting…" : "Review and request recovery"}
-        </button>
+        <Field label="Project ID" htmlFor={`${id}-project`}>
+          <Input
+            id={`${id}-project`}
+            name="projectId"
+            required
+            pattern="prj_[A-Za-z0-9_-]{8,64}"
+            className="font-mono"
+          />
+        </Field>
+        <Field label="Verified backup ID" htmlFor={`${id}-backup`}>
+          <Input
+            id={`${id}-backup`}
+            name="backupId"
+            required
+            maxLength={128}
+            className="font-mono"
+          />
+        </Field>
+        <Field label="Protected restore target" htmlFor={`${id}-target`}>
+          <Input id={`${id}-target`} name="target" required maxLength={256} />
+        </Field>
+        <div className="flex items-center gap-2 self-end sm:h-9">
+          <Checkbox id={`${id}-verified`} name="backupVerified" required />
+          <Label htmlFor={`${id}-verified`} className="font-normal">
+            Backup evidence reviewed and verified
+          </Label>
+        </div>
+        <Field label="Impact preview" htmlFor={`${id}-impact`} className="sm:col-span-2">
+          <Textarea id={`${id}-impact`} name="impactPreview" required maxLength={2048} />
+        </Field>
+        <Field label="Reason / case context" htmlFor={`${id}-reason`} className="sm:col-span-2">
+          <Textarea id={`${id}-reason`} name="reason" required minLength={8} maxLength={1024} />
+        </Field>
+        <div className="sm:col-span-2">
+          <Button type="submit" disabled={pending}>
+            {pending ? "Requesting…" : "Review and request recovery"}
+          </Button>
+        </div>
       </form>
-    </details>
+    </Disclosure>
   );
 }
 
 function ActivityPage({ permissions }: { readonly permissions: ReadonlySet<string> }) {
   const client = useOperatorClient();
+  const id = useId();
   const [query, setQuery] = useState("");
   const [submitted, setSubmitted] = useState("");
   const loader = useCallback(
@@ -1212,22 +1426,29 @@ function ActivityPage({ permissions }: { readonly permissions: ReadonlySet<strin
       actions={<ReloadButton reload={resource.reload} pending={resource.status === "loading"} />}
     >
       <form
-        className="operator-filter-bar"
+        className="flex flex-wrap items-end gap-3"
         onSubmit={(event) => {
           event.preventDefault();
           setSubmitted(query.trim());
         }}
       >
-        <label>
-          Actor, action, target, tenant, case, request, or outcome
-          <input
+        <Field
+          label="Actor, action, target, tenant, case, request, or outcome"
+          htmlFor={`${id}-query`}
+          className="min-w-0 flex-1 basis-72"
+        >
+          <Input
+            id={`${id}-query`}
             type="search"
             value={query}
             maxLength={200}
             onChange={(event) => setQuery(event.currentTarget.value)}
           />
-        </label>
-        <button type="submit">Search</button>
+        </Field>
+        <Button type="submit">
+          <Search aria-hidden="true" />
+          Search
+        </Button>
       </form>
       <ResourceFailure resource={resource} />
       {permissions.has("activity_export") && resource.status === "ready" ? (
@@ -1302,7 +1523,7 @@ function SecurityInventory({
   const [message, setMessage] = useState<string | null>(null);
   return (
     <>
-      <div className="operator-stat-grid">
+      <div className="grid gap-4 sm:grid-cols-3">
         <StatCard label="Entitlements" value={value.entitlements.length} tone="current" />
         <StatCard
           label="Active / recent sessions"
@@ -1316,37 +1537,43 @@ function SecurityInventory({
         />
       </div>
       {message === null ? null : (
-        <p role="status" className="notice">
-          {message}
-        </p>
+        <Alert role="status">
+          <AlertDescription className="block text-foreground">{message}</AlertDescription>
+        </Alert>
       )}
-      <div className="operator-table-scroll">
-        <table>
-          <thead>
-            <tr>
-              <th scope="col">Operator</th>
-              <th scope="col">Developer identity</th>
-              <th scope="col">Epoch</th>
-              <th scope="col">Permissions</th>
-              <th scope="col">Action</th>
-            </tr>
-          </thead>
-          <tbody>
+      <Card className="gap-0 overflow-hidden py-0">
+        <Table>
+          <TableHeader>
+            <TableRow className="hover:bg-transparent">
+              <TableHead scope="col" className="pl-4">
+                Operator
+              </TableHead>
+              <TableHead scope="col">Developer identity</TableHead>
+              <TableHead scope="col">Epoch</TableHead>
+              <TableHead scope="col">Permissions</TableHead>
+              <TableHead scope="col" className="pr-4 text-right">
+                Action
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {value.entitlements.map((entitlement) => (
-              <tr key={entitlement.developerIdentityId}>
-                <td>
-                  <code>{entitlement.operatorId}</code>
-                </td>
-                <td>
-                  <code>{entitlement.developerIdentityId}</code>
-                </td>
-                <td>{entitlement.operatorEpoch}</td>
-                <td>{entitlement.permissions.map(humanize).join(", ")}</td>
-                <td>
+              <TableRow key={entitlement.developerIdentityId}>
+                <TableCell className="pl-4">
+                  <code className="font-mono text-xs">{entitlement.operatorId}</code>
+                </TableCell>
+                <TableCell>
+                  <code className="font-mono text-xs">{entitlement.developerIdentityId}</code>
+                </TableCell>
+                <TableCell className="tabular-nums">{entitlement.operatorEpoch}</TableCell>
+                <TableCell className="max-w-md whitespace-normal text-muted-foreground">
+                  {entitlement.permissions.map(humanize).join(", ")}
+                </TableCell>
+                <TableCell className="pr-4 text-right">
                   {!canManage ? null : (
-                    <button
-                      type="button"
-                      className="secondary"
+                    <Button
+                      variant="outline"
+                      size="sm"
                       onClick={() => {
                         const reason = "Security administrator revoked active operator sessions";
                         void client
@@ -1361,47 +1588,55 @@ function SecurityInventory({
                       }}
                     >
                       Revoke sessions
-                    </button>
+                    </Button>
                   )}
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
-      </div>
-      <section className="panel full-span">
-        <h2>Authentication failures and throttling</h2>
-        {value.attempts.length === 0 ? (
-          <p>No retained attempt records.</p>
-        ) : (
-          <ul>
-            {value.attempts.map((attempt) => (
-              <li key={`${attempt.class}-${attempt.nextAllowedAt}-${attempt.count}`}>
-                {humanize(attempt.class)}: {attempt.count} attempt(s), next allowed{" "}
-                {formatRelative(attempt.nextAllowedAt)}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+          </TableBody>
+        </Table>
+      </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle>Authentication failures and throttling</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {value.attempts.length === 0 ? (
+            <p className="m-0 text-sm text-muted-foreground">No retained attempt records.</p>
+          ) : (
+            <ul className="m-0 grid list-disc gap-1 pl-5 text-sm">
+              {value.attempts.map((attempt) => (
+                <li key={`${attempt.class}-${attempt.nextAllowedAt}-${attempt.count}`}>
+                  {humanize(attempt.class)}: {attempt.count} attempt(s), next allowed{" "}
+                  {formatRelative(attempt.nextAllowedAt)}
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
     </>
   );
 }
 
 function EntitlementAdministration({ onChanged }: { readonly onChanged: () => void }) {
   const client = useOperatorClient();
+  const id = useId();
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   return (
-    <details className="panel operator-workflow-panel">
-      <summary>Administer operator entitlement</summary>
-      <p>
+    <Disclosure summary="Administer operator entitlement">
+      <p className="m-0 text-sm text-muted-foreground">
         The server plans and applies this change against the same digest. Long confirmation tokens
         are passed internally; you do not need to copy and paste one.
       </p>
-      {message === null ? null : <p role="status">{message}</p>}
+      {message === null ? null : (
+        <Alert role="status">
+          <AlertDescription className="block text-foreground">{message}</AlertDescription>
+        </Alert>
+      )}
       <form
-        className="operator-form-grid"
+        className="grid gap-4 sm:grid-cols-2"
         onSubmit={(event) => {
           event.preventDefault();
           const data = new FormData(event.currentTarget);
@@ -1431,73 +1666,98 @@ function EntitlementAdministration({ onChanged }: { readonly onChanged: () => vo
             .finally(() => setPending(false));
         }}
       >
-        <label>
-          Change
-          <select name="kind">
+        <Field label="Change" htmlFor={`${id}-kind`}>
+          <NativeSelect id={`${id}-kind`} name="kind">
             <option value="grant">Grant</option>
             <option value="replace">Replace</option>
             <option value="revoke">Revoke</option>
-          </select>
-        </label>
-        <label>
-          Developer email
-          <input name="targetEmail" type="email" required maxLength={320} />
-        </label>
-        <fieldset className="full-span">
-          <legend>Permissions (ignored for revoke)</legend>
-          <div className="checkbox-grid">
+          </NativeSelect>
+        </Field>
+        <Field label="Developer email" htmlFor={`${id}-email`}>
+          <Input id={`${id}-email`} name="targetEmail" type="email" required maxLength={320} />
+        </Field>
+        <fieldset className="m-0 grid gap-3 border-0 p-0 sm:col-span-2">
+          <legend className="mb-2 p-0 text-sm font-medium leading-none">
+            Permissions (ignored for revoke)
+          </legend>
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {OPERATOR_PERMISSIONS.map((permission) => (
-              <label key={permission}>
-                <input type="checkbox" name={permission} /> {humanize(permission)}
-              </label>
+              <div key={permission} className="flex items-center gap-2">
+                <Checkbox id={`${id}-${permission}`} name={permission} />
+                <Label htmlFor={`${id}-${permission}`} className="font-normal">
+                  {humanize(permission)}
+                </Label>
+              </div>
             ))}
           </div>
         </fieldset>
-        <label className="full-span">
-          Private reason / case context
-          <textarea name="privateReason" required minLength={8} maxLength={1024} />
-        </label>
-        <button type="submit" disabled={pending}>
-          {pending ? "Planning and applying…" : "Review and apply"}
-        </button>
+        <Field
+          label="Private reason / case context"
+          htmlFor={`${id}-reason`}
+          className="sm:col-span-2"
+        >
+          <Textarea
+            id={`${id}-reason`}
+            name="privateReason"
+            required
+            minLength={8}
+            maxLength={1024}
+          />
+        </Field>
+        <div className="sm:col-span-2">
+          <Button type="submit" disabled={pending}>
+            {pending ? "Planning and applying…" : "Review and apply"}
+          </Button>
+        </div>
       </form>
-    </details>
+    </Disclosure>
   );
 }
 
 function ActivityTable({ value }: { readonly value: OperatorActivityPage }) {
-  if (value.items.length === 0) return <EmptyState title="No activity matches these filters" />;
+  if (value.items.length === 0)
+    return <WorkspaceEmptyState title="No activity matches these filters" />;
   return (
-    <div className="operator-table-scroll">
-      <table>
-        <thead>
-          <tr>
-            <th scope="col">Time</th>
-            <th scope="col">Actor</th>
-            <th scope="col">Action</th>
-            <th scope="col">Target</th>
-            <th scope="col">Outcome</th>
-            <th scope="col">Integrity</th>
-          </tr>
-        </thead>
-        <tbody>
+    <Card className="gap-0 overflow-hidden py-0">
+      <Table>
+        <TableHeader>
+          <TableRow className="hover:bg-transparent">
+            <TableHead scope="col" className="pl-4">
+              Time
+            </TableHead>
+            <TableHead scope="col">Actor</TableHead>
+            <TableHead scope="col">Action</TableHead>
+            <TableHead scope="col">Target</TableHead>
+            <TableHead scope="col">Outcome</TableHead>
+            <TableHead scope="col" className="pr-4">
+              Integrity
+            </TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {value.items.map((event) => (
-            <tr key={event.id}>
-              <td>{formatDate(event.timestamp)}</td>
-              <td>{event.actorId}</td>
-              <td>{humanize(event.action)}</td>
-              <td>
-                <code>{event.target}</code>
-              </td>
-              <td>{event.outcome}</td>
-              <td>
-                <code>{event.integrity.slice(0, 12)}…</code>
-              </td>
-            </tr>
+            <TableRow key={event.id}>
+              <TableCell className="pl-4 text-muted-foreground">
+                {formatDate(event.timestamp)}
+              </TableCell>
+              <TableCell>
+                <code className="font-mono text-xs">{event.actorId}</code>
+              </TableCell>
+              <TableCell>{humanize(event.action)}</TableCell>
+              <TableCell>
+                <code className="font-mono text-xs">{event.target}</code>
+              </TableCell>
+              <TableCell>{event.outcome}</TableCell>
+              <TableCell className="pr-4">
+                <code className="font-mono text-xs text-muted-foreground">
+                  {event.integrity.slice(0, 12)}…
+                </code>
+              </TableCell>
+            </TableRow>
           ))}
-        </tbody>
-      </table>
-    </div>
+        </TableBody>
+      </Table>
+    </Card>
   );
 }
 
@@ -1513,10 +1773,10 @@ function ActivityExportButton({
   const [message, setMessage] = useState<string | null>(null);
   if (state.status !== "authenticated") return null;
   return (
-    <div className="operator-export-row">
-      <button
-        type="button"
-        className="secondary"
+    <div className="flex flex-wrap items-center gap-3">
+      <Button
+        variant="outline"
+        size="sm"
         onClick={() => {
           const id = `exp_${crypto.randomUUID().replaceAll("-", "")}`;
           void guardedInput(
@@ -1543,8 +1803,12 @@ function ActivityExportButton({
         }}
       >
         Create expiring export
-      </button>
-      {message === null ? null : <span role="status">{message}</span>}
+      </Button>
+      {message === null ? null : (
+        <span role="status" className="text-sm text-muted-foreground">
+          {message}
+        </span>
+      )}
     </div>
   );
 }
@@ -1552,20 +1816,27 @@ function ActivityExportButton({
 function WorkspacePage({
   title,
   eyebrow,
+  subtitle,
   actions,
   children,
 }: {
   readonly title: string;
-  readonly eyebrow: string;
+  readonly eyebrow: ReactNode;
+  readonly subtitle?: string;
   readonly actions?: ReactNode;
   readonly children: ReactNode;
 }) {
   return (
-    <section className="operator-page" aria-labelledby="operator-page-title">
-      <div className="operator-page-heading">
-        <div>
-          <p className="eyebrow">{eyebrow}</p>
-          <h1 id="operator-page-title">{title}</h1>
+    <section className="grid gap-6" aria-labelledby="operator-page-title">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="grid gap-1">
+          <Eyebrow>{eyebrow}</Eyebrow>
+          <h1 id="operator-page-title" className="text-2xl">
+            {title}
+          </h1>
+          {subtitle === undefined ? null : (
+            <p className="m-0 max-w-2xl text-sm text-muted-foreground">{subtitle}</p>
+          )}
         </div>
         {actions}
       </div>
@@ -1575,51 +1846,100 @@ function WorkspacePage({
 }
 
 function SectionGrid({ sections }: { readonly sections: readonly OperatorReadSection[] }) {
-  if (sections.length === 0) return <EmptyState title="No provider sections are configured" />;
+  if (sections.length === 0)
+    return <WorkspaceEmptyState title="No provider sections are configured" />;
   return (
-    <div className="operator-section-grid">
+    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
       {sections.map((section) => (
-        <section className="panel operator-provider-card" key={section.id}>
-          <div className="section-heading">
-            <div>
-              <p className="eyebrow">{section.provider}</p>
-              <h2>{humanize(section.id)}</h2>
-            </div>
-            <FreshnessBadge value={section.freshness} />
-          </div>
-          {section.message === null ? null : <p>{section.message}</p>}
-          {Object.keys(section.metrics).length === 0 ? null : (
-            <dl className="operator-metric-list">
-              {Object.entries(section.metrics).map(([name, value]) => (
-                <div key={name}>
-                  <dt>{humanize(name)}</dt>
-                  <dd>{metricValue(value)}</dd>
-                </div>
-              ))}
-            </dl>
-          )}
-          {section.links.length === 0 ? null : (
-            <ul>
-              {section.links.map((link) => (
-                <li key={link.url}>
-                  <a href={link.url} target="_blank" rel="noreferrer">
-                    {link.label}
-                  </a>
-                </li>
-              ))}
-            </ul>
-          )}
-          <small>
-            Observed {section.observedAt === null ? "unknown" : formatRelative(section.observedAt)}
-          </small>
-        </section>
+        <Card className="gap-4" key={section.id}>
+          <CardHeader>
+            <Eyebrow>{section.provider}</Eyebrow>
+            <CardTitle>{humanize(section.id)}</CardTitle>
+            <CardAction>
+              <FreshnessBadge value={section.freshness} />
+            </CardAction>
+          </CardHeader>
+          <CardContent className="grid gap-3 text-sm">
+            {section.message === null ? null : <p className="m-0">{section.message}</p>}
+            {Object.keys(section.metrics).length === 0 ? null : (
+              <dl className="m-0 grid gap-1.5">
+                {Object.entries(section.metrics).map(([name, value]) => (
+                  <div
+                    key={name}
+                    className="flex items-baseline justify-between gap-3 border-b border-dashed pb-1.5 last:border-b-0 last:pb-0"
+                  >
+                    <dt className="text-muted-foreground">{humanize(name)}</dt>
+                    <dd className="m-0 text-right font-medium wrap-anywhere tabular-nums">
+                      {metricValue(value)}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            )}
+            {section.links.length === 0 ? null : (
+              <ul className="m-0 grid list-none gap-1 p-0">
+                {section.links.map((link) => (
+                  <li key={link.url}>
+                    <a
+                      className="inline-flex items-center gap-1"
+                      href={link.url}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      {link.label}
+                      <ExternalLink aria-hidden="true" className="size-3.5" />
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <small className="text-xs text-muted-foreground">
+              Observed{" "}
+              {section.observedAt === null ? "unknown" : formatRelative(section.observedAt)}
+            </small>
+          </CardContent>
+        </Card>
       ))}
     </div>
   );
 }
 
+/** How fresh a provider's answer is: current, stale, or absent. */
 function FreshnessBadge({ value }: { readonly value: string }) {
-  return <span className={`status-pill ${value}`}>{humanize(value)}</span>;
+  const variant =
+    value === "current"
+      ? "positive"
+      : value === "unavailable"
+        ? "destructive"
+        : value === "stale"
+          ? "warning"
+          : "secondary";
+  return <Badge variant={variant}>{humanize(value)}</Badge>;
+}
+
+/** A project or environment lifecycle word. */
+function LifecycleBadge({ value }: { readonly value: string }) {
+  const variant =
+    value === "active"
+      ? "positive"
+      : value === "suspended" || value === "deleted" || value === "failed"
+        ? "destructive"
+        : value === "provisioning" || value === "pending" || value === "deleting"
+          ? "warning"
+          : "secondary";
+  return <Badge variant={variant}>{humanize(value)}</Badge>;
+}
+
+function SeverityBadge({ value }: { readonly value: string }) {
+  const variant =
+    value === "critical"
+      ? "destructive"
+      : value === "high"
+        ? "warning"
+        : value === "medium"
+          ? "secondary"
+          : "outline";
+  return <Badge variant={variant}>{value}</Badge>;
 }
 
 function StatCard({
@@ -1632,26 +1952,53 @@ function StatCard({
   readonly tone: string;
 }) {
   return (
-    <section className="panel operator-stat">
-      <span>{label}</span>
-      <strong>{value}</strong>
-      <span className={`status-dot ${tone}`} aria-hidden="true" />
-    </section>
+    <Card className="gap-2 py-4">
+      <CardContent className="grid gap-1">
+        <Eyebrow>{label}</Eyebrow>
+        <div className="flex items-center gap-2">
+          <strong className="text-2xl font-semibold tracking-tight tabular-nums">{value}</strong>
+          <span
+            className={cn(
+              "size-2 shrink-0 rounded-full",
+              tone === "current"
+                ? "bg-positive"
+                : tone === "unavailable"
+                  ? "bg-destructive"
+                  : tone === "stale"
+                    ? "bg-warning"
+                    : "bg-muted-foreground",
+            )}
+            aria-hidden="true"
+          />
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
-function EmptyState({ title }: { readonly title: string }) {
+/** Nothing to list; the title keeps its place in the page's outline. */
+function WorkspaceEmptyState({ title }: { readonly title: string }) {
   return (
-    <section className="panel operator-empty-state">
-      <h2>{title}</h2>
-      <p>Adjust filters or refresh after the underlying state changes.</p>
-    </section>
+    <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed px-6 py-10 text-center">
+      <div className="mb-1 flex size-10 items-center justify-center rounded-full bg-muted text-muted-foreground">
+        <Inbox aria-hidden="true" className="size-5" />
+      </div>
+      <h2 className="text-base">{title}</h2>
+      <p className="m-0 max-w-sm text-sm text-muted-foreground">
+        Adjust filters or refresh after the underlying state changes.
+      </p>
+    </div>
   );
 }
 
 function LoadingState({ label }: { readonly label: string }) {
   return (
-    <p className="panel" aria-live="polite" aria-busy="true">
+    <p
+      className="m-0 flex items-center gap-2 rounded-xl border bg-card px-5 py-4 text-sm text-muted-foreground"
+      aria-live="polite"
+      aria-busy="true"
+    >
+      <LoaderCircle aria-hidden="true" className="size-4 shrink-0 animate-spin" />
       {label}
     </p>
   );
@@ -1665,9 +2012,10 @@ function ReloadButton({
   readonly pending: boolean;
 }) {
   return (
-    <button type="button" className="secondary" disabled={pending} onClick={reload}>
+    <Button variant="outline" size="sm" disabled={pending} onClick={reload}>
+      <RefreshCw aria-hidden="true" className={cn(pending && "animate-spin")} />
       {pending ? "Refreshing…" : "Refresh"}
-    </button>
+    </Button>
   );
 }
 
@@ -1683,15 +2031,55 @@ function CursorControls({
   readonly onNext: () => void;
 }) {
   return (
-    <nav className="button-row spread" aria-label="Cursor pagination">
-      <button type="button" className="secondary" disabled={!canPrevious} onClick={onPrevious}>
+    <nav
+      className="flex flex-wrap items-center justify-between gap-2"
+      aria-label="Cursor pagination"
+    >
+      <Button variant="outline" size="sm" disabled={!canPrevious} onClick={onPrevious}>
+        <ChevronLeft aria-hidden="true" />
         Previous page
-      </button>
-      <span>Up to 25 records per page</span>
-      <button type="button" className="secondary" disabled={!canNext} onClick={onNext}>
+      </Button>
+      <span className="text-xs text-muted-foreground">Up to 25 records per page</span>
+      <Button variant="outline" size="sm" disabled={!canNext} onClick={onNext}>
         Next page
-      </button>
+        <ChevronRight aria-hidden="true" />
+      </Button>
     </nav>
+  );
+}
+
+/** A workflow folded away until it is wanted: a card whose body is a `details`. */
+function Disclosure({
+  summary,
+  children,
+}: {
+  readonly summary: string;
+  readonly children: ReactNode;
+}) {
+  return (
+    <Card as="div" className="gap-0 py-0">
+      <details className="group m-0">
+        <summary className="m-0 flex cursor-pointer list-none items-center gap-2 px-5 py-4 text-base font-semibold tracking-tight [&::-webkit-details-marker]:hidden">
+          <ChevronRight
+            aria-hidden="true"
+            className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-90"
+          />
+          {summary}
+        </summary>
+        <div className="grid gap-4 border-t px-5 py-5">{children}</div>
+      </details>
+    </Card>
+  );
+}
+
+function Definition({ term, children }: { readonly term: string; readonly children: ReactNode }) {
+  return (
+    <div className="grid gap-1">
+      <dt className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">
+        {term}
+      </dt>
+      <dd className="m-0 text-sm wrap-anywhere">{children}</dd>
+    </div>
   );
 }
 

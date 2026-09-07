@@ -32,9 +32,9 @@ test("the theme preference dresses every screen and is remembered on the device"
   expect((await theme(page)).attribute).toBeNull();
 
   const toggle = page.getByTestId("theme-toggle");
-  await expect(toggle).toHaveAccessibleName("Switch to dark mode");
+  await expect(toggle).toHaveAccessibleName("Switch to the dark theme");
   await toggle.click();
-  await expect(toggle).toHaveAccessibleName("Switch to light mode");
+  await expect(toggle).toHaveAccessibleName("Switch to the light theme");
   await expect(toggle).toHaveAttribute("aria-pressed", "true");
   expect(await theme(page)).toEqual({ attribute: "dark", scheme: "dark" });
 
@@ -106,6 +106,45 @@ test("a dialog is opened from the keyboard, closes on Escape, and gives focus ba
   await page.keyboard.press("Escape");
   await expect(dialog).toHaveCount(0);
   await expect(opener).toBeFocused();
+});
+
+test("a chart settles instead of redrawing itself forever", async ({ page }) => {
+  await openDemoHousehold(page);
+  await page.goto("/#/investments");
+  const chart = page.getByRole("img", { name: /Allocation of USD holdings/u });
+  await expect(chart).toBeVisible();
+  const sectors = chart.locator(".recharts-pie-sector path");
+  await expect(sectors).toHaveCount(2);
+
+  // The screen builds its slices inline, so the chart is handed a new array on
+  // every render; the drawing must still come to rest, and the ring must be
+  // whole rather than frozen part-way through its entry.
+  const geometry = () => sectors.evaluateAll((paths) => paths.map((p) => p.getAttribute("d")));
+  await page.waitForTimeout(1500);
+  const settled = await geometry();
+  await page.waitForTimeout(1200);
+  expect(await geometry()).toEqual(settled);
+
+  // Whole: the ring is drawn all the way round. Sampled at the middle of its
+  // thickness at twelve angles -- a chart frozen part-way through its entry
+  // leaves a gap, which is what this guards against.
+  const box = await chart.locator(".recharts-surface").first().boundingBox();
+  if (box === null) throw new Error("the chart has no drawing");
+  const centre = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  const radius = (Math.min(box.width, box.height) / 2) * 0.77;
+  const onRing = await page.evaluate(
+    ({ centre: middle, radius: distance }) =>
+      Array.from({ length: 12 }, (_unused, index) => {
+        const angle = (index / 12) * 2 * Math.PI;
+        const element = document.elementFromPoint(
+          middle.x + distance * Math.sin(angle),
+          middle.y - distance * Math.cos(angle),
+        );
+        return element?.closest(".recharts-pie-sector") != null;
+      }),
+    { centre, radius },
+  );
+  expect(onRing).toEqual(Array.from({ length: 12 }, () => true));
 });
 
 test("a chart names what it shows and explains the point under the pointer", async ({ page }) => {

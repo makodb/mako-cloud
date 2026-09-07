@@ -1,4 +1,21 @@
-import { type FormEvent, useCallback, useEffect, useState } from "react";
+import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  Eyebrow,
+  Field,
+  Input,
+  Textarea,
+} from "@mako-cloud/ui";
+import { AlertTriangle, CheckCircle2, ShieldCheck, XCircle } from "lucide-react";
+import { type FormEvent, type ReactNode, useCallback, useEffect, useState } from "react";
 
 import type {
   ActivePolicy,
@@ -43,6 +60,12 @@ const DEFAULT_EXAMPLES = JSON.stringify(
   null,
   2,
 );
+
+/** JSON that is written: the code face inside a textarea, sized by its content within bounds. */
+const JSON_FIELD = "min-h-56 max-h-[40rem] font-mono text-xs leading-5 md:text-xs";
+/** JSON that is read. */
+const JSON_BLOCK =
+  "m-0 overflow-x-auto rounded-md border bg-muted/40 p-3 font-mono text-xs leading-5";
 
 interface EvaluationResultView {
   readonly id: string;
@@ -199,149 +222,200 @@ export function PolicyScreen({
   };
 
   return (
-    <section aria-labelledby="policy-title">
-      <button type="button" className="back-link" onClick={onBack}>
-        ← Collection
-      </button>
-      <div className="section-heading">
+    <section aria-labelledby="policy-title" className="grid gap-6">
+      <div className="grid gap-3">
         <div>
-          <p className="eyebrow">Collection {collectionId}</p>
-          <h1 id="policy-title">Document policies</h1>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="-ml-2 text-muted-foreground hover:text-foreground"
+            onClick={onBack}
+          >
+            ← Collection
+          </Button>
         </div>
-        {active === null ? null : (
-          <span className="status">Authorization epoch {active.authorizationEpoch}</span>
-        )}
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <Eyebrow>
+              Collection{" "}
+              <span className="font-mono normal-case tracking-normal">{collectionId}</span>
+            </Eyebrow>
+            <h1 id="policy-title" className="m-0 text-2xl font-semibold tracking-tight">
+              Document policies
+            </h1>
+          </div>
+          {active === null ? null : (
+            <Badge variant="outline" className="tabular-nums">
+              Authorization epoch {active.authorizationEpoch}
+            </Badge>
+          )}
+        </div>
       </div>
       <ApiFailureNotice failure={failure} />
       <DefaultDenyNotice active={active} />
-      <div className="split-grid stacked-section">
-        <section className="panel" aria-labelledby="draft-title">
-          <h2 id="draft-title">Create immutable draft</h2>
-          <p>Rules use the typed, CEL-compatible policy expression environment.</p>
-          <form onSubmit={(event) => void createDraft(event)}>
-            <label>
-              Policy version
-              <input
-                name="version"
-                type="number"
-                min="1"
-                defaultValue={(active?.policy?.version ?? 0) + 1}
-                required
-              />
-            </label>
-            <label>
-              Rules (JSON)
-              <textarea
-                name="rules"
-                rows={18}
-                required
-                defaultValue={DEFAULT_RULES}
-                spellCheck={false}
-              />
-            </label>
-            <button type="submit">Create draft</button>
-          </form>
-        </section>
-        <section className="panel" aria-labelledby="versions-title">
-          <h2 id="versions-title">Policy versions</h2>
-          <form className="inline-form" onSubmit={(event) => void inspectVersion(event)}>
-            <label>
-              Inspect version
-              <input
-                name="version"
-                type="number"
-                min="1"
-                defaultValue={active?.policy?.version}
-                required
-              />
-            </label>
-            <button type="submit" className="secondary">
-              Load
-            </button>
-          </form>
-          <PolicyVersionCard policy={selected} />
-          {selected === null ? null : (
-            <div className="button-row">
-              <button type="button" onClick={() => void validate()}>
-                Validate against schema
-              </button>
-              <button
-                type="button"
-                className="secondary"
-                disabled={selected.state !== "validated"}
-                onClick={() => void changeActive("activate")}
-              >
-                Activate
-              </button>
-              <button
-                type="button"
-                className="secondary"
-                disabled={selected.state === "draft"}
-                onClick={() => void changeActive("rollback")}
-              >
-                Roll back to this version
-              </button>
-            </div>
-          )}
-          <ValidationResult validation={validation} />
-        </section>
+      <div className="grid items-start gap-6 lg:grid-cols-2">
+        <Card aria-labelledby="draft-title">
+          <CardHeader>
+            <CardTitle id="draft-title">Create immutable draft</CardTitle>
+            <CardDescription>
+              Rules use the typed, CEL-compatible policy expression environment.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form className="grid gap-4" onSubmit={(event) => void createDraft(event)}>
+              <Field label="Policy version" htmlFor="draft-version">
+                <Input
+                  id="draft-version"
+                  name="version"
+                  type="number"
+                  min="1"
+                  defaultValue={(active?.policy?.version ?? 0) + 1}
+                  required
+                  className="max-w-40"
+                />
+              </Field>
+              <Field label="Rules (JSON)" htmlFor="draft-rules">
+                <Textarea
+                  id="draft-rules"
+                  name="rules"
+                  rows={18}
+                  required
+                  defaultValue={DEFAULT_RULES}
+                  spellCheck={false}
+                  className={JSON_FIELD}
+                />
+              </Field>
+              <div>
+                <Button type="submit">Create draft</Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
+        <Card aria-labelledby="versions-title">
+          <CardHeader>
+            <CardTitle id="versions-title">Policy versions</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-4">
+            <form
+              className="flex flex-wrap items-end gap-2"
+              onSubmit={(event) => void inspectVersion(event)}
+            >
+              <Field label="Inspect version" htmlFor="inspect-version">
+                <Input
+                  id="inspect-version"
+                  name="version"
+                  type="number"
+                  min="1"
+                  defaultValue={active?.policy?.version}
+                  required
+                  className="w-32"
+                />
+              </Field>
+              <Button type="submit" variant="outline">
+                Load
+              </Button>
+            </form>
+            <PolicyVersionCard policy={selected} />
+            {selected === null ? null : (
+              <div className="flex flex-wrap items-center gap-2">
+                <Button onClick={() => void validate()}>
+                  <ShieldCheck aria-hidden="true" />
+                  Validate against schema
+                </Button>
+                <Button
+                  variant="outline"
+                  disabled={selected.state !== "validated"}
+                  onClick={() => void changeActive("activate")}
+                >
+                  Activate
+                </Button>
+                <Button
+                  variant="outline"
+                  disabled={selected.state === "draft"}
+                  onClick={() => void changeActive("rollback")}
+                >
+                  Roll back to this version
+                </Button>
+              </div>
+            )}
+            <ValidationResult validation={validation} />
+          </CardContent>
+        </Card>
       </div>
-      <section className="panel full-span stacked-section" aria-labelledby="test-policy-title">
-        <h2 id="test-policy-title">Example evaluation</h2>
-        <p>Examples run without changing the active policy.</p>
-        {selected === null ? (
-          <p>Select or create a policy version before testing.</p>
-        ) : (
-          <form onSubmit={(event) => void testExamples(event)}>
-            <label>
-              Example contexts (JSON)
-              <textarea
-                name="examples"
-                rows={16}
-                required
-                defaultValue={DEFAULT_EXAMPLES}
-                spellCheck={false}
-              />
-            </label>
-            <button type="submit">Evaluate policy v{selected.version}</button>
-          </form>
-        )}
-        <EvaluationTraces results={testResults} />
-      </section>
+      <Card aria-labelledby="test-policy-title">
+        <CardHeader>
+          <CardTitle id="test-policy-title">Example evaluation</CardTitle>
+          <CardDescription>Examples run without changing the active policy.</CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4">
+          {selected === null ? (
+            <p className="m-0 text-sm text-muted-foreground">
+              Select or create a policy version before testing.
+            </p>
+          ) : (
+            <form className="grid gap-4" onSubmit={(event) => void testExamples(event)}>
+              <Field label="Example contexts (JSON)" htmlFor="example-contexts">
+                <Textarea
+                  id="example-contexts"
+                  name="examples"
+                  rows={16}
+                  required
+                  defaultValue={DEFAULT_EXAMPLES}
+                  spellCheck={false}
+                  className={JSON_FIELD}
+                />
+              </Field>
+              <div>
+                <Button type="submit">Evaluate policy v{selected.version}</Button>
+              </div>
+            </form>
+          )}
+          <EvaluationTraces results={testResults} />
+        </CardContent>
+      </Card>
     </section>
   );
 }
 
 function DefaultDenyNotice({ active }: { readonly active: ActivePolicy | null }) {
   if (active === null) {
-    return <p>Loading active policy state…</p>;
+    return <p className="m-0 text-sm text-muted-foreground">Loading active policy state…</p>;
   }
   return (
-    <div className={`notice ${active.defaultDeny ? "warning" : "success"}`} role="status">
-      <strong>
+    <Alert variant={active.defaultDeny ? "warning" : "positive"} role="status">
+      {active.defaultDeny ? (
+        <AlertTriangle aria-hidden="true" />
+      ) : (
+        <CheckCircle2 aria-hidden="true" />
+      )}
+      <AlertTitle>
         {active.defaultDeny ? "Default deny is active." : "An active policy is installed."}
-      </strong>
-      <p>
-        {active.defaultDeny
-          ? "All create, read, update, and delete operations are denied until a validated policy is activated."
-          : `Policy v${active.policy?.version ?? "unknown"} controls access. Activation or rollback advances the authorization epoch.`}
-      </p>
-    </div>
+      </AlertTitle>
+      <AlertDescription>
+        <p className="m-0">
+          {active.defaultDeny
+            ? "All create, read, update, and delete operations are denied until a validated policy is activated."
+            : `Policy v${active.policy?.version ?? "unknown"} controls access. Activation or rollback advances the authorization epoch.`}
+        </p>
+      </AlertDescription>
+    </Alert>
   );
 }
 
 function PolicyVersionCard({ policy }: { readonly policy: PolicySet | null }) {
   if (policy === null) {
-    return <p>No policy version selected.</p>;
+    return <p className="m-0 text-sm text-muted-foreground">No policy version selected.</p>;
   }
   return (
-    <article className="workflow-card">
-      <div className="button-row spread">
-        <strong>Policy v{policy.version}</strong>
-        <LifecycleBadge state={policy.state} />
-      </div>
-      <pre className="json-preview">{JSON.stringify(policy.rules, null, 2)}</pre>
-    </article>
+    <Card as="article" className="gap-3 py-4">
+      <CardContent className="grid gap-3 px-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <strong className="text-sm font-medium">Policy v{policy.version}</strong>
+          <LifecycleBadge state={policy.state} />
+        </div>
+        <pre className={JSON_BLOCK}>{JSON.stringify(policy.rules, null, 2)}</pre>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -350,23 +424,29 @@ function ValidationResult({ validation }: { readonly validation: PolicyValidatio
     return null;
   }
   return (
-    <div className={`notice ${validation.valid ? "success" : "error"}`} role="status">
-      <strong>{validation.valid ? "Schema-aware validation passed." : "Validation failed."}</strong>
-      {validation.policy.diagnostics.length === 0 ? (
-        <p>No diagnostics.</p>
-      ) : (
-        <ul className="diagnostic-list">
-          {validation.policy.diagnostics.map((diagnostic) => (
-            <li key={JSON.stringify(diagnostic)}>
-              <strong>{diagnostic.severity}</strong> {diagnostic.code}: {diagnostic.message}
-              {diagnostic.span === undefined
-                ? null
-                : ` (line ${diagnostic.span.line}, column ${diagnostic.span.column})`}
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
+    <Alert variant={validation.valid ? "positive" : "destructive"} role="status">
+      {validation.valid ? <CheckCircle2 aria-hidden="true" /> : <XCircle aria-hidden="true" />}
+      <AlertTitle>
+        {validation.valid ? "Schema-aware validation passed." : "Validation failed."}
+      </AlertTitle>
+      <AlertDescription>
+        {validation.policy.diagnostics.length === 0 ? (
+          <p className="m-0">No diagnostics.</p>
+        ) : (
+          <ul className="m-0 list-disc pl-4">
+            {validation.policy.diagnostics.map((diagnostic) => (
+              <li key={JSON.stringify(diagnostic)}>
+                <strong>{diagnostic.severity}</strong>{" "}
+                <span className="font-mono">{diagnostic.code}</span>: {diagnostic.message}
+                {diagnostic.span === undefined
+                  ? null
+                  : ` (line ${diagnostic.span.line}, column ${diagnostic.span.column})`}
+              </li>
+            ))}
+          </ul>
+        )}
+      </AlertDescription>
+    </Alert>
   );
 }
 
@@ -375,23 +455,35 @@ function EvaluationTraces({ results }: { readonly results: EvaluationResultView[
     return null;
   }
   return (
-    <div className="card-grid stacked-section" aria-live="polite">
+    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3" aria-live="polite">
       {results.map(({ id, result }, index) => (
-        <article className="resource-card" key={id}>
-          <div className="button-row spread">
-            <strong>Example {index + 1}</strong>
-            <LifecycleBadge state={result.allowed ? "allowed" : "denied"} />
-          </div>
-          <p>Result code: {result.code}</p>
-          <p>Evaluated rules: {result.evaluatedRules}</p>
-          <p>
-            Matched rules:{" "}
-            {result.matchedRuleIds.length === 0 ? "none" : result.matchedRuleIds.join(", ")}
-          </p>
-        </article>
+        <Card as="article" key={id} className="gap-3 py-4">
+          <CardContent className="grid gap-2 px-4 text-sm">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <strong className="font-medium">Example {index + 1}</strong>
+              <LifecycleBadge state={result.allowed ? "allowed" : "denied"} />
+            </div>
+            <TraceLine>
+              Result code: <span className="font-mono">{result.code}</span>
+            </TraceLine>
+            <TraceLine>Evaluated rules: {result.evaluatedRules}</TraceLine>
+            <TraceLine>
+              Matched rules:{" "}
+              {result.matchedRuleIds.length === 0 ? (
+                "none"
+              ) : (
+                <span className="font-mono">{result.matchedRuleIds.join(", ")}</span>
+              )}
+            </TraceLine>
+          </CardContent>
+        </Card>
       ))}
     </div>
   );
+}
+
+function TraceLine({ children }: { readonly children: ReactNode }) {
+  return <p className="m-0 text-muted-foreground">{children}</p>;
 }
 
 class FormInputError extends Error {}

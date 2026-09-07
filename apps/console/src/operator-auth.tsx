@@ -1,4 +1,17 @@
 import {
+  Alert,
+  AlertDescription,
+  Button,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  Field,
+  Input,
+} from "@mako-cloud/ui";
+import {
   createContext,
   type FormEvent,
   type ReactNode,
@@ -168,21 +181,32 @@ function OperatorStepUpDialog({
       setPending(false);
     }
   };
+  // The layer is modal: Escape and a click on the backdrop cancel the
+  // verification the same way the Cancel button does, except while a
+  // verification is already on its way to the server.
   return (
-    <div className="modal-backdrop" role="presentation">
-      <section
-        className="panel modal"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="step-up-title"
-      >
-        <h2 id="step-up-title">Verify your operator password</h2>
-        <p>Privileged changes require a password verification from the last five minutes.</p>
-        {failure === null ? null : <p role="alert">{failure}</p>}
-        <form onSubmit={(event) => void submit(event)}>
-          <label>
-            Password
-            <input
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open && !pending) onCancel();
+      }}
+    >
+      <DialogContent showCloseButton={false} aria-labelledby="step-up-title">
+        <DialogHeader>
+          <DialogTitle id="step-up-title">Verify your operator password</DialogTitle>
+          <DialogDescription>
+            Privileged changes require a password verification from the last five minutes.
+          </DialogDescription>
+        </DialogHeader>
+        {failure === null ? null : (
+          <Alert variant="destructive">
+            <AlertDescription className="block">{failure}</AlertDescription>
+          </Alert>
+        )}
+        <form className="grid gap-4" onSubmit={(event) => void submit(event)}>
+          <Field label="Password" htmlFor="operator-step-up-password">
+            <Input
+              id="operator-step-up-password"
               type="password"
               autoComplete="current-password"
               value={password}
@@ -190,18 +214,18 @@ function OperatorStepUpDialog({
               maxLength={1024}
               onChange={(event) => setPassword(event.currentTarget.value)}
             />
-          </label>
-          <div className="button-row">
-            <button type="submit" disabled={pending || password === ""}>
-              {pending ? "Verifying…" : "Verify and continue"}
-            </button>
-            <button type="button" className="secondary" disabled={pending} onClick={onCancel}>
+          </Field>
+          <DialogFooter>
+            <Button variant="secondary" disabled={pending} onClick={onCancel}>
               Cancel
-            </button>
-          </div>
+            </Button>
+            <Button type="submit" disabled={pending || password === ""}>
+              {pending ? "Verifying…" : "Verify and continue"}
+            </Button>
+          </DialogFooter>
         </form>
-      </section>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 

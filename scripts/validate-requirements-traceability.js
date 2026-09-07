@@ -24,6 +24,7 @@ const capabilities = [
   ["CD", "openspec/specs/operations/custom-domains/spec.md"],
   ["AD", "openspec/specs/cloud/api-documentation/spec.md"],
   ["RA", "openspec/specs/samples/rational-money-app/spec.md"],
+  ["DS", "openspec/specs/cloud/design-system/spec.md"],
 ];
 
 const mockedEvidence = [

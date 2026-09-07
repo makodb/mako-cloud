@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { ALLOWED, findRawControls, main } from "../validate-ui-kit.js";
+import { ALLOWED, codeOnly, findRawControls, main } from "../validate-ui-kit.js";
 
 function fixture(files) {
   const root = mkdtempSync(join(process.env.TMPDIR ?? tmpdir(), "validate-ui-kit-"));
@@ -51,7 +51,7 @@ test("a raw control in an application source is refused by file and line", () =>
   }
 });
 
-test("the kit's own components, a file picker, and an allow-listed application pass", () => {
+test("the kit's own components and a file picker pass; an allow-list can excuse a path", () => {
   const root = fixture({
     "examples/rational/src/ui/import.tsx": [
       "export function Import() {",
@@ -62,12 +62,14 @@ test("the kit's own components, a file picker, and an allow-listed application p
       'import { Button, Input, NativeSelect } from "@mako-cloud/ui";',
       "export const Clean = () => <><Button /><Input /><NativeSelect><option /></NativeSelect></>;",
     ].join("\n"),
-    "apps/console/src/old.tsx": "export const Old = () => <select><option /></select>;",
+
     "packages/ui/src/components/button.tsx":
       'export const Button = () => <button type="button" />;',
   });
   try {
-    assert.ok(ALLOWED.has("apps/console/src/"), "the console is allow-listed until its re-skin");
+    // Nothing is excused today; the mechanism is still here for the next
+    // surface that adopts the kit screen by screen.
+    assert.equal(ALLOWED.size, 0);
     assert.deepEqual(findRawControls(root), []);
     const log = collectingLog();
     assert.equal(main(root, log), 0);
@@ -75,6 +77,37 @@ test("the kit's own components, a file picker, and an allow-listed application p
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test("a control named in a comment or a string is not a control", () => {
+  const root = fixture({
+    "examples/rational/src/ui/prose.tsx": [
+      "// The kit replaced every raw <button> on this screen.",
+      "/**",
+      " * A checkbox is a <button> to the browser, so the kit styles it as one.",
+      " */",
+      'const HELP = "use <Input> instead of <input>";',
+      "export const Prose = () => <p>{HELP}</p>;",
+    ].join("\n"),
+  });
+  try {
+    assert.deepEqual(findRawControls(root), []);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("blanking comments and strings keeps every line and column in place", () => {
+  const source = [
+    'const a = "<button>";',
+    "// <input>",
+    'const b = <button type="button" />;',
+  ].join("\n");
+  const blanked = codeOnly(source);
+  assert.equal(blanked.split("\n").length, 3);
+  assert.equal(blanked.split("\n")[2].indexOf("<button"), source.split("\n")[2].indexOf("<button"));
+  assert.equal(blanked.split("\n")[0].includes("<button"), false);
+  assert.equal(blanked.split("\n")[1].includes("<input"), false);
 });
 
 test("a missing source tree is not a failure", () => {

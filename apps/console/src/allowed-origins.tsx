@@ -1,8 +1,21 @@
-import { useCallback, useEffect, useState } from "react";
+import {
+  Alert,
+  AlertDescription,
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  Field,
+  Textarea,
+} from "@mako-cloud/ui";
+import { type ReactNode, useCallback, useEffect, useState } from "react";
 
 import type { AllowedOrigins } from "@mako-cloud/management-sdk";
 
-import { ApiFailureNotice, type ConsoleApiFailure, toConsoleApiFailure } from "./api-error.js";
+import { type ConsoleApiFailure, toConsoleApiFailure } from "./api-error.js";
+import { RequestId } from "./error-boundary.js";
 import { useManagementClient } from "./management.js";
 
 /** An origin as a browser's `Origin` header carries it: scheme, host, an optional port, nothing after. */
@@ -76,62 +89,71 @@ export function AllowedOriginsSection({
   };
 
   return (
-    <section className="allowed-origins" aria-labelledby="allowed-origins-heading">
-      <h2 id="allowed-origins-heading">Allowed origins</h2>
-      <p>
-        A browser application must list its own origin here before it can call this environment's
-        application API — authentication, documents, replication, storage, and function invocation —
-        from a page served somewhere else. This holds on the project's own API URL as well as on any
-        custom domain serving the environment. The management and operator APIs never answer
-        cross-origin calls, whatever is listed here.
-      </p>
-      <ApiFailureNotice failure={failure} />
-      {status === null ? null : (
-        <p className="notice success" role="status">
-          {status}
-        </p>
-      )}
-      {allowed === null ? (
-        <p>Loading…</p>
-      ) : (
-        <>
-          <h3>Allowed now</h3>
-          <OriginList origins={allowed.allowedOrigins} />
-          <form
-            className="allowed-origins-editor"
-            aria-label="Allowed origins"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void save();
-            }}
-          >
-            <label>
-              Origins, one per line
-              <textarea
-                name="allowedOrigins"
-                rows={5}
-                value={draft}
-                onChange={(event) => setDraft(event.currentTarget.value)}
-                placeholder="https://app.example.com"
-                spellCheck={false}
-              />
-            </label>
-            <p className="allowed-origins-note">
-              An origin is matched exactly as the browser sends it — scheme, host, and port, with no
-              path or trailing slash: <code>https://app.example.com</code>, or{" "}
-              <code>http://127.0.0.1:5173</code> for a local development server (plain http only to
-              loopback). At most {MAX_ORIGINS}; an empty list allows no cross-origin access. Saving
-              replaces the whole list.
-            </p>
-            <div className="button-row">
-              <button type="submit" disabled={saving}>
-                {saving ? "Saving…" : "Save origins"}
-              </button>
+    <Card className="mt-6 max-w-3xl" aria-labelledby="allowed-origins-heading">
+      <CardHeader>
+        <CardTitle id="allowed-origins-heading">Allowed origins</CardTitle>
+        <CardDescription>
+          A browser application must list its own origin here before it can call this environment's
+          application API — authentication, documents, replication, storage, and function invocation
+          — from a page served somewhere else. This holds on the project's own API URL as well as on
+          any custom domain serving the environment. The management and operator APIs never answer
+          cross-origin calls, whatever is listed here.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-4">
+        <FailureNotice failure={failure} />
+        {status === null ? null : (
+          <Alert variant="positive" role="status">
+            <AlertDescription className="text-foreground">{status}</AlertDescription>
+          </Alert>
+        )}
+        {allowed === null ? (
+          <p className="m-0 text-sm text-muted-foreground">Loading…</p>
+        ) : (
+          <>
+            <div className="grid gap-2">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Allowed now
+              </h3>
+              <OriginList origins={allowed.allowedOrigins} />
             </div>
-          </form>
-        </>
-      )}
-    </section>
+            <form
+              className="grid gap-3"
+              aria-label="Allowed origins"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void save();
+              }}
+            >
+              <Field label="Origins, one per line" htmlFor="allowed-origins-editor">
+                <Textarea
+                  id="allowed-origins-editor"
+                  name="allowedOrigins"
+                  rows={5}
+                  value={draft}
+                  onChange={(event) => setDraft(event.currentTarget.value)}
+                  placeholder="https://app.example.com"
+                  spellCheck={false}
+                  className="min-h-28 font-mono"
+                />
+              </Field>
+              <p className="m-0 text-xs text-muted-foreground">
+                An origin is matched exactly as the browser sends it — scheme, host, and port, with
+                no path or trailing slash: <Code>https://app.example.com</Code>, or{" "}
+                <Code>http://127.0.0.1:5173</Code> for a local development server (plain http only
+                to loopback). At most {MAX_ORIGINS}; an empty list allows no cross-origin access.
+                Saving replaces the whole list.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Button type="submit" disabled={saving}>
+                  {saving ? "Saving…" : "Save origins"}
+                </Button>
+              </div>
+            </form>
+          </>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -139,19 +161,43 @@ export function AllowedOriginsSection({
 function OriginList({ origins }: { readonly origins: readonly string[] }) {
   if (origins.length === 0) {
     return (
-      <p className="allowed-origins-none">
+      <p className="allowed-origins-none m-0 text-sm text-muted-foreground">
         None — no browser on another origin can call this environment's API.
       </p>
     );
   }
   return (
-    <ul className="allowed-origins-list">
+    <ul className="allowed-origins-list m-0 grid list-none gap-1 p-0 text-sm">
       {origins.map((origin) => (
         <li key={origin}>
-          <code>{origin}</code>
+          <Code>{origin}</Code>
         </li>
       ))}
     </ul>
+  );
+}
+
+/** An origin inside a sentence or a list: monospace on a quiet chip. */
+function Code({ children }: { readonly children: ReactNode }) {
+  return (
+    <code className="rounded bg-muted px-1 py-0.5 font-mono text-[0.85em] wrap-anywhere">
+      {children}
+    </code>
+  );
+}
+
+/** A failed request, with its request id when the API gave one. */
+function FailureNotice({ failure }: { readonly failure: ConsoleApiFailure | null }) {
+  if (failure === null) {
+    return null;
+  }
+  return (
+    <Alert variant="destructive" role="alert">
+      <AlertDescription>
+        <p className="m-0">{failure.message}</p>
+        <RequestId value={failure.requestId} />
+      </AlertDescription>
+    </Alert>
   );
 }
 

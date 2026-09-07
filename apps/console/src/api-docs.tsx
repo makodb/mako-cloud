@@ -1,4 +1,35 @@
-import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import {
+  Alert,
+  AlertDescription,
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  EmptyState,
+  Eyebrow,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  Tabs,
+  TabsContent,
+  TabsLine,
+  TabsTrigger,
+  cn,
+} from "@mako-cloud/ui";
+import { Copy, RefreshCw } from "lucide-react";
+import {
+  type ComponentProps,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 
 import type {
   ActivePolicy,
@@ -111,6 +142,21 @@ interface PropertyRow {
   readonly description: string;
 }
 
+/** The badge tone for each derived access kind. */
+const ACCESS_BADGE = {
+  allowed: "positive",
+  conditional: "warning",
+  denied: "destructive",
+} as const;
+
+/** The badge tone for each HTTP method: reads green, writes primary, replacements amber, removals red. */
+const METHOD_BADGE = {
+  GET: "positive",
+  POST: "default",
+  PUT: "warning",
+  DELETE: "destructive",
+} as const;
+
 /**
  * The only key material these pages may carry. Anything that is not a public
  * project key -- a service credential, a secret reference, an empty string --
@@ -187,30 +233,41 @@ export function ApiDocsScreen({
 
   const context = docs === null ? null : contextFrom(projectId, environmentId, docs);
   return (
-    <section className="api-docs" aria-labelledby="api-docs-title">
-      <div className="section-heading">
-        <div>
-          <p className="eyebrow">API documentation</p>
-          <h1 id="api-docs-title">This environment's API</h1>
-          <p>
+    <section className="grid grid-cols-1 gap-4" aria-labelledby="api-docs-title">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="grid gap-1">
+          <Eyebrow>API documentation</Eyebrow>
+          <h1 id="api-docs-title" className="text-2xl">
+            This environment's API
+          </h1>
+          <p className="m-0 max-w-3xl text-sm text-muted-foreground">
             Generated in the console from the environment's collections, schemas, indexes, active
             policies, functions, buckets, and public connection metadata. Nothing is stored: refresh
             to regenerate from the current state.
           </p>
         </div>
-        <button type="button" className="secondary" onClick={() => void regenerate()}>
+        <Button variant="outline" onClick={() => void regenerate()}>
+          <RefreshCw aria-hidden="true" />
           Regenerate
-        </button>
+        </Button>
       </div>
       {docs === null || context === null ? (
-        <p aria-busy="true">Generating documentation from the environment…</p>
+        <p className="m-0 text-sm text-muted-foreground" aria-busy="true">
+          Generating documentation from the environment…
+        </p>
       ) : (
         <>
-          <p className="api-docs-generated" role="status">
+          <p
+            className="api-docs-generated m-0 text-sm text-muted-foreground tabular-nums"
+            role="status"
+          >
             Generated from the environment at{" "}
             <time dateTime={docs.generatedAt}>{docs.generatedAt}</time>
           </p>
-          <nav className="api-docs-toc" aria-label="Documentation sections">
+          <nav
+            className="flex flex-wrap gap-x-4 gap-y-2 text-sm"
+            aria-label="Documentation sections"
+          >
             {[
               ["overview", "Overview"],
               ["auth", "Auth"],
@@ -221,6 +278,7 @@ export function ApiDocsScreen({
             ].map(([id, label]) => (
               <a
                 key={id}
+                className="font-medium text-primary hover:underline"
                 href={`#api-docs-${id}`}
                 onClick={(event) => {
                   event.preventDefault();
@@ -279,90 +337,81 @@ function OverviewSection({
     <DocsSection id="overview" title="Overview">
       <PartView part={docs.connect} label="Connection metadata">
         {(connect) => (
-          <dl className="definition-grid">
-            <div>
-              <dt>API URL</dt>
-              <dd>
-                <code>{connect.apiUrl}</code>
-              </dd>
-            </div>
-            <div>
-              <dt>Public key ID</dt>
-              <dd>
-                <code>{connect.publicKeyId}</code>
-              </dd>
-            </div>
-            <div>
-              <dt>Project</dt>
-              <dd>
-                <code>{context.projectId}</code>
-              </dd>
-            </div>
-            <div>
-              <dt>Environment</dt>
-              <dd>
-                <code>{context.environmentId}</code>
-              </dd>
-            </div>
-            <div>
-              <dt>Supported RxDB client</dt>
-              <dd>
-                <code>{connect.rxdbClientRange}</code>
-              </dd>
-            </div>
-          </dl>
+          <Facts>
+            <Fact term="API URL">
+              <Code>{connect.apiUrl}</Code>
+            </Fact>
+            <Fact term="Public key ID">
+              <Code>{connect.publicKeyId}</Code>
+            </Fact>
+            <Fact term="Project">
+              <Code>{context.projectId}</Code>
+            </Fact>
+            <Fact term="Environment">
+              <Code>{context.environmentId}</Code>
+            </Fact>
+            <Fact term="Supported RxDB client">
+              <Code>{connect.rxdbClientRange}</Code>
+            </Fact>
+          </Facts>
         )}
       </PartView>
       {docs.connect.status === "ready" && docs.connect.value.publicKey === null ? (
-        <p className="notice warning">
+        <p className="m-0 rounded-lg border border-warning/40 bg-warning/10 px-4 py-3 text-sm">
           A public key's value is shown once, when it is issued or rotated on the Credentials page.
-          The examples below use the placeholder <code>{PUBLIC_KEY_PLACEHOLDER}</code> where the
-          value of <code>{docs.connect.value.publicKeyId}</code> belongs.
+          The examples below use the placeholder <Code>{PUBLIC_KEY_PLACEHOLDER}</Code> where the
+          value of <Code>{docs.connect.value.publicKeyId}</Code> belongs.
         </p>
       ) : null}
-      <h3>Headers</h3>
-      <table className="api-docs-headers">
-        <thead>
-          <tr>
-            <th scope="col">Header</th>
-            <th scope="col">Carries</th>
-            <th scope="col">Where</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <th scope="row">
-              <code>X-Mako-Key</code>
-            </th>
-            <td>The public project key. It identifies and meters a client and grants nothing.</td>
-            <td>
-              Sign-up, sign-in, refresh, provider start and exchange, magic links, JWKS, and
-              replication alongside the bearer token.
-            </td>
-          </tr>
-          <tr>
-            <th scope="row">
-              <code>Authorization: Bearer</code>
-            </th>
-            <td>
-              An application user's access token from sign-in. Every document, replication, and
-              storage request is evaluated under the collection's or bucket's policy as that user.
-            </td>
-            <td>
-              Documents, replication, storage, sign-out, current user, and protected functions.
-            </td>
-          </tr>
-          <tr>
-            <th scope="row">
-              <code>Idempotency-Key</code>
-            </th>
-            <td>A stable key per mutation so a retried timeout cannot apply twice.</td>
-            <td>Document mutations and replication pushes.</td>
-          </tr>
-        </tbody>
-      </table>
-      <p className="api-docs-service-note">
-        Service credentials (<code>X-Mako-Service-Key</code>) are not documented here and never
+      <h3 className="text-sm font-semibold">Headers</h3>
+      <div className="overflow-hidden rounded-lg border">
+        <Table>
+          <TableHeader>
+            <TableRow className="hover:bg-transparent">
+              <TableHead scope="col">Header</TableHead>
+              <TableHead scope="col">Carries</TableHead>
+              <TableHead scope="col">Where</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            <TableRow>
+              <TableHead scope="row" className="align-top whitespace-nowrap">
+                <Code>X-Mako-Key</Code>
+              </TableHead>
+              <ProseCell>
+                The public project key. It identifies and meters a client and grants nothing.
+              </ProseCell>
+              <ProseCell>
+                Sign-up, sign-in, refresh, provider start and exchange, magic links, JWKS, and
+                replication alongside the bearer token.
+              </ProseCell>
+            </TableRow>
+            <TableRow>
+              <TableHead scope="row" className="align-top whitespace-nowrap">
+                <Code>Authorization: Bearer</Code>
+              </TableHead>
+              <ProseCell>
+                An application user's access token from sign-in. Every document, replication, and
+                storage request is evaluated under the collection's or bucket's policy as that user.
+              </ProseCell>
+              <ProseCell>
+                Documents, replication, storage, sign-out, current user, and protected functions.
+              </ProseCell>
+            </TableRow>
+            <TableRow>
+              <TableHead scope="row" className="align-top whitespace-nowrap">
+                <Code>Idempotency-Key</Code>
+              </TableHead>
+              <ProseCell>
+                A stable key per mutation so a retried timeout cannot apply twice.
+              </ProseCell>
+              <ProseCell>Document mutations and replication pushes.</ProseCell>
+            </TableRow>
+          </TableBody>
+        </Table>
+      </div>
+      <p className="m-0 text-sm text-muted-foreground">
+        Service credentials (<Code>X-Mako-Service-Key</Code>) are not documented here and never
         belong in browser or mobile code.
       </p>
     </DocsSection>
@@ -379,7 +428,7 @@ function AuthSection({
   const auth = docs.auth.status === "ready" ? docs.auth.value : null;
   return (
     <DocsSection id="auth" title="Auth">
-      <p>
+      <p className="m-0 text-sm text-muted-foreground">
         Application users belong to this environment alone. Password sign-up and sign-in take the
         public key; a session's access token is a short-lived JWT verified against the environment's
         JWKS, and the refresh token rotates it.
@@ -387,7 +436,7 @@ function AuthSection({
       {docs.auth.status === "unavailable" ? (
         <PartNotice label="Sign-in settings" failure={docs.auth.failure} />
       ) : auth === null ? null : (
-        <p>
+        <p className="m-0 text-sm">
           {auth.providers.length === 0
             ? "No external providers are configured; "
             : `Providers configured: ${auth.providers
@@ -399,9 +448,11 @@ function AuthSection({
             : `; registered redirects: ${auth.redirectUrls.join(", ")}.`}
         </p>
       )}
-      {authExamples(context).map((example) => (
-        <ExampleView key={example.id} example={example} />
-      ))}
+      <ExampleList>
+        {authExamples(context).map((example) => (
+          <ExampleView key={example.id} example={example} />
+        ))}
+      </ExampleList>
     </DocsSection>
   );
 }
@@ -418,7 +469,10 @@ function CollectionsSection({
       <PartView part={docs.collections} label="Collections">
         {(items) =>
           items.length === 0 ? (
-            <p>No collections exist in this environment yet; create one to document it here.</p>
+            <EmptyState
+              className="py-6"
+              title="No collections exist in this environment yet; create one to document it here."
+            />
           ) : (
             items.map((item) => (
               <CollectionReferenceView key={item.collection.id} item={item} context={context} />
@@ -445,66 +499,77 @@ function CollectionReferenceView({
   const indexes = item.indexes.status === "ready" ? item.indexes.value : [];
   const examples = collectionExamples(context, collection, sample, documentId, indexes);
   return (
-    <article
-      className="api-docs-collection"
+    <Entry
       data-collection-id={collection.id}
       aria-labelledby={`api-docs-collection-${collection.id}`}
     >
-      <h3 id={`api-docs-collection-${collection.id}`}>
-        <code>{collection.id}</code>
-      </h3>
-      <p>
-        Schema version {collection.schemaVersion} · primary key <code>{primaryKeyField}</code>
-        {collection.primaryKey.kind === "composite"
-          ? ` (composite of ${collection.primaryKey.fields.join(", ")})`
-          : ""}{" "}
-        · {humanize(collection.state)} · {humanize(collection.compatibility)}
-      </p>
-      <h4>Document shape</h4>
+      <div className="grid gap-1">
+        <h3 id={`api-docs-collection-${collection.id}`} className="text-base">
+          <Code className="text-base">{collection.id}</Code>
+        </h3>
+        <p className="m-0 text-sm text-muted-foreground">
+          Schema version {collection.schemaVersion} · primary key <Code>{primaryKeyField}</Code>
+          {collection.primaryKey.kind === "composite"
+            ? ` (composite of ${collection.primaryKey.fields.join(", ")})`
+            : ""}{" "}
+          · {humanize(collection.state)} · {humanize(collection.compatibility)}
+        </p>
+      </div>
+      <SubHeading>Document shape</SubHeading>
       {rows.length === 0 ? (
-        <p>
+        <p className="m-0 text-sm text-muted-foreground">
           The schema declares no properties: documents are free-form objects keyed by{" "}
-          <code>{primaryKeyField}</code>.
+          <Code>{primaryKeyField}</Code>.
         </p>
       ) : (
-        <div className="table-scroll">
-          <table className="api-docs-shape">
-            <thead>
-              <tr>
-                <th scope="col">Property</th>
-                <th scope="col">Type</th>
-                <th scope="col">Required</th>
-                <th scope="col">Description</th>
-              </tr>
-            </thead>
-            <tbody>
+        <div className="overflow-hidden rounded-lg border">
+          <Table>
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead scope="col">Property</TableHead>
+                <TableHead scope="col">Type</TableHead>
+                <TableHead scope="col">Required</TableHead>
+                <TableHead scope="col">Description</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {rows.map((row) => (
-                <tr key={row.name} data-property={row.name}>
-                  <th scope="row">
-                    <code>{row.name}</code>
-                    {row.primaryKey ? <small> primary key</small> : null}
-                  </th>
-                  <td>
-                    <code>{row.type}</code>
-                  </td>
-                  <td>{row.required ? "required" : "optional"}</td>
-                  <td>{row.description}</td>
-                </tr>
+                <TableRow key={row.name} data-property={row.name}>
+                  <TableHead scope="row" className="align-top">
+                    <Code>{row.name}</Code>
+                    {row.primaryKey ? (
+                      <Badge variant="outline" className="ml-2 align-middle">
+                        primary key
+                      </Badge>
+                    ) : null}
+                  </TableHead>
+                  <TableCell className="align-top">
+                    <Code>{row.type}</Code>
+                  </TableCell>
+                  <TableCell
+                    className={cn("align-top", row.required ? "" : "text-muted-foreground")}
+                  >
+                    {row.required ? "required" : "optional"}
+                  </TableCell>
+                  <ProseCell className="text-muted-foreground">{row.description}</ProseCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       )}
-      <h4>Indexes</h4>
+      <SubHeading>Indexes</SubHeading>
       <PartView part={item.indexes} label="Indexes">
         {(list) =>
           list.length === 0 ? (
-            <p>No secondary indexes; queries can predicate on the primary key only.</p>
+            <p className="m-0 text-sm text-muted-foreground">
+              No secondary indexes; queries can predicate on the primary key only.
+            </p>
           ) : (
-            <ul className="api-docs-indexes">
+            <ul className="api-docs-indexes m-0 grid list-disc gap-1 pl-5 text-sm">
               {list.map((index) => (
                 <li key={`${index.name}/${index.version}`}>
-                  <code>{index.name}</code> v{index.version} · {index.kind.replaceAll("_", " ")} ·{" "}
+                  <Code>{index.name}</Code> v{index.version} · {index.kind.replaceAll("_", " ")} ·{" "}
                   {humanize(index.state)} ·{" "}
                   {index.fields
                     .map((field) => `${field.path} ${field.direction === "ascending" ? "↑" : "↓"}`)
@@ -515,15 +580,17 @@ function CollectionReferenceView({
           )
         }
       </PartView>
-      <h4>Allowed operations</h4>
+      <SubHeading>Allowed operations</SubHeading>
       <PartView part={item.policy} label="Active policy">
         {(policy) => <OperationsView policy={policy} />}
       </PartView>
-      <h4>Example requests</h4>
-      {examples.map((example) => (
-        <ExampleView key={example.id} example={example} />
-      ))}
-    </article>
+      <SubHeading>Example requests</SubHeading>
+      <ExampleList>
+        {examples.map((example) => (
+          <ExampleView key={example.id} example={example} />
+        ))}
+      </ExampleList>
+    </Entry>
   );
 }
 
@@ -531,45 +598,49 @@ function OperationsView({ policy }: { readonly policy: ActivePolicy }) {
   const access = deriveOperations(policy);
   return (
     <>
-      <p className="api-docs-derivation">
+      <p className="m-0 text-sm text-muted-foreground">
         {policy.policy === undefined
           ? "No policy is active on this collection, so every operation is denied. "
           : `Derived from active policy version ${policy.policy.version} (authorization epoch ${policy.authorizationEpoch}): `}
-        an allow rule whose expression is <code>true</code> makes an operation allowed; allow rules
+        an allow rule whose expression is <Code>true</Code> makes an operation allowed; allow rules
         with any other expression make it conditional on that expression; an operation no allow rule
         names is denied. Deny rules are listed because a matching deny overrides every allow.
       </p>
-      <div className="api-docs-operations">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {access.map((entry) => (
           <article
             key={entry.operation}
-            className="api-docs-operation"
+            className={cn(
+              "grid content-start gap-2 rounded-lg border bg-card p-3",
+              entry.kind === "denied" && "border-destructive/30 bg-destructive/5",
+              entry.kind === "conditional" && "border-warning/40 bg-warning/10",
+            )}
             data-operation={entry.operation}
             data-access={entry.kind}
           >
-            <div className="section-heading">
-              <h5>{humanize(entry.operation)}</h5>
-              <span
-                className={`status-badge ${entry.kind === "allowed" ? "success" : entry.kind === "denied" ? "error" : ""}`}
-              >
+            <div className="flex items-center justify-between gap-2">
+              <h5 className="m-0 text-sm font-semibold">{humanize(entry.operation)}</h5>
+              <Badge className="status-badge" variant={ACCESS_BADGE[entry.kind]}>
                 {humanize(entry.kind)}
-              </span>
+              </Badge>
             </div>
-            <small>{entry.reason}</small>
+            <small className="text-xs text-muted-foreground">{entry.reason}</small>
             {entry.conditions.length > 0 ? (
-              <ul>
+              <ul className="m-0 grid list-disc gap-1 pl-4 text-xs wrap-anywhere">
                 {entry.conditions.map((rule) => (
                   <li key={rule.id}>
-                    <code>{rule.expression}</code> <small>({rule.id})</small>
+                    <Code>{rule.expression}</Code>{" "}
+                    <small className="text-muted-foreground">({rule.id})</small>
                   </li>
                 ))}
               </ul>
             ) : null}
             {entry.denies.length > 0 ? (
-              <ul className="api-docs-denies">
+              <ul className="m-0 grid list-disc gap-1 pl-4 text-xs text-destructive wrap-anywhere">
                 {entry.denies.map((rule) => (
                   <li key={rule.id}>
-                    Denied when <code>{rule.expression}</code> <small>({rule.id})</small>
+                    Denied when <Code className="text-destructive">{rule.expression}</Code>{" "}
+                    <small>({rule.id})</small>
                   </li>
                 ))}
               </ul>
@@ -590,57 +661,43 @@ function FunctionsSection({
 }) {
   return (
     <DocsSection id="functions" title="Functions">
-      <p>
+      <p className="m-0 text-sm text-muted-foreground">
         Functions are invoked through the project reference, which encodes the environment:{" "}
-        <code>{`${context.apiUrl}/${context.projectId}--${context.environmentId}/functions/v1/{name}`}</code>
+        <Code>{`${context.apiUrl}/${context.projectId}--${context.environmentId}/functions/v1/{name}`}</Code>
         . Only a function with an active version answers.
       </p>
       <PartView part={docs.functions} label="Functions">
         {(items) =>
           items.length === 0 ? (
-            <p>No functions exist in this environment.</p>
+            <EmptyState className="py-6" title="No functions exist in this environment." />
           ) : (
             items.map((item) => {
               const route = functionRoute(context, item.name);
               return (
-                <article
-                  key={item.name}
-                  className="api-docs-function"
-                  data-function-name={item.name}
-                >
-                  <h3>
-                    <code>{item.name}</code>
+                <Entry key={item.name} data-function-name={item.name}>
+                  <h3 className="text-base">
+                    <Code className="text-base">{item.name}</Code>
                   </h3>
-                  <dl className="definition-grid">
-                    <div>
-                      <dt>Route</dt>
-                      <dd>
-                        <code>{route}</code>
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>Active version</dt>
-                      <dd>
-                        {item.activeVersion === null
-                          ? "None deployed; the route does not answer yet"
-                          : `v${item.activeVersion}`}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>Caller</dt>
-                      <dd>
-                        {item.configuration.verifyJwt
-                          ? "Application session required (JWT verified)"
-                          : "Public: no session is verified"}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>Regions</dt>
-                      <dd>{item.configuration.regions.join(", ") || "none"}</dd>
-                    </div>
-                  </dl>
-                  <ExampleView example={functionExample(context, item)} />
-                </article>
+                  <Facts>
+                    <Fact term="Route">
+                      <Code>{route}</Code>
+                    </Fact>
+                    <Fact term="Active version">
+                      {item.activeVersion === null
+                        ? "None deployed; the route does not answer yet"
+                        : `v${item.activeVersion}`}
+                    </Fact>
+                    <Fact term="Caller">
+                      {item.configuration.verifyJwt
+                        ? "Application session required (JWT verified)"
+                        : "Public: no session is verified"}
+                    </Fact>
+                    <Fact term="Regions">{item.configuration.regions.join(", ") || "none"}</Fact>
+                  </Facts>
+                  <ExampleList>
+                    <ExampleView example={functionExample(context, item)} />
+                  </ExampleList>
+                </Entry>
               );
             })
           )
@@ -662,14 +719,14 @@ function StorageSection({
       <PartView part={docs.buckets} label="Buckets">
         {(items) =>
           items.length === 0 ? (
-            <p>No buckets exist in this environment.</p>
+            <EmptyState className="py-6" title="No buckets exist in this environment." />
           ) : (
             items.map((bucket) => (
-              <article key={bucket.id} className="api-docs-bucket" data-bucket-id={bucket.id}>
-                <h3>
-                  <code>{bucket.id}</code>
+              <Entry key={bucket.id} data-bucket-id={bucket.id}>
+                <h3 className="text-base">
+                  <Code className="text-base">{bucket.id}</Code>
                 </h3>
-                <p>
+                <p className="m-0 text-sm text-muted-foreground">
                   {bucket.access === "public"
                     ? "Public: anyone may download and list; writes need a session under the bucket's rules."
                     : "Policy: every read and write is evaluated under the bucket's rules as the signed-in user."}{" "}
@@ -678,10 +735,12 @@ function StorageSection({
                     ? ", any content type."
                     : `; content types ${bucket.allowedContentTypes.join(", ")}.`}
                 </p>
-                {bucketExamples(context, bucket).map((example) => (
-                  <ExampleView key={example.id} example={example} />
-                ))}
-              </article>
+                <ExampleList>
+                  {bucketExamples(context, bucket).map((example) => (
+                    <ExampleView key={example.id} example={example} />
+                  ))}
+                </ExampleList>
+              </Entry>
             ))
           )
         }
@@ -713,39 +772,43 @@ function QuickstartsSection({
         : rxdbQuickstart(context, first);
   return (
     <DocsSection id="quickstarts" title="Quickstarts">
-      <p className="api-docs-service-note">
+      <p className="m-0 text-sm text-muted-foreground">
         Each quickstart carries this environment's API URL and public key
         {context.publicKeyId === null ? "" : ` (${context.publicKeyId})`}. Service credentials never
         appear here.
       </p>
       {first === null ? (
-        <p>
-          No collection exists yet, so the snippets use a placeholder collection <code>todos</code>.
+        <p className="m-0 text-sm text-muted-foreground">
+          No collection exists yet, so the snippets use a placeholder collection <Code>todos</Code>.
         </p>
       ) : null}
-      <div className="tab-list" role="tablist" aria-label="Quickstart client">
-        {QUICKSTART_CLIENTS.map((client) => (
-          <button
-            key={client.id}
-            type="button"
-            role="tab"
-            id={`api-docs-quickstart-tab-${client.id}`}
-            aria-selected={selected === client.id}
-            aria-controls="api-docs-quickstart-panel"
-            className={selected === client.id ? "active" : "secondary"}
-            onClick={() => onSelect(client.id)}
-          >
-            {client.label}
-          </button>
-        ))}
-      </div>
-      <div
-        id="api-docs-quickstart-panel"
-        role="tabpanel"
-        aria-labelledby={`api-docs-quickstart-tab-${selected}`}
+      <Tabs
+        value={selected}
+        onValueChange={(value) => onSelect(value as QuickstartClient)}
+        className="gap-3"
       >
-        <CodeBlock text={snippet} label={`Copy ${labelOf(selected)} quickstart`} />
-      </div>
+        <TabsLine aria-label="Quickstart client">
+          {QUICKSTART_CLIENTS.map((client) => (
+            <TabsTrigger
+              key={client.id}
+              value={client.id}
+              id={`api-docs-quickstart-tab-${client.id}`}
+              aria-controls="api-docs-quickstart-panel"
+            >
+              {client.label}
+            </TabsTrigger>
+          ))}
+        </TabsLine>
+        {/* One panel, re-filled per client, so the page carries a single
+            tabpanel with a stable id whichever quickstart is showing. */}
+        <TabsContent
+          value={selected}
+          id="api-docs-quickstart-panel"
+          aria-labelledby={`api-docs-quickstart-tab-${selected}`}
+        >
+          <CodeBlock text={snippet} label={`Copy ${labelOf(selected)} quickstart`} />
+        </TabsContent>
+      </Tabs>
     </DocsSection>
   );
 }
@@ -762,11 +825,81 @@ function DocsSection({
   readonly children: ReactNode;
 }) {
   return (
-    <section className="panel" id={`api-docs-${id}`} aria-labelledby={`api-docs-${id}-title`}>
-      <h2 id={`api-docs-${id}-title`}>{title}</h2>
-      {children}
-    </section>
+    <Card id={`api-docs-${id}`} aria-labelledby={`api-docs-${id}-title`} className="gap-4">
+      <CardHeader>
+        <CardTitle id={`api-docs-${id}-title`}>{title}</CardTitle>
+      </CardHeader>
+      <CardContent className="grid grid-cols-1 gap-4">{children}</CardContent>
+    </Card>
   );
+}
+
+/** One documented thing in a section's list -- a collection, a function, a bucket -- ruled off from the one before. */
+function Entry({ className, ...props }: ComponentProps<"article">) {
+  return (
+    <article
+      className={cn("grid grid-cols-1 gap-3 border-t pt-5 first:border-t-0 first:pt-0", className)}
+      {...props}
+    />
+  );
+}
+
+/** The small upper-case heading over a part of an entry; an `h4` in the outline, as before. */
+function SubHeading({ children }: { readonly children: ReactNode }) {
+  return (
+    <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+      {children}
+    </h4>
+  );
+}
+
+/** A definition list of facts in a dense grid. */
+function Facts({ children }: { readonly children: ReactNode }) {
+  return (
+    <dl className="definition-grid m-0 grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2 lg:grid-cols-3">
+      {children}
+    </dl>
+  );
+}
+
+/** One fact: its term over its value. */
+function Fact({ term, children }: { readonly term: string; readonly children: ReactNode }) {
+  return (
+    <div className="grid min-w-0 gap-1">
+      <dt className="text-xs font-medium text-muted-foreground">{term}</dt>
+      <dd className="m-0 text-sm wrap-anywhere">{children}</dd>
+    </div>
+  );
+}
+
+/** An identifier, a header name, a URL, an expression: monospace on a quiet chip. */
+function Code({
+  className,
+  children,
+}: {
+  readonly className?: string;
+  readonly children: ReactNode;
+}) {
+  return (
+    <code className={cn("rounded bg-muted px-1 py-0.5 font-mono text-[0.85em]", className)}>
+      {children}
+    </code>
+  );
+}
+
+/** A table cell that wraps: a sentence rather than a value. */
+function ProseCell({
+  className,
+  children,
+}: {
+  readonly className?: string;
+  readonly children: ReactNode;
+}) {
+  return <TableCell className={cn("align-top whitespace-normal", className)}>{children}</TableCell>;
+}
+
+function ExampleList({ children }: { readonly children: ReactNode }) {
+  return <div className="divide-y">{children}</div>;
 }
 
 function PartView<T>({
@@ -778,7 +911,9 @@ function PartView<T>({
   readonly label: string;
   readonly children: (value: T) => ReactNode;
 }) {
-  if (part.status === "loading") return <p>Loading {label.toLowerCase()}…</p>;
+  if (part.status === "loading") {
+    return <p className="m-0 text-sm text-muted-foreground">Loading {label.toLowerCase()}…</p>;
+  }
   if (part.status === "unavailable") return <PartNotice label={label} failure={part.failure} />;
   return <>{children(part.value)}</>;
 }
@@ -791,31 +926,40 @@ function PartNotice({
   readonly failure: ConsoleApiFailure;
 }) {
   return (
-    <div className="notice warning" role="status">
-      <p>
-        {label} could not be read: {failure.message} The other sections are unaffected; regenerate
-        to try again.
-      </p>
-      <RequestId value={failure.requestId} />
-    </div>
+    <Alert variant="warning" role="status">
+      <AlertDescription>
+        <p className="m-0">
+          {label} could not be read: {failure.message} The other sections are unaffected; regenerate
+          to try again.
+        </p>
+        <RequestId value={failure.requestId} />
+      </AlertDescription>
+    </Alert>
   );
 }
 
 function ExampleView({ example }: { readonly example: ExampleRequest }) {
   return (
-    <article className="api-docs-example" data-example-id={example.id}>
-      <h5>{example.title}</h5>
-      <p>
-        <span className={`api-docs-method method-${example.method.toLowerCase()}`}>
+    <article
+      className="grid grid-cols-1 gap-2 py-4 first:pt-0 last:pb-0"
+      data-example-id={example.id}
+    >
+      <h5 className="m-0 text-sm font-semibold">{example.title}</h5>
+      <p className="m-0 flex flex-wrap items-center gap-2 text-sm">
+        <Badge variant={METHOD_BADGE[example.method]} className="min-w-14 justify-center font-mono">
           {example.method}
-        </span>{" "}
-        <code className="api-docs-url">{example.url}</code>
+        </Badge>{" "}
+        <code className="api-docs-url font-mono text-xs wrap-anywhere">{example.url}</code>
       </p>
-      {example.note === undefined ? null : <small>{example.note}</small>}
+      {example.note === undefined ? null : (
+        <small className="text-xs text-muted-foreground">{example.note}</small>
+      )}
       <CodeBlock text={curlFor(example)} label={`Copy ${example.title} request`} />
-      <details>
-        <summary>Response</summary>
-        <pre className="json-view">
+      <details className="m-0 text-sm">
+        <summary className="m-0 cursor-pointer select-none text-xs font-medium text-muted-foreground hover:text-foreground">
+          Response
+        </summary>
+        <pre className="m-0 mt-2 overflow-x-auto rounded-lg border bg-muted/40 p-3 font-mono text-xs leading-relaxed">
           {typeof example.response === "string"
             ? example.response
             : JSON.stringify(example.response, null, 2)}
@@ -827,16 +971,20 @@ function ExampleView({ example }: { readonly example: ExampleRequest }) {
 
 function CodeBlock({ text, label }: { readonly text: string; readonly label: string }) {
   return (
-    <div className="code-block">
-      <button
-        type="button"
-        className="secondary copy-button"
+    <div className="relative rounded-lg border bg-muted/40">
+      <Button
+        variant="ghost"
+        size="sm"
+        // The block scrolls a long line under this button, so the button keeps
+        // a ground of its own rather than letting the code read through it.
+        className="absolute top-1.5 right-1.5 h-7 bg-card px-2 text-xs text-muted-foreground hover:text-foreground"
         aria-label={label}
         onClick={() => void navigator.clipboard.writeText(text)}
       >
+        <Copy aria-hidden="true" className="size-3.5" />
         Copy
-      </button>
-      <pre>{text}</pre>
+      </Button>
+      <pre className="m-0 overflow-x-auto p-3 pr-24 font-mono text-xs leading-relaxed">{text}</pre>
     </div>
   );
 }

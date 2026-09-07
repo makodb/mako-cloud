@@ -7,9 +7,7 @@
     "rootDir": ".",
     "outDir": "dist",
     "tsBuildInfoFile": "dist/.tsbuildinfo",
-    "types": [
-      "vite/client"
-    ]
+    "types": ["vite/client"]
   },
   "references": [
     {

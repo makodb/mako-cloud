@@ -19,6 +19,7 @@ const COMPONENTS = [
   "CardAction",
   "CardContent",
   "CardFooter",
+  "Eyebrow",
   "Separator",
   "Skeleton",
   "Dialog",

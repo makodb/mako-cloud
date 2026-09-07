@@ -8,7 +8,35 @@
 // environment "Connect" screen already does (create → wait for active → keys →
 // connection check) and keeps its progress in browser storage keyed by the
 // developer, never storing a credential value.
-import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
+  Badge,
+  Button,
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  Eyebrow,
+  Field,
+  Input,
+  NativeSelect,
+  cn,
+} from "@mako-cloud/ui";
+import { CheckCircle2, ChevronRight, Copy } from "lucide-react";
+import {
+  type FormEvent,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import type {
   ConnectionCheck,
@@ -43,6 +71,13 @@ const POLL_MILLISECONDS = 2_000;
 const RXDB_VERSION = "17.0.0";
 /** The snippet never embeds a credential; the copied key replaces this marker. */
 const PUBLIC_KEY_PLACEHOLDER = "mako_pk.PASTE_ONE_TIME_PUBLIC_KEY";
+
+/** A small label over a fact. `dt` keeps the definition list intact, so this is
+ * the kit's Eyebrow styling on the term rather than the component. */
+const FACT_LABEL = "text-xs font-semibold uppercase tracking-wider text-muted-foreground";
+
+/** A quiet line of text: a loading note, an empty list, a caption. */
+const MUTED = "m-0 text-sm text-muted-foreground";
 
 export function HomeDashboard({
   onOpenTeam,
@@ -117,15 +152,19 @@ export function HomeDashboard({
   };
 
   return (
-    <section className="home" aria-labelledby="home-title" aria-busy={loading}>
-      <div className="section-heading">
-        <div>
-          <p className="eyebrow">Dashboard</p>
-          <h1 id="home-title">Home</h1>
-        </div>
+    <section className="grid gap-6" aria-labelledby="home-title" aria-busy={loading}>
+      <div className="grid gap-1">
+        <Eyebrow>Dashboard</Eyebrow>
+        <h1 id="home-title" className="text-2xl">
+          Home
+        </h1>
       </div>
       <ApiFailureNotice failure={failure} />
-      {teams === null ? <p aria-live="polite">Loading your projects…</p> : null}
+      {teams === null ? (
+        <p className={MUTED} aria-live="polite">
+          Loading your projects…
+        </p>
+      ) : null}
       {guideActive ? (
         <FirstRunGuide
           teams={joinedTeams}
@@ -136,7 +175,7 @@ export function HomeDashboard({
         />
       ) : null}
       {noProjects && !guideActive ? (
-        <EmptyState
+        <NoProjectsPanel
           teams={joinedTeams}
           onOpenProject={onOpenProject}
           onShowGuide={() => setProgress({ ...progress, dismissed: false })}
@@ -144,15 +183,15 @@ export function HomeDashboard({
       ) : null}
       {teams !== null && !noProjects ? (
         <>
-          <div className="home-layout">
-            <div className="home-groups">
+          <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]">
+            <div className="grid min-w-0 gap-8">
               {personalSpace === undefined ? (
-                <section className="home-group" aria-labelledby="owner-personal-title">
-                  <div className="section-heading">
-                    <div>
-                      <p className="eyebrow">Personal space</p>
-                      <h2 id="owner-personal-title">Your projects</h2>
-                    </div>
+                <section className="grid gap-4" aria-labelledby="owner-personal-title">
+                  <div className="grid gap-1">
+                    <Eyebrow>Personal space</Eyebrow>
+                    <h2 id="owner-personal-title" className="text-lg">
+                      Your projects
+                    </h2>
                   </div>
                   <FirstProjectPanel onCreated={reload} />
                 </section>
@@ -180,27 +219,29 @@ export function HomeDashboard({
             </div>
             <RecentActivity projects={activityProjects} loader={loader} />
           </div>
-          <section className="home-teams" aria-labelledby="teams-title">
-            <div className="section-heading">
-              <div>
-                <p className="eyebrow">Workspace</p>
-                <h2 id="teams-title">Teams</h2>
-              </div>
+          <section className="grid gap-4" aria-labelledby="teams-title">
+            <div className="grid gap-1">
+              <Eyebrow>Workspace</Eyebrow>
+              <h2 id="teams-title" className="text-lg">
+                Teams
+              </h2>
             </div>
             {joinedTeams.length === 0 ? (
-              <p className="home-muted">No teams are available for this account.</p>
+              <p className={MUTED}>No teams are available for this account.</p>
             ) : (
-              <div className="card-grid">
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {joinedTeams.map((team) => (
-                  <button
-                    type="button"
-                    className="resource-card"
+                  <Button
                     key={team.id}
+                    variant="outline"
+                    className="resource-card h-auto flex-col items-start gap-1 px-4 py-3 text-left whitespace-normal"
                     onClick={() => onOpenTeam(team.id)}
                   >
-                    <strong>{team.name}</strong>
-                    <span>{team.state.replaceAll("_", " ")}</span>
-                  </button>
+                    <strong className="text-sm font-semibold">{team.name}</strong>
+                    <span className="text-xs font-normal text-muted-foreground">
+                      {team.state.replaceAll("_", " ")}
+                    </span>
+                  </Button>
                 ))}
               </div>
             )}
@@ -208,14 +249,14 @@ export function HomeDashboard({
         </>
       ) : null}
       {showGuideAgain && !noProjects ? (
-        <p>
-          <button
-            type="button"
-            className="link-button"
+        <p className="m-0">
+          <Button
+            variant="link"
+            className="h-auto p-0"
             onClick={() => setProgress({ ...progress, dismissed: false })}
           >
             Show the guide again
-          </button>
+          </Button>
         </p>
       ) : null}
     </section>
@@ -248,31 +289,35 @@ function OwnerGroup({
   const headingId = `owner-${team.id}-title`;
   return (
     <section
-      className="home-group"
+      className="grid gap-4"
       aria-labelledby={headingId}
       aria-busy={load.status === "loading"}
     >
-      <div className="section-heading">
-        <div>
-          <p className="eyebrow">{personal ? "Personal space" : "Team"}</p>
-          <h2 id={headingId}>{personal ? "Your projects" : team.name}</h2>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div className="grid gap-1">
+          <Eyebrow>{personal ? "Personal space" : "Team"}</Eyebrow>
+          <h2 id={headingId} className="text-lg">
+            {personal ? "Your projects" : team.name}
+          </h2>
         </div>
         {personal ? (
-          <button type="button" className="secondary" onClick={() => onOpenTeam(team.id)}>
+          <Button variant="outline" size="sm" onClick={() => onOpenTeam(team.id)}>
             Billing and plan
-          </button>
+          </Button>
         ) : null}
       </div>
       {load.status === "loading" ? (
-        <p aria-live="polite">Loading projects…</p>
+        <p className={MUTED} aria-live="polite">
+          Loading projects…
+        </p>
       ) : load.status === "failed" ? (
         <ApiFailureNotice failure={load.failure} />
       ) : load.projects.length === 0 ? (
-        <p className="home-muted">
+        <p className={MUTED}>
           {personal ? "No individual projects yet." : "This team has no projects yet."}
         </p>
       ) : (
-        <div className="home-card-grid">
+        <div className="grid gap-4 grid-cols-[repeat(auto-fill,minmax(17rem,1fr))]">
           {load.projects.map((project) => (
             <ProjectCard
               key={project.id}
@@ -285,13 +330,21 @@ function OwnerGroup({
         </div>
       )}
       {personal ? (
-        <details>
-          <summary>Create project</summary>
-          <ProjectCreateForm
-            teams={[]}
-            submitLabel="Create and provision"
-            onCreated={(project) => onOpenProject(project.id)}
-          />
+        <details className="group rounded-lg border bg-card">
+          <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-2.5 text-sm font-medium text-muted-foreground select-none hover:text-foreground [&::-webkit-details-marker]:hidden">
+            <ChevronRight
+              aria-hidden="true"
+              className="size-4 shrink-0 transition-transform group-open:rotate-90"
+            />
+            Create project
+          </summary>
+          <div className="border-t px-4 py-4">
+            <ProjectCreateForm
+              teams={[]}
+              submitLabel="Create and provision"
+              onCreated={(project) => onOpenProject(project.id)}
+            />
+          </div>
         </details>
       ) : null}
     </section>
@@ -334,59 +387,79 @@ function ProjectCard({
   }, [loader, project.id, project.teamId]);
   const headingId = `project-${project.id}-title`;
   return (
-    <article
-      className="home-project-card"
+    <Card
+      as="article"
+      // `home-project-card` is the hook the browser suite selects on.
+      className="home-project-card gap-4 py-4 aria-busy:border-dashed"
       aria-labelledby={headingId}
       aria-busy={plan.status === "loading" || usage.status === "loading"}
     >
-      <div className="home-project-card-heading">
-        <h3 id={headingId}>{project.name}</h3>
-        <LifecycleBadge state={project.state} />
-      </div>
-      <dl className="home-facts">
-        <div>
-          <dt>Owner</dt>
-          <dd>{owner}</dd>
-        </div>
-        <div>
-          <dt>Region</dt>
-          <dd>{project.region}</dd>
-        </div>
-        <div>
-          <dt>Plan</dt>
-          <dd>
+      <CardHeader className="px-4">
+        <CardTitle as="h3" id={headingId} className="leading-snug break-words">
+          {project.name}
+        </CardTitle>
+        <CardAction>
+          <LifecycleBadge state={project.state} />
+        </CardAction>
+      </CardHeader>
+      <CardContent className="grid gap-4 px-4">
+        <dl className="m-0 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+          <Fact label="Owner">{owner}</Fact>
+          <Fact label="Region">
+            <span className="font-mono text-xs">{project.region}</span>
+          </Fact>
+          <Fact label="Plan">
             {plan.status === "loading" ? (
-              <span className="home-pending">Loading plan…</span>
+              <span className="text-muted-foreground italic">Loading plan…</span>
             ) : plan.status === "unavailable" ? (
-              <span className="home-unavailable">Plan unavailable</span>
+              <Badge variant="outline" className="text-destructive">
+                Plan unavailable
+              </Badge>
             ) : (
               plan.value
             )}
-          </dd>
-        </div>
-        <div className="home-fact-wide">
-          <dt>Usage</dt>
-          <dd>
+          </Fact>
+          <Fact label="Usage" className="col-span-2">
             {usage.status === "loading" ? (
-              <span className="home-pending">Loading usage…</span>
+              <span className="text-muted-foreground italic">Loading usage…</span>
             ) : usage.status === "unavailable" ? (
-              <span className="home-unavailable">Usage unavailable</span>
+              <Badge variant="outline" className="text-destructive">
+                Usage unavailable
+              </Badge>
             ) : (
               <UsageLine usage={usage.value} />
             )}
-          </dd>
-        </div>
-      </dl>
-      <button type="button" className="secondary" onClick={onOpen}>
-        Open <span className="visually-hidden">{project.name}</span>
-      </button>
-    </article>
+          </Fact>
+        </dl>
+        <Button variant="outline" size="sm" className="justify-self-start" onClick={onOpen}>
+          Open <span className="sr-only">{project.name}</span>
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
+/** One fact on a card: its name over its value. */
+function Fact({
+  label,
+  className,
+  children,
+}: {
+  readonly label: string;
+  readonly className?: string;
+  readonly children: ReactNode;
+}) {
+  return (
+    <div className={cn("grid min-w-0 content-start gap-0.5", className)}>
+      <dt className={FACT_LABEL}>{label}</dt>
+      <dd className="m-0 break-words">{children}</dd>
+    </div>
   );
 }
 
 function UsageLine({ usage }: { readonly usage: UsageSummary }) {
   if (usage.environment === null) {
-    return <span className="home-muted">No active environment</span>;
+    return <span className="text-muted-foreground">No active environment</span>;
   }
   const parts = [
     ...(usage.storageBytes === null ? [] : [`Storage ${formatBytes(usage.storageBytes)}`]),
@@ -396,7 +469,7 @@ function UsageLine({ usage }: { readonly usage: UsageSummary }) {
   ];
   return (
     <span>
-      <span className="home-environment">{usage.environment.name}</span>
+      <span className="font-medium">{usage.environment.name}</span>
       {parts.length === 0 ? " · No usage recorded this period" : ` · ${parts.join(" · ")}`}
     </span>
   );
@@ -456,45 +529,63 @@ function RecentActivity({
     .slice(0, ACTIVITY_ROWS);
   const unavailable = projects.filter((project) => sources[project.id]?.status === "unavailable");
 
+  // The kit's Card renders a section, an article, or a div; a feed beside the
+  // main content is a complementary landmark, so the card is drawn by hand.
   return (
-    <aside className="home-activity panel" aria-labelledby="activity-title" aria-busy={pending}>
-      <h2 id="activity-title">Recent activity</h2>
-      {projects.length === 0 ? <p className="home-muted">No projects to report on yet.</p> : null}
-      {unavailable.map((project) => (
-        <p key={project.id} className="home-unavailable" role="status">
-          Activity unavailable for {project.name}
-        </p>
-      ))}
-      {pending ? <p aria-live="polite">Loading activity…</p> : null}
-      {!pending && rows.length === 0 && unavailable.length < projects.length ? (
-        <p className="home-muted">No recent audited actions.</p>
-      ) : null}
-      {rows.length === 0 ? null : (
-        <ol className="home-activity-list">
-          {rows.map((row) => (
-            <li key={`${row.project.id}-${row.timestamp}-${row.action}-${row.target}`}>
-              <span className="home-activity-line">
-                <strong>{row.actorId}</strong> {row.action.replaceAll("_", " ")}{" "}
-                <code>{row.target}</code>
-                {row.outcome === "allowed" ? null : (
-                  <span className="home-activity-outcome"> ({row.outcome})</span>
-                )}
-              </span>
-              <small>
-                {row.project.name} ·{" "}
-                <time dateTime={row.timestamp}>{new Date(row.timestamp).toLocaleString()}</time>
-              </small>
-            </li>
-          ))}
-        </ol>
-      )}
+    <aside
+      className="flex min-w-0 flex-col gap-4 rounded-xl border bg-card py-4 text-card-foreground shadow-xs"
+      aria-labelledby="activity-title"
+      aria-busy={pending}
+    >
+      <CardHeader className="px-4">
+        <CardTitle id="activity-title">Recent activity</CardTitle>
+      </CardHeader>
+      <CardContent className="grid gap-3 px-4 text-sm">
+        {projects.length === 0 ? <p className={MUTED}>No projects to report on yet.</p> : null}
+        {unavailable.map((project) => (
+          <p key={project.id} className="m-0 text-sm text-destructive" role="status">
+            Activity unavailable for {project.name}
+          </p>
+        ))}
+        {pending ? (
+          <p className={MUTED} aria-live="polite">
+            Loading activity…
+          </p>
+        ) : null}
+        {!pending && rows.length === 0 && unavailable.length < projects.length ? (
+          <p className={MUTED}>No recent audited actions.</p>
+        ) : null}
+        {rows.length === 0 ? null : (
+          <ol className="m-0 grid list-none gap-3 p-0">
+            {rows.map((row) => (
+              <li
+                key={`${row.project.id}-${row.timestamp}-${row.action}-${row.target}`}
+                className="grid gap-0.5 border-b pb-3 last:border-b-0 last:pb-0"
+              >
+                <span className="break-words">
+                  <strong className="font-mono text-xs font-medium">{row.actorId}</strong>{" "}
+                  {row.action.replaceAll("_", " ")}{" "}
+                  <code className="font-mono text-xs">{row.target}</code>
+                  {row.outcome === "allowed" ? null : (
+                    <span className="font-medium text-destructive"> ({row.outcome})</span>
+                  )}
+                </span>
+                <small className="text-xs text-muted-foreground">
+                  {row.project.name} ·{" "}
+                  <time dateTime={row.timestamp}>{new Date(row.timestamp).toLocaleString()}</time>
+                </small>
+              </li>
+            ))}
+          </ol>
+        )}
+      </CardContent>
     </aside>
   );
 }
 
 // --- Empty state --------------------------------------------------------------
 
-function EmptyState({
+function NoProjectsPanel({
   teams,
   onOpenProject,
   onShowGuide,
@@ -504,25 +595,29 @@ function EmptyState({
   readonly onShowGuide: () => void;
 }) {
   return (
-    <section className="panel home-empty" aria-labelledby="empty-title">
-      <p className="eyebrow">No projects yet</p>
-      <h2 id="empty-title">Create a project</h2>
-      <p>
-        A project holds environments with their collections, application users, policies, and
-        functions. Individual projects live in your personal space; team projects belong to the team
-        that owns them.
-      </p>
-      <ProjectCreateForm
-        teams={teams}
-        submitLabel="Create project"
-        onCreated={(project) => onOpenProject(project.id)}
-      />
-      <p>
-        <button type="button" className="link-button" onClick={onShowGuide}>
-          Show the guide again
-        </button>
-      </p>
-    </section>
+    <Card aria-labelledby="empty-title">
+      <CardHeader>
+        <Eyebrow>No projects yet</Eyebrow>
+        <CardTitle id="empty-title">Create a project</CardTitle>
+        <CardDescription>
+          A project holds environments with their collections, application users, policies, and
+          functions. Individual projects live in your personal space; team projects belong to the
+          team that owns them.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-4">
+        <ProjectCreateForm
+          teams={teams}
+          submitLabel="Create project"
+          onCreated={(project) => onOpenProject(project.id)}
+        />
+        <p className="m-0">
+          <Button variant="link" className="h-auto p-0" onClick={onShowGuide}>
+            Show the guide again
+          </Button>
+        </p>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -543,6 +638,7 @@ function ProjectCreateForm({
   const client = useManagementClient();
   const [failure, setFailure] = useState<ConsoleApiFailure | null>(null);
   const [pending, setPending] = useState(false);
+  const id = useId();
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
@@ -563,32 +659,36 @@ function ProjectCreateForm({
     }
   };
   return (
-    <form onSubmit={(event) => void submit(event)}>
+    <form className="grid max-w-md gap-4" onSubmit={(event) => void submit(event)}>
       {teams.length === 0 ? null : (
-        <label>
-          Owner
-          <select name="owner" defaultValue="">
+        <Field label="Owner" htmlFor={`${id}-owner`}>
+          <NativeSelect id={`${id}-owner`} name="owner" defaultValue="">
             <option value="">Personal space</option>
             {teams.map((team) => (
               <option key={team.id} value={team.id}>
                 {team.name}
               </option>
             ))}
-          </select>
-        </label>
+          </NativeSelect>
+        </Field>
       )}
-      <label>
-        Project name
-        <input name="name" required maxLength={200} />
-      </label>
-      <label>
-        Data region
-        <input name="region" required maxLength={64} placeholder="us-east" />
-      </label>
+      <Field label="Project name" htmlFor={`${id}-name`}>
+        <Input id={`${id}-name`} name="name" required maxLength={200} />
+      </Field>
+      <Field label="Data region" htmlFor={`${id}-region`}>
+        <Input
+          id={`${id}-region`}
+          name="region"
+          required
+          maxLength={64}
+          placeholder="us-east"
+          className="font-mono"
+        />
+      </Field>
       <ApiFailureNotice failure={failure} />
-      <button type="submit" disabled={pending}>
+      <Button type="submit" disabled={pending} className="justify-self-start">
         {pending ? "Creating…" : submitLabel}
-      </button>
+      </Button>
     </form>
   );
 }
@@ -619,75 +719,94 @@ function FirstRunGuide({
   const stepIndex = GUIDE_STEPS.findIndex((step) => step.id === progress.step);
   const projectId = progress.projectId;
   return (
-    <section className="panel home-guide" aria-labelledby="guide-title">
-      <div className="section-heading">
-        <div>
-          <p className="eyebrow">First run</p>
-          <h2 id="guide-title">Connect your first project</h2>
-        </div>
-        <button
-          type="button"
-          className="secondary"
-          onClick={() => onProgress({ ...progress, dismissed: true })}
-        >
-          Dismiss
-        </button>
-      </div>
-      <ol className="home-steps" aria-label="First-run steps">
-        {GUIDE_STEPS.map((step, index) => (
-          <li
-            key={step.id}
-            className={index < stepIndex ? "done" : index === stepIndex ? "current" : ""}
-            aria-current={index === stepIndex ? "step" : undefined}
+    <Card aria-labelledby="guide-title">
+      <CardHeader>
+        <Eyebrow>First run</Eyebrow>
+        <CardTitle id="guide-title">Connect your first project</CardTitle>
+        <CardAction>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => onProgress({ ...progress, dismissed: true })}
           >
-            <span className="home-step-number" aria-hidden="true">
-              {index + 1}
-            </span>
-            {step.label}
-          </li>
-        ))}
-      </ol>
-      {progress.step === "create" || projectId === undefined ? (
-        <div className="home-guide-step">
-          <h3>Create a project</h3>
-          <p>
-            Choose where the project lives and the region that holds its data. Nothing is created
-            until you submit.
-          </p>
-          <ProjectCreateForm
-            teams={teams}
-            submitLabel="Create and provision"
-            onCreated={(project) =>
-              onProgress({ ...progress, step: "provision", projectId: project.id })
-            }
+            Dismiss
+          </Button>
+        </CardAction>
+      </CardHeader>
+      <CardContent className="grid gap-5">
+        <ol
+          className="m-0 grid list-none gap-2 p-0 sm:grid-cols-2 lg:grid-cols-4"
+          aria-label="First-run steps"
+        >
+          {GUIDE_STEPS.map((step, index) => {
+            const done = index < stepIndex;
+            const current = index === stepIndex;
+            return (
+              <li
+                key={step.id}
+                className={cn(
+                  "flex items-center gap-2.5 rounded-lg border px-3 py-2 text-sm font-medium text-muted-foreground",
+                  current && "border-primary/50 bg-accent text-foreground",
+                  done && "text-foreground",
+                )}
+                aria-current={current ? "step" : undefined}
+              >
+                <span
+                  className={cn(
+                    "inline-grid size-6 shrink-0 place-items-center rounded-full bg-muted text-xs font-semibold tabular-nums",
+                    (current || done) && "bg-primary text-primary-foreground",
+                  )}
+                  aria-hidden="true"
+                >
+                  {index + 1}
+                </span>
+                {step.label}
+              </li>
+            );
+          })}
+        </ol>
+        {progress.step === "create" || projectId === undefined ? (
+          <div className="grid gap-3">
+            <h3 className="text-base">Create a project</h3>
+            <p className="m-0 text-sm text-muted-foreground">
+              Choose where the project lives and the region that holds its data. Nothing is created
+              until you submit.
+            </p>
+            <ProjectCreateForm
+              teams={teams}
+              submitLabel="Create and provision"
+              onCreated={(project) =>
+                onProgress({ ...progress, step: "provision", projectId: project.id })
+              }
+            />
+          </div>
+        ) : progress.step === "provision" ? (
+          <ProvisionStep
+            client={client}
+            projectId={projectId}
+            onActive={() => onProgress({ ...progress, step: "keys" })}
+            onRestart={() => onProgress({ ...progress, step: "create" })}
           />
-        </div>
-      ) : progress.step === "provision" ? (
-        <ProvisionStep
-          client={client}
-          projectId={projectId}
-          onActive={() => onProgress({ ...progress, step: "keys" })}
-          onRestart={() => onProgress({ ...progress, step: "create" })}
-        />
-      ) : progress.step === "keys" ? (
-        <KeysStep
-          client={client}
-          projectId={projectId}
-          onContinue={() => onProgress({ ...progress, step: "check" })}
-        />
-      ) : (
-        <CheckStep
-          client={client}
-          projectId={projectId}
-          onBack={() => onProgress({ ...progress, step: "keys" })}
-          onOpenProject={() => {
-            onCompleted();
-            onOpenProject(projectId);
-          }}
-          onCompleted={onCompleted}
-        />
-      )}
-    </section>
+        ) : progress.step === "keys" ? (
+          <KeysStep
+            client={client}
+            projectId={projectId}
+            onContinue={() => onProgress({ ...progress, step: "check" })}
+          />
+        ) : (
+          <CheckStep
+            client={client}
+            projectId={projectId}
+            onBack={() => onProgress({ ...progress, step: "keys" })}
+            onOpenProject={() => {
+              onCompleted();
+              onOpenProject(projectId);
+            }}
+            onCompleted={onCompleted}
+          />
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -740,13 +859,15 @@ function ProvisionStep({
     };
   }, [client, projectId, settled]);
   return (
-    <div className="home-guide-step" aria-busy={!settled}>
-      <h3>Provisioning {project?.name ?? "your project"}</h3>
+    <div className="grid gap-3" aria-busy={!settled}>
+      <h3 className="text-base">Provisioning {project?.name ?? "your project"}</h3>
       <ApiFailureNotice failure={failure} />
       {project === null ? (
-        <p aria-live="polite">Checking the project…</p>
+        <p className={MUTED} aria-live="polite">
+          Checking the project…
+        </p>
       ) : (
-        <p aria-live="polite">
+        <p className="m-0 flex flex-wrap items-center gap-2 text-sm" aria-live="polite">
           <LifecycleBadge state={project.state} />{" "}
           {project.state === "failed"
             ? "Provisioning failed."
@@ -758,11 +879,13 @@ function ProvisionStep({
       {project?.state === "failed" ? (
         <>
           {project.failureDiagnostic === undefined ? null : (
-            <p role="alert">{project.failureDiagnostic}</p>
+            <p role="alert" className="m-0 text-sm text-destructive">
+              {project.failureDiagnostic}
+            </p>
           )}
-          <button type="button" className="secondary" onClick={onRestart}>
+          <Button variant="outline" className="justify-self-start" onClick={onRestart}>
             Start over with a new project
-          </button>
+          </Button>
         </>
       ) : null}
     </div>
@@ -873,61 +996,57 @@ function KeysStep({
         });
 
   return (
-    <div className="home-guide-step" aria-busy={environment === null}>
-      <h3>Your API URL and public key</h3>
-      <p>
+    <div className="grid gap-3" aria-busy={environment === null}>
+      <h3 className="text-base">Your API URL and public key</h3>
+      <p className="m-0 text-sm text-muted-foreground">
         Only the public project key belongs in browser or mobile code. It is shown once; store it in
         your application's secret store, then paste it into the snippet.
       </p>
       <ApiFailureNotice failure={failure} />
       {environment === null ? (
-        <p aria-live="polite">
+        <p className={MUTED} aria-live="polite">
           Waiting for the environment to become active
           {environmentState === null ? "" : ` (currently ${environmentState.replaceAll("_", " ")})`}
           …
         </p>
       ) : (
         <>
-          <dl className="definition-grid">
-            <div>
-              <dt>Environment</dt>
-              <dd>
-                {environment.name} <code>{environment.id}</code>
-              </dd>
-            </div>
-            <div>
-              <dt>API URL</dt>
-              <dd>
-                {metadata === null ? (
-                  metadataFailure === null ? (
-                    <span className="home-pending">Loading…</span>
-                  ) : (
-                    <span className="home-unavailable">Unavailable: {metadataFailure.message}</span>
-                  )
+          <dl className="m-0 grid gap-3 text-sm sm:grid-cols-3">
+            <KeyFact label="Environment">
+              {environment.name}{" "}
+              <code className="font-mono text-xs text-muted-foreground">{environment.id}</code>
+            </KeyFact>
+            <KeyFact label="API URL">
+              {metadata === null ? (
+                metadataFailure === null ? (
+                  <span className="text-muted-foreground italic">Loading…</span>
                 ) : (
-                  <code>{metadata.publicEndpoint}</code>
-                )}
-              </dd>
-            </div>
-            <div>
-              <dt>Public key ID</dt>
-              <dd>
-                {issued === null ? (
-                  <span className="home-muted">Not issued yet</span>
-                ) : (
-                  <code>{issued.id}</code>
-                )}
-              </dd>
-            </div>
+                  <span className="text-destructive">Unavailable: {metadataFailure.message}</span>
+                )
+              ) : (
+                <code className="font-mono text-xs">{metadata.publicEndpoint}</code>
+              )}
+            </KeyFact>
+            <KeyFact label="Public key ID">
+              {issued === null ? (
+                <span className="text-muted-foreground">Not issued yet</span>
+              ) : (
+                <code className="font-mono text-xs">{issued.id}</code>
+              )}
+            </KeyFact>
           </dl>
           {issued === null ? (
-            <button type="button" onClick={() => void issueKey()} disabled={pending}>
+            <Button
+              className="justify-self-start"
+              onClick={() => void issueKey()}
+              disabled={pending}
+            >
               {pending ? "Issuing…" : "Issue public key"}
-            </button>
+            </Button>
           ) : issued.value === "" ? (
-            <p className="home-muted">
-              Public key <code>{issued.id}</code> was issued and its value shown once. Rotate it
-              from the Credentials page if you lost it.
+            <p className={MUTED}>
+              Public key <code className="font-mono text-xs">{issued.id}</code> was issued and its
+              value shown once. Rotate it from the Credentials page if you lost it.
             </p>
           ) : (
             <OneTimeSecretValue
@@ -937,24 +1056,36 @@ function KeysStep({
             />
           )}
           {snippet === "" ? null : (
-            <div className="code-block">
-              <button
-                type="button"
-                className="secondary copy-button"
+            <div className="relative overflow-hidden rounded-lg border bg-muted/40">
+              <Button
+                variant="outline"
+                size="sm"
+                className="absolute top-2 right-2"
                 onClick={() => void navigator.clipboard.writeText(snippet)}
               >
+                <Copy aria-hidden="true" />
                 Copy
-              </button>
-              <pre>{snippet}</pre>
+              </Button>
+              <pre className="m-0 overflow-x-auto p-4 pr-28 font-mono text-xs leading-relaxed">
+                {snippet}
+              </pre>
             </div>
           )}
-          <div className="button-row">
-            <button type="button" onClick={onContinue}>
-              Continue to connection check
-            </button>
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={onContinue}>Continue to connection check</Button>
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+/** One fact of the connection: its name over its value, on a quiet tile. */
+function KeyFact({ label, children }: { readonly label: string; readonly children: ReactNode }) {
+  return (
+    <div className="grid min-w-0 content-start gap-1 rounded-lg border bg-muted/30 px-3 py-2">
+      <dt className={FACT_LABEL}>{label}</dt>
+      <dd className="m-0 break-all">{children}</dd>
     </div>
   );
 }
@@ -1005,34 +1136,45 @@ function CheckStep({
   };
   const passed = check?.steps.every((step) => step.state !== "failed") ?? false;
   return (
-    <div className="home-guide-step" aria-busy={pending}>
-      <h3>Connection check</h3>
-      <p>
+    <div className="grid gap-3" aria-busy={pending}>
+      <h3 className="text-base">Connection check</h3>
+      <p className="m-0 text-sm text-muted-foreground">
         Checks DNS, TLS, public routing, readiness, key metadata, and replication routes without
         reading documents or creating a user session.
       </p>
       <ApiFailureNotice failure={failure} />
-      <div className="button-row">
-        <button type="button" onClick={() => void run()} disabled={pending}>
+      <div className="flex flex-wrap gap-2">
+        <Button onClick={() => void run()} disabled={pending}>
           {pending ? "Checking…" : check === null ? "Run connection check" : "Run again"}
-        </button>
-        <button type="button" className="secondary" onClick={onBack}>
+        </Button>
+        <Button variant="outline" onClick={onBack}>
           Back to keys
-        </button>
+        </Button>
       </div>
       {check === null ? null : (
-        <ol className="check-list">
+        <ol className="m-0 grid list-none gap-2 p-0">
           {check.steps.map((step) => (
-            <li key={step.id}>
-              <span
-                className={`status-badge ${step.state === "passed" ? "success" : step.state === "failed" ? "error" : ""}`}
+            <li key={step.id} className="flex items-start gap-3 text-sm">
+              <Badge
+                variant={
+                  step.state === "passed"
+                    ? "positive"
+                    : step.state === "failed"
+                      ? "destructive"
+                      : "secondary"
+                }
+                className={cn(
+                  "status-badge mt-0.5",
+                  step.state === "passed" && "success",
+                  step.state === "failed" && "error",
+                )}
               >
                 {humanize(step.state)}
-              </span>
-              <span>
-                <strong>{humanize(step.id)}</strong>
+              </Badge>
+              <span className="grid gap-0.5">
+                <strong className="font-medium">{humanize(step.id)}</strong>
                 {step.remediationCode === null || step.remediationCode === undefined ? null : (
-                  <small>
+                  <small className="text-xs text-muted-foreground">
                     {humanize(step.remediationCode)} ·{" "}
                     {step.retryable ? "retryable" : "configuration change required"}
                   </small>
@@ -1043,24 +1185,27 @@ function CheckStep({
         </ol>
       )}
       {check !== null && passed ? (
-        <div className="notice success home-success" role="status">
-          <strong>Connected.</strong>
-          <p>
-            Your project is reachable and ready for an RxDB client. Checked at{" "}
-            <time dateTime={new Date(check.checkedAtUnixSeconds * 1000).toISOString()}>
-              {new Date(check.checkedAtUnixSeconds * 1000).toLocaleString()}
-            </time>
-            .
-          </p>
-          <div className="button-row">
-            <button type="button" onClick={onOpenProject}>
-              Open project
-            </button>
-            <button type="button" className="secondary" onClick={onCompleted}>
-              Go to the dashboard
-            </button>
-          </div>
-        </div>
+        <Alert variant="positive" role="status">
+          <CheckCircle2 aria-hidden="true" />
+          <AlertTitle>Connected.</AlertTitle>
+          <AlertDescription className="block">
+            <p className="m-0">
+              Your project is reachable and ready for an RxDB client. Checked at{" "}
+              <time dateTime={new Date(check.checkedAtUnixSeconds * 1000).toISOString()}>
+                {new Date(check.checkedAtUnixSeconds * 1000).toLocaleString()}
+              </time>
+              .
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button size="sm" onClick={onOpenProject}>
+                Open project
+              </Button>
+              <Button variant="outline" size="sm" onClick={onCompleted}>
+                Go to the dashboard
+              </Button>
+            </div>
+          </AlertDescription>
+        </Alert>
       ) : null}
     </div>
   );

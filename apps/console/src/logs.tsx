@@ -1,4 +1,25 @@
-import { type FormEvent, useEffect, useMemo, useState } from "react";
+import {
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  EmptyState,
+  Eyebrow,
+  Field,
+  Input,
+  NativeSelect,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@mako-cloud/ui";
+import { ScrollText } from "lucide-react";
+import { type FormEvent, useEffect, useId, useMemo, useState } from "react";
 
 import type {
   ObservabilityPage,
@@ -20,6 +41,9 @@ const RANGE_PRESETS = {
 } as const;
 type RangePreset = keyof typeof RANGE_PRESETS;
 type RangeChoice = RangePreset | "custom";
+
+/** A code snippet inline in prose or a cell: an identifier. */
+const CODE = "rounded bg-muted px-1 py-0.5 font-mono text-[0.85em]";
 
 interface TimeRange {
   readonly from: string;
@@ -46,6 +70,7 @@ export function LogsScreen({
   readonly environmentId: string;
 }) {
   const client = useManagementClient();
+  const id = useId();
   const [choice, setChoice] = useState<RangeChoice>("1h");
   const [range, setRange] = useState<TimeRange>(() => presetRange("1h"));
   const [level, setLevel] = useState<"all" | LogLevel>("all");
@@ -147,124 +172,139 @@ export function LogsScreen({
   };
 
   return (
-    <section aria-labelledby="logs-title">
-      <div className="section-heading">
-        <div>
-          <p className="eyebrow">Environment {environmentId}</p>
-          <h1 id="logs-title">Retained logs</h1>
-          <p>
-            Scrubbed log lines from the data plane, edge functions, and sync for project{" "}
-            <code>{projectId}</code>, newest first.
-          </p>
-        </div>
+    <section aria-labelledby="logs-title" className="grid gap-6">
+      <div className="grid gap-1">
+        <Eyebrow>Environment {environmentId}</Eyebrow>
+        <h1 id="logs-title" className="text-2xl">
+          Retained logs
+        </h1>
+        <p className="m-0 max-w-3xl text-sm text-muted-foreground">
+          Scrubbed log lines from the data plane, edge functions, and sync for project{" "}
+          <code className={CODE}>{projectId}</code>, newest first.
+        </p>
       </div>
       <ApiFailureNotice failure={failure} />
-      <section className="panel full-span" aria-labelledby="log-filters-title">
-        <h2 id="log-filters-title">Filters</h2>
-        <form className="log-filters" onSubmit={applyCustomRange}>
-          <label>
-            Time range
-            <select
-              name="range"
-              value={choice}
-              onChange={(event) => changeRange(event.currentTarget.value as RangeChoice)}
-            >
-              {(Object.keys(RANGE_PRESETS) as RangePreset[]).map((preset) => (
-                <option key={preset} value={preset}>
-                  {RANGE_PRESETS[preset].label}
-                </option>
-              ))}
-              <option value="custom">Custom range</option>
-            </select>
-          </label>
-          {choice === "custom" ? (
-            <>
-              <label>
-                From
-                <input name="from" type="datetime-local" required />
-              </label>
-              <label>
-                Until
-                <input name="until" type="datetime-local" />
-              </label>
-              <button type="submit">Apply time range</button>
-            </>
-          ) : null}
-          <label>
-            Level
-            <select
-              name="level"
-              value={level}
-              onChange={(event) => setLevel(event.currentTarget.value as "all" | LogLevel)}
-            >
-              <option value="all">All levels</option>
-              {LOG_LEVELS.map((item) => (
-                <option key={item} value={item}>
-                  {item}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Source
-            <select
-              name="source"
-              value={sources.includes(source) ? source : "all"}
-              onChange={(event) => setSource(event.currentTarget.value)}
-            >
-              <option value="all">All sources</option>
-              {sources.map((item) => (
-                <option key={item} value={item}>
-                  {item}
-                </option>
-              ))}
-            </select>
-          </label>
-        </form>
-        <p className="log-window">
-          Window: {new Date(range.from).toLocaleString()} –{" "}
-          {range.until === null ? "now" : new Date(range.until).toLocaleString()}
-        </p>
-        {page === null ? null : <RetentionNotice page={page} />}
-      </section>
-      <section className="panel full-span" aria-labelledby="log-lines-title">
-        <div className="button-row spread">
-          <h2 id="log-lines-title">Log lines</h2>
-          <small>
-            Showing {visible.length} of {lines.length} loaded lines.
-          </small>
-        </div>
-        {loading && page === null ? (
-          <p aria-live="polite">Loading retained logs…</p>
-        ) : lines.length === 0 ? (
-          <div className="log-empty" role="status">
-            <strong>No log lines are retained for this window.</strong>
-            <p>Widen the time range, or check that the environment has served traffic.</p>
-          </div>
-        ) : visible.length === 0 ? (
-          <div className="log-empty" role="status">
-            <strong>No loaded lines match the level and source filters.</strong>
-            <p>Clear a filter or load more lines from the retention window.</p>
-          </div>
-        ) : (
-          <LogTable lines={visible} />
-        )}
-        <div className="button-row spread">
-          <small>
-            {page === null || page.nextCursor === null
-              ? "Every retained line in this window is loaded."
-              : "Older lines remain in the retention window."}
-          </small>
-          <button
-            type="button"
-            className="secondary"
-            disabled={page === null || page.nextCursor === null || loading || loadingMore}
-            onClick={() => void loadMore()}
+      <Card aria-labelledby="log-filters-title">
+        <CardHeader>
+          <CardTitle id="log-filters-title">Filters</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-4">
+          <form
+            className="grid items-end gap-3 sm:grid-cols-2 xl:grid-cols-[repeat(auto-fit,minmax(11rem,1fr))]"
+            onSubmit={applyCustomRange}
           >
-            {loadingMore ? "Loading…" : "Load more"}
-          </button>
-        </div>
-      </section>
+            <Field label="Time range" htmlFor={`${id}-range`}>
+              <NativeSelect
+                id={`${id}-range`}
+                name="range"
+                value={choice}
+                onChange={(event) => changeRange(event.currentTarget.value as RangeChoice)}
+              >
+                {(Object.keys(RANGE_PRESETS) as RangePreset[]).map((preset) => (
+                  <option key={preset} value={preset}>
+                    {RANGE_PRESETS[preset].label}
+                  </option>
+                ))}
+                <option value="custom">Custom range</option>
+              </NativeSelect>
+            </Field>
+            {choice === "custom" ? (
+              <>
+                <Field label="From" htmlFor={`${id}-from`}>
+                  <Input id={`${id}-from`} name="from" type="datetime-local" required />
+                </Field>
+                <Field label="Until" htmlFor={`${id}-until`}>
+                  <Input id={`${id}-until`} name="until" type="datetime-local" />
+                </Field>
+                <div>
+                  <Button type="submit">Apply time range</Button>
+                </div>
+              </>
+            ) : null}
+            <Field label="Level" htmlFor={`${id}-level`}>
+              <NativeSelect
+                id={`${id}-level`}
+                name="level"
+                value={level}
+                onChange={(event) => setLevel(event.currentTarget.value as "all" | LogLevel)}
+              >
+                <option value="all">All levels</option>
+                {LOG_LEVELS.map((item) => (
+                  <option key={item} value={item}>
+                    {item}
+                  </option>
+                ))}
+              </NativeSelect>
+            </Field>
+            <Field label="Source" htmlFor={`${id}-source`}>
+              <NativeSelect
+                id={`${id}-source`}
+                name="source"
+                value={sources.includes(source) ? source : "all"}
+                onChange={(event) => setSource(event.currentTarget.value)}
+              >
+                <option value="all">All sources</option>
+                {sources.map((item) => (
+                  <option key={item} value={item}>
+                    {item}
+                  </option>
+                ))}
+              </NativeSelect>
+            </Field>
+          </form>
+          <p className="m-0 text-sm text-muted-foreground tabular-nums">
+            Window: {new Date(range.from).toLocaleString()} –{" "}
+            {range.until === null ? "now" : new Date(range.until).toLocaleString()}
+          </p>
+          {page === null ? null : <RetentionNotice page={page} />}
+        </CardContent>
+      </Card>
+      <Card aria-labelledby="log-lines-title">
+        <CardHeader>
+          <CardTitle id="log-lines-title">Log lines</CardTitle>
+          <CardDescription className="tabular-nums">
+            Showing {visible.length} of {lines.length} loaded lines.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4">
+          {loading && page === null ? (
+            <p className="m-0 text-sm text-muted-foreground" aria-live="polite">
+              Loading retained logs…
+            </p>
+          ) : lines.length === 0 ? (
+            <EmptyState
+              role="status"
+              icon={<ScrollText aria-hidden="true" />}
+              title="No log lines are retained for this window."
+              description="Widen the time range, or check that the environment has served traffic."
+            />
+          ) : visible.length === 0 ? (
+            <EmptyState
+              role="status"
+              icon={<ScrollText aria-hidden="true" />}
+              title="No loaded lines match the level and source filters."
+              description="Clear a filter or load more lines from the retention window."
+            />
+          ) : (
+            <LogTable lines={visible} />
+          )}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <small className="text-xs text-muted-foreground">
+              {page === null || page.nextCursor === null
+                ? "Every retained line in this window is loaded."
+                : "Older lines remain in the retention window."}
+            </small>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page === null || page.nextCursor === null || loading || loadingMore}
+              onClick={() => void loadMore()}
+            >
+              {loadingMore ? "Loading…" : "Load more"}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
     </section>
   );
 }
@@ -273,38 +313,57 @@ export function LogsScreen({
 // must never be interpreted as markup here.
 function LogTable({ lines }: { readonly lines: readonly LogLine[] }) {
   return (
-    <div className="table-scroll">
-      <table className="log-table">
-        <thead>
-          <tr>
-            <th scope="col">Time</th>
-            <th scope="col">Level</th>
-            <th scope="col">Source</th>
-            <th scope="col">Message</th>
-            <th scope="col">Correlation</th>
-          </tr>
-        </thead>
-        <tbody>
-          {lines.map((line) => (
-            <tr key={line.id}>
-              <td>
-                <time dateTime={line.timestamp}>{new Date(line.timestamp).toLocaleString()}</time>
-              </td>
-              <td>
-                <span className={`log-level log-level-${normalizeLevel(line.level) ?? "other"}`}>
-                  {line.level}
-                </span>
-              </td>
-              <td>{line.source}</td>
-              <td className="log-message">{line.message}</td>
-              <td>
-                <code>{line.correlationId}</code>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <Table className="log-table">
+      <TableHeader>
+        <TableRow className="hover:bg-transparent">
+          <TableHead scope="col">Time</TableHead>
+          <TableHead scope="col">Level</TableHead>
+          <TableHead scope="col">Source</TableHead>
+          <TableHead scope="col">Message</TableHead>
+          <TableHead scope="col">Correlation</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {lines.map((line) => (
+          <TableRow key={line.id}>
+            <TableCell className="align-top text-muted-foreground tabular-nums">
+              <time dateTime={line.timestamp}>{new Date(line.timestamp).toLocaleString()}</time>
+            </TableCell>
+            <TableCell className="align-top">
+              <LevelBadge level={line.level} />
+            </TableCell>
+            <TableCell className="align-top font-mono text-xs">{line.source}</TableCell>
+            <TableCell className="min-w-72 align-top font-mono text-xs whitespace-pre-wrap break-words">
+              {line.message}
+            </TableCell>
+            <TableCell className="align-top">
+              <code className={CODE}>{line.correlationId}</code>
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  );
+}
+
+/** The level as a badge; warn and error carry colour, the rest stay quiet. */
+function LevelBadge({ level }: { readonly level: string }) {
+  const normalized = normalizeLevel(level);
+  return (
+    <Badge
+      variant={
+        normalized === "error"
+          ? "destructive"
+          : normalized === "warn"
+            ? "warning"
+            : normalized === "info"
+              ? "secondary"
+              : "outline"
+      }
+      className="font-mono uppercase"
+    >
+      {level}
+    </Badge>
   );
 }
 

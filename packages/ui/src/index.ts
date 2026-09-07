@@ -19,6 +19,7 @@ export {
   CardFooter,
   CardHeader,
   CardTitle,
+  Eyebrow,
 } from "./components/card.js";
 export { Separator, Skeleton } from "./components/separator.js";
 export {

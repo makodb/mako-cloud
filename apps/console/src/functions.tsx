@@ -1,4 +1,31 @@
-import { type FormEvent, useCallback, useEffect, useState } from "react";
+import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
+  Button,
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  Checkbox,
+  EmptyState,
+  Eyebrow,
+  Field,
+  Input,
+  Label,
+  NativeSelect,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  Textarea,
+} from "@mako-cloud/ui";
+import { CircleCheck, Zap } from "lucide-react";
+import { type FormEvent, type ReactNode, useCallback, useEffect, useId, useState } from "react";
 
 import type {
   CreateFunctionRequest,
@@ -27,6 +54,11 @@ const DEFAULT_LIMITS = {
   concurrency: 10,
 } as const;
 
+/** A code snippet inline in prose or a cell: an identifier, a digest, a path. */
+const CODE = "rounded bg-muted px-1 py-0.5 font-mono text-[0.85em]";
+/** A block of JSON or a response body. */
+const PRE = "m-0 max-h-72 overflow-auto rounded-md bg-muted p-3 font-mono text-xs leading-relaxed";
+
 export function FunctionsScreen({
   projectId,
   environmentId,
@@ -41,6 +73,7 @@ export function FunctionsScreen({
   const client = useManagementClient();
   const [functions, setFunctions] = useState<EdgeFunction[] | null>(null);
   const [failure, setFailure] = useState<ConsoleApiFailure | null>(null);
+  const nameId = useId();
   const reload = useCallback(async () => {
     try {
       setFunctions(await client.listFunctions(projectId, environmentId));
@@ -75,58 +108,81 @@ export function FunctionsScreen({
   };
 
   return (
-    <section aria-labelledby="functions-title">
-      <button type="button" className="back-link" onClick={onBack}>
-        ← Project
-      </button>
-      <div className="section-heading">
-        <div>
-          <p className="eyebrow">Environment {environmentId}</p>
-          <h1 id="functions-title">Edge functions</h1>
+    <section aria-labelledby="functions-title" className="grid gap-6">
+      <div className="grid gap-2">
+        <BackLink onClick={onBack}>← Project</BackLink>
+        <div className="grid gap-1">
+          <Eyebrow>Environment {environmentId}</Eyebrow>
+          <h1 id="functions-title" className="text-2xl">
+            Edge functions
+          </h1>
         </div>
       </div>
       <ApiFailureNotice failure={failure} />
-      <div className="split-grid">
-        <section className="panel" aria-labelledby="function-list-title">
-          <h2 id="function-list-title">Functions</h2>
-          {functions === null ? (
-            <p>Loading functions…</p>
-          ) : functions.length === 0 ? (
-            <p>No functions have been created.</p>
-          ) : (
-            <div className="resource-list">
-              {functions.map((item) => (
-                <button
-                  type="button"
-                  className="resource-row"
-                  key={item.name}
-                  onClick={() => onOpen(item.name)}
-                >
-                  <span>
-                    <strong>{item.name}</strong>
-                    <small>
-                      {item.activeVersion === null
-                        ? "No active deployment"
-                        : `Active v${item.activeVersion}`}
-                    </small>
-                  </span>
-                  <LifecycleBadge state={item.state} />
-                </button>
-              ))}
-            </div>
-          )}
-        </section>
-        <section className="panel" aria-labelledby="create-function-title">
-          <h2 id="create-function-title">Create function</h2>
-          <form onSubmit={(event) => void create(event)}>
-            <label>
-              Function name
-              <input name="name" required pattern="[a-z][a-z0-9-]{0,62}" />
-            </label>
-            <ConfigurationFields />
-            <button type="submit">Create function</button>
-          </form>
-        </section>
+      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+        <Card aria-labelledby="function-list-title">
+          <CardHeader>
+            <CardTitle id="function-list-title">Functions</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {functions === null ? (
+              <p className="m-0 text-sm text-muted-foreground">Loading functions…</p>
+            ) : functions.length === 0 ? (
+              <EmptyState
+                icon={<Zap aria-hidden="true" />}
+                title="No functions have been created."
+                className="border-0 py-8"
+              />
+            ) : (
+              <ul className="m-0 grid list-none gap-1 p-0">
+                {functions.map((item) => (
+                  <li key={item.name}>
+                    <Button
+                      variant="ghost"
+                      className="h-auto w-full justify-between gap-3 px-3 py-2.5 text-left font-normal"
+                      onClick={() => onOpen(item.name)}
+                    >
+                      <span className="grid min-w-0 gap-0.5">
+                        <strong className="truncate font-mono text-sm font-semibold">
+                          {item.name}
+                        </strong>
+                        <small className="text-xs text-muted-foreground">
+                          {item.activeVersion === null
+                            ? "No active deployment"
+                            : `Active v${item.activeVersion}`}
+                        </small>
+                      </span>
+                      <LifecycleBadge state={item.state} />
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+        <Card aria-labelledby="create-function-title">
+          <CardHeader>
+            <CardTitle id="create-function-title">Create function</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <form className="grid gap-4" onSubmit={(event) => void create(event)}>
+              <Field label="Function name" htmlFor={nameId}>
+                <Input
+                  id={nameId}
+                  name="name"
+                  required
+                  pattern="[a-z][a-z0-9-]{0,62}"
+                  className="font-mono"
+                  spellCheck={false}
+                />
+              </Field>
+              <ConfigurationFields />
+              <div>
+                <Button type="submit">Create function</Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
       </div>
     </section>
   );
@@ -151,6 +207,7 @@ export function FunctionScreen({
   const [metrics, setMetrics] = useState<ObservabilityPage | null>(null);
   const [testResponse, setTestResponse] = useState<FunctionTestResponse | null>(null);
   const [failure, setFailure] = useState<ConsoleApiFailure | null>(null);
+  const deployId = useId();
   const reload = useCallback(async () => {
     try {
       const [nextFunction, nextDeployments, nextLogs, nextMetrics] = await Promise.all([
@@ -321,86 +378,118 @@ export function FunctionScreen({
   };
 
   return (
-    <section aria-labelledby="function-title">
-      <button type="button" className="back-link" onClick={onBack}>
-        ← Functions
-      </button>
-      <div className="section-heading">
-        <div>
-          <p className="eyebrow">Edge function</p>
-          <h1 id="function-title">{functionName}</h1>
+    <section aria-labelledby="function-title" className="grid gap-6">
+      <div className="grid gap-2">
+        <BackLink onClick={onBack}>← Functions</BackLink>
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="grid gap-1">
+            <Eyebrow>Edge function</Eyebrow>
+            <h1 id="function-title" className="font-mono text-2xl">
+              {functionName}
+            </h1>
+          </div>
+          {item === null ? null : <LifecycleBadge state={item.state} />}
         </div>
-        {item === null ? null : <LifecycleBadge state={item.state} />}
       </div>
       <ApiFailureNotice failure={failure} />
       {item === null ? (
-        <p>Loading function…</p>
+        <p className="m-0 text-sm text-muted-foreground">Loading function…</p>
       ) : (
         <>
-          <section className="panel" aria-labelledby="configuration-title">
-            <div className="button-row spread">
-              <div>
-                <h2 id="configuration-title">Configuration</h2>
-                <p>
-                  {item.configuration.verifyJwt
-                    ? "JWT verification is required."
-                    : "Public invocation is enabled."}
-                </p>
-              </div>
-              <button
-                type="button"
-                className="danger-link"
-                disabled={item.state === "deleted"}
-                onClick={() => void deleteFunction()}
+          <Card aria-labelledby="configuration-title">
+            <CardHeader>
+              <CardTitle id="configuration-title">Configuration</CardTitle>
+              <CardDescription>
+                {item.configuration.verifyJwt
+                  ? "JWT verification is required."
+                  : "Public invocation is enabled."}
+              </CardDescription>
+              <CardAction>
+                <DangerButton
+                  disabled={item.state === "deleted"}
+                  onClick={() => void deleteFunction()}
+                >
+                  Delete function
+                </DangerButton>
+              </CardAction>
+            </CardHeader>
+            <CardContent>
+              <form
+                key={item.updatedAt}
+                className="grid gap-4"
+                onSubmit={(event) => void configure(event)}
               >
-                Delete function
-              </button>
-            </div>
-            <form key={item.updatedAt} onSubmit={(event) => void configure(event)}>
-              <ConfigurationFields configuration={item.configuration} />
-              <button type="submit">Save configuration</button>
-            </form>
-          </section>
-          <div className="split-grid stacked-section">
+                <ConfigurationFields configuration={item.configuration} />
+                <div>
+                  <Button type="submit">Save configuration</Button>
+                </div>
+              </form>
+            </CardContent>
+          </Card>
+          <div className="grid items-start gap-6 lg:grid-cols-2">
             <BundleUploadPanel
               projectId={projectId}
               environmentId={environmentId}
               onReady={setArtifact}
               onFailure={setFailure}
             />
-            <section className="panel" aria-labelledby="deployment-title">
-              <h2 id="deployment-title">Deploy immutable version</h2>
-              <form key={artifact?.digest ?? "manual"} onSubmit={(event) => void deploy(event)}>
-                <label>
-                  Version
-                  <input
-                    name="version"
-                    type="number"
-                    min="1"
-                    defaultValue={(deployments?.at(-1)?.version ?? 0) + 1}
-                    required
-                  />
-                </label>
-                <label>
-                  Bundle digest
-                  <input
-                    name="bundleDigest"
-                    required
-                    pattern="sha256:[a-f0-9]{64}"
-                    defaultValue={artifact?.digest}
-                  />
-                </label>
-                <label>
-                  Entrypoint
-                  <input name="entrypoint" required defaultValue={artifact?.entrypoint} />
-                </label>
-                <label>
-                  Runtime version
-                  <input name="runtimeVersion" required placeholder="deno-compatible-v1" />
-                </label>
-                <button type="submit">Validate and deploy</button>
-              </form>
-            </section>
+            <Card aria-labelledby="deployment-title">
+              <CardHeader>
+                <CardTitle id="deployment-title">Deploy immutable version</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <form
+                  key={artifact?.digest ?? "manual"}
+                  className="grid gap-4"
+                  onSubmit={(event) => void deploy(event)}
+                >
+                  <Field label="Version" htmlFor={`${deployId}-version`}>
+                    <Input
+                      id={`${deployId}-version`}
+                      name="version"
+                      type="number"
+                      min="1"
+                      defaultValue={(deployments?.at(-1)?.version ?? 0) + 1}
+                      required
+                    />
+                  </Field>
+                  <Field label="Bundle digest" htmlFor={`${deployId}-digest`}>
+                    <Input
+                      id={`${deployId}-digest`}
+                      name="bundleDigest"
+                      required
+                      pattern="sha256:[a-f0-9]{64}"
+                      defaultValue={artifact?.digest}
+                      className="font-mono"
+                      spellCheck={false}
+                    />
+                  </Field>
+                  <Field label="Entrypoint" htmlFor={`${deployId}-entrypoint`}>
+                    <Input
+                      id={`${deployId}-entrypoint`}
+                      name="entrypoint"
+                      required
+                      defaultValue={artifact?.entrypoint}
+                      className="font-mono"
+                      spellCheck={false}
+                    />
+                  </Field>
+                  <Field label="Runtime version" htmlFor={`${deployId}-runtime`}>
+                    <Input
+                      id={`${deployId}-runtime`}
+                      name="runtimeVersion"
+                      required
+                      placeholder="deno-compatible-v1"
+                      className="font-mono"
+                      spellCheck={false}
+                    />
+                  </Field>
+                  <div>
+                    <Button type="submit">Validate and deploy</Button>
+                  </div>
+                </form>
+              </CardContent>
+            </Card>
           </div>
           <DeploymentsPanel
             deployments={deployments}
@@ -416,7 +505,7 @@ export function FunctionScreen({
             functionName={functionName}
             activeVersion={item.activeVersion}
           />
-          <div className="split-grid stacked-section">
+          <div className="grid items-start gap-6 lg:grid-cols-2">
             <TestInvocationPanel response={testResponse} onSubmit={test} />
             <FunctionMetricsPanel page={metrics} functionName={functionName} />
           </div>
@@ -439,6 +528,7 @@ function BundleUploadPanel({
   readonly onFailure: (failure: ConsoleApiFailure | null) => void;
 }) {
   const client = useManagementClient();
+  const id = useId();
   const [kind, setKind] = useState<"source" | "prebuilt">("source");
   const [diagnostics, setDiagnostics] = useState<
     readonly { code: string; message: string; path?: string; line?: number }[]
@@ -488,59 +578,98 @@ function BundleUploadPanel({
     }
   };
   return (
-    <section className="panel" aria-labelledby="bundle-upload-title">
-      <h2 id="bundle-upload-title">Upload bundle</h2>
-      <p>Files are validated, deterministically archived, and stored by SHA-256 digest.</p>
-      <form onSubmit={(event) => void upload(event)}>
-        <label>
-          Upload type
-          <select
-            value={kind}
-            onChange={(event) => setKind(event.currentTarget.value as "source" | "prebuilt")}
+    <Card aria-labelledby="bundle-upload-title">
+      <CardHeader>
+        <CardTitle id="bundle-upload-title">Upload bundle</CardTitle>
+        <CardDescription>
+          Files are validated, deterministically archived, and stored by SHA-256 digest.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-4">
+        <form className="grid gap-4" onSubmit={(event) => void upload(event)}>
+          <Field label="Upload type" htmlFor={`${id}-kind`}>
+            <NativeSelect
+              id={`${id}-kind`}
+              value={kind}
+              onChange={(event) => setKind(event.currentTarget.value as "source" | "prebuilt")}
+            >
+              <option value="source">TypeScript/JavaScript source</option>
+              <option value="prebuilt">Prebuilt bundle</option>
+            </NativeSelect>
+          </Field>
+          <Field
+            label={kind === "source" ? "Source files" : "Prebuilt bundle file"}
+            htmlFor={`${id}-files`}
           >
-            <option value="source">TypeScript/JavaScript source</option>
-            <option value="prebuilt">Prebuilt bundle</option>
-          </select>
-        </label>
-        <label>
-          {kind === "source" ? "Source files" : "Prebuilt bundle file"}
-          <input name="files" type="file" multiple={kind === "source"} required />
-        </label>
-        <label>
-          Entrypoint path
-          <input name="entrypoint" required placeholder="index.ts" />
-        </label>
-        {kind === "prebuilt" ? null : (
-          <label>
-            Dependency mappings (JSON: import specifier to uploaded path)
-            <textarea name="dependencies" rows={5} required defaultValue="{}" spellCheck={false} />
-          </label>
+            <Input
+              id={`${id}-files`}
+              name="files"
+              type="file"
+              multiple={kind === "source"}
+              required
+            />
+          </Field>
+          <Field label="Entrypoint path" htmlFor={`${id}-entrypoint`}>
+            <Input
+              id={`${id}-entrypoint`}
+              name="entrypoint"
+              required
+              placeholder="index.ts"
+              className="font-mono"
+              spellCheck={false}
+            />
+          </Field>
+          {kind === "prebuilt" ? null : (
+            <Field
+              label="Dependency mappings (JSON: import specifier to uploaded path)"
+              htmlFor={`${id}-dependencies`}
+            >
+              <Textarea
+                id={`${id}-dependencies`}
+                name="dependencies"
+                rows={5}
+                required
+                defaultValue="{}"
+                spellCheck={false}
+                className="font-mono text-xs"
+              />
+            </Field>
+          )}
+          <div>
+            <Button type="submit">Upload and validate</Button>
+          </div>
+        </form>
+        {diagnostics.length === 0 ? null : (
+          <Alert variant="destructive" role="alert">
+            <AlertDescription className="block">
+              <ul className="m-0 grid list-none gap-1 p-0">
+                {diagnostics.map((diagnostic) => (
+                  <li key={JSON.stringify(diagnostic)}>
+                    <strong className="font-mono">{diagnostic.code}</strong>: {diagnostic.message}
+                    {diagnostic.path === undefined ? null : ` (${diagnostic.path}`}
+                    {diagnostic.line === undefined ? null : `:${diagnostic.line}`}
+                    {diagnostic.path === undefined ? null : ")"}
+                  </li>
+                ))}
+              </ul>
+            </AlertDescription>
+          </Alert>
         )}
-        <button type="submit">Upload and validate</button>
-      </form>
-      {diagnostics.length === 0 ? null : (
-        <ul className="diagnostic-list notice error" role="alert">
-          {diagnostics.map((diagnostic) => (
-            <li key={JSON.stringify(diagnostic)}>
-              <strong>{diagnostic.code}</strong>: {diagnostic.message}
-              {diagnostic.path === undefined ? null : ` (${diagnostic.path}`}
-              {diagnostic.line === undefined ? null : `:${diagnostic.line}`}
-              {diagnostic.path === undefined ? null : ")"}
-            </li>
-          ))}
-        </ul>
-      )}
-      {artifact === null ? null : (
-        <div className="notice success" role="status">
-          <strong>Immutable bundle ready</strong>
-          <p>
-            {artifact.format.replaceAll("_", " ")} · {artifact.moduleCount} module(s) ·{" "}
-            {artifact.sizeBytes.toLocaleString()} bytes
-          </p>
-          <code>{artifact.digest}</code>
-        </div>
-      )}
-    </section>
+        {artifact === null ? null : (
+          <Alert variant="positive" role="status">
+            <CircleCheck aria-hidden="true" />
+            <AlertTitle>Immutable bundle ready</AlertTitle>
+            <AlertDescription className="block">
+              <p className="m-0">
+                {artifact.format.replaceAll("_", " ")} · {artifact.moduleCount} module(s) ·{" "}
+                {artifact.sizeBytes.toLocaleString()} bytes
+              </p>
+              <code className="mt-1 block font-mono text-xs break-all">{artifact.digest}</code>
+            </AlertDescription>
+          </Alert>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -560,77 +689,92 @@ function DeploymentsPanel({
   readonly onDelete: (version: number) => void;
 }) {
   return (
-    <section className="panel full-span stacked-section" aria-labelledby="versions-title">
-      <h2 id="versions-title">Deployment versions</h2>
-      {deployments === null ? (
-        <p>Loading deployments…</p>
-      ) : deployments.length === 0 ? (
-        <p>No versions have been deployed.</p>
-      ) : (
-        <div className="card-grid">
-          {deployments.map((deployment) => (
-            <article className="resource-card" key={deployment.version}>
-              <div className="button-row spread">
-                <strong>Version {deployment.version}</strong>
-                <LifecycleBadge
-                  state={activeVersion === deployment.version ? "active" : deployment.state}
-                />
-              </div>
-              <small>{deployment.runtimeVersion}</small>
-              <code>{deployment.bundleDigest}</code>
-              <p>
-                {deployment.bundleFormat.replaceAll("_", " ")} ·{" "}
-                {deployment.bundleSizeBytes.toLocaleString()} bytes
-              </p>
-              {deployment.diagnostic === null ? null : (
-                <p className="notice error" role="alert">
-                  {deployment.diagnostic}
+    <Card aria-labelledby="versions-title">
+      <CardHeader>
+        <CardTitle id="versions-title">Deployment versions</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {deployments === null ? (
+          <p className="m-0 text-sm text-muted-foreground">Loading deployments…</p>
+        ) : deployments.length === 0 ? (
+          <p className="m-0 text-sm text-muted-foreground">No versions have been deployed.</p>
+        ) : (
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {deployments.map((deployment) => (
+              <article
+                className="resource-card grid gap-3 rounded-lg border bg-card p-4 text-sm text-card-foreground"
+                key={deployment.version}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <strong className="font-semibold">Version {deployment.version}</strong>
+                  <LifecycleBadge
+                    state={activeVersion === deployment.version ? "active" : deployment.state}
+                  />
+                </div>
+                <small className="font-mono text-xs text-muted-foreground">
+                  {deployment.runtimeVersion}
+                </small>
+                <code className="block font-mono text-xs break-all">{deployment.bundleDigest}</code>
+                <p className="m-0 text-muted-foreground">
+                  {deployment.bundleFormat.replaceAll("_", " ")} ·{" "}
+                  {deployment.bundleSizeBytes.toLocaleString()} bytes
                 </p>
-              )}
-              <details>
-                <summary>Version configuration</summary>
-                <pre className="json-preview">
-                  {JSON.stringify(deployment.configuration, null, 2)}
-                </pre>
-              </details>
-              <div className="button-row">
-                <button
-                  type="button"
-                  className="secondary"
-                  disabled={deployment.state === "deleting"}
-                  onClick={() => onCheckHealth(deployment.version)}
-                >
-                  Check health
-                </button>
-                <button
-                  type="button"
-                  disabled={deployment.state !== "healthy" || activeVersion === deployment.version}
-                  onClick={() => onPromote(deployment.version)}
-                >
-                  Promote
-                </button>
-                <button
-                  type="button"
-                  className="secondary"
-                  disabled={deployment.state !== "healthy" || activeVersion === deployment.version}
-                  onClick={() => onRollback(deployment.version)}
-                >
-                  Roll back
-                </button>
-                <button
-                  type="button"
-                  className="danger-link"
-                  disabled={activeVersion === deployment.version || deployment.state === "deleting"}
-                  onClick={() => onDelete(deployment.version)}
-                >
-                  Delete version
-                </button>
-              </div>
-            </article>
-          ))}
-        </div>
-      )}
-    </section>
+                {deployment.diagnostic === null ? null : (
+                  <Alert variant="destructive" role="alert">
+                    <AlertDescription className="block">{deployment.diagnostic}</AlertDescription>
+                  </Alert>
+                )}
+                <details>
+                  <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
+                    Version configuration
+                  </summary>
+                  <pre className={`mt-2 ${PRE}`}>
+                    {JSON.stringify(deployment.configuration, null, 2)}
+                  </pre>
+                </details>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={deployment.state === "deleting"}
+                    onClick={() => onCheckHealth(deployment.version)}
+                  >
+                    Check health
+                  </Button>
+                  <Button
+                    size="sm"
+                    disabled={
+                      deployment.state !== "healthy" || activeVersion === deployment.version
+                    }
+                    onClick={() => onPromote(deployment.version)}
+                  >
+                    Promote
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={
+                      deployment.state !== "healthy" || activeVersion === deployment.version
+                    }
+                    onClick={() => onRollback(deployment.version)}
+                  >
+                    Roll back
+                  </Button>
+                  <DangerButton
+                    disabled={
+                      activeVersion === deployment.version || deployment.state === "deleting"
+                    }
+                    onClick={() => onDelete(deployment.version)}
+                  >
+                    Delete version
+                  </DangerButton>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -641,49 +785,69 @@ function TestInvocationPanel({
   readonly response: FunctionTestResponse | null;
   readonly onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
+  const id = useId();
   return (
-    <section className="panel" aria-labelledby="test-title">
-      <h2 id="test-title">Test invocation</h2>
-      <form onSubmit={onSubmit}>
-        <label>
-          Version (blank uses active)
-          <input name="version" type="number" min="1" />
-        </label>
-        <label>
-          Method
-          <select name="method" defaultValue="POST">
-            {["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"].map((method) => (
-              <option value={method} key={method}>
-                {method}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Path
-          <input name="path" required defaultValue="/" maxLength={2048} />
-        </label>
-        <label>
-          Headers (JSON)
-          <textarea name="headers" rows={4} required defaultValue="{}" spellCheck={false} />
-        </label>
-        <label>
-          Body
-          <textarea name="body" rows={5} />
-        </label>
-        <button type="submit">Invoke test</button>
-      </form>
-      {response === null ? null : (
-        <article className="workflow-card" aria-live="polite">
-          <div className="button-row spread">
-            <strong>HTTP {response.status}</strong>
-            <code>{response.correlationId}</code>
+    <Card aria-labelledby="test-title">
+      <CardHeader>
+        <CardTitle id="test-title">Test invocation</CardTitle>
+      </CardHeader>
+      <CardContent className="grid gap-4">
+        <form className="grid gap-4" onSubmit={onSubmit}>
+          <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(8rem,10rem)]">
+            <Field label="Version (blank uses active)" htmlFor={`${id}-version`}>
+              <Input id={`${id}-version`} name="version" type="number" min="1" />
+            </Field>
+            <Field label="Method" htmlFor={`${id}-method`}>
+              <NativeSelect id={`${id}-method`} name="method" defaultValue="POST">
+                {["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"].map((method) => (
+                  <option value={method} key={method}>
+                    {method}
+                  </option>
+                ))}
+              </NativeSelect>
+            </Field>
           </div>
-          <pre className="json-preview">{JSON.stringify(response.headers, null, 2)}</pre>
-          <pre className="json-preview">{decodeBase64Text(response.body)}</pre>
-        </article>
-      )}
-    </section>
+          <Field label="Path" htmlFor={`${id}-path`}>
+            <Input
+              id={`${id}-path`}
+              name="path"
+              required
+              defaultValue="/"
+              maxLength={2048}
+              className="font-mono"
+              spellCheck={false}
+            />
+          </Field>
+          <Field label="Headers (JSON)" htmlFor={`${id}-headers`}>
+            <Textarea
+              id={`${id}-headers`}
+              name="headers"
+              rows={4}
+              required
+              defaultValue="{}"
+              spellCheck={false}
+              className="font-mono text-xs"
+            />
+          </Field>
+          <Field label="Body" htmlFor={`${id}-body`}>
+            <Textarea id={`${id}-body`} name="body" rows={5} className="font-mono text-xs" />
+          </Field>
+          <div>
+            <Button type="submit">Invoke test</Button>
+          </div>
+        </form>
+        {response === null ? null : (
+          <article className="grid gap-2 rounded-lg border bg-muted/40 p-4" aria-live="polite">
+            <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
+              <strong className="font-semibold">HTTP {response.status}</strong>
+              <code className={CODE}>{response.correlationId}</code>
+            </div>
+            <pre className={PRE}>{JSON.stringify(response.headers, null, 2)}</pre>
+            <pre className={PRE}>{decodeBase64Text(response.body)}</pre>
+          </article>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -701,28 +865,39 @@ function FunctionMetricsPanel({
         : [],
     ) ?? [];
   return (
-    <section className="panel" aria-labelledby="function-metrics-title">
-      <h2 id="function-metrics-title">Metrics</h2>
-      {page === null ? (
-        <p>Loading metrics…</p>
-      ) : metrics.length === 0 ? (
-        <p>No retained metrics for this function.</p>
-      ) : (
-        <ul className="signal-list">
-          {metrics.map(({ timestamp, metric }) => (
-            <li key={`${timestamp}:${metric.version}:${metric.region}`}>
-              <strong>
-                v{metric.version} in {metric.region}
-              </strong>
-              <p>
-                {metric.invocationCount} calls · {metric.errorCount} errors ·{" "}
-                {metric.latencyMilliseconds} ms latency · {metric.computeMilliseconds} ms compute
-              </p>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
+    <Card aria-labelledby="function-metrics-title">
+      <CardHeader>
+        <CardTitle id="function-metrics-title">Metrics</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {page === null ? (
+          <p className="m-0 text-sm text-muted-foreground">Loading metrics…</p>
+        ) : metrics.length === 0 ? (
+          <p className="m-0 text-sm text-muted-foreground">
+            No retained metrics for this function.
+          </p>
+        ) : (
+          <ul className="m-0 grid list-none gap-3 p-0 text-sm">
+            {metrics.map(({ timestamp, metric }) => (
+              <li
+                key={`${timestamp}:${metric.version}:${metric.region}`}
+                className="grid gap-0.5 border-b pb-3 last:border-0 last:pb-0"
+              >
+                <strong className="font-mono text-xs font-semibold">
+                  v{metric.version} in {metric.region}
+                </strong>
+                <p className="m-0 text-muted-foreground tabular-nums">
+                  {metric.invocationCount.toLocaleString()} calls ·{" "}
+                  {metric.errorCount.toLocaleString()} errors ·{" "}
+                  {metric.latencyMilliseconds.toLocaleString()} ms latency ·{" "}
+                  {metric.computeMilliseconds.toLocaleString()} ms compute
+                </p>
+              </li>
+            ))}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -734,51 +909,61 @@ function FunctionLogsPanel({
   readonly onLoadMore: () => void;
 }) {
   return (
-    <section className="panel full-span stacked-section" aria-labelledby="function-logs-title">
-      <h2 id="function-logs-title">Sanitized logs</h2>
-      {logs === null ? (
-        <p>Loading logs…</p>
-      ) : logs.items.length === 0 ? (
-        <p>No retained log entries.</p>
-      ) : (
-        <div className="table-scroll">
-          <table>
-            <thead>
-              <tr>
-                <th scope="col">Time</th>
-                <th scope="col">Level</th>
-                <th scope="col">Version / region</th>
-                <th scope="col">Message</th>
-                <th scope="col">Correlation</th>
-              </tr>
-            </thead>
-            <tbody>
+    <Card aria-labelledby="function-logs-title">
+      <CardHeader>
+        <CardTitle id="function-logs-title">Sanitized logs</CardTitle>
+      </CardHeader>
+      <CardContent className="grid gap-4">
+        {logs === null ? (
+          <p className="m-0 text-sm text-muted-foreground">Loading logs…</p>
+        ) : logs.items.length === 0 ? (
+          <p className="m-0 text-sm text-muted-foreground">No retained log entries.</p>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead scope="col">Time</TableHead>
+                <TableHead scope="col">Level</TableHead>
+                <TableHead scope="col">Version / region</TableHead>
+                <TableHead scope="col">Message</TableHead>
+                <TableHead scope="col">Correlation</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {logs.items.map((entry) => (
-                <tr key={`${entry.timestamp}:${entry.correlationId}:${entry.version}`}>
-                  <td>{new Date(entry.timestamp).toLocaleString()}</td>
-                  <td>{entry.level}</td>
-                  <td>
+                <TableRow key={`${entry.timestamp}:${entry.correlationId}:${entry.version}`}>
+                  <TableCell className="align-top text-muted-foreground tabular-nums">
+                    {new Date(entry.timestamp).toLocaleString()}
+                  </TableCell>
+                  <TableCell className="align-top font-mono text-xs uppercase">
+                    {entry.level}
+                  </TableCell>
+                  <TableCell className="align-top font-mono text-xs">
                     v{entry.version} / {entry.region}
-                  </td>
-                  <td>{entry.message}</td>
-                  <td>
-                    <code>{entry.correlationId}</code>
-                  </td>
-                </tr>
+                  </TableCell>
+                  <TableCell className="min-w-72 align-top font-mono text-xs whitespace-pre-wrap break-words">
+                    {entry.message}
+                  </TableCell>
+                  <TableCell className="align-top">
+                    <code className={CODE}>{entry.correlationId}</code>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
+        )}
+        <div>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={logs?.nextCursor == null}
+            onClick={onLoadMore}
+          >
+            Load more logs
+          </Button>
         </div>
-      )}
-      <button
-        type="button"
-        className="secondary"
-        disabled={logs?.nextCursor == null}
-        onClick={onLoadMore}
-      >
-        Load more logs
-      </button>
-    </section>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -787,55 +972,133 @@ function ConfigurationFields({
 }: {
   readonly configuration?: FunctionConfiguration;
 }) {
+  const id = useId();
   const limits = configuration?.limits ?? DEFAULT_LIMITS;
   return (
     <>
-      <label className="checkbox-label">
-        <input name="verifyJwt" type="checkbox" defaultChecked={configuration?.verifyJwt ?? true} />
-        Require a valid project JWT
-      </label>
-      <label>
-        Regions (comma-separated)
-        <input name="regions" required defaultValue={configuration?.regions.join(",") ?? "local"} />
-      </label>
-      <label>
-        Attached secret names (comma-separated)
-        <input name="secretNames" defaultValue={configuration?.secretNames.join(",") ?? ""} />
-      </label>
-      <div className="limit-grid">
+      <div className="flex items-center gap-2">
+        <Checkbox
+          id={`${id}-verify-jwt`}
+          name="verifyJwt"
+          defaultChecked={configuration?.verifyJwt ?? true}
+        />
+        <Label htmlFor={`${id}-verify-jwt`} className="font-normal">
+          Require a valid project JWT
+        </Label>
+      </div>
+      <Field label="Regions (comma-separated)" htmlFor={`${id}-regions`}>
+        <Input
+          id={`${id}-regions`}
+          name="regions"
+          required
+          defaultValue={configuration?.regions.join(",") ?? "local"}
+          className="font-mono"
+          spellCheck={false}
+        />
+      </Field>
+      <Field label="Attached secret names (comma-separated)" htmlFor={`${id}-secrets`}>
+        <Input
+          id={`${id}-secrets`}
+          name="secretNames"
+          defaultValue={configuration?.secretNames.join(",") ?? ""}
+          className="font-mono"
+          spellCheck={false}
+        />
+      </Field>
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         <NumberField
+          id={`${id}-cpu`}
           name="cpuMilliseconds"
           label="CPU milliseconds"
           value={limits.cpuMilliseconds}
         />
         <NumberField
+          id={`${id}-wall`}
           name="wallMilliseconds"
           label="Wall milliseconds"
           value={limits.wallMilliseconds}
         />
-        <NumberField name="memoryBytes" label="Memory bytes" value={limits.memoryBytes} />
-        <NumberField name="requestBytes" label="Request bytes" value={limits.requestBytes} />
-        <NumberField name="responseBytes" label="Response bytes" value={limits.responseBytes} />
-        <NumberField name="concurrency" label="Concurrency" value={limits.concurrency} />
+        <NumberField
+          id={`${id}-memory`}
+          name="memoryBytes"
+          label="Memory bytes"
+          value={limits.memoryBytes}
+        />
+        <NumberField
+          id={`${id}-request`}
+          name="requestBytes"
+          label="Request bytes"
+          value={limits.requestBytes}
+        />
+        <NumberField
+          id={`${id}-response`}
+          name="responseBytes"
+          label="Response bytes"
+          value={limits.responseBytes}
+        />
+        <NumberField
+          id={`${id}-concurrency`}
+          name="concurrency"
+          label="Concurrency"
+          value={limits.concurrency}
+        />
       </div>
     </>
   );
 }
 
 function NumberField({
+  id,
   name,
   label,
   value,
 }: {
+  readonly id: string;
   readonly name: string;
   readonly label: string;
   readonly value: number;
 }) {
   return (
-    <label>
-      {label}
-      <input name={name} type="number" min="1" defaultValue={value} required />
-    </label>
+    <Field label={label} htmlFor={id}>
+      <Input id={id} name={name} type="number" min="1" defaultValue={value} required />
+    </Field>
+  );
+}
+
+/** The quiet way back to the list this page came from. */
+function BackLink({ onClick, children }: { readonly onClick: () => void; children: ReactNode }) {
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      className="-ml-2 w-fit text-muted-foreground hover:text-foreground"
+      onClick={onClick}
+    >
+      {children}
+    </Button>
+  );
+}
+
+/** A destructive action that is not the page's main one: a text button in the destructive colour. */
+function DangerButton({
+  disabled,
+  onClick,
+  children,
+}: {
+  readonly disabled?: boolean;
+  readonly onClick: () => void;
+  readonly children: ReactNode;
+}) {
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+      disabled={disabled}
+      onClick={onClick}
+    >
+      {children}
+    </Button>
   );
 }
 

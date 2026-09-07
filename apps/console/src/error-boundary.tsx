@@ -1,3 +1,12 @@
+import {
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  Eyebrow,
+} from "@mako-cloud/ui";
 import { Component, type ErrorInfo, type ReactNode } from "react";
 
 import { ManagementApiError } from "@mako-cloud/management-sdk";
@@ -30,16 +39,25 @@ export class ConsoleErrorBoundary extends Component<
     }
     const requestId = requestIdFor(this.state.error);
     return (
-      <main className="centered" aria-labelledby="console-error-title">
-        <section className="panel error-panel" role="alert">
-          <p className="eyebrow">Something went wrong</p>
-          <h1 id="console-error-title">The console could not load this view.</h1>
-          <p>{safeErrorMessage(this.state.error)}</p>
-          <RequestId value={requestId} />
-          <button type="button" onClick={() => this.setState({ error: null })}>
-            Try again
-          </button>
-        </section>
+      <main
+        className="grid min-h-screen place-items-center bg-background p-6 text-foreground"
+        aria-labelledby="console-error-title"
+      >
+        <Card role="alert" className="w-full max-w-xl">
+          <CardHeader>
+            <Eyebrow>Something went wrong</Eyebrow>
+            <CardTitle as="h1" id="console-error-title" className="text-xl">
+              The console could not load this view.
+            </CardTitle>
+            <CardDescription>{safeErrorMessage(this.state.error)}</CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-4">
+            <RequestId value={requestId} />
+            <div>
+              <Button onClick={() => this.setState({ error: null })}>Try again</Button>
+            </div>
+          </CardContent>
+        </Card>
       </main>
     );
   }
@@ -50,8 +68,8 @@ export function RequestId({ value }: { readonly value: string | null }) {
     return null;
   }
   return (
-    <p className="request-id">
-      Request ID: <code>{value}</code>
+    <p className="m-0 text-xs text-muted-foreground">
+      Request ID: <code className="font-mono text-foreground break-all">{value}</code>
     </p>
   );
 }

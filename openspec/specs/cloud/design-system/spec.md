@@ -1,8 +1,9 @@
-## Purpose
+# design-system Specification
 
+## Purpose
 One design system for every Mako web surface — the developer console and the Rational sample — so that controls, colour, type, icons, and charts are consistent, accessible, and themed the same way everywhere, and so that a standalone application built on it still builds on its own.
 
-## ADDED Requirements
+## Requirements
 
 ### Requirement: One kit dresses every web surface
 Every Mako web surface SHALL draw its controls, surfaces, typography, icons, and charts from one shared kit. The kit SHALL define its palette, spacing, radius, and type scale as named tokens with a light and a dark value each; an application MUST NOT define its own buttons, fields, menus, dialogs, or chart styles beside the kit's. The kit SHALL ship one typeface, self-hosted, so no page depends on a third-party font service.

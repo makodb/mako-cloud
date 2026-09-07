@@ -5,7 +5,26 @@
 // aggregates them -- flows sum their records, levels average their samples.
 // The allowance comes from the team's live bill, whose non-payable notice is
 // rendered verbatim ahead of any number it produced.
-import { useEffect, useState } from "react";
+import {
+  Alert,
+  AlertDescription,
+  Badge,
+  Card,
+  CardAction,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  Eyebrow,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  cn,
+} from "@mako-cloud/ui";
+import { Info } from "lucide-react";
+import { type ReactNode, useEffect, useState } from "react";
 
 import type {
   Environment,
@@ -18,6 +37,10 @@ import { useManagementClient } from "./management.js";
 
 type TeamBill = Awaited<ReturnType<MakoManagementClient["getTeamBill"]>>;
 type BillLineItem = TeamBill["lineItems"][number];
+
+/** A small label over a figure. `dt` keeps the definition list intact, so this
+ * is the kit's Eyebrow styling on the term rather than the component. */
+const FIGURE_LABEL = "text-xs font-semibold uppercase tracking-wider text-muted-foreground";
 
 /** Resources whose records are summed over the period. */
 const FLOW_RESOURCES = [
@@ -262,19 +285,22 @@ export function UsageScreen({
   const [monthStart] = useState(() => monthStartUtc(new Date()));
   const bill = useTeamBill(projectId);
   return (
-    <section className="usage-screen" aria-labelledby="usage-title">
-      <div className="section-heading">
-        <div>
-          <p className="eyebrow">
-            {environmentId === undefined ? `Project ${projectId}` : `Environment ${environmentId}`}
-          </p>
-          <h1 id="usage-title">Usage</h1>
-        </div>
+    <section className="grid gap-5" aria-labelledby="usage-title">
+      <div className="grid gap-1">
+        <Eyebrow>
+          {environmentId === undefined ? "Project " : "Environment "}
+          <span className="font-mono tracking-normal normal-case">
+            {environmentId === undefined ? projectId : environmentId}
+          </span>
+        </Eyebrow>
+        <h1 id="usage-title" className="text-2xl">
+          Usage
+        </h1>
+        <p className="m-0 text-sm text-muted-foreground">
+          {monthLabel(monthStart)} (UTC) so far, aggregated the way the bill rates it: flows sum
+          their records and levels average their samples.
+        </p>
       </div>
-      <p>
-        {monthLabel(monthStart)} (UTC) so far, aggregated the way the bill rates it: flows sum their
-        records and levels average their samples.
-      </p>
       {environmentId === undefined ? (
         <>
           <TeamBillSection bill={bill} />
@@ -308,33 +334,35 @@ function ProjectEnvironmentsUsage({
   const environments = useEnvironments(projectId);
   if (environments.status === "loading") {
     return (
-      <section className="panel usage-section" data-state="loading" aria-label="Environments">
-        <p aria-live="polite">Loading environments…</p>
-      </section>
+      <Card data-state="loading" aria-label="Environments">
+        <CardContent>
+          <p className="m-0 text-sm text-muted-foreground" aria-live="polite">
+            Loading environments…
+          </p>
+        </CardContent>
+      </Card>
     );
   }
   if (environments.status === "unavailable") {
     return (
-      <section
-        className="panel usage-section"
-        data-state="unavailable"
-        aria-labelledby="usage-environments-title"
-      >
+      <Card data-state="unavailable" aria-labelledby="usage-environments-title">
         <SectionHeading id="usage-environments-title" title="Environments" state="unavailable" />
-        <ApiFailureNotice failure={environments.failure} />
-      </section>
+        <CardContent>
+          <ApiFailureNotice failure={environments.failure} />
+        </CardContent>
+      </Card>
     );
   }
   if (environments.value.length === 0) {
     return (
-      <section
-        className="panel usage-section"
-        data-state="ready"
-        aria-labelledby="usage-environments-title"
-      >
+      <Card data-state="ready" aria-labelledby="usage-environments-title">
         <SectionHeading id="usage-environments-title" title="Environments" state="ready" />
-        <p>This project has no environments yet, so nothing has been metered.</p>
-      </section>
+        <CardContent>
+          <p className="m-0 text-sm text-muted-foreground">
+            This project has no environments yet, so nothing has been metered.
+          </p>
+        </CardContent>
+      </Card>
     );
   }
   return (
@@ -372,44 +400,47 @@ function EnvironmentUsageSection({
     bill.status === "ready" ? bill.value.lineItems.map((item) => [item.resource, item]) : [],
   );
   return (
-    <section
-      className="panel usage-section"
-      data-state={usage.status}
-      data-environment-id={environmentId}
-      aria-labelledby={headingId}
-    >
+    <Card data-state={usage.status} data-environment-id={environmentId} aria-labelledby={headingId}>
       <SectionHeading id={headingId} title={environmentName} state={usage.status} />
-      {usage.status === "loading" ? <p aria-live="polite">Reading this month's usage…</p> : null}
-      {usage.status === "unavailable" ? <ApiFailureNotice failure={usage.failure} /> : null}
-      {usage.status === "ready" ? (
-        <>
-          <p className="observed-at">
-            {usage.value.records.toLocaleString("en-US")} records observed at{" "}
-            <time dateTime={usage.value.observedAt}>{localTime(usage.value.observedAt)}</time>
-            {new Date(usage.value.retainedFrom).getTime() > monthStart.getTime() ? (
-              <>
-                {" "}
-                · retained evidence begins{" "}
-                <time dateTime={usage.value.retainedFrom}>
-                  {localTime(usage.value.retainedFrom)}
-                </time>
-                , after the month started
-              </>
-            ) : null}
-            {bill.status === "unavailable"
-              ? " · plan allowance unavailable, so quantities show without one"
-              : null}
+      <CardContent className="grid gap-4">
+        {usage.status === "loading" ? (
+          <p className="m-0 text-sm text-muted-foreground" aria-live="polite">
+            Reading this month's usage…
           </p>
-          {usage.value.truncated ? (
-            <p className="notice warning" role="status">
-              The read stopped after {MAX_USAGE_PAGES * USAGE_PAGE_LIMIT} records; these figures
-              cover only the records read so far.
+        ) : null}
+        {usage.status === "unavailable" ? <ApiFailureNotice failure={usage.failure} /> : null}
+        {usage.status === "ready" ? (
+          <>
+            <p className="m-0 text-sm text-muted-foreground">
+              {usage.value.records.toLocaleString("en-US")} records observed at{" "}
+              <time dateTime={usage.value.observedAt}>{localTime(usage.value.observedAt)}</time>
+              {new Date(usage.value.retainedFrom).getTime() > monthStart.getTime() ? (
+                <>
+                  {" "}
+                  · retained evidence begins{" "}
+                  <time dateTime={usage.value.retainedFrom}>
+                    {localTime(usage.value.retainedFrom)}
+                  </time>
+                  , after the month started
+                </>
+              ) : null}
+              {bill.status === "unavailable"
+                ? " · plan allowance unavailable, so quantities show without one"
+                : null}
             </p>
-          ) : null}
-          <UsageTable resources={usage.value.resources} allowances={allowances} />
-        </>
-      ) : null}
-    </section>
+            {usage.value.truncated ? (
+              <Alert variant="warning" role="status">
+                <AlertDescription className="block">
+                  The read stopped after {MAX_USAGE_PAGES * USAGE_PAGE_LIMIT} records; these figures
+                  cover only the records read so far.
+                </AlertDescription>
+              </Alert>
+            ) : null}
+            <UsageTable resources={usage.value.resources} allowances={allowances} />
+          </>
+        ) : null}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -420,56 +451,55 @@ function UsageTable({
   readonly resources: readonly ResourceUsage[];
   readonly allowances: ReadonlyMap<string, BillLineItem>;
 }) {
+  // `usage-table` is the hook the browser suite selects on.
   return (
-    <div className="table-scroll">
-      <table className="usage-table">
-        <thead>
-          <tr>
-            <th scope="col">Resource</th>
-            <th scope="col">Aggregation</th>
-            <th scope="col" className="numeric">
-              This month
-            </th>
-            <th scope="col" className="numeric">
-              Included
-            </th>
-            <th scope="col" className="numeric">
-              Share of allowance
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {resources.map((row) => {
-            const allowance = allowances.get(row.resource);
-            const over =
-              row.quantity !== null && allowance !== undefined && row.quantity > allowance.included;
-            return (
-              <tr key={row.resource} data-resource={row.resource} data-over={over}>
-                <th scope="row">{humanize(row.resource)}</th>
-                <td>
-                  {row.kind === "flow"
-                    ? `sum of ${row.samples.toLocaleString("en-US")} records`
-                    : `average of ${row.samples.toLocaleString("en-US")} samples`}
-                </td>
-                <td className="numeric">
-                  {row.quantity === null ? (
-                    <span className="usage-no-sample">no samples</span>
-                  ) : (
-                    formatQuantity(row.resource, row.quantity)
-                  )}
-                </td>
-                <td className="numeric">
-                  {allowance === undefined ? "—" : formatQuantity(row.resource, allowance.included)}
-                </td>
-                <td className="numeric">
-                  <AllowanceShare quantity={row.quantity} allowance={allowance} over={over} />
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
+    <Table className="usage-table">
+      <TableHeader>
+        <TableRow className="hover:bg-transparent">
+          <TableHead scope="col">Resource</TableHead>
+          <TableHead scope="col">Aggregation</TableHead>
+          <TableHead scope="col" className="text-right">
+            This month
+          </TableHead>
+          <TableHead scope="col" className="text-right">
+            Included
+          </TableHead>
+          <TableHead scope="col" className="text-right">
+            Share of allowance
+          </TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {resources.map((row) => {
+          const allowance = allowances.get(row.resource);
+          const over =
+            row.quantity !== null && allowance !== undefined && row.quantity > allowance.included;
+          return (
+            <TableRow key={row.resource} data-resource={row.resource} data-over={over}>
+              <TableHead scope="row">{humanize(row.resource)}</TableHead>
+              <TableCell className="text-muted-foreground">
+                {row.kind === "flow"
+                  ? `sum of ${row.samples.toLocaleString("en-US")} records`
+                  : `average of ${row.samples.toLocaleString("en-US")} samples`}
+              </TableCell>
+              <TableCell className={cn("money", over && "font-medium text-destructive")}>
+                {row.quantity === null ? (
+                  <span className="font-normal text-muted-foreground italic">no samples</span>
+                ) : (
+                  formatQuantity(row.resource, row.quantity)
+                )}
+              </TableCell>
+              <TableCell className="money text-muted-foreground">
+                {allowance === undefined ? "—" : formatQuantity(row.resource, allowance.included)}
+              </TableCell>
+              <TableCell className={cn("money", over && "font-medium text-destructive")}>
+                <AllowanceShare quantity={row.quantity} allowance={allowance} over={over} />
+              </TableCell>
+            </TableRow>
+          );
+        })}
+      </TableBody>
+    </Table>
   );
 }
 
@@ -489,7 +519,9 @@ function AllowanceShare({
   return (
     <>
       {share.toLocaleString("en-US", { maximumFractionDigits: share < 10 ? 1 : 0 })}%
-      {over ? <span className="usage-over"> over</span> : null}
+      {over ? (
+        <span className="ml-1 text-[0.65rem] font-bold tracking-wider uppercase"> over</span>
+      ) : null}
     </>
   );
 }
@@ -497,69 +529,85 @@ function AllowanceShare({
 /** The plan and period the environment's allowance comes from. */
 function PlanAllowanceSection({ bill }: { readonly bill: SectionState<TeamBill> }) {
   return (
-    <section
-      className="panel usage-section"
-      data-state={bill.status}
-      aria-labelledby="usage-plan-title"
-    >
+    <Card data-state={bill.status} aria-labelledby="usage-plan-title">
       <SectionHeading id="usage-plan-title" title="Plan allowance" state={bill.status} />
-      {bill.status === "loading" ? <p aria-live="polite">Loading the team's bill…</p> : null}
-      {bill.status === "unavailable" ? <ApiFailureNotice failure={bill.failure} /> : null}
-      {bill.status === "ready" ? (
-        <>
-          <BillNotice bill={bill.value} />
-          <BillPeriod bill={bill.value} />
-          <p>
-            Allowances are the team plan's for the whole period; the bill counts every project of
-            the team together, so one environment's share is a guide rather than the limit.
+      <CardContent className="grid gap-4">
+        {bill.status === "loading" ? (
+          <p className="m-0 text-sm text-muted-foreground" aria-live="polite">
+            Loading the team's bill…
           </p>
-        </>
-      ) : null}
-    </section>
+        ) : null}
+        {bill.status === "unavailable" ? <ApiFailureNotice failure={bill.failure} /> : null}
+        {bill.status === "ready" ? (
+          <>
+            <BillNotice bill={bill.value} />
+            <BillPeriod bill={bill.value} />
+            <p className="m-0 text-sm">
+              Allowances are the team plan's for the whole period; the bill counts every project of
+              the team together, so one environment's share is a guide rather than the limit.
+            </p>
+          </>
+        ) : null}
+      </CardContent>
+    </Card>
   );
 }
 
 /** The team's live bill: plan, period, and the balance as it stands. */
 function TeamBillSection({ bill }: { readonly bill: SectionState<TeamBill> }) {
   return (
-    <section
-      className="panel usage-section"
-      data-state={bill.status}
-      aria-labelledby="usage-bill-title"
-    >
+    <Card data-state={bill.status} aria-labelledby="usage-bill-title">
       <SectionHeading id="usage-bill-title" title="Team bill" state={bill.status} />
-      {bill.status === "loading" ? <p aria-live="polite">Loading the team's bill…</p> : null}
-      {bill.status === "unavailable" ? <ApiFailureNotice failure={bill.failure} /> : null}
-      {bill.status === "ready" ? (
-        <>
-          <BillNotice bill={bill.value} />
-          <BillPeriod bill={bill.value} />
-          <dl className="bill-summary">
-            <div>
-              <dt>Plan</dt>
-              <dd>{bill.value.planId}</dd>
-            </div>
-            <div>
-              <dt>Total</dt>
-              <dd>{dollars(bill.value.totalMicroDollars)}</dd>
-            </div>
-            <div>
-              <dt>Credits</dt>
-              <dd>{dollars(bill.value.creditsMicroDollars)}</dd>
-            </div>
-            <div>
-              <dt>Balance</dt>
-              <dd data-negative={bill.value.balanceMicroDollars < 0}>
+      <CardContent className="grid gap-4">
+        {bill.status === "loading" ? (
+          <p className="m-0 text-sm text-muted-foreground" aria-live="polite">
+            Loading the team's bill…
+          </p>
+        ) : null}
+        {bill.status === "unavailable" ? <ApiFailureNotice failure={bill.failure} /> : null}
+        {bill.status === "ready" ? (
+          <>
+            <BillNotice bill={bill.value} />
+            <BillPeriod bill={bill.value} />
+            {/* `bill-summary` is the hook the browser suite selects on. */}
+            <dl className="bill-summary m-0 grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <Figure label="Plan">{bill.value.planId}</Figure>
+              <Figure label="Total">{dollars(bill.value.totalMicroDollars)}</Figure>
+              <Figure label="Credits">{dollars(bill.value.creditsMicroDollars)}</Figure>
+              <Figure label="Balance" negative={bill.value.balanceMicroDollars < 0}>
                 {dollars(bill.value.balanceMicroDollars)}
                 {bill.value.balanceMicroDollars < 0 ? (
-                  <span className="visually-hidden"> (negative)</span>
+                  <span className="sr-only"> (negative)</span>
                 ) : null}
-              </dd>
-            </div>
-          </dl>
-        </>
-      ) : null}
-    </section>
+              </Figure>
+            </dl>
+          </>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+/** One figure of the bill: its name and a value, marked when it has gone negative. */
+function Figure({
+  label,
+  negative,
+  children,
+}: {
+  readonly label: string;
+  readonly negative?: boolean;
+  readonly children: ReactNode;
+}) {
+  return (
+    <div className="grid content-start gap-0.5 rounded-lg border bg-muted/30 px-3 py-2">
+      <dt className={FIGURE_LABEL}>{label}</dt>
+      <dd
+        className={cn("m-0 text-lg font-semibold tabular-nums", negative && "text-destructive")}
+        {...(negative === undefined ? {} : { "data-negative": negative })}
+      >
+        {children}
+      </dd>
+    </div>
   );
 }
 
@@ -567,16 +615,17 @@ function TeamBillSection({ bill }: { readonly bill: SectionState<TeamBill> }) {
  * number the bill produced. */
 function BillNotice({ bill }: { readonly bill: TeamBill }) {
   return (
-    <p className="bill-notice" role="note">
-      {bill.notice}
-    </p>
+    <Alert role="note">
+      <Info aria-hidden="true" />
+      <AlertDescription className="block text-foreground">{bill.notice}</AlertDescription>
+    </Alert>
   );
 }
 
 function BillPeriod({ bill }: { readonly bill: TeamBill }) {
   return (
-    <p className="observed-at">
-      Plan <strong>{bill.planId}</strong> · period{" "}
+    <p className="m-0 text-sm text-muted-foreground">
+      Plan <strong className="text-foreground">{bill.planId}</strong> · period{" "}
       <time dateTime={bill.periodStart}>{bill.periodStart.slice(0, 10)}</time> to{" "}
       <time dateTime={bill.periodEnd}>{bill.periodEnd.slice(0, 10)}</time>
       {bill.finalized ? " (closed)" : " (live)"} · observed at{" "}
@@ -595,11 +644,17 @@ function SectionHeading({
   readonly state: SectionState<unknown>["status"];
 }) {
   return (
-    <div className="button-row spread usage-section-heading">
-      <h2 id={id}>{title}</h2>
-      <span className={`status-pill ${state === "ready" ? "current" : state}`}>
-        {state === "ready" ? "Current" : state === "loading" ? "Loading" : "Unavailable"}
-      </span>
-    </div>
+    <CardHeader>
+      <CardTitle id={id}>{title}</CardTitle>
+      <CardAction>
+        <Badge
+          variant={
+            state === "ready" ? "positive" : state === "loading" ? "secondary" : "destructive"
+          }
+        >
+          {state === "ready" ? "Current" : state === "loading" ? "Loading" : "Unavailable"}
+        </Badge>
+      </CardAction>
+    </CardHeader>
   );
 }

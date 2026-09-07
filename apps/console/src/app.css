@@ -1,22 +1,4 @@
-/* The console's stylesheet entry.
-   The design system comes first and owns the cascade: its utilities sit in
-   Tailwind's `utilities` layer. What is left of the old hand-written CSS is
-   imported into a `legacy` layer declared *below* `components` and
-   `utilities`, so a screen already on the kit is never restyled by an old
-   element rule, while a screen not yet moved keeps its looks. Each import
-   below goes away with the screens it dressed. */
-@layer theme, base, legacy, components, utilities;
-
+/* The console's stylesheet entry: the design system, and nothing else. Layout
+   that is specific to a screen is written with the kit's utilities in the
+   screen. */
 @import "@mako-cloud/ui/styles.css";
-@import "./styles.css" layer(legacy);
-@import "./home.css" layer(legacy);
-@import "./project-home.css" layer(legacy);
-@import "./custom-domains.css" layer(legacy);
-@import "./surfaced.css" layer(legacy);
-@import "./usage-activity.css" layer(legacy);
-@import "./storage.css" layer(legacy);
-@import "./webhooks.css" layer(legacy);
-@import "./function-schedules.css" layer(legacy);
-@import "./auth.css" layer(legacy);
-@import "./api-docs.css" layer(legacy);
-@import "./allowed-origins.css" layer(legacy);

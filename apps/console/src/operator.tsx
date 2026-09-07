@@ -1,4 +1,24 @@
-import { type FormEvent, type ReactNode, useState } from "react";
+import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  Checkbox,
+  Eyebrow,
+  Field,
+  Input,
+  Label,
+  NativeSelect,
+  Textarea,
+} from "@mako-cloud/ui";
+import { ChevronDown, CircleCheck, ShieldCheck } from "lucide-react";
+import { type FormEvent, type ReactNode, useId, useState } from "react";
 
 import type {
   AbuseResponse,
@@ -15,7 +35,6 @@ import { ApiFailureNotice, type ConsoleApiFailure, toConsoleApiFailure } from ".
 import { useOperatorAuth } from "./operator-auth.js";
 import { useOperatorClient } from "./operator-management.js";
 import { OperatorWaitListPanel } from "./operator-waitlist.js";
-import { LifecycleBadge } from "./projects.js";
 import { confirmDestructiveAction } from "./safety.js";
 
 const QUOTA_RESOURCES: readonly CreateQuotaOverrideRequest["resource"][] = [
@@ -40,6 +59,9 @@ const SUPPORT_PERMISSIONS: readonly SupportPermission[] = [
   "document_read",
 ];
 
+const SKIP_LINK_CLASS =
+  "sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-50 focus:rounded-md focus:bg-card focus:px-3 focus:py-2 focus:shadow-md";
+
 export function RequireOperatorSession({ children }: { readonly children: ReactNode }) {
   const { state, signIn } = useOperatorAuth();
   const [pending, setPending] = useState(false);
@@ -55,15 +77,17 @@ export function RequireOperatorSession({ children }: { readonly children: ReactN
   if (state.status === "unconfigured") {
     return (
       <OperatorCentered title="Operator authentication is not configured">
-        The console host must supply a separate operator authentication adapter. Developer sessions
-        are intentionally not accepted on operator routes.
+        <p className="m-0 text-sm text-muted-foreground">
+          The console host must supply a separate operator authentication adapter. Developer
+          sessions are intentionally not accepted on operator routes.
+        </p>
       </OperatorCentered>
     );
   }
   if (state.status === "error") {
     return (
       <OperatorCentered title="Operator authentication unavailable">
-        {state.message}
+        <p className="m-0 text-sm text-muted-foreground">{state.message}</p>
       </OperatorCentered>
     );
   }
@@ -86,15 +110,19 @@ export function RequireOperatorSession({ children }: { readonly children: ReactN
   };
   return (
     <OperatorCentered title="Sign in as a platform operator">
-      <p>
+      <p className="m-0 text-sm text-muted-foreground">
         Use the email and password for an active developer identity with a separate operator
         entitlement. Ordinary developer and wait-list sessions are never accepted here.
       </p>
-      {failure === null ? null : <p role="alert">{failure}</p>}
-      <form onSubmit={(event) => void submit(event)}>
-        <label>
-          Email
-          <input
+      {failure === null ? null : (
+        <Alert variant="destructive">
+          <AlertDescription className="block">{failure}</AlertDescription>
+        </Alert>
+      )}
+      <form className="grid gap-4" onSubmit={(event) => void submit(event)}>
+        <Field label="Email" htmlFor="operator-sign-in-email">
+          <Input
+            id="operator-sign-in-email"
             type="email"
             autoComplete="username"
             value={email}
@@ -102,10 +130,10 @@ export function RequireOperatorSession({ children }: { readonly children: ReactN
             maxLength={320}
             onChange={(event) => setEmail(event.currentTarget.value)}
           />
-        </label>
-        <label>
-          Password
-          <input
+        </Field>
+        <Field label="Password" htmlFor="operator-sign-in-password">
+          <Input
+            id="operator-sign-in-password"
             type="password"
             autoComplete="current-password"
             value={password}
@@ -113,11 +141,17 @@ export function RequireOperatorSession({ children }: { readonly children: ReactN
             maxLength={1024}
             onChange={(event) => setPassword(event.currentTarget.value)}
           />
-        </label>
-        <p>The protected operator session expires within one hour.</p>
-        <button type="submit" disabled={pending || email.trim() === "" || password === ""}>
+        </Field>
+        <p className="m-0 text-xs text-muted-foreground">
+          The protected operator session expires within one hour.
+        </p>
+        <Button
+          type="submit"
+          className="w-full"
+          disabled={pending || email.trim() === "" || password === ""}
+        >
           {pending ? "Signing in…" : "Open operator console"}
-        </button>
+        </Button>
       </form>
     </OperatorCentered>
   );
@@ -149,58 +183,94 @@ export function OperatorConsoleScreen({ onExit }: { readonly onExit: () => void 
   };
 
   return (
-    <div className="operator-shell">
-      <a className="skip-link" href="#operator-main-content">
+    <div className="flex min-h-screen flex-col bg-background text-foreground">
+      <a className={SKIP_LINK_CLASS} href="#operator-main-content">
         Skip to operator actions
       </a>
-      <header className="operator-topbar">
-        <div>
-          <p className="eyebrow">Restricted surface</p>
-          <strong>Mako Cloud Operator Console</strong>
+      <header className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b bg-card px-4 py-3 sm:px-6">
+        <div className="flex min-w-0 items-center gap-3">
+          <ShieldCheck aria-hidden="true" className="size-5 shrink-0 text-primary" />
+          <div className="grid min-w-0 leading-tight">
+            <Eyebrow>Restricted surface</Eyebrow>
+            <strong className="truncate text-sm">Mako Cloud Operator Console</strong>
+          </div>
+          <Badge variant="outline" className="border-warning/50 bg-warning/10">
+            Operator
+          </Badge>
         </div>
-        <div className="account">
-          <span>{state.status === "authenticated" ? state.session.profile.email : ""}</span>
-          <button type="button" className="secondary" onClick={onExit}>
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          <span className="max-w-56 truncate text-sm text-muted-foreground">
+            {state.status === "authenticated" ? state.session.profile.email : ""}
+          </span>
+          <Button variant="outline" size="sm" onClick={onExit}>
             Exit operator console
-          </button>
-          <button type="button" onClick={() => void signOut()}>
+          </Button>
+          <Button size="sm" onClick={() => void signOut()}>
             Sign out
-          </button>
+          </Button>
         </div>
       </header>
-      <main className="workspace" id="operator-main-content" tabIndex={-1}>
-        <section aria-labelledby="operator-title">
-          <div className="section-heading">
-            <div>
-              <p className="eyebrow">Audited administration</p>
-              <h1 id="operator-title">Tenant operations</h1>
-            </div>
+      <main
+        className="min-w-0 flex-1 px-4 py-6 outline-none sm:px-6"
+        id="operator-main-content"
+        tabIndex={-1}
+      >
+        <section aria-labelledby="operator-title" className="grid gap-6">
+          <div className="grid gap-1">
+            <Eyebrow>Audited administration</Eyebrow>
+            <h1 id="operator-title" className="text-2xl">
+              Tenant operations
+            </h1>
           </div>
-          <p className="notice warning">
-            Every action on this surface requires a case-quality reason and is recorded against the
-            separate operator identity.
-          </p>
+          <Alert variant="warning" role="note">
+            <AlertDescription className="block">
+              Every action on this surface requires a case-quality reason and is recorded against
+              the separate operator identity.
+            </AlertDescription>
+          </Alert>
           <ApiFailureNotice failure={failure} />
           {permissions.has("waitlist_review") ? <OperatorWaitListPanel /> : null}
           {permissions.has("tenant_read") ? (
-            <section className="panel full-span" aria-labelledby="tenant-lookup-title">
-              <h2 id="tenant-lookup-title">Tenant lookup</h2>
-              <form className="inline-form" onSubmit={(event) => void lookup(event)}>
-                <label>
-                  Exact project ID
-                  <input name="projectId" required pattern="prj_[A-Za-z0-9_-]{8,64}" />
-                </label>
-                <button type="submit">Open operator-safe view</button>
-              </form>
-              {view === null ? null : <OperatorProjectSummary view={view} />}
-            </section>
+            <Card aria-labelledby="tenant-lookup-title">
+              <CardHeader>
+                <CardTitle id="tenant-lookup-title">Tenant lookup</CardTitle>
+              </CardHeader>
+              <CardContent className="grid gap-4">
+                <form
+                  className="flex flex-wrap items-end gap-3"
+                  onSubmit={(event) => void lookup(event)}
+                >
+                  <Field
+                    label="Exact project ID"
+                    htmlFor="operator-tenant-lookup-project"
+                    className="min-w-0 flex-1 basis-64"
+                  >
+                    <Input
+                      id="operator-tenant-lookup-project"
+                      name="projectId"
+                      required
+                      pattern="prj_[A-Za-z0-9_-]{8,64}"
+                      className="font-mono"
+                    />
+                  </Field>
+                  <Button type="submit">Open operator-safe view</Button>
+                </form>
+                {view === null ? null : <OperatorProjectSummary view={view} />}
+              </CardContent>
+            </Card>
           ) : (
-            <p className="notice">This operator entitlement does not include tenant lookup.</p>
+            <Alert role="note">
+              <AlertDescription className="block">
+                This operator entitlement does not include tenant lookup.
+              </AlertDescription>
+            </Alert>
           )}
           {!permissions.has("tenant_read") ? null : view === null ? (
-            <p>Select a project before using scoped operator actions.</p>
+            <p className="m-0 text-sm text-muted-foreground">
+              Select a project before using scoped operator actions.
+            </p>
           ) : (
-            <div className="split-grid stacked-section">
+            <div className="grid gap-4 lg:grid-cols-2">
               {permissions.has("provisioning_repair") ? (
                 <RepairPanel
                   onValidationError={(message) => setFailure({ message, requestId: null })}
@@ -284,25 +354,44 @@ export function OperatorConsoleScreen({ onExit }: { readonly onExit: () => void 
 
 function OperatorProjectSummary({ view }: { readonly view: OperatorProjectView }) {
   return (
-    <div className="stacked-section">
-      <div className="button-row spread">
-        <div>
+    <div className="grid gap-3 border-t pt-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="grid gap-1">
           <strong>{view.project.name}</strong>
-          <p>
-            <code>{view.project.id}</code> · {view.project.region}
+          <p className="m-0 text-sm text-muted-foreground">
+            <code className="font-mono text-xs">{view.project.id}</code> · {view.project.region}
           </p>
         </div>
-        <LifecycleBadge state={view.project.state} />
+        <StateBadge state={view.project.state} />
       </div>
-      <ul className="signal-list">
+      <ul className="m-0 grid list-none gap-2 p-0">
         {view.environments.map((environment) => (
-          <li key={environment.id}>
-            <strong>{environment.name}</strong> <code>{environment.id}</code>{" "}
-            <LifecycleBadge state={environment.state} />
+          <li key={environment.id} className="flex flex-wrap items-center gap-2 text-sm">
+            <strong>{environment.name}</strong>{" "}
+            <code className="font-mono text-xs text-muted-foreground">{environment.id}</code>{" "}
+            <StateBadge state={environment.state} />
           </li>
         ))}
       </ul>
     </div>
+  );
+}
+
+/** A project or environment lifecycle state, read out with its label. */
+function StateBadge({ state }: { readonly state: string }) {
+  const variant =
+    state === "active"
+      ? "positive"
+      : state === "suspended" || state === "deleted" || state === "failed"
+        ? "destructive"
+        : state === "provisioning" || state === "pending" || state === "deleting"
+          ? "warning"
+          : "secondary";
+  return (
+    <Badge variant={variant}>
+      <span className="sr-only">Status: </span>
+      {state.replaceAll("_", " ")}
+    </Badge>
   );
 }
 
@@ -319,6 +408,7 @@ export function RepairPanel({
   ) => Promise<void>;
   readonly onValidationError: (message: string) => void;
 }) {
+  const id = useId();
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     try {
@@ -333,25 +423,37 @@ export function RepairPanel({
     }
   };
   return (
-    <section className="panel" aria-labelledby="repair-title">
-      <h2 id="repair-title">Provisioning repair</h2>
-      <form onSubmit={submit}>
-        <label>
-          Workflow ID
-          <input name="workflowId" required minLength={8} />
-        </label>
-        <label>
-          Repair action
-          <select name="action">
-            <option value="requeue">Requeue workflow</option>
-            <option value="retry_compensation">Retry compensation</option>
-          </select>
-        </label>
-        <ReasonField />
-        <button type="submit">Apply reasoned repair</button>
-      </form>
-      {workflow === null ? null : <Result value={workflow} label="Provisioning workflow updated" />}
-    </section>
+    <Card aria-labelledby="repair-title">
+      <CardHeader>
+        <CardTitle id="repair-title">Provisioning repair</CardTitle>
+      </CardHeader>
+      <CardContent className="grid gap-4">
+        <form className="grid gap-4" onSubmit={submit}>
+          <Field label="Workflow ID" htmlFor={`${id}-workflow`}>
+            <Input
+              id={`${id}-workflow`}
+              name="workflowId"
+              required
+              minLength={8}
+              className="font-mono"
+            />
+          </Field>
+          <Field label="Repair action" htmlFor={`${id}-action`}>
+            <NativeSelect id={`${id}-action`} name="action">
+              <option value="requeue">Requeue workflow</option>
+              <option value="retry_compensation">Retry compensation</option>
+            </NativeSelect>
+          </Field>
+          <ReasonField />
+          <div>
+            <Button type="submit">Apply reasoned repair</Button>
+          </div>
+        </form>
+        {workflow === null ? null : (
+          <Result value={workflow} label="Provisioning workflow updated" />
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -364,6 +466,7 @@ export function QuotaOverridePanel({
   readonly onSubmit: (input: CreateQuotaOverrideRequest) => Promise<void>;
   readonly onValidationError: (message: string) => void;
 }) {
+  const id = useId();
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     try {
@@ -381,36 +484,45 @@ export function QuotaOverridePanel({
     }
   };
   return (
-    <section className="panel" aria-labelledby="quota-override-title">
-      <h2 id="quota-override-title">Quota override</h2>
-      <form onSubmit={submit}>
-        <label>
-          Override ID
-          <input name="id" required pattern="qov_[A-Za-z0-9_-]{8,96}" defaultValue={newId("qov")} />
-        </label>
-        <label>
-          Resource
-          <select name="resource">
-            {QUOTA_RESOURCES.map((resource) => (
-              <option key={resource} value={resource}>
-                {resource.replaceAll("_", " ")}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Limit
-          <input name="limit" type="number" min="1" required />
-        </label>
-        <label>
-          Expires at (blank means no expiry)
-          <input name="expiresAt" type="datetime-local" />
-        </label>
-        <ReasonField />
-        <button type="submit">Create audited override</button>
-      </form>
-      {result === null ? null : <Result value={result} label="Quota override created" />}
-    </section>
+    <Card aria-labelledby="quota-override-title">
+      <CardHeader>
+        <CardTitle id="quota-override-title">Quota override</CardTitle>
+      </CardHeader>
+      <CardContent className="grid gap-4">
+        <form className="grid gap-4" onSubmit={submit}>
+          <Field label="Override ID" htmlFor={`${id}-id`}>
+            <Input
+              id={`${id}-id`}
+              name="id"
+              required
+              pattern="qov_[A-Za-z0-9_-]{8,96}"
+              defaultValue={newId("qov")}
+              className="font-mono"
+            />
+          </Field>
+          <Field label="Resource" htmlFor={`${id}-resource`}>
+            <NativeSelect id={`${id}-resource`} name="resource">
+              {QUOTA_RESOURCES.map((resource) => (
+                <option key={resource} value={resource}>
+                  {resource.replaceAll("_", " ")}
+                </option>
+              ))}
+            </NativeSelect>
+          </Field>
+          <Field label="Limit" htmlFor={`${id}-limit`}>
+            <Input id={`${id}-limit`} name="limit" type="number" min="1" required />
+          </Field>
+          <Field label="Expires at (blank means no expiry)" htmlFor={`${id}-expires`}>
+            <Input id={`${id}-expires`} name="expiresAt" type="datetime-local" />
+          </Field>
+          <ReasonField />
+          <div>
+            <Button type="submit">Create audited override</Button>
+          </div>
+        </form>
+        {result === null ? null : <Result value={result} label="Quota override created" />}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -425,6 +537,7 @@ export function AbuseResponsePanel({
   readonly onSubmit: (input: CreateAbuseResponseRequest) => Promise<void>;
   readonly onValidationError: (message: string) => void;
 }) {
+  const id = useId();
   const [target, setTarget] = useState("project");
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -453,40 +566,56 @@ export function AbuseResponsePanel({
     }
   };
   return (
-    <section className="panel" aria-labelledby="abuse-response-title">
-      <h2 id="abuse-response-title">Abuse response</h2>
-      <p>This immediately suspends the selected project or environment.</p>
-      <form onSubmit={submit}>
-        <label>
-          Response ID
-          <input name="id" required pattern="abr_[A-Za-z0-9_-]{8,96}" defaultValue={newId("abr")} />
-        </label>
-        <label>
-          Target scope
-          <select value={target} onChange={(event) => setTarget(event.currentTarget.value)}>
-            <option value="project">Entire project</option>
-            <option value="environment">One environment</option>
-          </select>
-        </label>
-        {target === "project" ? null : (
-          <label>
-            Environment
-            <select name="environmentId">
-              {environments.map((environmentId) => (
-                <option key={environmentId} value={environmentId}>
-                  {environmentId}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
-        <ReasonField />
-        <button type="submit" className="danger">
-          Suspend scope
-        </button>
-      </form>
-      {result === null ? null : <Result value={result} label="Abuse response applied" />}
-    </section>
+    <Card aria-labelledby="abuse-response-title">
+      <CardHeader>
+        <CardTitle id="abuse-response-title">Abuse response</CardTitle>
+        <CardDescription>
+          This immediately suspends the selected project or environment.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-4">
+        <form className="grid gap-4" onSubmit={submit}>
+          <Field label="Response ID" htmlFor={`${id}-id`}>
+            <Input
+              id={`${id}-id`}
+              name="id"
+              required
+              pattern="abr_[A-Za-z0-9_-]{8,96}"
+              defaultValue={newId("abr")}
+              className="font-mono"
+            />
+          </Field>
+          <Field label="Target scope" htmlFor={`${id}-target`}>
+            <NativeSelect
+              id={`${id}-target`}
+              value={target}
+              onChange={(event) => setTarget(event.currentTarget.value)}
+            >
+              <option value="project">Entire project</option>
+              <option value="environment">One environment</option>
+            </NativeSelect>
+          </Field>
+          {target === "project" ? null : (
+            <Field label="Environment" htmlFor={`${id}-environment`}>
+              <NativeSelect id={`${id}-environment`} name="environmentId" className="font-mono">
+                {environments.map((environmentId) => (
+                  <option key={environmentId} value={environmentId}>
+                    {environmentId}
+                  </option>
+                ))}
+              </NativeSelect>
+            </Field>
+          )}
+          <ReasonField />
+          <div>
+            <Button type="submit" variant="destructive">
+              Suspend scope
+            </Button>
+          </div>
+        </form>
+        {result === null ? null : <Result value={result} label="Abuse response applied" />}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -509,6 +638,7 @@ export function SupportSessionPanel({
   readonly onRevoke: (sessionId: string, reason: string) => Promise<void>;
   readonly onValidationError: (message: string) => void;
 }) {
+  const id = useId();
   const create = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     try {
@@ -562,57 +692,81 @@ export function SupportSessionPanel({
     }
   };
   return (
-    <section className="panel" aria-labelledby="support-session-title">
-      <h2 id="support-session-title">Time-bounded support access</h2>
-      <form onSubmit={create}>
-        <label>
-          Session ID
-          <input name="id" required pattern="sup_[A-Za-z0-9_-]{8,96}" defaultValue={newId("sup")} />
-        </label>
-        <label>
-          Environment scope (blank means project metadata only)
-          <select name="environmentId" defaultValue="">
-            <option value="">No environment</option>
-            {environments.map((environmentId) => (
-              <option key={environmentId} value={environmentId}>
-                {environmentId}
-              </option>
+    <Card aria-labelledby="support-session-title">
+      <CardHeader>
+        <CardTitle id="support-session-title">Time-bounded support access</CardTitle>
+      </CardHeader>
+      <CardContent className="grid gap-4">
+        <form className="grid gap-4" onSubmit={create}>
+          <Field label="Session ID" htmlFor={`${id}-id`}>
+            <Input
+              id={`${id}-id`}
+              name="id"
+              required
+              pattern="sup_[A-Za-z0-9_-]{8,96}"
+              defaultValue={newId("sup")}
+              className="font-mono"
+            />
+          </Field>
+          <Field
+            label="Environment scope (blank means project metadata only)"
+            htmlFor={`${id}-environment`}
+          >
+            <NativeSelect id={`${id}-environment`} name="environmentId" defaultValue="">
+              <option value="">No environment</option>
+              {environments.map((environmentId) => (
+                <option key={environmentId} value={environmentId}>
+                  {environmentId}
+                </option>
+              ))}
+            </NativeSelect>
+          </Field>
+          <fieldset className="m-0 grid gap-2 border-0 p-0">
+            <legend className="mb-2 p-0 text-sm font-medium leading-none">
+              Least-privilege permissions
+            </legend>
+            {SUPPORT_PERMISSIONS.map((permission) => (
+              <div key={permission} className="flex items-center gap-2">
+                <Checkbox id={`${id}-${permission}`} name="permissions" value={permission} />
+                <Label htmlFor={`${id}-${permission}`} className="font-normal">
+                  {permission.replaceAll("_", " ")}
+                </Label>
+              </div>
             ))}
-          </select>
-        </label>
-        <fieldset className="checkbox-grid">
-          <legend>Least-privilege permissions</legend>
-          {SUPPORT_PERMISSIONS.map((permission) => (
-            <label key={permission}>
-              <input type="checkbox" name="permissions" value={permission} />
-              {permission.replaceAll("_", " ")}
-            </label>
-          ))}
-        </fieldset>
-        <label>
-          Expires at (maximum eight hours)
-          <input name="expiresAt" type="datetime-local" required />
-        </label>
-        <ReasonField />
-        <button type="submit">Create support session</button>
-      </form>
-      {session === null ? null : (
-        <div className="notice success" role="status">
-          <strong>Support session {session.state}</strong>
-          <p>
-            <code>{session.id}</code> expires {new Date(session.expiresAt).toLocaleString()}.
-          </p>
-          {session.state === "active" ? (
-            <form onSubmit={revoke}>
-              <ReasonField label="Revocation reason" />
-              <button type="submit" className="danger">
-                Revoke support session
-              </button>
-            </form>
-          ) : null}
-        </div>
-      )}
-    </section>
+          </fieldset>
+          <Field label="Expires at (maximum eight hours)" htmlFor={`${id}-expires`}>
+            <Input id={`${id}-expires`} name="expiresAt" type="datetime-local" required />
+          </Field>
+          <ReasonField />
+          <div>
+            <Button type="submit">Create support session</Button>
+          </div>
+        </form>
+        {session === null ? null : (
+          <Alert variant="positive" role="status">
+            <AlertTitle>
+              <strong>Support session {session.state}</strong>
+            </AlertTitle>
+            <AlertDescription className="block">
+              <p className="m-0">
+                <code className="font-mono text-xs">{session.id}</code> expires{" "}
+                {new Date(session.expiresAt).toLocaleString()}.
+              </p>
+              {session.state === "active" ? (
+                <form className="mt-3 grid w-full gap-3 text-foreground" onSubmit={revoke}>
+                  <ReasonField label="Revocation reason" />
+                  <div>
+                    <Button type="submit" variant="destructive">
+                      Revoke support session
+                    </Button>
+                  </div>
+                </form>
+              ) : null}
+            </AlertDescription>
+          </Alert>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -621,19 +775,29 @@ function ReasonField({
 }: {
   readonly label?: string;
 }) {
+  const id = useId();
   return (
-    <label>
-      {label}
-      <textarea name="reason" required minLength={8} maxLength={1024} />
-    </label>
+    <Field label={label} htmlFor={id}>
+      <Textarea id={id} name="reason" required minLength={8} maxLength={1024} />
+    </Field>
   );
 }
 
+/** The server's answer to an action, folded away until the operator wants the record. */
 function Result({ value, label }: { readonly value: unknown; readonly label: string }) {
   return (
-    <details className="notice success">
-      <summary>{label}</summary>
-      <pre className="json-preview">{JSON.stringify(value, null, 2)}</pre>
+    <details className="group m-0 rounded-lg border border-positive/30 bg-positive/5 text-sm">
+      <summary className="m-0 flex cursor-pointer list-none items-center gap-2 px-4 py-3 font-medium [&::-webkit-details-marker]:hidden">
+        <CircleCheck aria-hidden="true" className="size-4 shrink-0 text-positive" />
+        {label}
+        <ChevronDown
+          aria-hidden="true"
+          className="ml-auto size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180"
+        />
+      </summary>
+      <pre className="m-0 max-h-80 overflow-auto border-t border-positive/30 px-4 py-3 font-mono text-xs leading-relaxed">
+        {JSON.stringify(value, null, 2)}
+      </pre>
     </details>
   );
 }
@@ -646,12 +810,21 @@ function OperatorCentered({
   readonly children?: ReactNode;
 }) {
   return (
-    <main className="centered operator-shell">
-      <section className="panel">
-        <p className="eyebrow">Restricted operator route</p>
-        <h1>{title}</h1>
-        {children}
-      </section>
+    <main className="flex min-h-screen items-center justify-center bg-background px-4 py-10 text-foreground">
+      <Card className="w-full max-w-md">
+        <CardHeader>
+          <Eyebrow className="flex items-center gap-2">
+            <ShieldCheck aria-hidden="true" className="size-4 text-primary" />
+            Restricted operator route
+          </Eyebrow>
+          <CardTitle as="h1" className="text-xl">
+            {title}
+          </CardTitle>
+        </CardHeader>
+        {children === undefined ? null : (
+          <CardContent className="grid gap-4">{children}</CardContent>
+        )}
+      </Card>
     </main>
   );
 }

@@ -1,10 +1,33 @@
-import { type FormEvent, useCallback, useEffect, useState } from "react";
+import {
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  Eyebrow,
+  Field,
+  Input,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@mako-cloud/ui";
+import { ChevronRight } from "lucide-react";
+import { type FormEvent, useCallback, useEffect, useId, useState } from "react";
 
 import type { Environment, ObservabilityPage, Project } from "@mako-cloud/management-sdk";
 
 import { ApiFailureNotice, type ConsoleApiFailure, toConsoleApiFailure } from "./api-error.js";
 import { useManagementClient } from "./management.js";
 import { confirmDestructiveAction } from "./safety.js";
+
+/** A disclosure's summary: a quiet row that turns its chevron when open. */
+const SUMMARY =
+  "flex cursor-pointer list-none items-center gap-2 px-4 py-2.5 text-sm font-medium text-muted-foreground select-none hover:text-foreground [&::-webkit-details-marker]:hidden";
 
 export function ProjectsPanel({
   teamId,
@@ -48,37 +71,66 @@ export function ProjectsPanel({
     }
   };
   return (
-    <section className="panel full-span" aria-labelledby="projects-title">
-      <h2 id="projects-title">Projects</h2>
-      <ApiFailureNotice failure={failure} />
-      {projects === null ? (
-        <p>Loading projects…</p>
-      ) : (
-        <div className="resource-list">
-          {projects.map((project) => (
-            <button
-              type="button"
-              className="resource-row"
-              key={project.id}
-              onClick={() => onOpen(project.id)}
-            >
-              <span>
-                <strong>{project.name}</strong>
-                <small>{project.region}</small>
-              </span>
-              <LifecycleBadge state={project.state} />
-            </button>
-          ))}
-        </div>
-      )}
-      <details>
-        <summary>Create project</summary>
-        <form onSubmit={(event) => void create(event)}>
-          <ProjectFormFields />
-          <button type="submit">Create and provision</button>
-        </form>
-      </details>
-    </section>
+    <Card className="lg:col-span-2" aria-labelledby="projects-title">
+      <CardHeader>
+        <CardTitle id="projects-title">Projects</CardTitle>
+      </CardHeader>
+      <CardContent className="grid gap-4">
+        <ApiFailureNotice failure={failure} />
+        {projects === null ? (
+          <p className="m-0 text-sm text-muted-foreground">Loading projects…</p>
+        ) : projects.length === 0 ? null : (
+          <Table>
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead scope="col">Project</TableHead>
+                <TableHead scope="col">Region</TableHead>
+                <TableHead scope="col">State</TableHead>
+                <TableHead scope="col" className="text-right">
+                  <span className="sr-only">Open</span>
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {projects.map((project) => (
+                <TableRow key={project.id}>
+                  <TableCell className="font-medium">{project.name}</TableCell>
+                  <TableCell className="font-mono text-xs text-muted-foreground">
+                    {project.region}
+                  </TableCell>
+                  <TableCell>
+                    <LifecycleBadge state={project.state} />
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Button variant="outline" size="sm" onClick={() => onOpen(project.id)}>
+                      Open <span className="sr-only">{project.name}</span>
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+        <details className="group rounded-lg border">
+          <summary className={SUMMARY}>
+            <ChevronRight
+              aria-hidden="true"
+              className="size-4 shrink-0 transition-transform group-open:rotate-90"
+            />
+            Create project
+          </summary>
+          <form
+            className="grid max-w-md gap-4 border-t px-4 py-4"
+            onSubmit={(event) => void create(event)}
+          >
+            <ProjectFormFields />
+            <Button type="submit" className="justify-self-start">
+              Create and provision
+            </Button>
+          </form>
+        </details>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -107,34 +159,44 @@ export function FirstProjectPanel({ onCreated }: { readonly onCreated: () => Pro
     }
   };
   return (
-    <section className="panel" aria-labelledby="first-project-title">
-      <h2 id="first-project-title">Create your first project</h2>
-      <p>
-        Individual projects live in your personal space, which is created together with your first
-        project.
-      </p>
-      <ApiFailureNotice failure={failure} />
-      <form onSubmit={(event) => void create(event)}>
-        <ProjectFormFields />
-        <button type="submit" disabled={pending}>
-          {pending ? "Creating…" : "Create and provision"}
-        </button>
-      </form>
-    </section>
+    <Card aria-labelledby="first-project-title">
+      <CardHeader>
+        <CardTitle id="first-project-title">Create your first project</CardTitle>
+        <CardDescription>
+          Individual projects live in your personal space, which is created together with your first
+          project.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-4">
+        <ApiFailureNotice failure={failure} />
+        <form className="grid max-w-md gap-4" onSubmit={(event) => void create(event)}>
+          <ProjectFormFields />
+          <Button type="submit" disabled={pending} className="justify-self-start">
+            {pending ? "Creating…" : "Create and provision"}
+          </Button>
+        </form>
+      </CardContent>
+    </Card>
   );
 }
 
 function ProjectFormFields() {
+  const id = useId();
   return (
     <>
-      <label>
-        Project name
-        <input name="name" required maxLength={200} />
-      </label>
-      <label>
-        Data region
-        <input name="region" required maxLength={64} placeholder="us-east" />
-      </label>
+      <Field label="Project name" htmlFor={`${id}-name`}>
+        <Input id={`${id}-name`} name="name" required maxLength={200} />
+      </Field>
+      <Field label="Data region" htmlFor={`${id}-region`}>
+        <Input
+          id={`${id}-region`}
+          name="region"
+          required
+          maxLength={64}
+          placeholder="us-east"
+          className="font-mono"
+        />
+      </Field>
     </>
   );
 }
@@ -243,29 +305,33 @@ export function ProjectScreen({
       setFailure(toConsoleApiFailure(error));
     }
   };
+  const environmentNameId = useId();
 
   return (
-    <section aria-labelledby="project-title">
-      <button
-        type="button"
-        className="back-link"
+    <section aria-labelledby="project-title" className="grid gap-6">
+      <Button
+        variant="ghost"
+        size="sm"
+        className="justify-self-start text-muted-foreground"
         disabled={project === null}
         onClick={() => project !== null && onBack(project.teamId)}
       >
         ← Back
-      </button>
-      <div className="section-heading">
-        <div>
-          <p className="eyebrow">Project</p>
-          <h1 id="project-title">{project?.name ?? "Loading…"}</h1>
+      </Button>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="grid gap-1">
+          <Eyebrow>Project</Eyebrow>
+          <h1 id="project-title" className="text-2xl">
+            {project?.name ?? "Loading…"}
+          </h1>
         </div>
         {project === null ? null : <LifecycleBadge state={project.state} />}
       </div>
       <ApiFailureNotice failure={failure} />
       {project === null ? (
-        <p>Loading project…</p>
+        <p className="m-0 text-sm text-muted-foreground">Loading project…</p>
       ) : (
-        <>
+        <div className="grid gap-4 lg:grid-cols-2">
           <LifecyclePanel
             project={project}
             onSuspend={() => void projectAction("suspend")}
@@ -273,35 +339,49 @@ export function ProjectScreen({
             onDelete={() => void projectAction("delete")}
           />
           <HealthPanel page={health} />
-          <section className="panel full-span" aria-labelledby="environments-title">
-            <h2 id="environments-title">Environments</h2>
-            <div className="resource-list">
-              {environments?.map((environment) => (
-                <EnvironmentRow
-                  key={environment.id}
-                  environment={environment}
-                  onChanged={reload}
-                  onOpenCollections={() => onOpenCollections(environment.id)}
-                  onOpenWorkspace={() => onOpenWorkspace(environment.id)}
-                  onOpenFunctions={() => onOpenFunctions(environment.id)}
-                  onOpenObservability={() => onOpenObservability(environment.id)}
-                  onOpenUsers={() => onOpenUsers(environment.id)}
-                  onOpenSecurity={() => onOpenSecurity(environment.id)}
-                />
-              ))}
-            </div>
-            <details>
-              <summary>Create environment</summary>
-              <form onSubmit={(event) => void createEnvironment(event)}>
-                <label>
-                  Environment name
-                  <input name="name" required maxLength={100} />
-                </label>
-                <button type="submit">Create environment</button>
-              </form>
-            </details>
-          </section>
-        </>
+          <Card className="lg:col-span-2" aria-labelledby="environments-title">
+            <CardHeader>
+              <CardTitle id="environments-title">Environments</CardTitle>
+            </CardHeader>
+            <CardContent className="grid gap-4">
+              <div className="grid gap-3">
+                {environments?.map((environment) => (
+                  <EnvironmentRow
+                    key={environment.id}
+                    environment={environment}
+                    onChanged={reload}
+                    onOpenCollections={() => onOpenCollections(environment.id)}
+                    onOpenWorkspace={() => onOpenWorkspace(environment.id)}
+                    onOpenFunctions={() => onOpenFunctions(environment.id)}
+                    onOpenObservability={() => onOpenObservability(environment.id)}
+                    onOpenUsers={() => onOpenUsers(environment.id)}
+                    onOpenSecurity={() => onOpenSecurity(environment.id)}
+                  />
+                ))}
+              </div>
+              <details className="group rounded-lg border">
+                <summary className={SUMMARY}>
+                  <ChevronRight
+                    aria-hidden="true"
+                    className="size-4 shrink-0 transition-transform group-open:rotate-90"
+                  />
+                  Create environment
+                </summary>
+                <form
+                  className="grid max-w-md gap-4 border-t px-4 py-4"
+                  onSubmit={(event) => void createEnvironment(event)}
+                >
+                  <Field label="Environment name" htmlFor={environmentNameId}>
+                    <Input id={environmentNameId} name="name" required maxLength={100} />
+                  </Field>
+                  <Button type="submit" className="justify-self-start">
+                    Create environment
+                  </Button>
+                </form>
+              </details>
+            </CardContent>
+          </Card>
+        </div>
       )}
     </section>
   );
@@ -319,39 +399,45 @@ function LifecyclePanel({
   readonly onDelete: () => void;
 }) {
   return (
-    <section className="panel lifecycle-panel" aria-labelledby="lifecycle-title">
-      <h2 id="lifecycle-title">Provisioning and lifecycle</h2>
-      <p>
-        Current state: <strong>{project.state.replaceAll("_", " ")}</strong>
-      </p>
-      {project.failureDiagnostic === undefined ? null : (
-        <p role="alert">{project.failureDiagnostic}</p>
-      )}
-      {project.deletionDeadline === undefined ? null : (
-        <p>Restorable until {new Date(project.deletionDeadline).toLocaleString()}.</p>
-      )}
-      <div className="button-row">
-        <button type="button" onClick={onSuspend} disabled={project.state !== "active"}>
-          Suspend
-        </button>
-        <button
-          type="button"
-          className="secondary"
-          onClick={onRestore}
-          disabled={!(["suspended", "deletion_grace"] as string[]).includes(project.state)}
-        >
-          Restore
-        </button>
-        <button
-          type="button"
-          className="danger"
-          onClick={onDelete}
-          disabled={!(["active", "suspended", "failed"] as string[]).includes(project.state)}
-        >
-          Request deletion
-        </button>
-      </div>
-    </section>
+    <Card aria-labelledby="lifecycle-title">
+      <CardHeader>
+        <CardTitle id="lifecycle-title">Provisioning and lifecycle</CardTitle>
+      </CardHeader>
+      <CardContent className="grid gap-3 text-sm">
+        <p className="m-0">
+          Current state: <strong>{project.state.replaceAll("_", " ")}</strong>
+        </p>
+        {project.failureDiagnostic === undefined ? null : (
+          <p role="alert" className="m-0 text-destructive">
+            {project.failureDiagnostic}
+          </p>
+        )}
+        {project.deletionDeadline === undefined ? null : (
+          <p className="m-0 text-muted-foreground">
+            Restorable until {new Date(project.deletionDeadline).toLocaleString()}.
+          </p>
+        )}
+        <div className="flex flex-wrap gap-2">
+          <Button onClick={onSuspend} disabled={project.state !== "active"}>
+            Suspend
+          </Button>
+          <Button
+            variant="outline"
+            onClick={onRestore}
+            disabled={!(["suspended", "deletion_grace"] as string[]).includes(project.state)}
+          >
+            Restore
+          </Button>
+          <Button
+            variant="destructive"
+            onClick={onDelete}
+            disabled={!(["active", "suspended", "failed"] as string[]).includes(project.state)}
+          >
+            Request deletion
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -407,82 +493,67 @@ function EnvironmentRow({
       setFailure(toConsoleApiFailure(error));
     }
   };
+  const active = environment.state === "active";
   return (
-    <article className="environment-row">
-      <div>
-        <strong>{environment.name}</strong>
-        <code>{environment.id}</code>
-        {environment.deletionDeadline === undefined ? null : (
-          <small>Restorable until {new Date(environment.deletionDeadline).toLocaleString()}</small>
-        )}
-      </div>
-      <LifecycleBadge state={environment.state} />
-      <div className="button-row">
-        <button type="button" disabled={environment.state !== "active"} onClick={onOpenWorkspace}>
+    <Card as="article" className="gap-3 py-4">
+      <CardContent className="flex flex-wrap items-center gap-3 px-4">
+        <div className="grid min-w-0 gap-0.5">
+          <strong className="text-sm font-semibold">{environment.name}</strong>
+          <code className="font-mono text-xs text-muted-foreground">{environment.id}</code>
+          {environment.deletionDeadline === undefined ? null : (
+            <small className="text-xs text-muted-foreground">
+              Restorable until {new Date(environment.deletionDeadline).toLocaleString()}
+            </small>
+          )}
+        </div>
+        <LifecycleBadge state={environment.state} />
+      </CardContent>
+      <CardContent className="flex flex-wrap gap-2 px-4">
+        <Button size="sm" disabled={!active} onClick={onOpenWorkspace}>
           Workspace
-        </button>
-        <button type="button" disabled={environment.state !== "active"} onClick={onOpenCollections}>
+        </Button>
+        <Button size="sm" disabled={!active} onClick={onOpenCollections}>
           Collections
-        </button>
-        <button
-          type="button"
-          className="secondary"
-          disabled={environment.state !== "active"}
-          onClick={onOpenFunctions}
-        >
+        </Button>
+        <Button variant="outline" size="sm" disabled={!active} onClick={onOpenFunctions}>
           Functions
-        </button>
-        <button
-          type="button"
-          className="secondary"
-          disabled={environment.state !== "active"}
-          onClick={onOpenObservability}
-        >
+        </Button>
+        <Button variant="outline" size="sm" disabled={!active} onClick={onOpenObservability}>
           Observability
-        </button>
-        <button
-          type="button"
-          className="secondary"
-          disabled={environment.state !== "active"}
-          onClick={onOpenUsers}
-        >
+        </Button>
+        <Button variant="outline" size="sm" disabled={!active} onClick={onOpenUsers}>
           Users
-        </button>
-        <button
-          type="button"
-          className="secondary"
-          disabled={environment.state !== "active"}
-          onClick={onOpenSecurity}
-        >
+        </Button>
+        <Button variant="outline" size="sm" disabled={!active} onClick={onOpenSecurity}>
           Credentials
-        </button>
-        <button
-          type="button"
-          className="secondary"
-          disabled={environment.state !== "active"}
-          onClick={() => void act("suspend")}
-        >
+        </Button>
+        <Button variant="outline" size="sm" disabled={!active} onClick={() => void act("suspend")}>
           Suspend
-        </button>
-        <button
-          type="button"
-          className="secondary"
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
           disabled={!(["suspended", "deletion_grace"] as string[]).includes(environment.state)}
           onClick={() => void act("restore")}
         >
           Restore
-        </button>
-        <button
-          type="button"
-          className="danger-link"
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="text-destructive hover:text-destructive"
           disabled={!(["active", "suspended", "failed"] as string[]).includes(environment.state)}
           onClick={() => void act("delete")}
         >
           Delete
-        </button>
-      </div>
-      <ApiFailureNotice failure={failure} />
-    </article>
+        </Button>
+      </CardContent>
+      {failure === null ? null : (
+        <CardContent className="px-4">
+          <ApiFailureNotice failure={failure} />
+        </CardContent>
+      )}
+    </Card>
   );
 }
 
@@ -494,34 +565,53 @@ function HealthPanel({ page }: { readonly page: ObservabilityPage | null }) {
         : [],
     ) ?? [];
   return (
-    <section className="panel" aria-labelledby="health-title">
-      <h2 id="health-title">Data-plane health</h2>
-      {page === null ? (
-        <p>No environment health is available yet.</p>
-      ) : health.length === 0 ? (
-        <p>No retained health observations.</p>
-      ) : (
-        <ul className="signal-list">
-          {health.map((record) => {
-            const payload = record.payload;
-            return (
-              <li key={`${record.timestamp}-${payload.service}-${payload.region}`}>
-                <strong>{payload.service}</strong> in {payload.region}: {payload.status}
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </section>
+    <Card aria-labelledby="health-title">
+      <CardHeader>
+        <CardTitle id="health-title">Data-plane health</CardTitle>
+      </CardHeader>
+      <CardContent className="text-sm">
+        {page === null ? (
+          <p className="m-0 text-muted-foreground">No environment health is available yet.</p>
+        ) : health.length === 0 ? (
+          <p className="m-0 text-muted-foreground">No retained health observations.</p>
+        ) : (
+          <ul className="m-0 grid list-none gap-1.5 p-0">
+            {health.map((record) => {
+              const payload = record.payload;
+              return (
+                <li key={`${record.timestamp}-${payload.service}-${payload.region}`}>
+                  <strong className="font-medium">{payload.service}</strong> in {payload.region}:{" "}
+                  {payload.status}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
+/** How a lifecycle state is coloured: green when serving, amber when paused, red when broken or going. */
+const LIFECYCLE_VARIANTS: Readonly<
+  Record<string, "positive" | "warning" | "destructive" | "secondary" | "outline">
+> = {
+  active: "positive",
+  provisioning: "secondary",
+  restoring: "secondary",
+  suspended: "warning",
+  deletion_grace: "warning",
+  failed: "destructive",
+  deleting: "destructive",
+  deleted: "outline",
+};
+
 export function LifecycleBadge({ state }: { readonly state: string }) {
   return (
-    <span className={`status status-${state}`}>
-      <span className="visually-hidden">Status: </span>
+    <Badge variant={LIFECYCLE_VARIANTS[state] ?? "secondary"} data-state={state}>
+      <span className="sr-only">Status: </span>
       {state.replaceAll("_", " ")}
-    </span>
+    </Badge>
   );
 }
 

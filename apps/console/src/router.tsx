@@ -1,7 +1,22 @@
+import {
+  Alert,
+  AlertDescription,
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  Field,
+  Input,
+} from "@mako-cloud/ui";
 import { type ReactNode, useCallback, useEffect, useState } from "react";
 
 import { useDeveloperAuth } from "./auth.js";
 import { HostedSignInView, WaitListStatusView } from "./developer-auth-views.js";
+
+/** A page with one thing in the middle of it: a sign-in card, a notice, a wait. */
+const CENTERED_PAGE = "grid min-h-screen place-items-center bg-background p-6 text-foreground";
 
 export type ConsoleRoute =
   | { readonly name: "home" }
@@ -424,14 +439,18 @@ export function RequireDeveloperSession({ children }: { readonly children: React
   }
   if (state.status === "error") {
     return (
-      <main className="centered">
-        <section className="panel" role="alert">
-          <h1>Authentication unavailable</h1>
-          <p>{state.message}</p>
-          <button type="button" onClick={() => void signIn()}>
-            Try sign-in again
-          </button>
-        </section>
+      <main className={CENTERED_PAGE}>
+        <Card role="alert" className="w-full max-w-xl">
+          <CardHeader>
+            <CardTitle as="h1" className="text-xl">
+              Authentication unavailable
+            </CardTitle>
+            <CardDescription>{state.message}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button onClick={() => void signIn()}>Try sign-in again</Button>
+          </CardContent>
+        </Card>
       </main>
     );
   }
@@ -467,56 +486,72 @@ export function SignInView({
     return <HostedSignInView navigate={navigate} />;
   }
   return (
-    <main className="centered">
-      <section className="panel sign-in" aria-labelledby="sign-in-title">
-        <p className="eyebrow">Mako Cloud</p>
-        <h1 id="sign-in-title">Sign in to your developer account</h1>
-        <p>Your application users and developer identity remain separate.</p>
-        {failed ? (
-          <p role="alert">
-            {acceptsSessionToken
-              ? "The developer session token is invalid, expired, or for another environment."
-              : "Sign-in could not be started. Please try again."}
+    <main className={CENTERED_PAGE}>
+      <Card className="w-full max-w-md" aria-labelledby="sign-in-title">
+        <CardHeader>
+          <p className="m-0 text-xs font-semibold tracking-[0.18em] text-primary uppercase">
+            Mako Cloud
           </p>
-        ) : null}
-        {acceptsSessionToken ? (
-          <form
-            onSubmit={(event) => {
-              event.preventDefault();
-              void begin(sessionToken);
-            }}
-          >
-            <label>
-              Short-lived developer session token
-              <input
-                type="password"
-                name="developer-session-token"
-                value={sessionToken}
-                autoComplete="off"
-                spellCheck={false}
-                required
-                onChange={(event) => setSessionToken(event.currentTarget.value)}
-              />
-            </label>
-            <p>The token stays only in this browser tab and expires within one hour.</p>
-            <button type="submit" disabled={pending || sessionToken.trim() === ""}>
-              {pending ? "Verifying session…" : "Sign in with session token"}
-            </button>
-          </form>
-        ) : (
-          <button type="button" disabled={pending} onClick={() => void begin()}>
-            {pending ? "Opening identity provider…" : "Continue to sign in"}
-          </button>
-        )}
-      </section>
+          <CardTitle as="h1" id="sign-in-title" className="text-xl">
+            Sign in to your developer account
+          </CardTitle>
+          <CardDescription>
+            Your application users and developer identity remain separate.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4">
+          {failed ? (
+            <Alert variant="destructive">
+              <AlertDescription className="block">
+                {acceptsSessionToken
+                  ? "The developer session token is invalid, expired, or for another environment."
+                  : "Sign-in could not be started. Please try again."}
+              </AlertDescription>
+            </Alert>
+          ) : null}
+          {acceptsSessionToken ? (
+            <form
+              className="grid gap-4"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void begin(sessionToken);
+              }}
+            >
+              <Field
+                label="Short-lived developer session token"
+                htmlFor="developer-session-token"
+                hint="The token stays only in this browser tab and expires within one hour."
+              >
+                <Input
+                  id="developer-session-token"
+                  type="password"
+                  name="developer-session-token"
+                  value={sessionToken}
+                  autoComplete="off"
+                  spellCheck={false}
+                  required
+                  onChange={(event) => setSessionToken(event.currentTarget.value)}
+                />
+              </Field>
+              <Button type="submit" disabled={pending || sessionToken.trim() === ""}>
+                {pending ? "Verifying session…" : "Sign in with session token"}
+              </Button>
+            </form>
+          ) : (
+            <Button disabled={pending} onClick={() => void begin()}>
+              {pending ? "Opening identity provider…" : "Continue to sign in"}
+            </Button>
+          )}
+        </CardContent>
+      </Card>
     </main>
   );
 }
 
 function ConsoleStatus({ label }: { readonly label: string }) {
   return (
-    <main className="centered" aria-live="polite" aria-busy="true">
-      <p>{label}</p>
+    <main className={CENTERED_PAGE} aria-live="polite" aria-busy="true">
+      <p className="m-0 text-sm text-muted-foreground">{label}</p>
     </main>
   );
 }

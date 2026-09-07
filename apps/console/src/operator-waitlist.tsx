@@ -1,4 +1,38 @@
-import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Alert,
+  AlertDescription,
+  Badge,
+  Button,
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  Checkbox,
+  EmptyState,
+  Eyebrow,
+  Field,
+  Input,
+  Label,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  Textarea,
+} from "@mako-cloud/ui";
+import { ChevronLeft, ChevronRight, RefreshCw, Users, X } from "lucide-react";
+import {
+  type FormEvent,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useState,
+} from "react";
 
 import type { DeveloperApplicant, DeveloperApplicantPage } from "@mako-cloud/management-sdk";
 
@@ -7,6 +41,13 @@ import { useOperatorClient } from "./operator-management.js";
 import { confirmDestructiveAction } from "./safety.js";
 
 const PAGE_SIZE = 25;
+
+/**
+ * A native radio dressed by the kit's `Input`: the kit has no radio group of
+ * its own, and the decision must stay a real radio so the form submits it and
+ * the browser enforces `required`.
+ */
+const RADIO_CLASS = "size-4 shrink-0 rounded-full border-0 p-0 shadow-none accent-primary";
 
 export function OperatorWaitListPanel() {
   const client = useOperatorClient();
@@ -25,7 +66,6 @@ export function OperatorWaitListPanel() {
     readonly committed: number;
     readonly failed: number;
   } | null>(null);
-  const selectAllRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(
     async (nextCursor: string | undefined) => {
@@ -75,12 +115,6 @@ export function OperatorWaitListPanel() {
   const allVisibleSelected =
     applicants.length > 0 && selectedApplicants.length === applicants.length;
   const someVisibleSelected = selectedApplicants.length > 0 && !allVisibleSelected;
-
-  useEffect(() => {
-    if (selectAllRef.current !== null) {
-      selectAllRef.current.indeterminate = someVisibleSelected;
-    }
-  }, [someVisibleSelected]);
 
   const openApplicant = async (identityId: string) => {
     try {
@@ -206,183 +240,231 @@ export function OperatorWaitListPanel() {
   };
 
   return (
-    <section className="panel full-span" aria-labelledby="developer-waitlist-title">
-      <div className="section-heading">
-        <div>
-          <p className="eyebrow">Explicit permission required</p>
-          <h2 id="developer-waitlist-title">Applicants awaiting review</h2>
-        </div>
-        <button
-          type="button"
-          className="secondary"
-          disabled={batchPending}
-          onClick={() => void load(cursor)}
+    <Card aria-labelledby="developer-waitlist-title">
+      <CardHeader>
+        <Eyebrow>Explicit permission required</Eyebrow>
+        <CardTitle id="developer-waitlist-title">Applicants awaiting review</CardTitle>
+        <CardDescription>
+          Review verified developer identities. Approval activates only the developer identity; it
+          does not change operator access or create a tenant, project, or membership.
+        </CardDescription>
+        <CardAction>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={batchPending}
+            onClick={() => void load(cursor)}
+          >
+            <RefreshCw aria-hidden="true" />
+            Refresh
+          </Button>
+        </CardAction>
+      </CardHeader>
+      <CardContent className="grid gap-4">
+        <ApiFailureNotice failure={failure} />
+        {batchResult === null ? null : (
+          <Alert role="status">
+            <AlertDescription className="block text-foreground">
+              Batch approval finished: {batchResult.committed} committed, {batchResult.failed}{" "}
+              failed.
+            </AlertDescription>
+          </Alert>
+        )}
+        <Field
+          label="Filter this page by applicant, email, or developer ID"
+          htmlFor="operator-waitlist-filter"
+          className="max-w-xl"
         >
-          Refresh
-        </button>
-      </div>
-      <p>
-        Review verified developer identities. Approval activates only the developer identity; it
-        does not change operator access or create a tenant, project, or membership.
-      </p>
-      <ApiFailureNotice failure={failure} />
-      {batchResult === null ? null : (
-        <p role="status">
-          Batch approval finished: {batchResult.committed} committed, {batchResult.failed} failed.
-        </p>
-      )}
-      <label className="search-field">
-        Filter this page by applicant, email, or developer ID
-        <input
-          type="search"
-          value={query}
-          maxLength={200}
-          disabled={batchPending}
-          onChange={(event) => {
-            setQuery(event.currentTarget.value);
-            setBatchSelection(new Set());
-            setBatchValidation(null);
-            setBatchResult(null);
-          }}
-        />
-      </label>
-      {loading ? (
-        <p aria-live="polite">Loading a bounded page of applicants…</p>
-      ) : applicants.length === 0 ? (
-        <p>No matching wait-listed applicants are on this page.</p>
-      ) : (
-        <>
-          <section className="stacked-section notice" aria-labelledby="batch-approval-title">
-            <div>
-              <h3 id="batch-approval-title">Batch approve</h3>
-              <p>
-                Select up to {PAGE_SIZE} applicants on this page. Each approval commits
-                independently.
-              </p>
-            </div>
-            <label>
-              Private review reason / case reference (optional)
-              <textarea
-                value={batchReason}
-                maxLength={1_024}
-                disabled={batchPending}
-                onChange={(event) => {
-                  setBatchReason(event.currentTarget.value);
-                  setBatchValidation(null);
-                }}
-              />
-            </label>
-            {batchValidation === null ? null : <p role="alert">{batchValidation}</p>}
-            <button
-              type="button"
-              disabled={batchPending || selectedApplicants.length === 0}
-              onClick={() => void approveSelected()}
+          <Input
+            id="operator-waitlist-filter"
+            type="search"
+            value={query}
+            maxLength={200}
+            disabled={batchPending}
+            onChange={(event) => {
+              setQuery(event.currentTarget.value);
+              setBatchSelection(new Set());
+              setBatchValidation(null);
+              setBatchResult(null);
+            }}
+          />
+        </Field>
+        {loading ? (
+          <p aria-live="polite" className="m-0 text-sm text-muted-foreground">
+            Loading a bounded page of applicants…
+          </p>
+        ) : applicants.length === 0 ? (
+          <EmptyState
+            icon={<Users aria-hidden="true" />}
+            title="No matching wait-listed applicants are on this page."
+          />
+        ) : (
+          <>
+            <Card
+              aria-labelledby="batch-approval-title"
+              className="gap-4 bg-muted/30 py-4 shadow-none"
             >
-              {batchPending
-                ? "Approving selected…"
-                : `Approve selected (${selectedApplicants.length})`}
-            </button>
-          </section>
-          <div className="table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th scope="col">
-                    <input
-                      ref={selectAllRef}
-                      type="checkbox"
-                      checked={allVisibleSelected}
-                      disabled={batchPending}
-                      aria-label="Select all visible applicants for batch approval"
-                      onChange={(event) => setAllVisibleSelected(event.currentTarget.checked)}
-                    />
-                  </th>
-                  <th scope="col">Applicant</th>
-                  <th scope="col">Email</th>
-                  <th scope="col">Developer status</th>
-                  <th scope="col">Operator access</th>
-                  <th scope="col">Created</th>
-                  <th scope="col">Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {applicants.map((applicant) => (
-                  <tr key={applicant.developerIdentityId}>
-                    <td>
-                      <input
-                        type="checkbox"
-                        checked={batchSelection.has(applicant.developerIdentityId)}
+              <CardHeader>
+                <CardTitle as="h3" id="batch-approval-title">
+                  Batch approve
+                </CardTitle>
+                <CardDescription>
+                  Select up to {PAGE_SIZE} applicants on this page. Each approval commits
+                  independently.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-4">
+                <Field
+                  label="Private review reason / case reference (optional)"
+                  htmlFor="operator-waitlist-batch-reason"
+                >
+                  <Textarea
+                    id="operator-waitlist-batch-reason"
+                    value={batchReason}
+                    maxLength={1_024}
+                    disabled={batchPending}
+                    onChange={(event) => {
+                      setBatchReason(event.currentTarget.value);
+                      setBatchValidation(null);
+                    }}
+                  />
+                </Field>
+                {batchValidation === null ? null : (
+                  <Alert variant="destructive">
+                    <AlertDescription className="block">{batchValidation}</AlertDescription>
+                  </Alert>
+                )}
+                <div>
+                  <Button
+                    disabled={batchPending || selectedApplicants.length === 0}
+                    onClick={() => void approveSelected()}
+                  >
+                    {batchPending
+                      ? "Approving selected…"
+                      : `Approve selected (${selectedApplicants.length})`}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+            <div className="overflow-hidden rounded-lg border">
+              <Table>
+                <TableHeader>
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead scope="col" className="w-10 pl-3">
+                      <Checkbox
+                        checked={someVisibleSelected ? "indeterminate" : allVisibleSelected}
                         disabled={batchPending}
-                        aria-label={`Select ${applicant.email} for batch approval`}
-                        onChange={(event) =>
-                          setApplicantSelected(
-                            applicant.developerIdentityId,
-                            event.currentTarget.checked,
-                          )
-                        }
+                        aria-label="Select all visible applicants for batch approval"
+                        onCheckedChange={(checked) => setAllVisibleSelected(checked === true)}
                       />
-                    </td>
-                    <td>
-                      <strong>{applicant.displayName}</strong>
-                      <br />
-                      <code>{applicant.developerIdentityId}</code>
-                    </td>
-                    <td>{applicant.email}</td>
-                    <td>{applicant.status}</td>
-                    <td>{applicant.operatorEntitlementStatus}</td>
-                    <td>{new Date(applicant.createdAt).toLocaleString()}</td>
-                    <td>
-                      <button
-                        type="button"
-                        className="secondary"
-                        disabled={batchPending}
-                        onClick={() => void openApplicant(applicant.developerIdentityId)}
+                    </TableHead>
+                    <TableHead scope="col">Applicant</TableHead>
+                    <TableHead scope="col">Email</TableHead>
+                    <TableHead scope="col">Developer status</TableHead>
+                    <TableHead scope="col">Operator access</TableHead>
+                    <TableHead scope="col">Created</TableHead>
+                    <TableHead scope="col" className="text-right">
+                      Action
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {applicants.map((applicant) => {
+                    const isSelected = batchSelection.has(applicant.developerIdentityId);
+                    return (
+                      <TableRow
+                        key={applicant.developerIdentityId}
+                        data-state={isSelected ? "selected" : undefined}
                       >
-                        Review
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </>
-      )}
-      <nav className="button-row spread" aria-label="Wait-list pagination">
-        <button
-          type="button"
-          className="secondary"
-          disabled={previous.length === 0 || loading || batchPending}
-          onClick={() => {
-            const history = [...previous];
-            const prior = history.pop();
-            setPrevious(history);
-            void load(prior);
-          }}
+                        <TableCell className="w-10 pl-3">
+                          <Checkbox
+                            checked={isSelected}
+                            disabled={batchPending}
+                            aria-label={`Select ${applicant.email} for batch approval`}
+                            onCheckedChange={(checked) =>
+                              setApplicantSelected(applicant.developerIdentityId, checked === true)
+                            }
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <div className="grid gap-0.5">
+                            <strong className="font-medium">{applicant.displayName}</strong>
+                            <code className="font-mono text-xs text-muted-foreground">
+                              {applicant.developerIdentityId}
+                            </code>
+                          </div>
+                        </TableCell>
+                        <TableCell>{applicant.email}</TableCell>
+                        <TableCell>
+                          <StatusBadge value={applicant.status} />
+                        </TableCell>
+                        <TableCell>
+                          <StatusBadge value={applicant.operatorEntitlementStatus} />
+                        </TableCell>
+                        <TableCell className="text-muted-foreground tabular-nums">
+                          {new Date(applicant.createdAt).toLocaleString()}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={batchPending}
+                            onClick={() => void openApplicant(applicant.developerIdentityId)}
+                          >
+                            Review
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          </>
+        )}
+        <nav
+          className="flex flex-wrap items-center justify-between gap-2"
+          aria-label="Wait-list pagination"
         >
-          Previous page
-        </button>
-        <span>Up to {PAGE_SIZE} applicants per page</span>
-        <button
-          type="button"
-          className="secondary"
-          disabled={page?.nextCursor == null || loading || batchPending}
-          onClick={() => {
-            setPrevious((history) => [...history, cursor]);
-            void load(page?.nextCursor ?? undefined);
-          }}
-        >
-          Next page
-        </button>
-      </nav>
-      {selected === null ? null : (
-        <ApplicantDecisionPanel
-          applicant={selected}
-          onClose={() => setSelected(null)}
-          onDecision={decide}
-        />
-      )}
-    </section>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={previous.length === 0 || loading || batchPending}
+            onClick={() => {
+              const history = [...previous];
+              const prior = history.pop();
+              setPrevious(history);
+              void load(prior);
+            }}
+          >
+            <ChevronLeft aria-hidden="true" />
+            Previous page
+          </Button>
+          <span className="text-xs text-muted-foreground">
+            Up to {PAGE_SIZE} applicants per page
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={page?.nextCursor == null || loading || batchPending}
+            onClick={() => {
+              setPrevious((history) => [...history, cursor]);
+              void load(page?.nextCursor ?? undefined);
+            }}
+          >
+            Next page
+            <ChevronRight aria-hidden="true" />
+          </Button>
+        </nav>
+        {selected === null ? null : (
+          <ApplicantDecisionPanel
+            applicant={selected}
+            onClose={() => setSelected(null)}
+            onDecision={decide}
+          />
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -395,6 +477,7 @@ function ApplicantDecisionPanel({
   readonly onClose: () => void;
   readonly onDecision: (action: "approve" | "reject", reason: string) => Promise<void>;
 }) {
+  const id = useId();
   const [pending, setPending] = useState(false);
   const [validation, setValidation] = useState<string | null>(null);
   const submit = (event: FormEvent<HTMLFormElement>) => {
@@ -415,63 +498,114 @@ function ApplicantDecisionPanel({
     void onDecision(action, reason).finally(() => setPending(false));
   };
   return (
-    <aside className="stacked-section notice warning" aria-labelledby="applicant-detail-title">
-      <div className="button-row spread">
-        <div>
-          <h3 id="applicant-detail-title">{applicant.displayName}</h3>
-          <p>
-            {applicant.email} · <code>{applicant.developerIdentityId}</code>
+    <aside
+      className="grid gap-5 rounded-xl border border-warning/40 bg-warning/5 p-5"
+      aria-labelledby="applicant-detail-title"
+    >
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="grid gap-1">
+          <h3 id="applicant-detail-title" className="text-base leading-none">
+            {applicant.displayName}
+          </h3>
+          <p className="m-0 text-sm text-muted-foreground">
+            {applicant.email} ·{" "}
+            <code className="font-mono text-xs">{applicant.developerIdentityId}</code>
           </p>
         </div>
-        <button type="button" className="secondary" onClick={onClose}>
+        <Button variant="outline" size="sm" onClick={onClose}>
+          <X aria-hidden="true" />
           Close detail
-        </button>
+        </Button>
       </div>
-      <dl className="definition-grid">
-        <div>
-          <dt>Developer status</dt>
-          <dd>{applicant.status}</dd>
-        </div>
-        <div>
-          <dt>Operator access</dt>
-          <dd>{applicant.operatorEntitlementStatus}</dd>
-        </div>
-        <div>
-          <dt>Email verified</dt>
-          <dd>{applicant.emailVerified ? "yes" : "no"}</dd>
-        </div>
-        <div>
-          <dt>Authorization epoch</dt>
-          <dd>{applicant.authorizationEpoch}</dd>
-        </div>
-        <div>
-          <dt>Last updated</dt>
-          <dd>{new Date(applicant.updatedAt).toLocaleString()}</dd>
-        </div>
+      <dl className="m-0 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <Definition term="Developer status">
+          <StatusBadge value={applicant.status} />
+        </Definition>
+        <Definition term="Operator access">
+          <StatusBadge value={applicant.operatorEntitlementStatus} />
+        </Definition>
+        <Definition term="Email verified">{applicant.emailVerified ? "yes" : "no"}</Definition>
+        <Definition term="Authorization epoch">
+          <span className="tabular-nums">{applicant.authorizationEpoch}</span>
+        </Definition>
+        <Definition term="Last updated">
+          {new Date(applicant.updatedAt).toLocaleString()}
+        </Definition>
       </dl>
       {applicant.status !== "waitlisted" ? (
-        <p role="status">This applicant already has the authoritative status shown above.</p>
+        <p role="status" className="m-0 text-sm text-muted-foreground">
+          This applicant already has the authoritative status shown above.
+        </p>
       ) : (
-        <form onSubmit={submit}>
-          <label>
-            Private review reason / case reference (optional)
-            <textarea name="reason" maxLength={1_024} />
-          </label>
-          <fieldset>
-            <legend>Decision</legend>
-            <label className="checkbox-label">
-              <input type="radio" name="action" value="approve" required /> Approve developer
-            </label>
-            <label className="checkbox-label">
-              <input type="radio" name="action" value="reject" required /> Reject developer
-            </label>
+        <form className="grid gap-4" onSubmit={submit}>
+          <Field label="Private review reason / case reference (optional)" htmlFor={`${id}-reason`}>
+            <Textarea id={`${id}-reason`} name="reason" maxLength={1_024} />
+          </Field>
+          <fieldset className="m-0 grid gap-2 border-0 p-0">
+            <legend className="mb-2 p-0 text-sm font-medium leading-none">Decision</legend>
+            <div className="flex items-center gap-2">
+              <Input
+                id={`${id}-approve`}
+                type="radio"
+                name="action"
+                value="approve"
+                required
+                className={RADIO_CLASS}
+              />
+              <Label htmlFor={`${id}-approve`} className="font-normal">
+                Approve developer
+              </Label>
+            </div>
+            <div className="flex items-center gap-2">
+              <Input
+                id={`${id}-reject`}
+                type="radio"
+                name="action"
+                value="reject"
+                required
+                className={RADIO_CLASS}
+              />
+              <Label htmlFor={`${id}-reject`} className="font-normal">
+                Reject developer
+              </Label>
+            </div>
           </fieldset>
-          {validation === null ? null : <p role="alert">{validation}</p>}
-          <button type="submit" disabled={pending}>
-            {pending ? "Committing decision…" : "Review and confirm decision"}
-          </button>
+          {validation === null ? null : (
+            <Alert variant="destructive">
+              <AlertDescription className="block">{validation}</AlertDescription>
+            </Alert>
+          )}
+          <div>
+            <Button type="submit" disabled={pending}>
+              {pending ? "Committing decision…" : "Review and confirm decision"}
+            </Button>
+          </div>
         </form>
       )}
     </aside>
+  );
+}
+
+/** A lifecycle word as a badge: the value is the server's own, shown as it is. */
+function StatusBadge({ value }: { readonly value: string }) {
+  const variant =
+    value === "active"
+      ? "positive"
+      : value === "waitlisted"
+        ? "warning"
+        : value === "rejected" || value === "disabled" || value === "deleted" || value === "revoked"
+          ? "destructive"
+          : "secondary";
+  return <Badge variant={variant}>{value}</Badge>;
+}
+
+function Definition({ term, children }: { readonly term: string; readonly children: ReactNode }) {
+  return (
+    <div className="grid gap-1">
+      <dt className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">
+        {term}
+      </dt>
+      <dd className="m-0 text-sm wrap-anywhere">{children}</dd>
+    </div>
   );
 }

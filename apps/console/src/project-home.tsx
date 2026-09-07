@@ -5,6 +5,43 @@
 // summary loads on its own and states when it was observed, so one failing
 // source marks only its own panel.
 import {
+  Alert,
+  AlertDescription,
+  Badge,
+  Button,
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+  EmptyState,
+  Eyebrow,
+  Field,
+  Input,
+  NativeSelect,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  cn,
+} from "@mako-cloud/ui";
+import {
+  Activity,
+  Copy,
+  Gauge,
+  Globe,
+  Layers,
+  LayoutDashboard,
+  type LucideIcon,
+  Plus,
+  RefreshCw,
+  Settings,
+} from "lucide-react";
+import {
   type FormEvent,
   type MouseEvent,
   type ReactNode,
@@ -38,12 +75,16 @@ export type ProjectSection = "overview" | "usage" | "activity" | "settings" | "d
 type ProjectAction = "suspend" | "restore" | "delete";
 type Navigate = (path: string, replace?: boolean) => void;
 
-const PROJECT_DESTINATIONS: readonly { readonly id: ProjectSection; readonly label: string }[] = [
-  { id: "overview", label: "Overview" },
-  { id: "usage", label: "Usage" },
-  { id: "activity", label: "Activity" },
-  { id: "domains", label: "Domains" },
-  { id: "settings", label: "Settings" },
+const PROJECT_DESTINATIONS: readonly {
+  readonly id: ProjectSection;
+  readonly label: string;
+  readonly icon: LucideIcon;
+}[] = [
+  { id: "overview", label: "Overview", icon: LayoutDashboard },
+  { id: "usage", label: "Usage", icon: Gauge },
+  { id: "activity", label: "Activity", icon: Activity },
+  { id: "domains", label: "Domains", icon: Globe },
+  { id: "settings", label: "Settings", icon: Settings },
 ];
 
 // The transfer target that names the caller's personal space; the API
@@ -57,6 +98,9 @@ const SECTION_EYEBROW: Record<ProjectSection, string> = {
   domains: "Custom domains",
   settings: "Project settings",
 };
+
+/** A quiet secondary line: an identifier's caption, an observation time. */
+const OBSERVED = "block text-xs text-muted-foreground";
 
 export function ProjectHome({
   projectId,
@@ -165,7 +209,7 @@ export function ProjectHome({
 
   let content: ReactNode;
   if (project === null || environments === null) {
-    content = <p>Loading project…</p>;
+    content = <p className="m-0 text-sm text-muted-foreground">Loading project…</p>;
   } else if (section === "usage") {
     content = <UsageScreen projectId={projectId} />;
   } else if (section === "activity") {
@@ -198,85 +242,105 @@ export function ProjectHome({
   }
 
   return (
-    <div className="developer-workspace-shell project-home">
-      <aside className="developer-sidebar" aria-label="Project navigation">
-        <div className="context-switcher">
-          <p className="eyebrow">Project</p>
-          <ConsoleLink className="project-home-owner" path={ownerPath} navigate={navigate}>
+    <div className="grid min-h-full lg:grid-cols-[16rem_minmax(0,1fr)]">
+      <aside
+        className="flex flex-col gap-6 border-b bg-sidebar p-4 text-sidebar-foreground lg:sticky lg:top-0 lg:max-h-screen lg:overflow-y-auto lg:border-r lg:border-b-0"
+        aria-label="Project navigation"
+      >
+        <div className="grid gap-2">
+          <Eyebrow>Project</Eyebrow>
+          <ConsoleLink className="w-fit text-sm font-medium" path={ownerPath} navigate={navigate}>
             {ownerLabel}
           </ConsoleLink>
-          <button
-            type="button"
-            className="context-home"
+          <Button
+            variant="ghost"
+            className="-mx-2 h-auto justify-start px-2 py-1 text-left text-base font-semibold whitespace-normal"
             onClick={() => navigate(`/projects/${projectId}`)}
           >
             {project?.name ?? projectId}
-          </button>
-          <div className="project-home-environments">
-            <p id="project-environments-label">Environments</p>
-            {environments === null ? (
-              <small>Loading…</small>
-            ) : environments.length === 0 ? (
-              <small>No environments yet</small>
-            ) : (
-              <ul aria-labelledby="project-environments-label">
-                {environments.map((environment) => (
-                  <li key={environment.id}>
-                    <ConsoleLink
-                      path={`/projects/${projectId}/environments/${environment.id}/overview`}
-                      navigate={navigate}
-                    >
-                      <span>{environment.name}</span>
-                      <LifecycleBadge state={environment.state} />
-                    </ConsoleLink>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
+          </Button>
+        </div>
+        <div className="grid gap-2">
+          <Eyebrow id="project-environments-label">Environments</Eyebrow>
+          {environments === null ? (
+            <small className="text-xs text-muted-foreground">Loading…</small>
+          ) : environments.length === 0 ? (
+            <small className="text-xs text-muted-foreground">No environments yet</small>
+          ) : (
+            <ul
+              aria-labelledby="project-environments-label"
+              className="m-0 grid list-none gap-0.5 p-0"
+            >
+              {environments.map((environment) => (
+                <li key={environment.id}>
+                  <ConsoleLink
+                    className="flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-sm text-foreground no-underline transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground hover:no-underline"
+                    path={`/projects/${projectId}/environments/${environment.id}/overview`}
+                    navigate={navigate}
+                  >
+                    <span className="truncate">{environment.name}</span>
+                    <LifecycleBadge state={environment.state} />
+                  </ConsoleLink>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
         <nav aria-label="Project destinations">
-          <ul>
-            {PROJECT_DESTINATIONS.map((destination) => (
-              <li key={destination.id}>
-                <ConsoleLink
-                  className={section === destination.id ? "active" : undefined}
-                  current={section === destination.id}
-                  path={
-                    destination.id === "overview"
-                      ? `/projects/${projectId}`
-                      : `/projects/${projectId}/${destination.id}`
-                  }
-                  navigate={navigate}
-                >
-                  {destination.label}
-                </ConsoleLink>
-              </li>
-            ))}
+          <ul className="m-0 grid list-none gap-0.5 p-0">
+            {PROJECT_DESTINATIONS.map((destination) => {
+              const Icon = destination.icon;
+              const active = section === destination.id;
+              return (
+                <li key={destination.id}>
+                  <ConsoleLink
+                    className={cn(
+                      "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground no-underline transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground hover:no-underline",
+                      active && "bg-sidebar-accent text-sidebar-foreground",
+                    )}
+                    current={active}
+                    path={
+                      destination.id === "overview"
+                        ? `/projects/${projectId}`
+                        : `/projects/${projectId}/${destination.id}`
+                    }
+                    navigate={navigate}
+                  >
+                    <Icon aria-hidden="true" className="size-4 shrink-0" />
+                    {destination.label}
+                  </ConsoleLink>
+                </li>
+              );
+            })}
           </ul>
         </nav>
       </aside>
-      <div className="developer-workspace-content">
-        <nav className="breadcrumbs" aria-label="Breadcrumb">
-          <ConsoleLink path="/" navigate={navigate}>
-            Home
-          </ConsoleLink>
-          <span aria-hidden="true">/</span>
-          <ConsoleLink path={ownerPath} navigate={navigate}>
-            {ownerLabel}
-          </ConsoleLink>
-          <span aria-hidden="true">/</span>
-          <strong>{project?.name ?? projectId}</strong>
-        </nav>
-        <div className="section-heading project-home-heading">
-          <div>
-            <p className="eyebrow">{SECTION_EYEBROW[section]}</p>
-            <h1 id="project-title">{project?.name ?? "Loading…"}</h1>
+      <div className="grid min-w-0 content-start gap-6 p-6 lg:p-8">
+        <div className="grid gap-4">
+          <nav
+            className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground"
+            aria-label="Breadcrumb"
+          >
+            <ConsoleLink path="/" navigate={navigate}>
+              Home
+            </ConsoleLink>
+            <span aria-hidden="true">/</span>
+            <ConsoleLink path={ownerPath} navigate={navigate}>
+              {ownerLabel}
+            </ConsoleLink>
+            <span aria-hidden="true">/</span>
+            <strong className="font-medium text-foreground">{project?.name ?? projectId}</strong>
+          </nav>
+          <div className="grid gap-1">
+            <Eyebrow>{SECTION_EYEBROW[section]}</Eyebrow>
+            <h1 id="project-title" className="text-2xl">
+              {project?.name ?? "Loading…"}
+            </h1>
             {project === null ? null : (
-              <p className="project-home-meta">
+              <p className="m-0 mt-1 flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
                 <LifecycleBadge state={project.state} />
                 <span>Region {project.region}</span>
-                <code>{project.id}</code>
+                <code className="font-mono text-xs">{project.id}</code>
               </p>
             )}
           </div>
@@ -319,25 +383,27 @@ function ProjectOverview({
         navigate={navigate}
       />
       {selectedEnvironment === null ? null : (
-        <section aria-labelledby="selected-environment-title">
-          <div className="section-heading project-home-selected">
-            <div>
-              <p className="eyebrow">Selected environment</p>
-              <h2 id="selected-environment-title">{selectedEnvironment.name}</h2>
-              <p>
+        <section aria-labelledby="selected-environment-title" className="grid gap-4">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="grid gap-1">
+              <Eyebrow>Selected environment</Eyebrow>
+              <h2 id="selected-environment-title" className="text-xl">
+                {selectedEnvironment.name}
+              </h2>
+              <p className="m-0 text-sm text-muted-foreground">
                 Each summary loads on its own and names when it was observed. An unavailable summary
                 never hides a healthy one.
               </p>
             </div>
-            <button
-              type="button"
-              className="secondary"
-              onClick={() => setRefreshKey((value) => value + 1)}
-            >
+            <Button variant="outline" size="sm" onClick={() => setRefreshKey((value) => value + 1)}>
+              <RefreshCw aria-hidden="true" />
               Refresh summaries
-            </button>
+            </Button>
           </div>
-          <div className="project-home-grid" key={`${selectedEnvironment.id}:${refreshKey}`}>
+          <div
+            className="grid gap-4 xl:grid-cols-2"
+            key={`${selectedEnvironment.id}:${refreshKey}`}
+          >
             <ConnectPanel
               projectId={projectId}
               environment={selectedEnvironment}
@@ -400,59 +466,71 @@ function EnvironmentsPanel({
     }
   };
   return (
-    <section className="panel full-span project-home-panel" aria-labelledby="environments-title">
-      <div className="section-heading">
-        <div>
-          <h2 id="environments-title">Environments</h2>
-          <p>
-            Each environment reports its own readiness. Select one to see its keys, usage, health,
-            and activity.
-          </p>
-        </div>
-      </div>
-      <ApiFailureNotice failure={failure} />
-      {environments.length === 0 ? (
-        <p>This project has no environments yet. Create one to start connecting clients.</p>
-      ) : (
-        <div className="table-scroll">
-          <table className="project-home-table">
-            <thead>
-              <tr>
-                <th scope="col">
-                  <span className="visually-hidden">Selected</span>
-                </th>
-                <th scope="col">Environment</th>
-                <th scope="col">State</th>
-                <th scope="col">Readiness</th>
-                <th scope="col">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {environments.map((environment) => (
-                <EnvironmentTableRow
-                  key={environment.id}
-                  environment={environment}
-                  selected={environment.id === selectedEnvironmentId}
-                  onSelect={() => onSelect(environment.id)}
-                  onChanged={onChanged}
-                  navigate={navigate}
-                />
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-      <details>
-        <summary>Create environment</summary>
-        <form onSubmit={(event) => void createEnvironment(event)}>
-          <label>
-            Environment name
-            <input name="name" required maxLength={100} />
-          </label>
-          <button type="submit">Create environment</button>
-        </form>
-      </details>
-    </section>
+    <Card aria-labelledby="environments-title">
+      <CardHeader>
+        <CardTitle id="environments-title">Environments</CardTitle>
+        <CardDescription>
+          Each environment reports its own readiness. Select one to see its keys, usage, health, and
+          activity.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-4">
+        <ApiFailureNotice failure={failure} />
+        {environments.length === 0 ? (
+          <EmptyState
+            icon={<Layers aria-hidden="true" />}
+            title="This project has no environments yet. Create one to start connecting clients."
+          />
+        ) : (
+          <div className="overflow-hidden rounded-lg border">
+            <Table>
+              <TableHeader>
+                <TableRow className="hover:bg-transparent">
+                  <TableHead scope="col" className="w-10 pl-3">
+                    <span className="sr-only">Selected</span>
+                  </TableHead>
+                  <TableHead scope="col">Environment</TableHead>
+                  <TableHead scope="col">State</TableHead>
+                  <TableHead scope="col">Readiness</TableHead>
+                  <TableHead scope="col">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {environments.map((environment) => (
+                  <EnvironmentTableRow
+                    key={environment.id}
+                    environment={environment}
+                    selected={environment.id === selectedEnvironmentId}
+                    onSelect={() => onSelect(environment.id)}
+                    onChanged={onChanged}
+                    navigate={navigate}
+                  />
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+        <details>
+          <summary className="flex w-fit cursor-pointer list-none items-center gap-1.5 text-sm font-medium text-primary hover:underline [&::-webkit-details-marker]:hidden">
+            <Plus aria-hidden="true" className="size-4" />
+            Create environment
+          </summary>
+          <form
+            className="mt-3 flex max-w-xl flex-wrap items-end gap-3"
+            onSubmit={(event) => void createEnvironment(event)}
+          >
+            <Field
+              label="Environment name"
+              htmlFor="new-environment-name"
+              className="min-w-56 flex-1"
+            >
+              <Input id="new-environment-name" name="name" required maxLength={100} />
+            </Field>
+            <Button type="submit">Create environment</Button>
+          </form>
+        </details>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -504,69 +582,75 @@ function EnvironmentTableRow({
     }
   };
   return (
-    <tr aria-selected={selected}>
-      <td>
-        <input
+    <TableRow
+      aria-selected={selected}
+      data-state={selected ? "selected" : undefined}
+      className="align-top"
+    >
+      <TableCell className="pl-3">
+        <Input
           type="radio"
           name="selected-environment"
           aria-label={`Select ${environment.name}`}
           checked={selected}
           onChange={onSelect}
+          className="mt-0.5 h-4 w-4 cursor-pointer rounded-full border-0 p-0 shadow-none accent-primary"
         />
-      </td>
-      <td>
-        <strong>{environment.name}</strong>
+      </TableCell>
+      <TableCell className="whitespace-normal">
+        <strong className="font-medium">{environment.name}</strong>
         <br />
-        <code>{environment.id}</code>
+        <code className="font-mono text-xs text-muted-foreground">{environment.id}</code>
         {environment.deletionDeadline === undefined ? null : (
-          <small className="project-home-observed">
+          <small className={OBSERVED}>
             Restorable until {new Date(environment.deletionDeadline).toLocaleString()}
           </small>
         )}
-      </td>
-      <td>
+      </TableCell>
+      <TableCell>
         <LifecycleBadge state={environment.state} />
-      </td>
-      <td>
+      </TableCell>
+      <TableCell className="whitespace-normal">
         <EnvironmentReadiness projectId={environment.projectId} environmentId={environment.id} />
-      </td>
-      <td>
-        <div className="button-row">
+      </TableCell>
+      <TableCell className="whitespace-normal">
+        <div className="flex flex-wrap items-center gap-1">
           <ConsoleLink
-            className="project-home-open"
+            className="px-2 text-sm font-medium"
             path={`/projects/${environment.projectId}/environments/${environment.id}/overview`}
             navigate={navigate}
           >
             Open
           </ConsoleLink>
-          <button
-            type="button"
-            className="secondary"
+          <Button
+            variant="ghost"
+            size="sm"
             disabled={environment.state !== "active"}
             onClick={() => void act("suspend")}
           >
             Suspend
-          </button>
-          <button
-            type="button"
-            className="secondary"
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
             disabled={!(["suspended", "deletion_grace"] as string[]).includes(environment.state)}
             onClick={() => void act("restore")}
           >
             Restore
-          </button>
-          <button
-            type="button"
-            className="danger-link"
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-destructive hover:text-destructive"
             disabled={!(["active", "suspended", "failed"] as string[]).includes(environment.state)}
             onClick={() => void act("delete")}
           >
             Delete
-          </button>
+          </Button>
         </div>
         <ApiFailureNotice failure={failure} />
-      </td>
-    </tr>
+      </TableCell>
+    </TableRow>
   );
 }
 
@@ -588,22 +672,22 @@ function EnvironmentReadiness({
   );
   const summary = useSummary(load);
   if (summary.status === "loading") {
-    return <span className="project-home-observed">Loading readiness…</span>;
+    return <span className="text-xs text-muted-foreground">Loading readiness…</span>;
   }
   if (summary.status === "unavailable") {
     return (
-      <div className="project-home-readiness">
+      <div className="grid gap-1">
         <StatusBadge state="unavailable" />
-        <small className="project-home-observed">{summary.failure.message}</small>
+        <small className={OBSERVED}>{summary.failure.message}</small>
       </div>
     );
   }
   const section = summary.value.sections.lifecycle ?? summary.value.sections.readiness;
   if (section === undefined) {
     return (
-      <div className="project-home-readiness">
+      <div className="grid gap-1">
         <StatusBadge state="unavailable" />
-        <small className="project-home-observed">
+        <small className={OBSERVED}>
           No readiness section · observed {summary.observedAt.toLocaleString()}
         </small>
       </div>
@@ -612,17 +696,17 @@ function EnvironmentReadiness({
   const detail = readinessDetail(section.payload);
   const counts = summaryCounts(summary.value);
   return (
-    <div className="project-home-readiness">
-      <span>
+    <div className="grid gap-1">
+      <span className="flex flex-wrap items-center gap-2">
         <StatusBadge state={section.status} />
-        {detail === null ? null : <span> {detail}</span>}
+        {detail === null ? null : <span>{detail}</span>}
       </span>
-      {counts === null ? null : <small>{counts}</small>}
-      <small className="project-home-observed">
+      {counts === null ? null : <small className="block text-xs">{counts}</small>}
+      <small className={OBSERVED}>
         Observed {formatUnixSeconds(section.observedAtUnixSeconds)}
       </small>
       {section.remediationCode === null || section.remediationCode === undefined ? null : (
-        <small className="project-home-observed">{humanize(section.remediationCode)}</small>
+        <small className={OBSERVED}>{humanize(section.remediationCode)}</small>
       )}
     </div>
   );
@@ -678,59 +762,60 @@ function ConnectDetails({ metadata }: { readonly metadata: ConnectMetadata }) {
   });
   return (
     <>
-      <dl className="definition-grid">
-        <div>
-          <dt>API URL</dt>
-          <dd>
-            <code>{metadata.publicEndpoint}</code>
-          </dd>
-        </div>
-        <div>
-          <dt>Public key ID</dt>
-          <dd>
-            <code>{metadata.publicKeyId}</code>
-          </dd>
-        </div>
-        <div>
-          <dt>Supported client</dt>
-          <dd>
-            <code>{metadata.rxdbClientRange}</code>
-          </dd>
-        </div>
+      <dl className="m-0 grid gap-3 sm:grid-cols-2">
+        <Definition term="API URL" className="sm:col-span-2">
+          <code className="font-mono break-all">{metadata.publicEndpoint}</code>
+        </Definition>
+        <Definition term="Public key ID">
+          <code className="font-mono break-all">{metadata.publicKeyId}</code>
+        </Definition>
+        <Definition term="Supported client">
+          <code className="font-mono">{metadata.rxdbClientRange}</code>
+        </Definition>
       </dl>
       {metadata.publicKey === "" ? (
-        <p className="notice warning">
-          No recoverable public key is available. Issue or rotate a public project credential on the
-          Credentials page, then paste the one-time value into your application secret store.
-        </p>
+        <Alert variant="warning">
+          <AlertDescription className="block">
+            No recoverable public key is available. Issue or rotate a public project credential on
+            the Credentials page, then paste the one-time value into your application secret store.
+          </AlertDescription>
+        </Alert>
       ) : (
-        <label className="project-home-key">
-          Public project key
-          <input readOnly value={metadata.publicKey} />
-        </label>
+        <Field label="Public project key" htmlFor="public-project-key">
+          <Input
+            id="public-project-key"
+            readOnly
+            value={metadata.publicKey}
+            className="font-mono text-xs md:text-xs"
+          />
+        </Field>
       )}
-      <div>
-        <p>
-          <strong>Quickstart</strong>
+      <div className="grid gap-2">
+        <p className="m-0 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm">
+          <strong className="font-medium">Quickstart</strong>
           {collection === undefined ? (
-            <small className="project-home-observed">
+            <small className="text-xs text-muted-foreground">
               No collection exists yet; the snippet uses a placeholder collection.
             </small>
           ) : (
-            <small className="project-home-observed">
+            <small className="text-xs text-muted-foreground">
               Collection {collection.collectionId} · schema v{collection.activeSchemaVersion}
             </small>
           )}
         </p>
-        <div className="code-block">
-          <button
-            type="button"
-            className="secondary copy-button"
+        <div className="relative rounded-lg border bg-muted/50">
+          <Button
+            variant="outline"
+            size="sm"
+            className="absolute top-2 right-2"
             onClick={() => void navigator.clipboard.writeText(snippet)}
           >
+            <Copy aria-hidden="true" />
             Copy
-          </button>
-          <pre>{snippet}</pre>
+          </Button>
+          <pre className="m-0 overflow-x-auto p-4 pr-24 font-mono text-xs leading-relaxed break-words whitespace-pre-wrap">
+            {snippet}
+          </pre>
         </div>
       </div>
     </>
@@ -768,28 +853,32 @@ function UsagePanel({
       {(value) => {
         const totals = usageTotals(value);
         return totals.length === 0 ? (
-          <p>No usage has been recorded in the retention window.</p>
+          <p className="m-0 text-sm text-muted-foreground">
+            No usage has been recorded in the retention window.
+          </p>
         ) : (
-          <div className="table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th scope="col">Resource</th>
-                  <th scope="col">Quantity</th>
-                </tr>
-              </thead>
-              <tbody>
+          <div className="overflow-hidden rounded-lg border">
+            <Table>
+              <TableHeader>
+                <TableRow className="hover:bg-transparent">
+                  <TableHead scope="col">Resource</TableHead>
+                  <TableHead scope="col" className="text-right">
+                    Quantity
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {totals.map((total) => (
-                  <tr key={total.resource}>
-                    <td>{total.resource.replaceAll("_", " ")}</td>
-                    <td>
+                  <TableRow key={total.resource}>
+                    <TableCell>{total.resource.replaceAll("_", " ")}</TableCell>
+                    <TableCell className="text-right tabular-nums">
                       {formatQuantity(total.resource, total.quantity)}
                       {total.resource.includes("bytes") ? "" : ` ${total.unit}`}
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </div>
         );
       }}
@@ -835,15 +924,15 @@ function HealthPanel({
             : [],
         );
         return health.length === 0 ? (
-          <p>No retained health observations.</p>
+          <p className="m-0 text-sm text-muted-foreground">No retained health observations.</p>
         ) : (
-          <ul className="signal-list">
+          <ul className="m-0 grid list-none gap-2 p-0 text-sm">
             {health.map((record) => (
               <li key={`${record.timestamp}-${record.payload.service}-${record.payload.region}`}>
-                <strong>{record.payload.service}</strong> in {record.payload.region}:{" "}
-                {record.payload.status}
+                <strong className="font-medium">{record.payload.service}</strong> in{" "}
+                {record.payload.region}: {record.payload.status}
                 {record.payload.diagnostic === null ? null : (
-                  <small className="project-home-observed">{record.payload.diagnostic}</small>
+                  <small className={OBSERVED}>{record.payload.diagnostic}</small>
                 )}
               </li>
             ))}
@@ -885,16 +974,24 @@ function ActivityPanel({
       {(value) => {
         const events = auditEvents(value);
         return events.length === 0 ? (
-          <p>No audited actions in the retention window.</p>
+          <p className="m-0 text-sm text-muted-foreground">
+            No audited actions in the retention window.
+          </p>
         ) : (
-          <ol className="project-home-events">
+          <ol className="m-0 grid list-none gap-3 p-0 text-sm">
             {events.map((event) => (
-              <li key={`${event.timestamp}-${event.requestId}`}>
-                <time dateTime={event.timestamp}>{new Date(event.timestamp).toLocaleString()}</time>
+              <li
+                key={`${event.timestamp}-${event.requestId}`}
+                className="grid gap-0.5 border-b pb-3 last:border-0 last:pb-0"
+              >
+                <time dateTime={event.timestamp} className="text-xs text-muted-foreground">
+                  {new Date(event.timestamp).toLocaleString()}
+                </time>
                 <span>
-                  <strong>{event.actorId}</strong> {event.action} <code>{event.target}</code>
+                  <strong className="font-medium">{event.actorId}</strong> {event.action}{" "}
+                  <code className="font-mono text-xs">{event.target}</code>
                 </span>
-                <small className="project-home-observed">
+                <small className={OBSERVED}>
                   {event.outcome}
                   {event.details === null ? "" : ` · ${event.details}`}
                 </small>
@@ -915,46 +1012,52 @@ function ProjectLifecyclePanel({
   readonly onAction: (action: ProjectAction) => void;
 }) {
   return (
-    <section
-      className="panel full-span project-home-panel lifecycle-panel"
-      aria-labelledby="lifecycle-title"
-    >
-      <h2 id="lifecycle-title">Provisioning and lifecycle</h2>
-      <p>
-        Current state: <strong>{project.state.replaceAll("_", " ")}</strong>
-      </p>
-      {project.failureDiagnostic === undefined ? null : (
-        <p role="alert">{project.failureDiagnostic}</p>
-      )}
-      {project.deletionDeadline === undefined ? null : (
-        <p>Restorable until {new Date(project.deletionDeadline).toLocaleString()}.</p>
-      )}
-      <div className="button-row">
-        <button
-          type="button"
-          onClick={() => onAction("suspend")}
-          disabled={project.state !== "active"}
-        >
-          Suspend
-        </button>
-        <button
-          type="button"
-          className="secondary"
-          onClick={() => onAction("restore")}
-          disabled={!(["suspended", "deletion_grace"] as string[]).includes(project.state)}
-        >
-          Restore
-        </button>
-        <button
-          type="button"
-          className="danger"
-          onClick={() => onAction("delete")}
-          disabled={!(["active", "suspended", "failed"] as string[]).includes(project.state)}
-        >
-          Request deletion
-        </button>
-      </div>
-    </section>
+    <Card aria-labelledby="lifecycle-title">
+      <CardHeader>
+        <CardTitle id="lifecycle-title">Provisioning and lifecycle</CardTitle>
+        <CardDescription>
+          Current state:{" "}
+          <strong className="font-medium text-foreground">
+            {project.state.replaceAll("_", " ")}
+          </strong>
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-3">
+        {project.failureDiagnostic === undefined ? null : (
+          <Alert variant="destructive">
+            <AlertDescription className="block">{project.failureDiagnostic}</AlertDescription>
+          </Alert>
+        )}
+        {project.deletionDeadline === undefined ? null : (
+          <p className="m-0 text-sm">
+            Restorable until {new Date(project.deletionDeadline).toLocaleString()}.
+          </p>
+        )}
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            onClick={() => onAction("suspend")}
+            disabled={project.state !== "active"}
+          >
+            Suspend
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => onAction("restore")}
+            disabled={!(["suspended", "deletion_grace"] as string[]).includes(project.state)}
+          >
+            Restore
+          </Button>
+          <Button
+            variant="destructive"
+            onClick={() => onAction("delete")}
+            disabled={!(["active", "suspended", "failed"] as string[]).includes(project.state)}
+          >
+            Request deletion
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -973,18 +1076,16 @@ function ProjectSettings({
 }) {
   return (
     <>
-      <section className="panel full-span project-home-panel" aria-labelledby="identifiers-title">
-        <h2 id="identifiers-title">Identifiers and ownership</h2>
-        <dl className="definition-grid">
-          <div>
-            <dt>Project ID</dt>
-            <dd>
-              <code>{project.id}</code>
-            </dd>
-          </div>
-          <div>
-            <dt>Owner</dt>
-            <dd>
+      <Card aria-labelledby="identifiers-title">
+        <CardHeader>
+          <CardTitle id="identifiers-title">Identifiers and ownership</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <dl className="m-0 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <Definition term="Project ID">
+              <code className="font-mono break-all">{project.id}</code>
+            </Definition>
+            <Definition term="Owner">
               {team === null
                 ? ownerUnavailable
                   ? "Owner unavailable"
@@ -992,71 +1093,61 @@ function ProjectSettings({
                 : team.kind === "personal"
                   ? "Your personal space"
                   : team.name}
-            </dd>
-          </div>
-          <div>
-            <dt>Owner kind</dt>
-            <dd>{team === null ? "—" : team.kind === "personal" ? "Personal space" : "Team"}</dd>
-          </div>
-          <div>
-            <dt>Owner ID</dt>
-            <dd>
-              <code>{project.teamId}</code>
-            </dd>
-          </div>
-          <div>
-            <dt>Region</dt>
-            <dd>{project.region}</dd>
-          </div>
-          <div>
-            <dt>Lifecycle</dt>
-            <dd>
+            </Definition>
+            <Definition term="Owner kind">
+              {team === null ? "—" : team.kind === "personal" ? "Personal space" : "Team"}
+            </Definition>
+            <Definition term="Owner ID">
+              <code className="font-mono break-all">{project.teamId}</code>
+            </Definition>
+            <Definition term="Region">{project.region}</Definition>
+            <Definition term="Lifecycle">
               <LifecycleBadge state={project.state} />
-            </dd>
-          </div>
-          <div>
-            <dt>Created</dt>
-            <dd>{new Date(project.createdAt).toLocaleString()}</dd>
-          </div>
-          <div>
-            <dt>Updated</dt>
-            <dd>{new Date(project.updatedAt).toLocaleString()}</dd>
-          </div>
-        </dl>
-      </section>
+            </Definition>
+            <Definition term="Created">{new Date(project.createdAt).toLocaleString()}</Definition>
+            <Definition term="Updated">{new Date(project.updatedAt).toLocaleString()}</Definition>
+          </dl>
+        </CardContent>
+      </Card>
       <RenameProjectPanel project={project} onChanged={onChanged} />
       <TransferProjectPanel project={project} owner={team} onChanged={onChanged} />
-      <section className="panel full-span project-home-panel" aria-labelledby="deletion-title">
-        <h2 id="deletion-title">Deletion</h2>
-        <p>
-          Requesting deletion revokes data-plane access immediately. Final destruction follows a
-          grace period during which the project can be restored.
-        </p>
-        {project.failureDiagnostic === undefined ? null : (
-          <p role="alert">{project.failureDiagnostic}</p>
-        )}
-        {project.deletionDeadline === undefined ? null : (
-          <p>Restorable until {new Date(project.deletionDeadline).toLocaleString()}.</p>
-        )}
-        <div className="button-row">
-          <button
-            type="button"
-            className="danger"
-            onClick={() => onAction("delete")}
-            disabled={!(["active", "suspended", "failed"] as string[]).includes(project.state)}
-          >
-            Request deletion
-          </button>
-          <button
-            type="button"
-            className="secondary"
-            onClick={() => onAction("restore")}
-            disabled={project.state !== "deletion_grace"}
-          >
-            Restore
-          </button>
-        </div>
-      </section>
+      <Card aria-labelledby="deletion-title" className="border-destructive/30">
+        <CardHeader>
+          <CardTitle id="deletion-title">Deletion</CardTitle>
+          <CardDescription>
+            Requesting deletion revokes data-plane access immediately. Final destruction follows a
+            grace period during which the project can be restored.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-3">
+          {project.failureDiagnostic === undefined ? null : (
+            <Alert variant="destructive">
+              <AlertDescription className="block">{project.failureDiagnostic}</AlertDescription>
+            </Alert>
+          )}
+          {project.deletionDeadline === undefined ? null : (
+            <p className="m-0 text-sm">
+              Restorable until {new Date(project.deletionDeadline).toLocaleString()}.
+            </p>
+          )}
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="destructive"
+              onClick={() => onAction("delete")}
+              disabled={!(["active", "suspended", "failed"] as string[]).includes(project.state)}
+            >
+              Request deletion
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => onAction("restore")}
+              disabled={project.state !== "deletion_grace"}
+            >
+              Restore
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
     </>
   );
 }
@@ -1107,33 +1198,40 @@ function RenameProjectPanel({
     }
   };
   return (
-    <section className="panel full-span project-home-panel" aria-labelledby="rename-title">
-      <h2 id="rename-title">Project name</h2>
-      <p>
-        The name appears everywhere the project is listed. Its identifier, keys, policies, and data
-        never change with it. Renaming requires confirmation and is audited.
-      </p>
-      <form className="inline-form project-home-form" onSubmit={(event) => void submit(event)}>
-        <label>
-          Project name
-          <input
-            name="name"
-            value={name}
-            maxLength={200}
-            onChange={(event) => setDraft(event.currentTarget.value)}
-          />
-        </label>
-        <button type="submit" disabled={unchanged || pending}>
-          {pending ? "Renaming…" : "Rename"}
-        </button>
-      </form>
-      <ApiFailureNotice failure={failure} />
-      {status === null ? null : (
-        <p className="notice success" role="status">
-          {status}
-        </p>
-      )}
-    </section>
+    <Card aria-labelledby="rename-title">
+      <CardHeader>
+        <CardTitle id="rename-title">Project name</CardTitle>
+        <CardDescription>
+          The name appears everywhere the project is listed. Its identifier, keys, policies, and
+          data never change with it. Renaming requires confirmation and is audited.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-3">
+        <form
+          className="flex max-w-2xl flex-wrap items-end gap-3"
+          onSubmit={(event) => void submit(event)}
+        >
+          <Field label="Project name" htmlFor="project-name" className="min-w-64 flex-1">
+            <Input
+              id="project-name"
+              name="name"
+              value={name}
+              maxLength={200}
+              onChange={(event) => setDraft(event.currentTarget.value)}
+            />
+          </Field>
+          <Button type="submit" disabled={unchanged || pending}>
+            {pending ? "Renaming…" : "Rename"}
+          </Button>
+        </form>
+        <ApiFailureNotice failure={failure} />
+        {status === null ? null : (
+          <Alert variant="positive" role="status">
+            <AlertDescription className="block">{status}</AlertDescription>
+          </Alert>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -1207,27 +1305,39 @@ function TransferProjectPanel({
 
   let form: ReactNode;
   if (teams.status === "loading") {
-    form = <p aria-busy="true">Loading the teams you belong to…</p>;
+    form = (
+      <p aria-busy="true" className="m-0 text-sm text-muted-foreground">
+        Loading the teams you belong to…
+      </p>
+    );
   } else if (teams.status === "unavailable") {
     form = (
       <>
-        <p>The teams you belong to could not be listed, so no transfer can be offered right now.</p>
+        <p className="m-0 text-sm">
+          The teams you belong to could not be listed, so no transfer can be offered right now.
+        </p>
         <ApiFailureNotice failure={teams.failure} />
       </>
     );
   } else if (ownerIsPersonal && teamTargets.length === 0) {
     form = (
-      <p>
+      <p className="m-0 text-sm">
         This project is in your personal space and you belong to no team, so there is no owner to
         transfer it to.
       </p>
     );
   } else {
     form = (
-      <form className="inline-form project-home-form" onSubmit={(event) => void submit(event)}>
-        <label>
-          Transfer to
-          <select value={selection} onChange={(event) => setSelection(event.currentTarget.value)}>
+      <form
+        className="flex max-w-2xl flex-wrap items-end gap-3"
+        onSubmit={(event) => void submit(event)}
+      >
+        <Field label="Transfer to" htmlFor="transfer-target" className="min-w-64 flex-1">
+          <NativeSelect
+            id="transfer-target"
+            value={selection}
+            onChange={(event) => setSelection(event.currentTarget.value)}
+          >
             <option value="">Choose the new owner</option>
             {ownerIsPersonal ? null : (
               <option value={PERSONAL_TARGET}>Your projects (personal space)</option>
@@ -1238,30 +1348,34 @@ function TransferProjectPanel({
                 {team.state === "active" ? "" : ` (${humanize(team.state).toLowerCase()})`}
               </option>
             ))}
-          </select>
-        </label>
-        <button type="submit" disabled={target === null || pending}>
+          </NativeSelect>
+        </Field>
+        <Button type="submit" disabled={target === null || pending}>
           {pending ? "Transferring…" : "Transfer"}
-        </button>
+        </Button>
       </form>
     );
   }
   return (
-    <section className="panel full-span project-home-panel" aria-labelledby="transfer-title">
-      <h2 id="transfer-title">Transfer ownership</h2>
-      <p>
-        Move this project to your personal space or to a team you administer. Its identifier,
-        environments, policies, users, data, and keys stay as they are; usage limits follow the new
-        owner's plan. A transfer requires confirmation and is audited under both owners.
-      </p>
-      {form}
-      <ApiFailureNotice failure={failure} />
-      {status === null ? null : (
-        <p className="notice success" role="status">
-          {status}
-        </p>
-      )}
-    </section>
+    <Card aria-labelledby="transfer-title">
+      <CardHeader>
+        <CardTitle id="transfer-title">Transfer ownership</CardTitle>
+        <CardDescription>
+          Move this project to your personal space or to a team you administer. Its identifier,
+          environments, policies, users, data, and keys stay as they are; usage limits follow the
+          new owner's plan. A transfer requires confirmation and is audited under both owners.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-3">
+        {form}
+        <ApiFailureNotice failure={failure} />
+        {status === null ? null : (
+          <Alert variant="positive" role="status">
+            <AlertDescription className="block">{status}</AlertDescription>
+          </Alert>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -1309,35 +1423,57 @@ function SummaryPanel<T>({
   const badge =
     state.status === "ready" ? "current" : state.status === "loading" ? "loading" : "unavailable";
   return (
-    <section
-      className="panel project-home-panel"
-      aria-labelledby={`${id}-summary-title`}
-      data-status={state.status}
-    >
-      <div className="section-heading">
-        <div>
-          <h2 id={`${id}-summary-title`}>{title}</h2>
-          <p>{description}</p>
-        </div>
-        <StatusBadge state={badge} />
-      </div>
-      {state.status === "loading" ? (
-        <p aria-busy="true">Loading…</p>
-      ) : state.status === "unavailable" ? (
-        <>
-          <p>This summary is unavailable; the other summaries are unaffected.</p>
-          <ApiFailureNotice failure={state.failure} />
-        </>
-      ) : (
-        <>
-          {children(state.value)}
-          <small className="project-home-observed">
-            Observed {observedAt(state.value, state.observedAt).toLocaleString()}
-          </small>
-        </>
+    <Card aria-labelledby={`${id}-summary-title`} data-status={state.status} className="gap-4">
+      <CardHeader>
+        <CardTitle id={`${id}-summary-title`}>{title}</CardTitle>
+        <CardDescription>{description}</CardDescription>
+        <CardAction>
+          <StatusBadge state={badge} />
+        </CardAction>
+      </CardHeader>
+      <CardContent className="grid gap-3">
+        {state.status === "loading" ? (
+          <p aria-busy="true" className="m-0 text-sm text-muted-foreground">
+            Loading…
+          </p>
+        ) : state.status === "unavailable" ? (
+          <>
+            <p className="m-0 text-sm text-muted-foreground">
+              This summary is unavailable; the other summaries are unaffected.
+            </p>
+            <ApiFailureNotice failure={state.failure} />
+          </>
+        ) : (
+          <>
+            {children(state.value)}
+            <small className={OBSERVED}>
+              Observed {observedAt(state.value, state.observedAt).toLocaleString()}
+            </small>
+          </>
+        )}
+      </CardContent>
+      {actions === undefined ? null : (
+        <CardFooter className="flex-wrap gap-4 text-sm font-medium">{actions}</CardFooter>
       )}
-      {actions === undefined ? null : <div className="project-home-actions">{actions}</div>}
-    </section>
+    </Card>
+  );
+}
+
+/** One term and its value in a definition list laid out as a grid. */
+function Definition({
+  term,
+  className,
+  children,
+}: {
+  readonly term: string;
+  readonly className?: string | undefined;
+  readonly children: ReactNode;
+}) {
+  return (
+    <div className={cn("grid gap-1", className)}>
+      <dt className="text-xs font-medium text-muted-foreground">{term}</dt>
+      <dd className="m-0 text-sm">{children}</dd>
+    </div>
   );
 }
 
@@ -1378,14 +1514,25 @@ function ConsoleLink({
   );
 }
 
+/// A summary's freshness or an environment's readiness as one word. The
+/// `status-badge` class is the hook the browser suites select it by.
 function StatusBadge({ state }: { readonly state: string }) {
-  const tone =
+  const variant =
     state === "current" || state === "ready" || state === "active"
-      ? "success"
+      ? "positive"
       : state === "unavailable" || state === "failed"
-        ? "error"
-        : "warning";
-  return <span className={`status-badge ${tone}`}>{humanize(state)}</span>;
+        ? "destructive"
+        : state === "loading"
+          ? "outline"
+          : "warning";
+  return (
+    <Badge
+      className={cn("status-badge", variant === "outline" && "text-muted-foreground")}
+      variant={variant}
+    >
+      {humanize(state)}
+    </Badge>
+  );
 }
 
 function readinessDetail(payload: unknown): string | null {

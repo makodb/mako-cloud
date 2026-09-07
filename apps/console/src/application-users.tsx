@@ -1,10 +1,32 @@
-import { type FormEvent, useCallback, useEffect, useState } from "react";
-
 import type {
   AdminCreateUserRequest,
   ApplicationUserSummary,
   ApplicationUserView,
 } from "@mako-cloud/management-sdk";
+import {
+  Alert,
+  AlertDescription,
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  EmptyState,
+  Eyebrow,
+  Field,
+  Input,
+  NativeSelect,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  Textarea,
+} from "@mako-cloud/ui";
+import { Search, TriangleAlert, UserPlus, Users } from "lucide-react";
+import { type FormEvent, type ReactNode, useCallback, useEffect, useState } from "react";
 
 import { ApiFailureNotice, type ConsoleApiFailure, toConsoleApiFailure } from "./api-error.js";
 import { useManagementClient } from "./management.js";
@@ -75,80 +97,110 @@ export function ApplicationUsersScreen({
   };
 
   return (
-    <section aria-labelledby="users-title">
-      <button type="button" className="back-link" onClick={onBack}>
-        ← Project
-      </button>
-      <div className="section-heading">
-        <div>
-          <p className="eyebrow">Environment {environmentId}</p>
-          <h1 id="users-title">Application users</h1>
+    <section aria-labelledby="users-title" className="grid gap-6">
+      <div className="grid gap-3">
+        <BackButton onClick={onBack}>← Project</BackButton>
+        <div className="grid gap-1">
+          <Eyebrow>Environment {environmentId}</Eyebrow>
+          <h1 id="users-title" className="text-2xl">
+            Application users
+          </h1>
         </div>
       </div>
       <ApiFailureNotice failure={failure} />
-      <div className="split-grid">
-        <section className="panel" aria-labelledby="user-search-title">
-          <h2 id="user-search-title">Search users</h2>
-          <search>
-            <form className="inline-form" onSubmit={submitSearch}>
-              <label>
-                Email or user ID
-                <input
-                  type="search"
-                  value={query}
-                  maxLength={320}
-                  onChange={(event) => setQuery(event.currentTarget.value)}
-                />
-              </label>
-              <button type="submit">Search</button>
+      <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+        <Card aria-labelledby="user-search-title">
+          <CardHeader>
+            <CardTitle id="user-search-title">Search users</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-4">
+            <search>
+              <form className="flex flex-wrap items-end gap-3" onSubmit={submitSearch}>
+                <Field label="Email or user ID" htmlFor="user-search" className="min-w-64 flex-1">
+                  <Input
+                    id="user-search"
+                    type="search"
+                    value={query}
+                    maxLength={320}
+                    onChange={(event) => setQuery(event.currentTarget.value)}
+                  />
+                </Field>
+                <Button type="submit" variant="secondary">
+                  <Search aria-hidden="true" />
+                  Search
+                </Button>
+              </form>
+            </search>
+            {users === null ? (
+              <p className="m-0 text-sm text-muted-foreground">Loading application users…</p>
+            ) : users.length === 0 ? (
+              <EmptyState icon={<Users aria-hidden="true" />} title="No users match this search." />
+            ) : (
+              <Table aria-label="Application users">
+                <TableHeader>
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead scope="col">User</TableHead>
+                    <TableHead scope="col">Status</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {users.map((user) => (
+                    <TableRow key={user.id}>
+                      <TableCell className="whitespace-normal">
+                        <Button
+                          variant="link"
+                          className="h-auto p-0 font-medium"
+                          onClick={() => onOpen(user.id)}
+                        >
+                          {user.email ?? user.id}
+                        </Button>
+                        <span className="block font-mono text-xs text-muted-foreground">
+                          {user.id}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <LifecycleBadge state={user.status} />
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+            {truncated ? (
+              <Alert variant="warning" role="status">
+                <TriangleAlert aria-hidden="true" />
+                <AlertDescription>Only the first 100 matches are shown.</AlertDescription>
+              </Alert>
+            ) : null}
+          </CardContent>
+        </Card>
+        <Card aria-labelledby="create-user-title">
+          <CardHeader>
+            <CardTitle id="create-user-title">Create or invite</CardTitle>
+            <CardDescription>
+              Trusted metadata is administrator-controlled and may affect document access.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form className="grid gap-4" onSubmit={(event) => void create(event)}>
+              <Field label="Action" htmlFor="create-user-mode">
+                <NativeSelect id="create-user-mode" name="mode" defaultValue="invite">
+                  <option value="invite">Invite by email</option>
+                  <option value="create">Create active user</option>
+                </NativeSelect>
+              </Field>
+              <Field label="Email" htmlFor="create-user-email">
+                <Input id="create-user-email" name="email" type="email" required maxLength={320} />
+              </Field>
+              <JsonField name="trustedMetadata" label="Trusted metadata" />
+              <JsonField name="profileMetadata" label="Profile metadata" />
+              <Button type="submit" className="justify-self-start">
+                <UserPlus aria-hidden="true" />
+                Create application user
+              </Button>
             </form>
-          </search>
-          {users === null ? (
-            <p>Loading application users…</p>
-          ) : users.length === 0 ? (
-            <p>No users match this search.</p>
-          ) : (
-            <div className="resource-list">
-              {users.map((user) => (
-                <button
-                  type="button"
-                  className="resource-row"
-                  key={user.id}
-                  onClick={() => onOpen(user.id)}
-                >
-                  <span>
-                    <strong>{user.email ?? user.id}</strong>
-                    <small>{user.id}</small>
-                  </span>
-                  <LifecycleBadge state={user.status} />
-                </button>
-              ))}
-            </div>
-          )}
-          {truncated ? (
-            <p className="notice warning">Only the first 100 matches are shown.</p>
-          ) : null}
-        </section>
-        <section className="panel" aria-labelledby="create-user-title">
-          <h2 id="create-user-title">Create or invite</h2>
-          <p>Trusted metadata is administrator-controlled and may affect document access.</p>
-          <form onSubmit={(event) => void create(event)}>
-            <label>
-              Action
-              <select name="mode" defaultValue="invite">
-                <option value="invite">Invite by email</option>
-                <option value="create">Create active user</option>
-              </select>
-            </label>
-            <label>
-              Email
-              <input name="email" type="email" required maxLength={320} />
-            </label>
-            <JsonField name="trustedMetadata" label="Trusted metadata" />
-            <JsonField name="profileMetadata" label="Profile metadata" />
-            <button type="submit">Create application user</button>
-          </form>
-        </section>
+          </CardContent>
+        </Card>
       </div>
     </section>
   );
@@ -258,103 +310,118 @@ export function ApplicationUserScreen({
   };
 
   return (
-    <section aria-labelledby="user-title">
-      <button type="button" className="back-link" onClick={onBack}>
-        ← Application users
-      </button>
-      <div className="section-heading">
-        <div>
-          <p className="eyebrow">Application user</p>
-          <h1 id="user-title">{user?.email ?? userId}</h1>
-          <code>{userId}</code>
+    <section aria-labelledby="user-title" className="grid gap-6">
+      <div className="grid gap-3">
+        <BackButton onClick={onBack}>← Application users</BackButton>
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="grid gap-1">
+            <Eyebrow>Application user</Eyebrow>
+            <h1 id="user-title" className="break-all text-2xl">
+              {user?.email ?? userId}
+            </h1>
+            <code className="font-mono text-xs text-muted-foreground">{userId}</code>
+          </div>
+          {user === null ? null : <LifecycleBadge state={user.status} />}
         </div>
-        {user === null ? null : <LifecycleBadge state={user.status} />}
       </div>
       <ApiFailureNotice failure={failure} />
       {user === null ? (
-        <p>Loading application user…</p>
+        <p className="m-0 text-sm text-muted-foreground">Loading application user…</p>
       ) : (
-        <div className="split-grid">
-          <section className="panel" aria-labelledby="metadata-title">
-            <h2 id="metadata-title">User metadata</h2>
-            <p>
-              Trusted metadata affects authorization and is separate from user-editable profile
-              metadata.
-            </p>
-            <form key={user.updatedAt} onSubmit={(event) => void updateMetadata(event)}>
-              <label>
-                Trusted metadata
-                <textarea
-                  name="trustedMetadata"
-                  rows={10}
-                  required
-                  defaultValue={JSON.stringify(user.trustedMetadata, null, 2)}
-                  spellCheck={false}
-                />
-              </label>
-              <label>
-                Profile metadata
-                <textarea
-                  name="profileMetadata"
-                  rows={10}
-                  required
-                  defaultValue={JSON.stringify(user.profileMetadata, null, 2)}
-                  spellCheck={false}
-                />
-              </label>
-              <button type="submit">Save metadata</button>
-            </form>
-          </section>
-          <section className="panel" aria-labelledby="user-lifecycle-title">
-            <h2 id="user-lifecycle-title">Access and lifecycle</h2>
-            <dl className="metadata-list">
-              <div>
-                <dt>Session epoch</dt>
-                <dd>{user.sessionEpoch}</dd>
+        <div className="grid items-start gap-6 xl:grid-cols-2">
+          <Card aria-labelledby="metadata-title">
+            <CardHeader>
+              <CardTitle id="metadata-title">User metadata</CardTitle>
+              <CardDescription>
+                Trusted metadata affects authorization and is separate from user-editable profile
+                metadata.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form
+                key={user.updatedAt}
+                className="grid gap-4"
+                onSubmit={(event) => void updateMetadata(event)}
+              >
+                <Field label="Trusted metadata" htmlFor="user-trusted-metadata">
+                  <Textarea
+                    id="user-trusted-metadata"
+                    name="trustedMetadata"
+                    rows={10}
+                    required
+                    defaultValue={JSON.stringify(user.trustedMetadata, null, 2)}
+                    spellCheck={false}
+                    className="min-h-40 font-mono text-xs leading-relaxed"
+                  />
+                </Field>
+                <Field label="Profile metadata" htmlFor="user-profile-metadata">
+                  <Textarea
+                    id="user-profile-metadata"
+                    name="profileMetadata"
+                    rows={10}
+                    required
+                    defaultValue={JSON.stringify(user.profileMetadata, null, 2)}
+                    spellCheck={false}
+                    className="min-h-40 font-mono text-xs leading-relaxed"
+                  />
+                </Field>
+                <Button type="submit" className="justify-self-start">
+                  Save metadata
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
+          <Card aria-labelledby="user-lifecycle-title">
+            <CardHeader>
+              <CardTitle id="user-lifecycle-title">Access and lifecycle</CardTitle>
+            </CardHeader>
+            <CardContent className="grid gap-5">
+              <dl className="m-0 grid gap-2 text-sm">
+                <div className="grid grid-cols-[8rem_minmax(0,1fr)] gap-3">
+                  <dt className="text-muted-foreground">Session epoch</dt>
+                  <dd className="m-0 font-mono tabular-nums">{user.sessionEpoch}</dd>
+                </div>
+                <div className="grid grid-cols-[8rem_minmax(0,1fr)] gap-3">
+                  <dt className="text-muted-foreground">Created</dt>
+                  <dd className="m-0">{new Date(user.createdAt).toLocaleString()}</dd>
+                </div>
+                <div className="grid grid-cols-[8rem_minmax(0,1fr)] gap-3">
+                  <dt className="text-muted-foreground">Updated</dt>
+                  <dd className="m-0">{new Date(user.updatedAt).toLocaleString()}</dd>
+                </div>
+              </dl>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  disabled={user.status !== "active"}
+                  onClick={() => void lifecycle("disable")}
+                >
+                  Disable user
+                </Button>
+                <Button
+                  variant="outline"
+                  disabled={user.status !== "disabled"}
+                  onClick={() => void lifecycle("restore")}
+                >
+                  Restore user
+                </Button>
+                <Button
+                  variant="outline"
+                  disabled={!user.sessions.some((session) => session.status === "active")}
+                  onClick={() => void lifecycle("revoke-all")}
+                >
+                  Revoke all sessions
+                </Button>
+                <Button
+                  variant="destructive"
+                  disabled={user.status === "deleted"}
+                  onClick={() => void lifecycle("delete")}
+                >
+                  Delete user
+                </Button>
               </div>
-              <div>
-                <dt>Created</dt>
-                <dd>{new Date(user.createdAt).toLocaleString()}</dd>
-              </div>
-              <div>
-                <dt>Updated</dt>
-                <dd>{new Date(user.updatedAt).toLocaleString()}</dd>
-              </div>
-            </dl>
-            <div className="button-row">
-              <button
-                type="button"
-                disabled={user.status !== "active"}
-                onClick={() => void lifecycle("disable")}
-              >
-                Disable user
-              </button>
-              <button
-                type="button"
-                className="secondary"
-                disabled={user.status !== "disabled"}
-                onClick={() => void lifecycle("restore")}
-              >
-                Restore user
-              </button>
-              <button
-                type="button"
-                className="secondary"
-                disabled={!user.sessions.some((session) => session.status === "active")}
-                onClick={() => void lifecycle("revoke-all")}
-              >
-                Revoke all sessions
-              </button>
-              <button
-                type="button"
-                className="danger"
-                disabled={user.status === "deleted"}
-                onClick={() => void lifecycle("delete")}
-              >
-                Delete user
-              </button>
-            </div>
-          </section>
+            </CardContent>
+          </Card>
           <SessionsPanel user={user} onRevoke={(sessionId) => void revokeSession(sessionId)} />
         </div>
       )}
@@ -370,62 +437,100 @@ function SessionsPanel({
   readonly onRevoke: (sessionId: string) => void;
 }) {
   return (
-    <section className="panel full-span" aria-labelledby="sessions-title">
-      <h2 id="sessions-title">Sessions</h2>
-      {user.sessions.length === 0 ? (
-        <p>No retained sessions.</p>
-      ) : (
-        <div className="table-scroll">
-          <table>
-            <thead>
-              <tr>
-                <th scope="col">Session</th>
-                <th scope="col">Status</th>
-                <th scope="col">Created</th>
-                <th scope="col">Expires</th>
-                <th scope="col">Action</th>
-              </tr>
-            </thead>
-            <tbody>
+    <Card className="xl:col-span-2" aria-labelledby="sessions-title">
+      <CardHeader>
+        <CardTitle id="sessions-title">Sessions</CardTitle>
+      </CardHeader>
+      <CardContent className="grid gap-4">
+        {user.sessions.length === 0 ? (
+          <p className="m-0 text-sm text-muted-foreground">No retained sessions.</p>
+        ) : (
+          <Table aria-labelledby="sessions-title">
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead scope="col">Session</TableHead>
+                <TableHead scope="col">Status</TableHead>
+                <TableHead scope="col">Created</TableHead>
+                <TableHead scope="col">Expires</TableHead>
+                <TableHead scope="col">Action</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {user.sessions.map((session) => (
-                <tr key={session.id}>
-                  <td>
-                    <code>{session.id}</code>
-                  </td>
-                  <td>
+                <TableRow key={session.id}>
+                  <TableCell>
+                    <code className="font-mono text-xs">{session.id}</code>
+                  </TableCell>
+                  <TableCell>
                     <LifecycleBadge state={session.status} />
-                  </td>
-                  <td>{new Date(session.createdAt).toLocaleString()}</td>
-                  <td>{new Date(session.expiresAt).toLocaleString()}</td>
-                  <td>
-                    <button
-                      type="button"
-                      className="danger-link"
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {new Date(session.createdAt).toLocaleString()}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {new Date(session.expiresAt).toLocaleString()}
+                  </TableCell>
+                  <TableCell>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-destructive hover:text-destructive"
                       disabled={session.status !== "active"}
                       onClick={() => onRevoke(session.id)}
                     >
                       Revoke
-                    </button>
-                  </td>
-                </tr>
+                    </Button>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-      {user.sessionsTruncated ? (
-        <p className="notice warning">Only the bounded retained session set is shown.</p>
-      ) : null}
-    </section>
+            </TableBody>
+          </Table>
+        )}
+        {user.sessionsTruncated ? (
+          <Alert variant="warning" role="status">
+            <TriangleAlert aria-hidden="true" />
+            <AlertDescription>Only the bounded retained session set is shown.</AlertDescription>
+          </Alert>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+/** The quiet way back up the hierarchy, above the page title. */
+function BackButton({
+  onClick,
+  children,
+}: {
+  readonly onClick: () => void;
+  readonly children: ReactNode;
+}) {
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      className="-ml-2 w-fit text-muted-foreground hover:text-foreground"
+      onClick={onClick}
+    >
+      {children}
+    </Button>
   );
 }
 
 function JsonField({ name, label }: { readonly name: string; readonly label: string }) {
+  const id = `create-user-${name}`;
   return (
-    <label>
-      {label}
-      <textarea name={name} rows={6} required defaultValue={EMPTY_OBJECT} spellCheck={false} />
-    </label>
+    <Field label={label} htmlFor={id}>
+      <Textarea
+        id={id}
+        name={name}
+        rows={6}
+        required
+        defaultValue={EMPTY_OBJECT}
+        spellCheck={false}
+        className="min-h-24 font-mono text-xs leading-relaxed"
+      />
+    </Field>
   );
 }
 

@@ -1,4 +1,30 @@
-import { type FormEvent, useCallback, useEffect, useState } from "react";
+import {
+  Alert,
+  AlertDescription,
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  Checkbox,
+  EmptyState,
+  Eyebrow,
+  Field,
+  Input,
+  Label,
+  NativeSelect,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  cn,
+} from "@mako-cloud/ui";
+import { Webhook } from "lucide-react";
+import { type FormEvent, type ReactNode, useCallback, useEffect, useId, useState } from "react";
 
 import type {
   WebhookDelivery,
@@ -20,6 +46,15 @@ const DELIVERY_STATES: readonly WebhookDeliveryState[] = ["pending", "delivered"
 const DELIVERY_PAGE_SIZE = 50;
 const COLLECTION_ID_PATTERN = "[a-z][a-z0-9_-]{0,62}";
 const COLLECTION_ID = new RegExp(`^${COLLECTION_ID_PATTERN}$`, "u");
+
+/** A code snippet inline in prose or a cell: an identifier, a URL, an error. */
+const CODE = "rounded bg-muted px-1 py-0.5 font-mono text-[0.85em]";
+/** The quieter second line of a cell: an id, a description, a response status. */
+const SUBLINE = "mt-0.5 block text-xs font-normal text-muted-foreground";
+/** A term in the details list. */
+const TERM = "m-0 text-xs font-medium tracking-wide text-muted-foreground uppercase";
+/** Its definition. */
+const DEFINITION = "m-0 mt-0.5 text-sm font-medium break-words tabular-nums";
 
 /** One line of the subscription editor; `key` survives edits so React keeps the inputs. */
 interface SubscriptionRow {
@@ -133,24 +168,20 @@ function EndpointListScreen({
   };
 
   return (
-    <section aria-labelledby="webhooks-title" className="webhooks-screen">
-      <div className="section-heading">
-        <div>
-          <p className="eyebrow">Environment {environmentId}</p>
-          <h1 id="webhooks-title">Webhooks</h1>
-          <p>
-            Signed HTTP deliveries to your own endpoints when documents in project{" "}
-            <code>{projectId}</code> change: durable, retried with backoff, and paused rather than
-            dropped when an endpoint keeps failing.
-          </p>
-        </div>
+    <section aria-labelledby="webhooks-title" className="grid gap-6">
+      <div className="grid gap-1">
+        <Eyebrow>Environment {environmentId}</Eyebrow>
+        <h1 id="webhooks-title" className="text-2xl">
+          Webhooks
+        </h1>
+        <p className="m-0 max-w-3xl text-sm text-muted-foreground">
+          Signed HTTP deliveries to your own endpoints when documents in project{" "}
+          <code className={CODE}>{projectId}</code> change: durable, retried with backoff, and
+          paused rather than dropped when an endpoint keeps failing.
+        </p>
       </div>
       <ApiFailureNotice failure={failure} />
-      {status === null ? null : (
-        <p className="notice success" role="status">
-          {status}
-        </p>
-      )}
+      {status === null ? null : <StatusNotice>{status}</StatusNotice>}
       {oneTime === null ? null : (
         <OneTimeSecretValue
           label={oneTime.label}
@@ -158,82 +189,94 @@ function EndpointListScreen({
           onDismiss={() => setOneTime(null)}
         />
       )}
-      <div className="split-grid">
-        <section className="panel" aria-labelledby="endpoint-list-title">
-          <h2 id="endpoint-list-title">Endpoints</h2>
-          {endpoints === null ? (
-            <p aria-live="polite">Loading endpoints…</p>
-          ) : endpoints.length === 0 ? (
-            <p>No webhook endpoints have been registered in this environment.</p>
-          ) : (
-            <div className="table-scroll">
-              <table className="webhook-table">
-                <thead>
-                  <tr>
-                    <th scope="col">Endpoint</th>
-                    <th scope="col">Subscriptions</th>
-                    <th scope="col">State</th>
-                    <th scope="col" className="numeric">
+      <div className="grid items-start gap-6">
+        <Card aria-labelledby="endpoint-list-title">
+          <CardHeader>
+            <CardTitle id="endpoint-list-title">Endpoints</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {endpoints === null ? (
+              <p className="m-0 text-sm text-muted-foreground" aria-live="polite">
+                Loading endpoints…
+              </p>
+            ) : endpoints.length === 0 ? (
+              <EmptyState
+                icon={<Webhook aria-hidden="true" />}
+                title="No webhook endpoints have been registered in this environment."
+                className="border-0 py-8"
+              />
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead scope="col">Endpoint</TableHead>
+                    <TableHead scope="col">Subscriptions</TableHead>
+                    <TableHead scope="col">State</TableHead>
+                    <TableHead scope="col" className="text-right">
                       Failures
-                    </th>
-                    <th scope="col">Updated</th>
-                    <th scope="col">
-                      <span className="visually-hidden">Actions</span>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
+                    </TableHead>
+                    <TableHead scope="col">Updated</TableHead>
+                    <TableHead scope="col" className="text-right">
+                      <span className="sr-only">Actions</span>
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {endpoints.map((endpoint) => (
-                    <tr key={endpoint.id} data-webhook-id={endpoint.id}>
-                      <th scope="row">
-                        <code className="webhook-url">{endpoint.url}</code>
+                    <TableRow key={endpoint.id} data-webhook-id={endpoint.id}>
+                      <TableHead scope="row" className="max-w-xs align-top whitespace-normal">
+                        <code className={cn(CODE, "break-all")}>{endpoint.url}</code>
                         {endpoint.description === "" ? null : (
-                          <small className="webhook-description">{endpoint.description}</small>
+                          <small className={SUBLINE}>{endpoint.description}</small>
                         )}
-                      </th>
-                      <td>
+                      </TableHead>
+                      <TableCell className="align-top">
                         <SubscriptionSummary subscriptions={endpoint.subscriptions} />
-                      </td>
-                      <td>
+                      </TableCell>
+                      <TableCell className="align-top whitespace-normal">
                         <EndpointState endpoint={endpoint} />
-                      </td>
-                      <td className="numeric">
+                      </TableCell>
+                      <TableCell className="numeric text-right align-top tabular-nums">
                         {endpoint.consecutiveFailures.toLocaleString("en-US")}
-                      </td>
-                      <td>
+                      </TableCell>
+                      <TableCell className="align-top text-muted-foreground">
                         <Timestamp value={endpoint.updatedAt} />
-                      </td>
-                      <td>
-                        <button
-                          type="button"
-                          className="secondary"
+                      </TableCell>
+                      <TableCell className="text-right align-top">
+                        <Button
+                          variant="outline"
+                          size="sm"
                           aria-label={`Open webhook ${endpoint.id}`}
                           onClick={() => onOpen(endpoint.id)}
                         >
                           Open
-                        </button>
-                      </td>
-                    </tr>
+                        </Button>
+                      </TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
-        <section className="panel" aria-labelledby="register-endpoint-title">
-          <h2 id="register-endpoint-title">Register endpoint</h2>
-          <p>
-            The platform generates the signing secret and shows it once, right here, when the
-            endpoint is registered. Deliveries begin with changes committed from then on.
-          </p>
-          <EndpointForm
-            submitLabel="Register endpoint"
-            busyLabel="Registering endpoint…"
-            busy={creating}
-            onSubmit={create}
-            onFailure={setFailure}
-          />
-        </section>
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
+        <Card aria-labelledby="register-endpoint-title" className="w-full max-w-3xl">
+          <CardHeader>
+            <CardTitle id="register-endpoint-title">Register endpoint</CardTitle>
+            <CardDescription>
+              The platform generates the signing secret and shows it once, right here, when the
+              endpoint is registered. Deliveries begin with changes committed from then on.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <EndpointForm
+              submitLabel="Register endpoint"
+              busyLabel="Registering endpoint…"
+              busy={creating}
+              onSubmit={create}
+              onFailure={setFailure}
+            />
+          </CardContent>
+        </Card>
       </div>
     </section>
   );
@@ -251,6 +294,7 @@ function EndpointScreen({
   readonly onBack: () => void;
 }) {
   const client = useManagementClient();
+  const filterId = useId();
   const [endpoint, setEndpoint] = useState<WebhookEndpoint | null>(null);
   const [failure, setFailure] = useState<ConsoleApiFailure | null>(null);
   const [status, setStatus] = useState<string | null>(null);
@@ -476,27 +520,30 @@ function EndpointScreen({
 
   const busy = acting !== null;
   return (
-    <section aria-labelledby="webhook-title" className="webhooks-screen">
-      <button type="button" className="back-link" onClick={onBack}>
-        ← Webhooks
-      </button>
-      <div className="section-heading">
-        <div>
-          <p className="eyebrow">Webhook endpoint</p>
-          <h1 id="webhook-title">{webhookId}</h1>
+    <section aria-labelledby="webhook-title" className="grid gap-6">
+      <div className="grid gap-2">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="-ml-2 w-fit text-muted-foreground hover:text-foreground"
+          onClick={onBack}
+        >
+          ← Webhooks
+        </Button>
+        <div className="grid gap-1">
+          <Eyebrow>Webhook endpoint</Eyebrow>
+          <h1 id="webhook-title" className="font-mono text-2xl">
+            {webhookId}
+          </h1>
           {endpoint === null ? null : (
-            <p>
-              Deliveries are posted to <code className="webhook-url">{endpoint.url}</code>
+            <p className="m-0 text-sm text-muted-foreground">
+              Deliveries are posted to <code className={cn(CODE, "break-all")}>{endpoint.url}</code>
             </p>
           )}
         </div>
       </div>
       <ApiFailureNotice failure={failure} />
-      {status === null ? null : (
-        <p className="notice success" role="status">
-          {status}
-        </p>
-      )}
+      {status === null ? null : <StatusNotice>{status}</StatusNotice>}
       {oneTime === null ? null : (
         <OneTimeSecretValue
           label={oneTime.label}
@@ -505,118 +552,131 @@ function EndpointScreen({
         />
       )}
       {endpoint === null ? (
-        <p aria-live="polite">Loading webhook…</p>
+        <p className="m-0 text-sm text-muted-foreground" aria-live="polite">
+          Loading webhook…
+        </p>
       ) : (
-        <div className="split-grid">
-          <section className="panel" aria-labelledby="webhook-details-title">
-            <h2 id="webhook-details-title">Details</h2>
-            <dl className="definition-grid webhook-details">
-              <div>
-                <dt>State</dt>
-                <dd data-field="state">
-                  <EndpointState endpoint={endpoint} />
-                </dd>
-              </div>
-              <div>
-                <dt>Enabled</dt>
-                <dd data-field="enabled">{endpoint.enabled ? "yes" : "no"}</dd>
-              </div>
-              <div>
-                <dt>Consecutive failures</dt>
-                <dd data-field="consecutiveFailures">
-                  {endpoint.consecutiveFailures.toLocaleString("en-US")}
-                </dd>
-              </div>
-              <div>
-                <dt>Secret version</dt>
-                <dd data-field="secretVersion">{endpoint.secretVersion}</dd>
-              </div>
-              {endpoint.pausedAt === null ? null : (
+        <div className="grid items-start gap-6 lg:grid-cols-2">
+          <Card aria-labelledby="webhook-details-title">
+            <CardHeader>
+              <CardTitle id="webhook-details-title">Details</CardTitle>
+            </CardHeader>
+            <CardContent className="grid gap-5">
+              <dl className="m-0 grid gap-x-6 gap-y-4 sm:grid-cols-2">
                 <div>
-                  <dt>Paused at</dt>
-                  <dd data-field="pausedAt">
-                    <Timestamp value={endpoint.pausedAt} />
+                  <dt className={TERM}>State</dt>
+                  <dd className={DEFINITION} data-field="state">
+                    <EndpointState endpoint={endpoint} />
                   </dd>
                 </div>
-              )}
-              <div>
-                <dt>Created</dt>
-                <dd>
-                  <Timestamp value={endpoint.createdAt} />
-                </dd>
+                <div>
+                  <dt className={TERM}>Enabled</dt>
+                  <dd className={DEFINITION} data-field="enabled">
+                    {endpoint.enabled ? "yes" : "no"}
+                  </dd>
+                </div>
+                <div>
+                  <dt className={TERM}>Consecutive failures</dt>
+                  <dd className={DEFINITION} data-field="consecutiveFailures">
+                    {endpoint.consecutiveFailures.toLocaleString("en-US")}
+                  </dd>
+                </div>
+                <div>
+                  <dt className={TERM}>Secret version</dt>
+                  <dd className={DEFINITION} data-field="secretVersion">
+                    {endpoint.secretVersion}
+                  </dd>
+                </div>
+                {endpoint.pausedAt === null ? null : (
+                  <div>
+                    <dt className={TERM}>Paused at</dt>
+                    <dd className={DEFINITION} data-field="pausedAt">
+                      <Timestamp value={endpoint.pausedAt} />
+                    </dd>
+                  </div>
+                )}
+                <div>
+                  <dt className={TERM}>Created</dt>
+                  <dd className={DEFINITION}>
+                    <Timestamp value={endpoint.createdAt} />
+                  </dd>
+                </div>
+                <div>
+                  <dt className={TERM}>Updated</dt>
+                  <dd className={DEFINITION}>
+                    <Timestamp value={endpoint.updatedAt} />
+                  </dd>
+                </div>
+              </dl>
+              <p className="m-0 text-sm text-muted-foreground">
+                Deliveries carry the signature header named by the secret version. The secret itself
+                cannot be read back; rotating it shows the new one once.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {endpoint.state === "paused" ? (
+                  <Button disabled={busy} onClick={() => void resume()}>
+                    {acting === "resume" ? "Resuming…" : "Resume"}
+                  </Button>
+                ) : null}
+                <Button
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() => void setEnabled(!endpoint.enabled)}
+                >
+                  {acting === "enable"
+                    ? endpoint.enabled
+                      ? "Disabling…"
+                      : "Enabling…"
+                    : endpoint.enabled
+                      ? "Disable"
+                      : "Enable"}
+                </Button>
+                <Button variant="outline" disabled={busy} onClick={() => void rotate()}>
+                  {acting === "rotate" ? "Rotating secret…" : "Rotate secret"}
+                </Button>
+                <Button
+                  variant="outline"
+                  className="border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                  disabled={busy}
+                  onClick={() => void remove()}
+                >
+                  {acting === "delete" ? "Deleting…" : "Delete"}
+                </Button>
               </div>
-              <div>
-                <dt>Updated</dt>
-                <dd>
-                  <Timestamp value={endpoint.updatedAt} />
-                </dd>
-              </div>
-            </dl>
-            <p>
-              Deliveries carry the signature header named by the secret version. The secret itself
-              cannot be read back; rotating it shows the new one once.
-            </p>
-            <div className="button-row">
-              {endpoint.state === "paused" ? (
-                <button type="button" disabled={busy} onClick={() => void resume()}>
-                  {acting === "resume" ? "Resuming…" : "Resume"}
-                </button>
-              ) : null}
-              <button
-                type="button"
-                className="secondary"
-                disabled={busy}
-                onClick={() => void setEnabled(!endpoint.enabled)}
-              >
-                {acting === "enable"
-                  ? endpoint.enabled
-                    ? "Disabling…"
-                    : "Enabling…"
-                  : endpoint.enabled
-                    ? "Disable"
-                    : "Enable"}
-              </button>
-              <button
-                type="button"
-                className="secondary"
-                disabled={busy}
-                onClick={() => void rotate()}
-              >
-                {acting === "rotate" ? "Rotating secret…" : "Rotate secret"}
-              </button>
-              <button
-                type="button"
-                className="danger"
-                disabled={busy}
-                onClick={() => void remove()}
-              >
-                {acting === "delete" ? "Deleting…" : "Delete"}
-              </button>
-            </div>
-          </section>
-          <section className="panel" aria-labelledby="webhook-settings-title">
-            <h2 id="webhook-settings-title">Settings</h2>
-            <p>Changes apply to deliveries queued from now on; the signing secret is kept.</p>
-            <EndpointForm
-              key={`settings-${endpoint.updatedAt}`}
-              endpoint={endpoint}
-              submitLabel="Save"
-              busyLabel="Saving…"
-              busy={saving}
-              onSubmit={save}
-              onFailure={setFailure}
-            />
-          </section>
-          <section className="panel full-span" aria-labelledby="webhook-deliveries-title">
-            <div className="button-row spread">
-              <h2 id="webhook-deliveries-title">Deliveries</h2>
-              <small>Newest first. The log is retained for a bounded period.</small>
-            </div>
-            <div className="delivery-filter">
-              <label>
-                State
-                <select
+            </CardContent>
+          </Card>
+          <Card aria-labelledby="webhook-settings-title">
+            <CardHeader>
+              <CardTitle id="webhook-settings-title">Settings</CardTitle>
+              <CardDescription>
+                Changes apply to deliveries queued from now on; the signing secret is kept.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <EndpointForm
+                key={`settings-${endpoint.updatedAt}`}
+                endpoint={endpoint}
+                submitLabel="Save"
+                busyLabel="Saving…"
+                busy={saving}
+                onSubmit={save}
+                onFailure={setFailure}
+              />
+            </CardContent>
+          </Card>
+          <Card aria-labelledby="webhook-deliveries-title" className="lg:col-span-2">
+            <CardHeader>
+              <CardTitle id="webhook-deliveries-title">Deliveries</CardTitle>
+              <CardDescription>
+                Newest first. The log is retained for a bounded period.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-4">
+              <Field label="State" htmlFor={filterId} className="w-56">
+                <NativeSelect
+                  id={filterId}
                   name="state"
+                  size="sm"
                   value={stateFilter}
                   onChange={(event) =>
                     setStateFilter(event.currentTarget.value as WebhookDeliveryState | "")
@@ -628,43 +688,45 @@ function EndpointScreen({
                       {state}
                     </option>
                   ))}
-                </select>
-              </label>
-            </div>
-            {loadingDeliveries && page === null ? (
-              <p aria-live="polite">Loading deliveries…</p>
-            ) : page === null || page.items.length === 0 ? (
-              <p className="delivery-empty">
-                {stateFilter === ""
-                  ? "No deliveries have been logged for this endpoint."
-                  : `No ${stateFilter} deliveries are logged.`}
-              </p>
-            ) : (
-              <DeliveryTable
-                deliveries={page.items}
-                redelivering={redelivering}
-                canRedeliver={endpoint.state === "active"}
-                onRedeliver={(delivery) => void redeliver(delivery)}
-              />
-            )}
-            <div className="button-row spread">
-              <small>
-                {page === null || page.nextCursor === null
-                  ? "Every retained delivery is listed."
-                  : "Older deliveries are retained."}
-              </small>
-              <button
-                type="button"
-                className="secondary"
-                disabled={
-                  page === null || page.nextCursor === null || loadingDeliveries || loadingMore
-                }
-                onClick={() => void loadMore()}
-              >
-                {loadingMore ? "Loading…" : "Load more"}
-              </button>
-            </div>
-          </section>
+                </NativeSelect>
+              </Field>
+              {loadingDeliveries && page === null ? (
+                <p className="m-0 text-sm text-muted-foreground" aria-live="polite">
+                  Loading deliveries…
+                </p>
+              ) : page === null || page.items.length === 0 ? (
+                <p className="m-0 text-sm text-muted-foreground">
+                  {stateFilter === ""
+                    ? "No deliveries have been logged for this endpoint."
+                    : `No ${stateFilter} deliveries are logged.`}
+                </p>
+              ) : (
+                <DeliveryTable
+                  deliveries={page.items}
+                  redelivering={redelivering}
+                  canRedeliver={endpoint.state === "active"}
+                  onRedeliver={(delivery) => void redeliver(delivery)}
+                />
+              )}
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <small className="text-xs text-muted-foreground">
+                  {page === null || page.nextCursor === null
+                    ? "Every retained delivery is listed."
+                    : "Older deliveries are retained."}
+                </small>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={
+                    page === null || page.nextCursor === null || loadingDeliveries || loadingMore
+                  }
+                  onClick={() => void loadMore()}
+                >
+                  {loadingMore ? "Loading…" : "Load more"}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
         </div>
       )}
     </section>
@@ -683,86 +745,93 @@ function DeliveryTable({
   readonly onRedeliver: (delivery: WebhookDelivery) => void;
 }) {
   return (
-    <div className="table-scroll">
-      <table className="delivery-table">
-        <thead>
-          <tr>
-            <th scope="col">Time</th>
-            <th scope="col">Event</th>
-            <th scope="col">Collection</th>
-            <th scope="col">Document</th>
-            <th scope="col" className="numeric">
-              Attempts
-            </th>
-            <th scope="col">Status</th>
-            <th scope="col">Error</th>
-            <th scope="col">
-              <span className="visually-hidden">Actions</span>
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {deliveries.map((delivery) => (
-            <tr key={delivery.id} data-delivery-id={delivery.id} data-state={delivery.state}>
-              <th scope="row">
-                <Timestamp value={delivery.createdAt} />
-                <small className="delivery-id">{delivery.id}</small>
-              </th>
-              <td>
-                {delivery.event}
-                {delivery.redeliveryOf === null ? null : (
-                  <small className="delivery-id">redelivery of {delivery.redeliveryOf}</small>
-                )}
-              </td>
-              <td>
-                <code>{delivery.collectionId}</code>
-              </td>
-              <td>
-                <code className="delivery-document">{delivery.documentId}</code>
-                <small className="delivery-id">revision {delivery.revision}</small>
-              </td>
-              <td className="numeric">{delivery.attempts.toLocaleString("en-US")}</td>
-              <td>
-                <span className={`delivery-state ${delivery.state}`}>{delivery.state}</span>
-                {delivery.lastResponseStatus === null ? null : (
-                  <small className="delivery-id">HTTP {delivery.lastResponseStatus}</small>
-                )}
-                {delivery.state === "pending" && delivery.nextAttemptAt !== null ? (
-                  <small className="delivery-id">
-                    next attempt <Timestamp value={delivery.nextAttemptAt} />
-                  </small>
-                ) : null}
-              </td>
-              <td>
-                {delivery.lastError === null ? (
-                  <em>none</em>
-                ) : (
-                  <code className="delivery-error">{delivery.lastError}</code>
-                )}
-              </td>
-              <td>
-                {delivery.state === "failed" ? (
-                  <button
-                    type="button"
-                    className="secondary"
-                    aria-label={`Redeliver ${delivery.id}`}
-                    disabled={redelivering !== null || !canRedeliver}
-                    title={
-                      canRedeliver
-                        ? undefined
-                        : "Redelivery is refused while the endpoint is paused or disabled."
-                    }
-                    onClick={() => onRedeliver(delivery)}
-                  >
-                    {redelivering === delivery.id ? "Queuing…" : "Redeliver"}
-                  </button>
-                ) : null}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <Table>
+      <TableHeader>
+        <TableRow className="hover:bg-transparent">
+          <TableHead scope="col">Time</TableHead>
+          <TableHead scope="col">Event</TableHead>
+          <TableHead scope="col">Collection</TableHead>
+          <TableHead scope="col">Document</TableHead>
+          <TableHead scope="col" className="text-right">
+            Attempts
+          </TableHead>
+          <TableHead scope="col">Status</TableHead>
+          <TableHead scope="col">Error</TableHead>
+          <TableHead scope="col" className="text-right">
+            <span className="sr-only">Actions</span>
+          </TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {deliveries.map((delivery) => (
+          <TableRow key={delivery.id} data-delivery-id={delivery.id} data-state={delivery.state}>
+            <TableHead scope="row" className="align-top">
+              <Timestamp value={delivery.createdAt} />
+              <small className={cn(SUBLINE, "font-mono")}>{delivery.id}</small>
+            </TableHead>
+            <TableCell className="align-top">
+              {delivery.event}
+              {delivery.redeliveryOf === null ? null : (
+                <small className={SUBLINE}>redelivery of {delivery.redeliveryOf}</small>
+              )}
+            </TableCell>
+            <TableCell className="align-top">
+              <code className={CODE}>{delivery.collectionId}</code>
+            </TableCell>
+            <TableCell className="align-top whitespace-normal">
+              <code className={cn(CODE, "break-all")}>{delivery.documentId}</code>
+              <small className={cn(SUBLINE, "font-mono")}>revision {delivery.revision}</small>
+            </TableCell>
+            <TableCell className="numeric text-right align-top tabular-nums">
+              {delivery.attempts.toLocaleString("en-US")}
+            </TableCell>
+            <TableCell className="align-top">
+              <Badge
+                className="delivery-state capitalize"
+                variant={deliveryVariant(delivery.state)}
+              >
+                {delivery.state}
+              </Badge>
+              {delivery.lastResponseStatus === null ? null : (
+                <small className={cn(SUBLINE, "tabular-nums")}>
+                  HTTP {delivery.lastResponseStatus}
+                </small>
+              )}
+              {delivery.state === "pending" && delivery.nextAttemptAt !== null ? (
+                <small className={SUBLINE}>
+                  next attempt <Timestamp value={delivery.nextAttemptAt} />
+                </small>
+              ) : null}
+            </TableCell>
+            <TableCell className="align-top whitespace-normal">
+              {delivery.lastError === null ? (
+                <em className="text-muted-foreground">none</em>
+              ) : (
+                <code className={cn(CODE, "break-all")}>{delivery.lastError}</code>
+              )}
+            </TableCell>
+            <TableCell className="text-right align-top">
+              {delivery.state === "failed" ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  aria-label={`Redeliver ${delivery.id}`}
+                  disabled={redelivering !== null || !canRedeliver}
+                  title={
+                    canRedeliver
+                      ? undefined
+                      : "Redelivery is refused while the endpoint is paused or disabled."
+                  }
+                  onClick={() => onRedeliver(delivery)}
+                >
+                  {redelivering === delivery.id ? "Queuing…" : "Redeliver"}
+                </Button>
+              ) : null}
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
   );
 }
 
@@ -787,6 +856,7 @@ function EndpointForm({
   readonly onSubmit: (input: EndpointInput) => Promise<boolean>;
   readonly onFailure: (failure: ConsoleApiFailure) => void;
 }) {
+  const id = useId();
   const [rows, setRows] = useState<SubscriptionRow[]>(() =>
     endpoint === undefined ? [emptyRow(0)] : endpoint.subscriptions.map(rowFrom),
   );
@@ -821,91 +891,105 @@ function EndpointForm({
     });
 
   return (
-    <form onSubmit={(event) => void submit(event)}>
-      <label>
-        Endpoint URL
-        <input
+    <form className="grid gap-4" onSubmit={(event) => void submit(event)}>
+      <Field label="Endpoint URL" htmlFor={`${id}-url`}>
+        <Input
+          id={`${id}-url`}
           name="url"
           type="url"
           required
           placeholder="https://example.test/hooks/mako"
           spellCheck={false}
           defaultValue={endpoint?.url ?? ""}
+          className="font-mono"
         />
-      </label>
-      <small className="field-hint">
-        An absolute <code>https</code> URL; <code>http</code> is admitted only to loopback outside
-        production.
-      </small>
-      <label>
-        Description
-        <input
+        <p className="m-0 text-sm text-muted-foreground">
+          An absolute <code className={CODE}>https</code> URL; <code className={CODE}>http</code> is
+          admitted only to loopback outside production.
+        </p>
+      </Field>
+      <Field label="Description" htmlFor={`${id}-description`}>
+        <Input
+          id={`${id}-description`}
           name="description"
           maxLength={256}
           placeholder="orders to the warehouse"
           defaultValue={endpoint?.description ?? ""}
         />
-      </label>
-      <fieldset className="subscription-editor">
-        <legend>Subscriptions</legend>
+      </Field>
+      <fieldset className="m-0 grid min-w-0 gap-3 rounded-lg border p-3">
+        <legend className="px-1 text-sm font-medium">Subscriptions</legend>
         {rows.map((row, index) => (
-          <div className="subscription-row" key={row.key}>
-            <input
+          <div
+            className="grid items-center gap-x-3 gap-y-2 sm:grid-cols-[minmax(8rem,1fr)_repeat(3,auto)_auto]"
+            key={row.key}
+          >
+            <Input
               type="text"
               aria-label={`Subscription ${index + 1} collection`}
               placeholder="collection id"
               pattern={COLLECTION_ID_PATTERN}
               spellCheck={false}
+              className="font-mono"
               value={row.collectionId}
               onChange={(event) => update(row.key, { collectionId: event.currentTarget.value })}
             />
             {EVENTS.map((event) => (
-              <label className="checkbox-label" key={event}>
-                <input
-                  type="checkbox"
+              <div className="flex items-center gap-2 whitespace-nowrap" key={event}>
+                <Checkbox
+                  id={`${id}-${row.key}-${event}`}
                   aria-label={`Subscription ${index + 1} ${event}`}
                   checked={row.events.includes(event)}
-                  onChange={(change) => toggle(row, event, change.currentTarget.checked)}
+                  onCheckedChange={(checked) => toggle(row, event, checked === true)}
                 />
-                {event}
-              </label>
+                <Label htmlFor={`${id}-${row.key}-${event}`} className="font-normal">
+                  {event}
+                </Label>
+              </div>
             ))}
-            <button
-              type="button"
-              className="secondary"
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground hover:text-foreground"
               aria-label={`Remove subscription ${index + 1}`}
               disabled={rows.length === 1}
               onClick={() => setRows((current) => current.filter((item) => item.key !== row.key))}
             >
               Remove
-            </button>
+            </Button>
           </div>
         ))}
-        <button
-          type="button"
-          className="secondary"
-          onClick={() =>
-            setRows((current) => [
-              ...current,
-              emptyRow(1 + Math.max(...current.map((row) => row.key))),
-            ])
-          }
-        >
-          Add collection
-        </button>
+        <div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              setRows((current) => [
+                ...current,
+                emptyRow(1 + Math.max(...current.map((row) => row.key))),
+              ])
+            }
+          >
+            Add collection
+          </Button>
+        </div>
       </fieldset>
-      <small className="field-hint">
+      <p className="-mt-2 text-sm text-muted-foreground">
         Each collection is delivered for the events ticked; a collection appears once.
-      </small>
+      </p>
       {endpoint === undefined ? (
-        <label className="checkbox-label">
-          <input name="enabled" type="checkbox" defaultChecked />
-          Enabled — deliver as soon as the endpoint is registered
-        </label>
+        <div className="flex items-center gap-2">
+          <Checkbox id={`${id}-enabled`} name="enabled" defaultChecked />
+          <Label htmlFor={`${id}-enabled`} className="font-normal">
+            Enabled — deliver as soon as the endpoint is registered
+          </Label>
+        </div>
       ) : null}
-      <button type="submit" disabled={busy}>
-        {busy ? busyLabel : submitLabel}
-      </button>
+      <div>
+        <Button type="submit" disabled={busy}>
+          {busy ? busyLabel : submitLabel}
+        </Button>
+      </div>
     </form>
   );
 }
@@ -916,13 +1000,14 @@ function SubscriptionSummary({
   readonly subscriptions: readonly WebhookSubscription[];
 }) {
   if (subscriptions.length === 0) {
-    return <em>none</em>;
+    return <em className="text-muted-foreground">none</em>;
   }
   return (
-    <ul className="subscription-summary">
+    <ul className="m-0 grid list-none gap-1 p-0">
       {subscriptions.map((subscription) => (
-        <li key={subscription.collectionId}>
-          <code>{subscription.collectionId}</code> {subscription.events.join(", ")}
+        <li key={subscription.collectionId} className="whitespace-nowrap">
+          <code className={CODE}>{subscription.collectionId}</code>{" "}
+          <span className="text-muted-foreground">{subscription.events.join(", ")}</span>
         </li>
       ))}
     </ul>
@@ -933,16 +1018,57 @@ function SubscriptionSummary({
 function EndpointState({ endpoint }: { readonly endpoint: WebhookEndpoint }) {
   return (
     <>
-      <span className={`webhook-state ${endpoint.state}`}>{endpoint.state}</span>
+      <Badge className="webhook-state capitalize" variant={endpointVariant(endpoint.state)}>
+        {endpoint.state}
+      </Badge>
       {endpoint.state === "paused" && endpoint.pausedReason !== null ? (
-        <small className="paused-reason">{endpoint.pausedReason}</small>
+        <small className="paused-reason mt-1 block text-xs font-normal text-destructive">
+          {endpoint.pausedReason}
+        </small>
       ) : null}
     </>
   );
 }
 
+function endpointVariant(
+  state: WebhookEndpoint["state"],
+): "positive" | "destructive" | "secondary" {
+  switch (state) {
+    case "active":
+      return "positive";
+    case "paused":
+      return "destructive";
+    case "disabled":
+      return "secondary";
+  }
+}
+
+function deliveryVariant(state: WebhookDeliveryState): "positive" | "destructive" | "warning" {
+  switch (state) {
+    case "delivered":
+      return "positive";
+    case "failed":
+      return "destructive";
+    case "pending":
+      return "warning";
+  }
+}
+
+/** What the last action did, in the page's own words. */
+function StatusNotice({ children }: { readonly children: ReactNode }) {
+  return (
+    <Alert variant="positive" role="status">
+      <AlertDescription className="block text-foreground">{children}</AlertDescription>
+    </Alert>
+  );
+}
+
 function Timestamp({ value }: { readonly value: string }) {
-  return <time dateTime={value}>{new Date(value).toLocaleString()}</time>;
+  return (
+    <time dateTime={value} className="whitespace-nowrap tabular-nums">
+      {new Date(value).toLocaleString()}
+    </time>
+  );
 }
 
 function deliveryQuery(

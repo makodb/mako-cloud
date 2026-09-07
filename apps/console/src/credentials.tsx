@@ -1,5 +1,3 @@
-import { type FormEvent, useCallback, useEffect, useState } from "react";
-
 import type {
   AutomationPermission,
   AutomationScope,
@@ -9,11 +7,36 @@ import type {
   ProjectCredential,
   ServiceCredentialScope,
 } from "@mako-cloud/management-sdk";
+import {
+  Alert,
+  AlertDescription,
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  Checkbox,
+  Eyebrow,
+  Field,
+  Input,
+  Label,
+  NativeSelect,
+  Separator,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@mako-cloud/ui";
+import { CircleCheck, Copy, Eye, EyeOff, KeyRound, ShieldAlert } from "lucide-react";
+import { type FormEvent, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 
 import { ApiFailureNotice, type ConsoleApiFailure, toConsoleApiFailure } from "./api-error.js";
 import { useManagementClient } from "./management.js";
 import { LifecycleBadge } from "./projects.js";
-import { confirmDestructiveAction, OneTimeSecretValue } from "./safety.js";
+import { confirmDestructiveAction } from "./safety.js";
 
 const AUTOMATION_PERMISSIONS: readonly AutomationPermission[] = [
   "organization_read",
@@ -32,6 +55,13 @@ const DOCUMENT_OPERATIONS: readonly ServiceCredentialScope["operations"][number]
   "update",
   "delete",
 ];
+
+/** A revealed secret leaves the screen on its own after this long. */
+const AUTO_DISMISS_MILLISECONDS = 5 * 60 * 1_000;
+
+/** A record's JSON, shown as the developer would paste it. */
+const JSON_PREVIEW =
+  "m-0 overflow-x-auto rounded-md border bg-muted/40 p-3 font-mono text-xs leading-relaxed";
 
 interface OneTimeSecret {
   readonly label: string;
@@ -330,19 +360,26 @@ export function CredentialsScreen({
   };
 
   return (
-    <section aria-labelledby="credentials-title">
-      <button type="button" className="back-link" onClick={onBack}>
-        ← Project
-      </button>
-      <div className="section-heading">
-        <div>
-          <p className="eyebrow">Environment {environmentId}</p>
-          <h1 id="credentials-title">Credentials and secrets</h1>
+    <section aria-labelledby="credentials-title" className="grid gap-6">
+      <div className="grid gap-3">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="-ml-2 w-fit text-muted-foreground hover:text-foreground"
+          onClick={onBack}
+        >
+          ← Project
+        </Button>
+        <div className="grid gap-1">
+          <Eyebrow>Environment {environmentId}</Eyebrow>
+          <h1 id="credentials-title" className="text-2xl">
+            Credentials and secrets
+          </h1>
         </div>
       </div>
       <ApiFailureNotice failure={failure} />
       <OneTimeValue secret={oneTime} onDismiss={() => setOneTime(null)} />
-      <div className="split-grid">
+      <div className="grid items-start gap-6 xl:grid-cols-2">
         <ProjectCredentialsPanel
           credential={credential}
           onCreate={createCredential}
@@ -390,86 +427,109 @@ function ProjectCredentialsPanel({
   readonly onRetire: () => void;
 }) {
   return (
-    <section className="panel" aria-labelledby="project-credentials-title">
-      <h2 id="project-credentials-title">Project credentials</h2>
-      <form onSubmit={onCreate}>
-        <label>
-          Credential kind
-          <select name="kind" defaultValue="public">
-            <option value="public">Public project key</option>
-            <option value="service">Service credential</option>
-          </select>
-        </label>
-        <label>
-          Credential ID
-          <input name="id" required maxLength={128} />
-        </label>
-        <label>
-          Service collections (comma-separated)
-          <input name="collections" defaultValue="*" />
-        </label>
-        <fieldset>
-          <legend>Service operations</legend>
-          <div className="checkbox-grid">
+    <Card aria-labelledby="project-credentials-title">
+      <CardHeader>
+        <CardTitle id="project-credentials-title">Project credentials</CardTitle>
+      </CardHeader>
+      <CardContent className="grid gap-5">
+        <form className="grid gap-4" onSubmit={onCreate}>
+          <Field label="Credential kind" htmlFor="credential-kind">
+            <NativeSelect id="credential-kind" name="kind" defaultValue="public">
+              <option value="public">Public project key</option>
+              <option value="service">Service credential</option>
+            </NativeSelect>
+          </Field>
+          <Field label="Credential ID" htmlFor="credential-id">
+            <Input id="credential-id" name="id" required maxLength={128} className="font-mono" />
+          </Field>
+          <Field label="Service collections (comma-separated)" htmlFor="credential-collections">
+            <Input
+              id="credential-collections"
+              name="collections"
+              defaultValue="*"
+              className="font-mono"
+            />
+          </Field>
+          <CheckboxGroup legend="Service operations">
             {DOCUMENT_OPERATIONS.map((operation) => (
-              <label key={operation}>
-                <input type="checkbox" name="operation" value={operation} defaultChecked />
+              <CheckboxOption
+                key={operation}
+                id={`credential-operation-${operation}`}
+                name="operation"
+                value={operation}
+                defaultChecked
+              >
                 {operation}
-              </label>
+              </CheckboxOption>
             ))}
-          </div>
-        </fieldset>
-        <button type="submit">Create credential</button>
-      </form>
-      <hr />
-      <form className="inline-form" onSubmit={onInspect}>
-        <label>
-          Credential ID
-          <input name="credentialId" required maxLength={128} />
-        </label>
-        <button type="submit" className="secondary">
-          Inspect
-        </button>
-      </form>
-      {credential === null ? null : (
-        <article className="workflow-card">
-          <div className="button-row spread">
-            <strong>{credential.id}</strong>
-            <LifecycleBadge state={credential.state} />
-          </div>
-          <p>{credential.kind} credential</p>
-          {credential.serviceScope === undefined ? null : (
-            <pre className="json-preview">{JSON.stringify(credential.serviceScope, null, 2)}</pre>
-          )}
-          <form onSubmit={onRotate}>
-            <label>
-              Replacement ID
-              <input name="replacementId" required maxLength={128} />
-            </label>
-            <label>
-              Overlap seconds
-              <input
-                name="overlapSeconds"
-                type="number"
-                min="0"
-                max="2592000"
-                defaultValue="300"
-                required
-              />
-            </label>
-            <button type="submit">Rotate credential</button>
-          </form>
-          <button
-            type="button"
-            className="danger-link"
-            disabled={credential.state === "retired"}
-            onClick={onRetire}
-          >
-            Retire credential
-          </button>
-        </article>
-      )}
-    </section>
+          </CheckboxGroup>
+          <Button type="submit" className="justify-self-start">
+            Create credential
+          </Button>
+        </form>
+        <Separator />
+        <form className="flex flex-wrap items-end gap-3" onSubmit={onInspect}>
+          <Field label="Credential ID" htmlFor="inspect-credential-id" className="min-w-48 flex-1">
+            <Input
+              id="inspect-credential-id"
+              name="credentialId"
+              required
+              maxLength={128}
+              className="font-mono"
+            />
+          </Field>
+          <Button type="submit" variant="secondary">
+            Inspect
+          </Button>
+        </form>
+        {credential === null ? null : (
+          <RecordCard>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <strong className="font-mono text-sm">{credential.id}</strong>
+              <LifecycleBadge state={credential.state} />
+            </div>
+            <p className="m-0 text-sm text-muted-foreground">{credential.kind} credential</p>
+            {credential.serviceScope === undefined ? null : (
+              <pre className={JSON_PREVIEW}>{JSON.stringify(credential.serviceScope, null, 2)}</pre>
+            )}
+            <form className="grid gap-4" onSubmit={onRotate}>
+              <Field label="Replacement ID" htmlFor="credential-replacement-id">
+                <Input
+                  id="credential-replacement-id"
+                  name="replacementId"
+                  required
+                  maxLength={128}
+                  className="font-mono"
+                />
+              </Field>
+              <Field label="Overlap seconds" htmlFor="credential-overlap-seconds">
+                <Input
+                  id="credential-overlap-seconds"
+                  name="overlapSeconds"
+                  type="number"
+                  min="0"
+                  max="2592000"
+                  defaultValue="300"
+                  required
+                />
+              </Field>
+              <Button type="submit" variant="secondary" className="justify-self-start">
+                Rotate credential
+              </Button>
+            </form>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-fit text-destructive hover:text-destructive"
+              disabled={credential.state === "retired"}
+              onClick={onRetire}
+            >
+              Retire credential
+            </Button>
+          </RecordCard>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -485,57 +545,76 @@ function SigningKeysPanel({
   readonly onRotate: (event: FormEvent<HTMLFormElement>) => void;
 }) {
   return (
-    <section className="panel" aria-labelledby="signing-keys-title">
-      <h2 id="signing-keys-title">JWT signing keys</h2>
-      <p>Private signing material is never returned.</p>
-      {keys === null ? (
-        <p>Loading signing keys…</p>
-      ) : keys.length === 0 ? (
-        <div className="notice key-initialize" role="status">
-          <p>
-            No signing key exists for this environment yet. Application-user sessions cannot be
-            issued until one is initialized.
-          </p>
-          <button type="button" onClick={onInitialize}>
-            Initialize signing key
-          </button>
-        </div>
-      ) : (
-        <ul className="resource-list">
-          {keys.map((key) => (
-            <li className="resource-row" key={key.keyId}>
-              <span>
-                <strong>{key.keyId}</strong>
-                <small>{new Date(key.createdAt).toLocaleString()}</small>
-              </span>
-              <LifecycleBadge state={key.state} />
-            </li>
-          ))}
-        </ul>
-      )}
-      {initialized === null ? null : (
-        <p className="notice success" role="status">
-          Signing key <code>{initialized.keyId}</code> initialized ({initialized.state}) at{" "}
-          {new Date(initialized.createdAt).toLocaleString()}.
-        </p>
-      )}
-      {keys === null || keys.length === 0 ? null : (
-        <form onSubmit={onRotate}>
-          <label>
-            Verification overlap seconds
-            <input
-              name="overlapSeconds"
-              type="number"
-              min="1"
-              max="2592000"
-              defaultValue="3600"
-              required
-            />
-          </label>
-          <button type="submit">Rotate signing key</button>
-        </form>
-      )}
-    </section>
+    <Card aria-labelledby="signing-keys-title">
+      <CardHeader>
+        <CardTitle id="signing-keys-title">JWT signing keys</CardTitle>
+        <CardDescription>Private signing material is never returned.</CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-5">
+        {keys === null ? (
+          <p className="m-0 text-sm text-muted-foreground">Loading signing keys…</p>
+        ) : keys.length === 0 ? (
+          <Alert role="status">
+            <KeyRound aria-hidden="true" />
+            <AlertDescription>
+              <p className="m-0">
+                No signing key exists for this environment yet. Application-user sessions cannot be
+                issued until one is initialized.
+              </p>
+              <Button size="sm" className="mt-1" onClick={onInitialize}>
+                Initialize signing key
+              </Button>
+            </AlertDescription>
+          </Alert>
+        ) : (
+          <ul className="m-0 grid list-none gap-2 p-0">
+            {keys.map((key) => (
+              <li
+                className="resource-row flex items-center justify-between gap-4 rounded-lg border p-3 text-left"
+                key={key.keyId}
+              >
+                <span className="grid gap-0.5">
+                  <strong className="font-mono text-sm">{key.keyId}</strong>
+                  <small className="text-xs text-muted-foreground">
+                    {new Date(key.createdAt).toLocaleString()}
+                  </small>
+                </span>
+                <LifecycleBadge state={key.state} />
+              </li>
+            ))}
+          </ul>
+        )}
+        {initialized === null ? null : (
+          <Alert variant="positive" role="status">
+            <CircleCheck aria-hidden="true" />
+            <AlertDescription>
+              <p className="m-0">
+                Signing key <code className="font-mono">{initialized.keyId}</code> initialized (
+                {initialized.state}) at {new Date(initialized.createdAt).toLocaleString()}.
+              </p>
+            </AlertDescription>
+          </Alert>
+        )}
+        {keys === null || keys.length === 0 ? null : (
+          <form className="grid gap-4" onSubmit={onRotate}>
+            <Field label="Verification overlap seconds" htmlFor="signing-key-overlap-seconds">
+              <Input
+                id="signing-key-overlap-seconds"
+                name="overlapSeconds"
+                type="number"
+                min="1"
+                max="2592000"
+                defaultValue="3600"
+                required
+              />
+            </Field>
+            <Button type="submit" variant="secondary" className="justify-self-start">
+              Rotate signing key
+            </Button>
+          </form>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -553,48 +632,66 @@ function FunctionSecretsPanel({
   readonly onRetire: () => void;
 }) {
   return (
-    <section className="panel" aria-labelledby="function-secrets-title">
-      <h2 id="function-secrets-title">Function secrets</h2>
-      <form className="inline-form" onSubmit={onCreate}>
-        <label>
-          Secret name
-          <input name="name" required pattern="[A-Za-z_][A-Za-z0-9_]{0,127}" />
-        </label>
-        <button type="submit">Create</button>
-      </form>
-      <form className="inline-form" onSubmit={onInspect}>
-        <label>
-          Inspect by name
-          <input name="name" required pattern="[A-Za-z_][A-Za-z0-9_]{0,127}" />
-        </label>
-        <button type="submit" className="secondary">
-          Inspect
-        </button>
-      </form>
-      {secret === null ? null : (
-        <article className="workflow-card">
-          <div className="button-row spread">
-            <strong>
-              {secret.name} v{secret.version}
-            </strong>
-            <LifecycleBadge state={secret.state} />
-          </div>
-          <div className="button-row">
-            <button type="button" disabled={secret.state !== "active"} onClick={onRotate}>
-              Rotate
-            </button>
-            <button
-              type="button"
-              className="danger-link"
-              disabled={secret.state !== "active"}
-              onClick={onRetire}
-            >
-              Retire
-            </button>
-          </div>
-        </article>
-      )}
-    </section>
+    <Card aria-labelledby="function-secrets-title">
+      <CardHeader>
+        <CardTitle id="function-secrets-title">Function secrets</CardTitle>
+      </CardHeader>
+      <CardContent className="grid gap-5">
+        <form className="flex flex-wrap items-end gap-3" onSubmit={onCreate}>
+          <Field label="Secret name" htmlFor="function-secret-name" className="min-w-48 flex-1">
+            <Input
+              id="function-secret-name"
+              name="name"
+              required
+              pattern="[A-Za-z_][A-Za-z0-9_]{0,127}"
+              className="font-mono"
+            />
+          </Field>
+          <Button type="submit">Create</Button>
+        </form>
+        <form className="flex flex-wrap items-end gap-3" onSubmit={onInspect}>
+          <Field
+            label="Inspect by name"
+            htmlFor="function-secret-inspect-name"
+            className="min-w-48 flex-1"
+          >
+            <Input
+              id="function-secret-inspect-name"
+              name="name"
+              required
+              pattern="[A-Za-z_][A-Za-z0-9_]{0,127}"
+              className="font-mono"
+            />
+          </Field>
+          <Button type="submit" variant="secondary">
+            Inspect
+          </Button>
+        </form>
+        {secret === null ? null : (
+          <RecordCard>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <strong className="font-mono text-sm">
+                {secret.name} v{secret.version}
+              </strong>
+              <LifecycleBadge state={secret.state} />
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="secondary" disabled={secret.state !== "active"} onClick={onRotate}>
+                Rotate
+              </Button>
+              <Button
+                variant="ghost"
+                className="text-destructive hover:text-destructive"
+                disabled={secret.state !== "active"}
+                onClick={onRetire}
+              >
+                Retire
+              </Button>
+            </div>
+          </RecordCard>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -614,76 +711,161 @@ function AutomationTokensPanel({
   readonly onRevoke: () => void;
 }) {
   return (
-    <section className="panel" aria-labelledby="automation-title">
-      <h2 id="automation-title">Automation tokens</h2>
-      <form onSubmit={onCreate}>
-        <label>
-          Token name
-          <input name="name" required maxLength={100} />
-        </label>
-        <label>
-          Expires at
-          <input name="expiresAt" type="datetime-local" required />
-        </label>
-        <fieldset>
-          <legend>Permissions</legend>
-          <div className="checkbox-grid">
+    <Card aria-labelledby="automation-title">
+      <CardHeader>
+        <CardTitle id="automation-title">Automation tokens</CardTitle>
+      </CardHeader>
+      <CardContent className="grid gap-5">
+        <form className="grid gap-4" onSubmit={onCreate}>
+          <Field label="Token name" htmlFor="automation-token-name">
+            <Input id="automation-token-name" name="name" required maxLength={100} />
+          </Field>
+          <Field label="Expires at" htmlFor="automation-token-expires-at">
+            <Input
+              id="automation-token-expires-at"
+              name="expiresAt"
+              type="datetime-local"
+              required
+            />
+          </Field>
+          <CheckboxGroup legend="Permissions">
             {AUTOMATION_PERMISSIONS.map((permission) => (
-              <label key={permission}>
-                <input type="checkbox" name="permission" value={permission} />
+              <CheckboxOption
+                key={permission}
+                id={`automation-permission-${permission}`}
+                name="permission"
+                value={permission}
+              >
                 {permission.replaceAll("_", " ")}
-              </label>
+              </CheckboxOption>
             ))}
-          </div>
-        </fieldset>
-        <button type="submit">Create scoped token</button>
-      </form>
-      {tokens === null ? (
-        <p>Loading automation tokens…</p>
-      ) : (
-        <div className="resource-list">
-          {tokens.map((token) => (
-            <button
-              type="button"
-              className="resource-row"
-              key={token.id}
-              onClick={() => onSelect(token)}
+          </CheckboxGroup>
+          <Button type="submit" className="justify-self-start">
+            Create scoped token
+          </Button>
+        </form>
+        {tokens === null ? (
+          <p className="m-0 text-sm text-muted-foreground">Loading automation tokens…</p>
+        ) : tokens.length === 0 ? null : (
+          <Table aria-labelledby="automation-title">
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead scope="col">Token</TableHead>
+                <TableHead scope="col">Status</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {tokens.map((token) => (
+                <TableRow
+                  key={token.id}
+                  data-state={selected?.id === token.id ? "selected" : undefined}
+                >
+                  <TableCell className="whitespace-normal">
+                    <Button
+                      variant="link"
+                      className="h-auto p-0 font-medium"
+                      onClick={() => onSelect(token)}
+                    >
+                      {token.name}
+                    </Button>
+                    <span className="block font-mono text-xs text-muted-foreground">
+                      {token.id}
+                    </span>
+                  </TableCell>
+                  <TableCell>
+                    <LifecycleBadge state={token.status} />
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+        {selected === null ? null : (
+          <RecordCard>
+            <strong className="text-sm">{selected.name}</strong>
+            <pre className={JSON_PREVIEW}>{JSON.stringify(selected.scope, null, 2)}</pre>
+            <form className="grid gap-4" onSubmit={onRotate}>
+              <Field label="Replacement token ID" htmlFor="automation-replacement-id">
+                <Input
+                  id="automation-replacement-id"
+                  name="replacementId"
+                  required
+                  pattern="atm_[A-Za-z0-9_-]{8,64}"
+                  className="font-mono"
+                />
+              </Field>
+              <Field label="Replacement expires at" htmlFor="automation-replacement-expires-at">
+                <Input
+                  id="automation-replacement-expires-at"
+                  name="expiresAt"
+                  type="datetime-local"
+                  required
+                />
+              </Field>
+              <Button type="submit" variant="secondary" className="justify-self-start">
+                Rotate token
+              </Button>
+            </form>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-fit text-destructive hover:text-destructive"
+              disabled={selected.status !== "active"}
+              onClick={onRevoke}
             >
-              <span>
-                <strong>{token.name}</strong>
-                <small>{token.id}</small>
-              </span>
-              <LifecycleBadge state={token.status} />
-            </button>
-          ))}
-        </div>
-      )}
-      {selected === null ? null : (
-        <article className="workflow-card">
-          <strong>{selected.name}</strong>
-          <pre className="json-preview">{JSON.stringify(selected.scope, null, 2)}</pre>
-          <form onSubmit={onRotate}>
-            <label>
-              Replacement token ID
-              <input name="replacementId" required pattern="atm_[A-Za-z0-9_-]{8,64}" />
-            </label>
-            <label>
-              Replacement expires at
-              <input name="expiresAt" type="datetime-local" required />
-            </label>
-            <button type="submit">Rotate token</button>
-          </form>
-          <button
-            type="button"
-            className="danger-link"
-            disabled={selected.status !== "active"}
-            onClick={onRevoke}
-          >
-            Revoke token
-          </button>
-        </article>
-      )}
-    </section>
+              Revoke token
+            </Button>
+          </RecordCard>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/** The one record a panel is working on, set apart from the forms around it. */
+function RecordCard({ children }: { readonly children: ReactNode }) {
+  return <article className="grid gap-3 rounded-lg border bg-muted/30 p-4">{children}</article>;
+}
+
+/** A set of checkboxes under one legend, laid out in columns. */
+function CheckboxGroup({
+  legend,
+  children,
+}: {
+  readonly legend: string;
+  readonly children: ReactNode;
+}) {
+  return (
+    <fieldset className="m-0 grid min-w-0 gap-2 border-0 p-0">
+      <legend className="mb-2 p-0 text-sm font-medium leading-none">{legend}</legend>
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(10rem,1fr))] gap-x-4 gap-y-2">
+        {children}
+      </div>
+    </fieldset>
+  );
+}
+
+/** One checkbox with its label; it submits with the form under `name`. */
+function CheckboxOption({
+  id,
+  name,
+  value,
+  defaultChecked,
+  children,
+}: {
+  readonly id: string;
+  readonly name: string;
+  readonly value: string;
+  readonly defaultChecked?: boolean;
+  readonly children: ReactNode;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <Checkbox id={id} name={name} value={value} defaultChecked={defaultChecked === true} />
+      <Label htmlFor={id} className="font-mono text-xs font-normal">
+        {children}
+      </Label>
+    </div>
   );
 }
 
@@ -697,7 +879,109 @@ function OneTimeValue({
   if (secret === null) {
     return null;
   }
-  return <OneTimeSecretValue label={secret.label} value={secret.value} onDismiss={onDismiss} />;
+  return <OneTimeSecretCard label={secret.label} value={secret.value} onDismiss={onDismiss} />;
+}
+
+/**
+ * A secret shown exactly once. It starts hidden, is hidden again whenever the
+ * tab leaves the foreground, and dismisses itself after five minutes; the
+ * developer reveals it, copies it, and confirms it is stored.
+ */
+function OneTimeSecretCard({
+  label,
+  value,
+  onDismiss,
+}: {
+  readonly label: string;
+  readonly value: string;
+  readonly onDismiss: () => void;
+}) {
+  const [revealed, setRevealed] = useState(false);
+  const [copyStatus, setCopyStatus] = useState("");
+  const heading = useRef<HTMLElement>(null);
+  const dismiss = useRef(onDismiss);
+  dismiss.current = onDismiss;
+
+  useEffect(() => {
+    if (value.length === 0) {
+      dismiss.current();
+      return;
+    }
+    setRevealed(false);
+    setCopyStatus("");
+    heading.current?.focus();
+    const timer = window.setTimeout(() => dismiss.current(), AUTO_DISMISS_MILLISECONDS);
+    const hideWhenBackgrounded = () => {
+      if (document.visibilityState === "hidden") {
+        setRevealed(false);
+      }
+    };
+    document.addEventListener("visibilitychange", hideWhenBackgrounded);
+    return () => {
+      window.clearTimeout(timer);
+      document.removeEventListener("visibilitychange", hideWhenBackgrounded);
+    };
+  }, [value]);
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopyStatus("Copied. Clear your clipboard after storing the value securely.");
+    } catch {
+      setCopyStatus("Clipboard access was unavailable. Reveal the value and copy it manually.");
+    }
+  };
+
+  return (
+    <aside
+      aria-labelledby="one-time-title"
+      className="grid gap-3 rounded-xl border border-warning/50 bg-warning/10 p-5 text-foreground"
+    >
+      <div className="flex items-start gap-3">
+        <ShieldAlert aria-hidden="true" className="mt-0.5 size-5 shrink-0 text-warning" />
+        <div className="grid gap-1">
+          <strong
+            id="one-time-title"
+            ref={heading}
+            tabIndex={-1}
+            className="text-base font-semibold outline-none"
+          >
+            Copy this {label} now. It will not be shown again.
+          </strong>
+          <p className="m-0 text-sm text-muted-foreground">
+            The value is hidden again when this tab moves to the background and removed after five
+            minutes.
+          </p>
+        </div>
+      </div>
+      {revealed ? (
+        <code className="block break-all rounded-md border bg-card px-3 py-2 font-mono text-sm">
+          {value}
+        </code>
+      ) : (
+        <span className="block rounded-md border bg-card px-3 py-2 font-mono text-sm tracking-widest text-muted-foreground">
+          <span aria-hidden="true">••••••••••••••••</span>
+          <span className="sr-only">Secret value hidden</span>
+        </span>
+      )}
+      <div className="flex flex-wrap gap-2">
+        <Button variant="outline" onClick={() => setRevealed((shown) => !shown)}>
+          {revealed ? <EyeOff aria-hidden="true" /> : <Eye aria-hidden="true" />}
+          {revealed ? "Hide value" : "Reveal value"}
+        </Button>
+        <Button variant="outline" onClick={() => void copy()}>
+          <Copy aria-hidden="true" />
+          Copy value
+        </Button>
+        <Button onClick={onDismiss}>I have stored it securely</Button>
+      </div>
+      {copyStatus === "" ? null : (
+        <p className="m-0 text-sm text-muted-foreground" aria-live="polite" aria-atomic="true">
+          {copyStatus}
+        </p>
+      )}
+    </aside>
+  );
 }
 
 class FormInputError extends Error {}

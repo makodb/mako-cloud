@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import {
   Area,
   AreaChart as RechartsAreaChart,
@@ -64,6 +64,30 @@ export function motionAllowed(): boolean {
   if (document.documentElement.dataset.testing !== undefined) return false;
   if (typeof window.matchMedia !== "function") return true;
   return !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+/** How long a chart's entry animation lasts, and the rest it gets afterwards. */
+const ENTRY_ANIMATION_MILLISECONDS = 700;
+
+/**
+ * The entry animation, and only the entry.
+ *
+ * The drawing library restarts its animation whenever the data it is handed is
+ * a new array -- and a screen that derives its series inline hands it one on
+ * every render, which a live query makes often. The chart then redraws from
+ * zero forever and never settles. So animation is switched off once the entry
+ * has had its time: the first paint animates, everything after it is drawn
+ * where it belongs. Callers need not memoize to get a chart that stands still.
+ */
+function useEntryAnimation(): boolean {
+  const allowed = motionAllowed();
+  const [entering, setEntering] = useState(allowed);
+  useEffect(() => {
+    if (!allowed) return;
+    const timer = setTimeout(() => setEntering(false), ENTRY_ANIMATION_MILLISECONDS + 150);
+    return () => clearTimeout(timer);
+  }, [allowed]);
+  return allowed && entering;
 }
 
 /** What Recharts hands a tooltip: whether it is shown, the rows under the pointer, and the x value. */
@@ -187,7 +211,7 @@ export function LineChart({
   className,
   legend,
 }: CartesianChartProps) {
-  const animate = motionAllowed();
+  const animate = useEntryAnimation();
   const labels = labelsOf(series);
   return (
     <Frame
@@ -241,6 +265,7 @@ export function LineChart({
               dot={false}
               activeDot={{ r: 4 }}
               isAnimationActive={animate}
+              animationDuration={ENTRY_ANIMATION_MILLISECONDS}
             />
           ))}
         </RechartsLineChart>
@@ -263,7 +288,7 @@ export function AreaChart({
   className,
   legend,
 }: CartesianChartProps) {
-  const animate = motionAllowed();
+  const animate = useEntryAnimation();
   const labels = labelsOf(series);
   return (
     <Frame
@@ -332,6 +357,7 @@ export function AreaChart({
               strokeWidth={2}
               fill={`url(#area-${entry.key})`}
               isAnimationActive={animate}
+              animationDuration={ENTRY_ANIMATION_MILLISECONDS}
             />
           ))}
         </RechartsAreaChart>
@@ -355,7 +381,7 @@ export function BarChart({
   legend,
   stacked = false,
 }: CartesianChartProps & { stacked?: boolean }) {
-  const animate = motionAllowed();
+  const animate = useEntryAnimation();
   const labels = labelsOf(series);
   return (
     <Frame
@@ -408,6 +434,7 @@ export function BarChart({
               radius={stacked ? 0 : 3}
               maxBarSize={40}
               isAnimationActive={animate}
+              animationDuration={ENTRY_ANIMATION_MILLISECONDS}
               {...(stacked ? { stackId: "stack" } : {})}
             />
           ))}
@@ -445,7 +472,7 @@ export function DonutChart({
   /** A row per slice under the chart, with its formatted value. */
   legend?: boolean;
 }) {
-  const animate = motionAllowed();
+  const animate = useEntryAnimation();
   const labels = new Map(data.map((slice) => [slice.name, slice.name]));
   const rows = legend ? (
     <ul className="m-0 grid list-none gap-1 p-0 text-sm">
@@ -491,6 +518,7 @@ export function DonutChart({
             paddingAngle={data.length > 1 ? 1.5 : 0}
             strokeWidth={0}
             isAnimationActive={animate}
+            animationDuration={ENTRY_ANIMATION_MILLISECONDS}
           >
             {data.map((slice, index) => (
               <Cell key={slice.name} fill={slice.color ?? seriesColor(index)} />
@@ -522,7 +550,7 @@ export function Sparkline({
   height?: number;
   className?: string;
 }) {
-  const animate = motionAllowed();
+  const animate = useEntryAnimation();
   const data = values.map((value, index) => ({ index, value }));
   return (
     <figure
@@ -542,6 +570,7 @@ export function Sparkline({
             strokeWidth={1.5}
             dot={false}
             isAnimationActive={animate}
+            animationDuration={ENTRY_ANIMATION_MILLISECONDS}
           />
         </RechartsLineChart>
       </ResponsiveContainer>

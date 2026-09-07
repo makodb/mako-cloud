@@ -27,5 +27,22 @@ export default defineConfig({
   build: {
     outDir: "web-dist",
     emptyOutDir: true,
+    // The libraries change on their own schedule; kept apart from the
+    // console's own code so a release does not invalidate every byte.
+    rollupOptions: {
+      output: {
+        manualChunks: (id) => {
+          if (!id.includes("node_modules")) return undefined;
+          if (/[\\/]node_modules[\\/](react|react-dom|scheduler)[\\/]/.test(id)) return "react";
+          if (
+            /[\\/]node_modules[\\/](radix-ui|@radix-ui|@floating-ui|aria-hidden|react-remove-scroll)/.test(
+              id,
+            )
+          )
+            return "primitives";
+          return "vendor";
+        },
+      },
+    },
   },
 });

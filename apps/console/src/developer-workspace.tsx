@@ -1,3 +1,59 @@
+import {
+  Alert,
+  AlertDescription,
+  Badge,
+  Button,
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  EmptyState,
+  Eyebrow,
+  Field,
+  Input,
+  Label,
+  NativeSelect,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  Textarea,
+  cn,
+} from "@mako-cloud/ui";
+import {
+  Activity,
+  ArrowRight,
+  BookOpen,
+  Box,
+  CalendarClock,
+  ChevronRight,
+  Copy,
+  Database,
+  DatabaseBackup,
+  FolderOpen,
+  Gauge,
+  Globe,
+  HardDrive,
+  KeyRound,
+  LayoutDashboard,
+  type LucideIcon,
+  Mail,
+  Plug,
+  Radar,
+  RefreshCw,
+  ScrollText,
+  Settings,
+  ShieldCheck,
+  SquareFunction,
+  Table2,
+  TriangleAlert,
+  Users,
+  Webhook,
+} from "lucide-react";
 import { type FormEvent, type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 
 import type {
@@ -143,6 +199,31 @@ function consoleDestinations(projectId: string, environmentId: string): Workspac
   ];
 }
 
+/** One icon per destination the sidebar can list; an unknown id gets a plain box. */
+const DESTINATION_ICONS: Readonly<Record<string, LucideIcon>> = {
+  overview: LayoutDashboard,
+  data: Database,
+  collections: Table2,
+  sync: RefreshCw,
+  users: Users,
+  policies: ShieldCheck,
+  functions: SquareFunction,
+  observability: Radar,
+  backups: DatabaseBackup,
+  connect: Plug,
+  settings: Settings,
+  storage: HardDrive,
+  webhooks: Webhook,
+  "auth-providers": KeyRound,
+  "email-templates": Mail,
+  "api-docs": BookOpen,
+  logs: ScrollText,
+  usage: Gauge,
+  activity: Activity,
+  schedules: CalendarClock,
+  domains: Globe,
+};
+
 export function EnvironmentWorkspaceLayout({
   projectId,
   environmentId,
@@ -183,20 +264,30 @@ export function EnvironmentWorkspaceLayout({
   }, [client, environmentId, projectId]);
   const currentEnvironment = environments.find((environment) => environment.id === environmentId);
   return (
-    <div className="developer-workspace-shell">
-      <aside className="developer-sidebar" aria-label="Environment navigation">
-        <div className="context-switcher">
-          <p className="eyebrow">Database workspace</p>
-          <button
-            type="button"
-            className="context-home"
+    <div className="grid min-h-[calc(100vh-3.5rem)] grid-cols-1 md:grid-cols-[16rem_minmax(0,1fr)]">
+      <aside
+        // Full height below the top bar, so the navigation's ground reaches the
+        // bottom of the window rather than stopping under its last destination.
+        className="flex min-w-0 flex-col gap-5 border-b bg-sidebar px-3 py-5 text-sidebar-foreground md:sticky md:top-0 md:h-[calc(100vh-3.5rem)] md:self-start md:overflow-y-auto md:border-r md:border-b-0"
+        aria-label="Environment navigation"
+      >
+        <div className="grid gap-3 px-3">
+          <Eyebrow>Database workspace</Eyebrow>
+          <Button
+            variant="ghost"
+            className="h-auto justify-start gap-2 whitespace-normal px-0 py-0 text-left text-base font-semibold hover:bg-transparent hover:underline"
             onClick={() => navigate(`/projects/${projectId}`)}
           >
+            <FolderOpen aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
             {project?.name ?? projectId}
-          </button>
-          <label>
-            Environment
-            <select
+          </Button>
+          <div className="grid gap-1">
+            <Label htmlFor="environment-switcher" className="text-xs text-muted-foreground">
+              Environment
+            </Label>
+            <NativeSelect
+              id="environment-switcher"
+              size="sm"
               aria-label="Switch environment"
               value={environmentId}
               onChange={(event) =>
@@ -210,34 +301,45 @@ export function EnvironmentWorkspaceLayout({
                   {environment.name} · {environment.state}
                 </option>
               ))}
-            </select>
-          </label>
+            </NativeSelect>
+          </div>
         </div>
-        <nav aria-label="Environment destinations">
-          <ul>
+        <nav aria-label="Environment destinations" className="min-w-0">
+          <ul className="m-0 flex list-none gap-0.5 overflow-x-auto p-0 md:grid md:overflow-visible">
             {[
               ...destinations.filter((destination) => destination.permitted),
               ...consoleDestinations(projectId, environmentId),
-            ].map((destination) => (
-              <li key={destination.id}>
-                <a
-                  className={section === destination.id ? "active" : ""}
-                  aria-current={section === destination.id ? "page" : undefined}
-                  href={destination.path}
-                  onClick={(event) => {
-                    event.preventDefault();
-                    navigate(destination.path);
-                  }}
-                >
-                  {destination.label}
-                </a>
-              </li>
-            ))}
+            ].map((destination) => {
+              const active = section === destination.id;
+              const Icon = DESTINATION_ICONS[destination.id] ?? Box;
+              return (
+                <li key={destination.id} className="shrink-0 md:shrink">
+                  <a
+                    className={cn(
+                      "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground no-underline transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground hover:no-underline",
+                      active && "bg-sidebar-accent text-sidebar-foreground",
+                    )}
+                    aria-current={active ? "page" : undefined}
+                    href={destination.path}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      navigate(destination.path);
+                    }}
+                  >
+                    <Icon aria-hidden="true" className="size-4 shrink-0" />
+                    {destination.label}
+                  </a>
+                </li>
+              );
+            })}
           </ul>
         </nav>
       </aside>
-      <div className="developer-workspace-content">
-        <nav className="breadcrumbs" aria-label="Breadcrumb">
+      <div className="min-w-0 px-6 py-6">
+        <nav
+          className="mb-6 flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground"
+          aria-label="Breadcrumb"
+        >
           <a
             href="/"
             onClick={(event) => {
@@ -247,7 +349,9 @@ export function EnvironmentWorkspaceLayout({
           >
             Teams
           </a>
-          <span aria-hidden="true">/</span>
+          <span aria-hidden="true" className="flex text-muted-foreground/60">
+            <ChevronRight className="size-3.5" />
+          </span>
           <a
             href={`/projects/${projectId}`}
             onClick={(event) => {
@@ -257,13 +361,57 @@ export function EnvironmentWorkspaceLayout({
           >
             {project?.name ?? projectId}
           </a>
-          <span aria-hidden="true">/</span>
-          <strong>{currentEnvironment?.name ?? environmentId}</strong>
+          <span aria-hidden="true" className="flex text-muted-foreground/60">
+            <ChevronRight className="size-3.5" />
+          </span>
+          <strong className="font-medium text-foreground">
+            {currentEnvironment?.name ?? environmentId}
+          </strong>
         </nav>
         <ApiFailureNotice failure={failure} />
         {children}
       </div>
     </div>
+  );
+}
+
+/** A page's title line: eyebrow, h1, a muted sentence, and room for an action on the right. */
+function PageHeader({
+  eyebrow,
+  title,
+  description,
+  action,
+}: {
+  readonly eyebrow: string;
+  readonly title: string;
+  readonly description?: ReactNode;
+  readonly action?: ReactNode;
+}) {
+  return (
+    <div className="flex flex-wrap items-start justify-between gap-4">
+      <div className="grid gap-1">
+        <Eyebrow>{eyebrow}</Eyebrow>
+        <h1 className="text-2xl">{title}</h1>
+        {description === undefined ? null : (
+          <p className="m-0 max-w-2xl text-sm text-muted-foreground">{description}</p>
+        )}
+      </div>
+      {action}
+    </div>
+  );
+}
+
+/**
+ * A warning the reader should notice but that is not a live region: the page
+ * may already own its one `status`, and these notes are part of the page, not
+ * news about it.
+ */
+function WarningNote({ children, className }: { children: ReactNode; className?: string }) {
+  return (
+    <Alert variant="warning" role="note" className={className}>
+      <TriangleAlert aria-hidden="true" />
+      <AlertDescription className="block">{children}</AlertDescription>
+    </Alert>
   );
 }
 
@@ -291,67 +439,79 @@ function WorkspaceOverview({
     void reload();
   }, [reload]);
   return (
-    <section>
-      <div className="section-heading">
-        <div>
-          <p className="eyebrow">Environment overview</p>
-          <h1>Database health and activity</h1>
-          <p>Each card loads independently; unavailable providers do not erase healthy sections.</p>
-        </div>
-        <button type="button" className="secondary" onClick={() => void reload()}>
-          Refresh
-        </button>
-      </div>
+    <section className="grid gap-6">
+      <PageHeader
+        eyebrow="Environment overview"
+        title="Database health and activity"
+        description="Each card loads independently; unavailable providers do not erase healthy sections."
+        action={
+          <Button variant="outline" onClick={() => void reload()}>
+            <RefreshCw aria-hidden="true" />
+            Refresh
+          </Button>
+        }
+      />
       <ApiFailureNotice failure={failure} />
       {summary === null ? (
-        <p>Loading workspace summaries…</p>
+        <p className="m-0 text-sm text-muted-foreground">Loading workspace summaries…</p>
       ) : (
-        <div className="summary-grid">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {Object.entries(summary.sections).map(([id, item]) => (
-            <article className="summary-card" key={id}>
-              <div className="section-heading">
-                <h2>{humanize(id)}</h2>
+            <Card as="article" key={id} className="gap-3 py-4">
+              <CardHeader className="flex flex-row items-center justify-between gap-3 px-4">
+                <CardTitle>{humanize(id)}</CardTitle>
                 <StatusBadge state={item.status} />
-              </div>
-              <SummaryPayload value={item.payload} />
-              <small>
-                Observed {formatTime(item.observedAtUnixSeconds)} · fresh until{" "}
-                {formatTime(item.freshUntilUnixSeconds)}
-                {item.retainedSinceUnixSeconds !== null &&
-                item.retainedSinceUnixSeconds !== undefined
-                  ? ` · retained since ${formatTime(item.retainedSinceUnixSeconds)}`
-                  : ""}
-              </small>
-              {item.remediationCode !== null && item.remediationCode !== undefined ? (
-                <p className="notice warning">{humanize(item.remediationCode)}</p>
-              ) : null}
-            </article>
+              </CardHeader>
+              <CardContent className="grid gap-3 px-4">
+                <SummaryPayload value={item.payload} />
+                <small className="text-xs text-muted-foreground">
+                  Observed {formatTime(item.observedAtUnixSeconds)} · fresh until{" "}
+                  {formatTime(item.freshUntilUnixSeconds)}
+                  {item.retainedSinceUnixSeconds !== null &&
+                  item.retainedSinceUnixSeconds !== undefined
+                    ? ` · retained since ${formatTime(item.retainedSinceUnixSeconds)}`
+                    : ""}
+                </small>
+                {item.remediationCode !== null && item.remediationCode !== undefined ? (
+                  <WarningNote>
+                    <p>{humanize(item.remediationCode)}</p>
+                  </WarningNote>
+                ) : null}
+              </CardContent>
+            </Card>
           ))}
         </div>
       )}
-      <div className="quick-actions">
-        <button
-          type="button"
+      <div className="flex flex-wrap gap-2">
+        <Button
           onClick={() => navigate(`/projects/${projectId}/environments/${environmentId}/data`)}
         >
           Explore data
-        </button>
-        <button
-          type="button"
-          className="secondary"
+        </Button>
+        <Button
+          variant="secondary"
           onClick={() => navigate(`/projects/${projectId}/environments/${environmentId}/connect`)}
         >
           Connect RxDB
-        </button>
-        <button
-          type="button"
-          className="secondary"
+        </Button>
+        <Button
+          variant="secondary"
           onClick={() => navigate(`/projects/${projectId}/environments/${environmentId}/sync`)}
         >
           Inspect sync
-        </button>
+        </Button>
       </div>
     </section>
+  );
+}
+
+/** One fact in a grid of facts: a small label over its value. */
+function Definition({ term, children }: { readonly term: string; readonly children: ReactNode }) {
+  return (
+    <div className="grid gap-1 rounded-lg border bg-card px-3 py-2.5">
+      <dt className="text-xs font-medium text-muted-foreground">{term}</dt>
+      <dd className="m-0 text-sm break-all">{children}</dd>
+    </div>
   );
 }
 
@@ -406,61 +566,50 @@ function ConnectPage({
     }
   };
   return (
-    <section>
-      <div className="section-heading">
-        <div>
-          <p className="eyebrow">API & Connect</p>
-          <h1>Connect an RxDB application</h1>
-          <p>
-            Only the public project key belongs in browser or mobile code. Never ship a service
-            credential.
-          </p>
-        </div>
-      </div>
+    <section className="grid gap-6">
+      <PageHeader
+        eyebrow="API & Connect"
+        title="Connect an RxDB application"
+        description="Only the public project key belongs in browser or mobile code. Never ship a service credential."
+      />
       <ApiFailureNotice failure={failure} />
       {metadata === null ? (
-        <p>Loading public connection metadata…</p>
+        <p className="m-0 text-sm text-muted-foreground">Loading public connection metadata…</p>
       ) : (
         <>
-          <div className="definition-grid">
-            <div>
-              <dt>Public endpoint</dt>
-              <dd>
-                <code>{metadata.publicEndpoint}</code>
-              </dd>
-            </div>
-            <div>
-              <dt>Public key ID</dt>
-              <dd>
-                <code>{metadata.publicKeyId}</code>
-              </dd>
-            </div>
-            <div>
-              <dt>Supported client</dt>
-              <dd>
-                <code>{metadata.rxdbClientRange}</code>
-              </dd>
-            </div>
-            <div>
-              <dt>Template</dt>
-              <dd>v{metadata.templateVersion}</dd>
-            </div>
-          </div>
+          <dl className="m-0 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <Definition term="Public endpoint">
+              <code className="font-mono">{metadata.publicEndpoint}</code>
+            </Definition>
+            <Definition term="Public key ID">
+              <code className="font-mono">{metadata.publicKeyId}</code>
+            </Definition>
+            <Definition term="Supported client">
+              <code className="font-mono">{metadata.rxdbClientRange}</code>
+            </Definition>
+            <Definition term="Template">v{metadata.templateVersion}</Definition>
+          </dl>
           {metadata.publicKey === "" ? (
-            <p className="notice warning">
-              No recoverable public key is available. Issue or rotate a public project credential on
-              the Credentials page, then paste the one-time value into your application secret
-              store.
-            </p>
+            <WarningNote>
+              <p>
+                No recoverable public key is available. Issue or rotate a public project credential
+                on the Credentials page, then paste the one-time value into your application secret
+                store.
+              </p>
+            </WarningNote>
           ) : (
-            <label>
-              Public project key
-              <input readOnly value={metadata.publicKey} />
-            </label>
+            <Field label="Public project key" htmlFor="connect-public-key">
+              <Input
+                id="connect-public-key"
+                readOnly
+                value={metadata.publicKey}
+                className="font-mono text-xs"
+              />
+            </Field>
           )}
-          <label>
-            Collection
-            <select
+          <Field label="Collection" htmlFor="connect-collection" className="max-w-md">
+            <NativeSelect
+              id="connect-collection"
               value={collectionId}
               onChange={(event) => setCollectionId(event.currentTarget.value)}
             >
@@ -469,50 +618,54 @@ function ConnectPage({
                   {collection.collectionId} · schema v{collection.activeSchemaVersion}
                 </option>
               ))}
-            </select>
-          </label>
-          <div className="code-block">
-            <button
-              type="button"
-              className="secondary copy-button"
+            </NativeSelect>
+          </Field>
+          <div className="relative overflow-hidden rounded-lg border bg-muted/40">
+            <Button
+              variant="outline"
+              size="sm"
+              className="absolute top-2 right-2"
               onClick={() => void navigator.clipboard.writeText(snippet)}
             >
+              <Copy aria-hidden="true" />
               Copy
-            </button>
-            <pre>{snippet}</pre>
+            </Button>
+            <pre className="m-0 overflow-x-auto p-4 pr-24 font-mono text-xs leading-relaxed whitespace-pre-wrap break-words">
+              {snippet}
+            </pre>
           </div>
-          <section className="panel">
-            <div className="section-heading">
-              <div>
-                <h2>Connection check</h2>
-                <p>
-                  Checks DNS, TLS, public routing, readiness, key metadata, schema compatibility,
-                  and replication routes without reading documents or creating a user session.
-                </p>
-              </div>
-              <button type="button" onClick={() => void runCheck()}>
-                Run check
-              </button>
-            </div>
+          <Card>
+            <CardHeader>
+              <CardTitle>Connection check</CardTitle>
+              <CardDescription>
+                Checks DNS, TLS, public routing, readiness, key metadata, schema compatibility, and
+                replication routes without reading documents or creating a user session.
+              </CardDescription>
+              <CardAction>
+                <Button onClick={() => void runCheck()}>Run check</Button>
+              </CardAction>
+            </CardHeader>
             {check !== null ? (
-              <ol className="check-list">
-                {check.steps.map((step) => (
-                  <li key={step.id}>
-                    <StatusBadge state={step.state} />
-                    <span>
-                      <strong>{humanize(step.id)}</strong>
-                      {step.remediationCode !== null && step.remediationCode !== undefined ? (
-                        <small>
-                          {humanize(step.remediationCode)} ·{" "}
-                          {step.retryable ? "retryable" : "configuration change required"}
-                        </small>
-                      ) : null}
-                    </span>
-                  </li>
-                ))}
-              </ol>
+              <CardContent>
+                <ol className="m-0 grid list-none gap-3 p-0">
+                  {check.steps.map((step) => (
+                    <li key={step.id} className="flex items-start gap-3">
+                      <StatusBadge state={step.state} />
+                      <span className="grid gap-0.5 text-sm">
+                        <strong className="font-medium">{humanize(step.id)}</strong>
+                        {step.remediationCode !== null && step.remediationCode !== undefined ? (
+                          <small className="text-xs text-muted-foreground">
+                            {humanize(step.remediationCode)} ·{" "}
+                            {step.retryable ? "retryable" : "configuration change required"}
+                          </small>
+                        ) : null}
+                      </span>
+                    </li>
+                  ))}
+                </ol>
+              </CardContent>
             ) : null}
-          </section>
+          </Card>
         </>
       )}
     </section>
@@ -575,65 +728,67 @@ function SyncDashboard({
           ["Schema mismatch", summary.schemaMismatches],
         ] as const);
   return (
-    <section>
-      <p className="eyebrow">RxDB sync</p>
-      <h1>Replication diagnostics</h1>
+    <section className="grid gap-6">
+      <PageHeader eyebrow="RxDB sync" title="Replication diagnostics" />
       <ApiFailureNotice failure={failure} />
-      <form className="filter-grid" onSubmit={(event) => void query(event)}>
-        <label>
-          Collection
-          <select name="collectionId">
+      <form
+        className="grid gap-3 sm:grid-cols-[minmax(12rem,1fr)_minmax(12rem,1fr)_auto] sm:items-end"
+        onSubmit={(event) => void query(event)}
+      >
+        <Field label="Collection" htmlFor="sync-collection">
+          <NativeSelect id="sync-collection" name="collectionId">
             <option value="">All collections</option>
             {collections.map((collection) => (
               <option key={collection.id} value={collection.id}>
                 {collection.id}
               </option>
             ))}
-          </select>
-        </label>
-        <label>
-          Time window
-          <select name="hours" defaultValue="1">
+          </NativeSelect>
+        </Field>
+        <Field label="Time window" htmlFor="sync-hours">
+          <NativeSelect id="sync-hours" name="hours" defaultValue="1">
             <option value="1">Last hour</option>
             <option value="6">Last 6 hours</option>
             <option value="24">Last 24 hours</option>
-          </select>
-        </label>
-        <button type="submit">Apply</button>
+          </NativeSelect>
+        </Field>
+        <Button type="submit">Apply</Button>
       </form>
       {summary === null ? (
-        <p>Loading sync summary…</p>
+        <p className="m-0 text-sm text-muted-foreground">Loading sync summary…</p>
       ) : (
         <>
-          <div className="metric-grid">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
             {metrics.map(([label, value]) => (
-              <article key={label}>
-                <strong>{value ?? 0}</strong>
-                <span>{label}</span>
-              </article>
+              <Card as="article" key={label} className="gap-1 px-4 py-3">
+                <strong className="text-2xl font-semibold tabular-nums">{value ?? 0}</strong>
+                <span className="text-xs text-muted-foreground">{label}</span>
+              </Card>
             ))}
           </div>
-          <section className="panel">
-            <h2>Client compatibility classes</h2>
-            {Object.keys(summary.clientVersionClasses ?? {}).length === 0 ? (
-              <p>No bounded client-version observations in this window.</p>
-            ) : (
-              <ul>
-                {Object.entries(summary.clientVersionClasses ?? {}).map(([label, count]) => (
-                  <li key={label}>
-                    {humanize(label)}: {count}
-                  </li>
-                ))}
-              </ul>
-            )}
-            <p>
-              <small>
+          <Card>
+            <CardHeader>
+              <CardTitle>Client compatibility classes</CardTitle>
+            </CardHeader>
+            <CardContent className="grid gap-3 text-sm">
+              {Object.keys(summary.clientVersionClasses ?? {}).length === 0 ? (
+                <p className="m-0">No bounded client-version observations in this window.</p>
+              ) : (
+                <ul className="m-0 grid gap-1 pl-5">
+                  {Object.entries(summary.clientVersionClasses ?? {}).map(([label, count]) => (
+                    <li key={label}>
+                      {humanize(label)}: {count}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <p className="m-0 text-xs text-muted-foreground">
                 Observed {formatTime(summary.observedAtUnixSeconds)} · retained since{" "}
                 {formatTime(summary.retainedSinceUnixSeconds)}. Counts never contain raw user,
                 device, session, IP, token, or document identifiers.
-              </small>
-            </p>
-          </section>
+              </p>
+            </CardContent>
+          </Card>
           <RemediationHelp summary={summary} />
         </>
       )}
@@ -659,13 +814,16 @@ function RemediationHelp({ summary }: { readonly summary: SyncSummary }) {
     },
   ].filter((item) => (item.count ?? 0) > 0);
   return issues.length === 0 ? null : (
-    <aside className="notice warning">
-      <strong>Recommended action</strong>
-      <ul>
-        {issues.map((issue) => (
-          <li key={issue.text}>{issue.text}</li>
-        ))}
-      </ul>
+    <aside className="flex items-start gap-3 rounded-lg border border-warning/40 bg-warning/10 px-4 py-3 text-sm">
+      <TriangleAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-warning" />
+      <div className="grid gap-1">
+        <strong className="font-medium">Recommended action</strong>
+        <ul className="m-0 grid gap-1 pl-5 text-foreground/85">
+          {issues.map((issue) => (
+            <li key={issue.text}>{issue.text}</li>
+          ))}
+        </ul>
+      </div>
     </aside>
   );
 }
@@ -727,109 +885,139 @@ function BackupAndRestore({
     }
   };
   return (
-    <section>
-      <p className="eyebrow">Backup and recovery</p>
-      <h1>Verified recovery points</h1>
-      <p>
-        Developer recovery always creates a new isolated environment. It cannot overwrite or promote
-        an environment.
-      </p>
+    <section className="grid gap-6">
+      <PageHeader
+        eyebrow="Backup and recovery"
+        title="Verified recovery points"
+        description="Developer recovery always creates a new isolated environment. It cannot overwrite or promote an environment."
+      />
       <ApiFailureNotice failure={failure} />
       {backups.length === 0 ? (
-        <p className="notice">No tenant-verified recovery point is available.</p>
+        <EmptyState
+          icon={<DatabaseBackup aria-hidden="true" />}
+          title="No tenant-verified recovery point is available."
+        />
       ) : (
-        <div className="table-scroll">
-          <table>
-            <thead>
-              <tr>
-                <th>Recovery point</th>
-                <th>Verification</th>
-                <th>Retention</th>
-                <th>Restore drill / objective</th>
-              </tr>
-            </thead>
-            <tbody>
+        <Card className="gap-0 overflow-hidden py-0">
+          <Table>
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead scope="col" className="pl-4">
+                  Recovery point
+                </TableHead>
+                <TableHead scope="col">Verification</TableHead>
+                <TableHead scope="col">Retention</TableHead>
+                <TableHead scope="col" className="pr-4">
+                  Restore drill / objective
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {backups.map((backup) => (
-                <tr key={backup.backupId}>
-                  <td>
-                    <code>{backup.backupId}</code>
-                    <br />
-                    {formatTime(backup.recoveryPointUnixSeconds)}
-                  </td>
-                  <td>{formatTime(backup.verifiedAtUnixSeconds)}</td>
-                  <td>{formatTime(backup.retainedUntilUnixSeconds)}</td>
-                  <td>
+                <TableRow key={backup.backupId}>
+                  <TableCell className="pl-4">
+                    <code className="font-mono text-xs">{backup.backupId}</code>
+                    <span className="block text-xs text-muted-foreground">
+                      {formatTime(backup.recoveryPointUnixSeconds)}
+                    </span>
+                  </TableCell>
+                  <TableCell>{formatTime(backup.verifiedAtUnixSeconds)}</TableCell>
+                  <TableCell>{formatTime(backup.retainedUntilUnixSeconds)}</TableCell>
+                  <TableCell className="pr-4">
                     {backup.lastRestoreDrillUnixSeconds === null ||
                     backup.lastRestoreDrillUnixSeconds === undefined
                       ? "No recorded drill"
                       : formatTime(backup.lastRestoreDrillUnixSeconds)}
-                    <br />
-                    {backup.recoveryObjectiveStatus}
-                  </td>
-                </tr>
+                    <span className="block text-xs text-muted-foreground">
+                      {backup.recoveryObjectiveStatus}
+                    </span>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
-        </div>
+            </TableBody>
+          </Table>
+        </Card>
       )}
       {restoreEnabled ? (
-        <section className="panel">
-          <h2>Request isolated recovery environment</h2>
-          <p className="notice warning">
-            The restored environment stays inaccessible until tenant isolation, storage, services,
-            and recovery validation all pass. Overwrite and promotion are prohibited.
-          </p>
-          <form onSubmit={(event) => void requestRestore(event)}>
-            <label>
-              Verified backup
-              <select name="backupId" required>
-                {backups.map((backup) => (
-                  <option key={backup.backupId} value={backup.backupId}>
-                    {backup.backupId} · {formatTime(backup.recoveryPointUnixSeconds)}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              New environment name
-              <input name="targetEnvironmentName" required maxLength={64} />
-            </label>
-            <label>
-              Reason
-              <textarea name="reason" required maxLength={500} />
-            </label>
-            <label>
-              Confirm your developer password
-              <input name="password" type="password" required autoComplete="current-password" />
-            </label>
-            <button type="submit" disabled={backups.length === 0}>
-              Request recovery
-            </button>
-          </form>
-        </section>
+        <Card>
+          <CardHeader>
+            <CardTitle>Request isolated recovery environment</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-5">
+            <WarningNote>
+              <p>
+                The restored environment stays inaccessible until tenant isolation, storage,
+                services, and recovery validation all pass. Overwrite and promotion are prohibited.
+              </p>
+            </WarningNote>
+            <form className="grid gap-4" onSubmit={(event) => void requestRestore(event)}>
+              <Field label="Verified backup" htmlFor="restore-backup">
+                <NativeSelect id="restore-backup" name="backupId" required>
+                  {backups.map((backup) => (
+                    <option key={backup.backupId} value={backup.backupId}>
+                      {backup.backupId} · {formatTime(backup.recoveryPointUnixSeconds)}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </Field>
+              <Field label="New environment name" htmlFor="restore-target-name">
+                <Input
+                  id="restore-target-name"
+                  name="targetEnvironmentName"
+                  required
+                  maxLength={64}
+                />
+              </Field>
+              <Field label="Reason" htmlFor="restore-reason">
+                <Textarea id="restore-reason" name="reason" required maxLength={500} />
+              </Field>
+              <Field label="Confirm your developer password" htmlFor="restore-password">
+                <Input
+                  id="restore-password"
+                  name="password"
+                  type="password"
+                  required
+                  autoComplete="current-password"
+                />
+              </Field>
+              <div>
+                <Button type="submit" disabled={backups.length === 0}>
+                  Request recovery
+                </Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
       ) : (
         <DisabledWorkspaceFeature name="Isolated recovery requests" />
       )}
-      <section className="panel">
-        <h2>Recovery requests</h2>
-        {restores.length === 0 ? (
-          <p>No recovery requests.</p>
-        ) : (
-          <div className="resource-list">
-            {restores.map((restore) => (
-              <div className="resource-row static" key={restore.requestId}>
-                <span>
-                  <strong>{restore.target.environmentId}</strong>
-                  <small>
-                    {restore.state} · updated {formatTime(restore.updatedAtUnixSeconds)}
-                  </small>
-                </span>
-                <StatusBadge state={restore.accessible ? "ready" : restore.state} />
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
+      <Card>
+        <CardHeader>
+          <CardTitle>Recovery requests</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {restores.length === 0 ? (
+            <p className="m-0 text-sm text-muted-foreground">No recovery requests.</p>
+          ) : (
+            <div className="grid gap-2">
+              {restores.map((restore) => (
+                <div
+                  className="flex items-center justify-between gap-4 rounded-lg border px-3 py-2"
+                  key={restore.requestId}
+                >
+                  <span className="grid gap-0.5 text-sm">
+                    <strong className="font-medium">{restore.target.environmentId}</strong>
+                    <small className="text-xs text-muted-foreground">
+                      {restore.state} · updated {formatTime(restore.updatedAtUnixSeconds)}
+                    </small>
+                  </span>
+                  <StatusBadge state={restore.accessible ? "ready" : restore.state} />
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </section>
   );
 }
@@ -855,40 +1043,29 @@ function EnvironmentSettings({
     };
   }, [client, environmentId, projectId]);
   return (
-    <section>
-      <p className="eyebrow">Settings</p>
-      <h1>Environment settings</h1>
+    <section className="grid gap-6">
+      <PageHeader eyebrow="Settings" title="Environment settings" />
       <ApiFailureNotice failure={failure} />
       {environment === null ? (
-        <p>Loading…</p>
+        <p className="m-0 text-sm text-muted-foreground">Loading…</p>
       ) : (
-        <dl className="definition-grid">
-          <div>
-            <dt>Name</dt>
-            <dd>{environment.name}</dd>
-          </div>
-          <div>
-            <dt>ID</dt>
-            <dd>
-              <code>{environment.id}</code>
-            </dd>
-          </div>
-          <div>
-            <dt>Lifecycle</dt>
-            <dd>
-              <StatusBadge state={environment.state} />
-            </dd>
-          </div>
-          <div>
-            <dt>Updated</dt>
-            <dd>{new Date(environment.updatedAt).toLocaleString()}</dd>
-          </div>
+        <dl className="m-0 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <Definition term="Name">{environment.name}</Definition>
+          <Definition term="ID">
+            <code className="font-mono">{environment.id}</code>
+          </Definition>
+          <Definition term="Lifecycle">
+            <StatusBadge state={environment.state} />
+          </Definition>
+          <Definition term="Updated">{new Date(environment.updatedAt).toLocaleString()}</Definition>
         </dl>
       )}
-      <p className="notice">
-        Credentials, schema, function, and destructive lifecycle controls remain on their existing
-        dedicated pages while the workspace rollout is reversible.
-      </p>
+      <Alert role="note">
+        <AlertDescription className="block">
+          Credentials, schema, function, and destructive lifecycle controls remain on their existing
+          dedicated pages while the workspace rollout is reversible.
+        </AlertDescription>
+      </Alert>
       <AllowedOriginsSection projectId={projectId} environmentId={environmentId} />
     </section>
   );
@@ -906,21 +1083,19 @@ function WorkspaceLinks({
   readonly navigate: (path: string) => void;
 }) {
   return (
-    <section>
-      <p className="eyebrow">Workspace</p>
-      <h1>{title}</h1>
-      <p>{description}</p>
-      <div className="resource-list">
+    <section className="grid gap-6">
+      <PageHeader eyebrow="Workspace" title={title} description={description} />
+      <div className="grid max-w-2xl gap-2">
         {links.map((link) => (
-          <button
-            type="button"
-            className="resource-row"
+          <Button
+            variant="outline"
+            className="h-auto justify-between px-4 py-3 text-left text-sm font-medium"
             key={link.path}
             onClick={() => navigate(link.path)}
           >
             {link.label}
-            <span aria-hidden="true">→</span>
-          </button>
+            <ArrowRight aria-hidden="true" className="text-muted-foreground" />
+          </Button>
         ))}
       </div>
     </section>
@@ -928,36 +1103,60 @@ function WorkspaceLinks({
 }
 function DisabledWorkspaceFeature({ name }: { readonly name: string }) {
   return (
-    <section className="panel">
-      <p className="eyebrow">Staged rollout</p>
-      <h1>{name}</h1>
-      <p>
-        This capability is disabled by its independent deployment gate. Existing project tools
-        remain available.
-      </p>
-    </section>
+    <Card className="max-w-2xl">
+      <CardHeader>
+        <Eyebrow>Staged rollout</Eyebrow>
+        <CardTitle as="h1" className="text-xl">
+          {name}
+        </CardTitle>
+        <CardDescription>
+          This capability is disabled by its independent deployment gate. Existing project tools
+          remain available.
+        </CardDescription>
+      </CardHeader>
+    </Card>
   );
 }
 function StatusBadge({ state }: { readonly state: string }) {
+  const tone =
+    state === "current" || state === "passed" || state === "ready" || state === "active"
+      ? "success"
+      : state === "unavailable" || state === "failed"
+        ? "error"
+        : "warning";
   return (
-    <span
-      className={`status-badge ${state === "current" || state === "passed" || state === "ready" || state === "active" ? "success" : state === "unavailable" || state === "failed" ? "error" : "warning"}`}
+    <Badge
+      variant="outline"
+      className={cn(
+        "status-badge",
+        tone,
+        tone === "success" && "border-positive/40 bg-positive/10 text-positive",
+        tone === "error" && "border-destructive/40 bg-destructive/10 text-destructive",
+        tone === "warning" && "border-warning/50 bg-warning/15 text-foreground",
+      )}
     >
       {humanize(state)}
-    </span>
+    </Badge>
   );
 }
 function SummaryPayload({ value }: { readonly value: unknown }) {
   if (typeof value !== "object" || value === null || Array.isArray(value))
-    return <p>{value === undefined ? "No summary payload" : String(value)}</p>;
+    return (
+      <p className="m-0 text-sm">{value === undefined ? "No summary payload" : String(value)}</p>
+    );
   return (
-    <dl>
+    <dl className="m-0 grid text-sm">
       {Object.entries(value)
         .slice(0, 12)
         .map(([key, item]) => (
-          <div key={key}>
-            <dt>{humanize(key)}</dt>
-            <dd>{typeof item === "object" ? JSON.stringify(item) : String(item)}</dd>
+          <div
+            key={key}
+            className="flex items-baseline justify-between gap-3 border-b py-1.5 last:border-0"
+          >
+            <dt className="text-muted-foreground">{humanize(key)}</dt>
+            <dd className="m-0 text-right font-medium break-all">
+              {typeof item === "object" ? JSON.stringify(item) : String(item)}
+            </dd>
           </div>
         ))}
     </dl>

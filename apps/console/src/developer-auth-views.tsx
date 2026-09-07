@@ -1,8 +1,30 @@
+import {
+  Alert,
+  AlertDescription,
+  Button,
+  Card,
+  CardContent,
+  CardHeader,
+  Eyebrow,
+  Field,
+  Input,
+  useTheme,
+} from "@mako-cloud/ui";
 import { type FormEvent, type ReactNode, useEffect, useRef, useState } from "react";
 
 import { useDeveloperAuth } from "./auth.js";
 
 type Navigate = (path: string, replace?: boolean) => void;
+
+/**
+ * The developer's theme preference, under the same key the authenticated
+ * shell keeps it, so the sign-in card is drawn the way the console was left.
+ * (Declared here rather than imported: the shell imports these views.)
+ */
+const THEME_KEY = "mako.console.theme";
+
+/** A link inside a sentence, or standing alone under a form. */
+const LINK = "text-sm text-primary underline-offset-4 hover:underline";
 
 export function HostedSignInView({ navigate }: { readonly navigate: Navigate }) {
   const { selfService, state } = useDeveloperAuth();
@@ -34,37 +56,56 @@ export function HostedSignInView({ navigate }: { readonly navigate: Navigate }) 
   };
   return (
     <PublicAuthShell title="Sign in to your developer account">
-      <p>
+      <p className="m-0 text-sm text-muted-foreground">
         Developer accounts administer Mako projects. They are separate from users of applications
         built on Mako.
       </p>
-      {failed ? <p role="alert">The email or password was not accepted.</p> : null}
-      <form onSubmit={(event) => void submit(event)}>
-        <label>
-          Developer email
-          <input name="email" type="email" autoComplete="username" maxLength={320} required />
-        </label>
-        <label>
-          Password
-          <input
+      {failed ? (
+        <Alert variant="destructive" role="alert">
+          <AlertDescription>The email or password was not accepted.</AlertDescription>
+        </Alert>
+      ) : null}
+      <form className="grid gap-4" onSubmit={(event) => void submit(event)}>
+        <Field label="Developer email" htmlFor="sign-in-email">
+          <Input
+            id="sign-in-email"
+            name="email"
+            type="email"
+            autoComplete="username"
+            maxLength={320}
+            required
+          />
+        </Field>
+        <Field label="Password" htmlFor="sign-in-password">
+          <Input
+            id="sign-in-password"
             name="password"
             type="password"
             autoComplete="current-password"
             maxLength={1024}
             required
           />
-        </label>
-        <button type="submit" disabled={pending}>
+        </Field>
+        <Button type="submit" className="w-full" disabled={pending}>
           {pending ? "Signing in…" : "Sign in"}
-        </button>
+        </Button>
       </form>
-      <nav className="auth-links" aria-label="Developer account help">
-        <a href="/create-account">Create an account</a>
-        <a href="/forgot-password">Forgot password?</a>
+      <nav
+        className="flex flex-wrap items-center justify-between gap-3"
+        aria-label="Developer account help"
+      >
+        <a className={LINK} href="/create-account">
+          Create an account
+        </a>
+        <a className={LINK} href="/forgot-password">
+          Forgot password?
+        </a>
       </nav>
-      <p className="notice">
-        New developer accounts must verify their email and be approved before product access.
-      </p>
+      <Alert role="note">
+        <AlertDescription>
+          New developer accounts must verify their email and be approved before product access.
+        </AlertDescription>
+      </Alert>
     </PublicAuthShell>
   );
 }
@@ -93,25 +134,41 @@ export function CreateAccountView({ navigate }: { readonly navigate: Navigate })
   };
   return (
     <PublicAuthShell title="Create a Mako developer account">
-      <p>
+      <p className="m-0 text-sm text-muted-foreground">
         This account is for building and administering Mako projects, not for signing into an app
         that uses Mako.
       </p>
       {failed ? (
-        <p role="alert">Registration is unavailable or the submitted details are invalid.</p>
+        <Alert variant="destructive" role="alert">
+          <AlertDescription>
+            Registration is unavailable or the submitted details are invalid.
+          </AlertDescription>
+        </Alert>
       ) : null}
-      <form onSubmit={(event) => void submit(event)}>
-        <label>
-          Display name
-          <input name="displayName" autoComplete="name" minLength={1} maxLength={200} required />
-        </label>
-        <label>
-          Developer email
-          <input name="email" type="email" autoComplete="email" maxLength={320} required />
-        </label>
-        <label>
-          Password
-          <input
+      <form className="grid gap-4" onSubmit={(event) => void submit(event)}>
+        <Field label="Display name" htmlFor="create-account-display-name">
+          <Input
+            id="create-account-display-name"
+            name="displayName"
+            autoComplete="name"
+            minLength={1}
+            maxLength={200}
+            required
+          />
+        </Field>
+        <Field label="Developer email" htmlFor="create-account-email">
+          <Input
+            id="create-account-email"
+            name="email"
+            type="email"
+            autoComplete="email"
+            maxLength={320}
+            required
+          />
+        </Field>
+        <Field label="Password" htmlFor="create-account-password">
+          <Input
+            id="create-account-password"
             name="password"
             type="password"
             autoComplete="new-password"
@@ -120,14 +177,19 @@ export function CreateAccountView({ navigate }: { readonly navigate: Navigate })
             aria-describedby="new-password-help"
             required
           />
-        </label>
-        <p id="new-password-help">Use at least 12 characters.</p>
-        <button type="submit" disabled={pending}>
+          <p id="new-password-help" className="m-0 text-sm text-muted-foreground">
+            Use at least 12 characters.
+          </p>
+        </Field>
+        <Button type="submit" className="w-full" disabled={pending}>
           {pending ? "Submitting…" : "Create developer account"}
-        </button>
+        </Button>
       </form>
-      <p>
-        Already registered? <a href="/sign-in">Sign in</a>
+      <p className="m-0 text-sm text-muted-foreground">
+        Already registered?{" "}
+        <a className={LINK} href="/sign-in">
+          Sign in
+        </a>
       </p>
     </PublicAuthShell>
   );
@@ -139,12 +201,13 @@ export function CheckEmailView() {
   const [sent, setSent] = useState(false);
   return (
     <PublicAuthShell title="Check your email">
-      <p>
+      <p className="m-0 text-sm text-muted-foreground">
         If the submitted address is eligible, we sent a single-use verification link. After
         verification, the developer account joins the review wait list.
       </p>
       {selfService === null ? null : (
         <form
+          className="grid gap-4"
           onSubmit={(event) => {
             event.preventDefault();
             setSent(false);
@@ -154,23 +217,29 @@ export function CheckEmailView() {
             );
           }}
         >
-          <label>
-            Developer email
-            <input
+          <Field label="Developer email" htmlFor="resend-verification-email">
+            <Input
+              id="resend-verification-email"
               type="email"
               value={email}
               maxLength={320}
               required
               onChange={(event) => setEmail(event.currentTarget.value)}
             />
-          </label>
-          <button type="submit">Resend verification email</button>
+          </Field>
+          <Button type="submit" variant="secondary" className="justify-self-start">
+            Resend verification email
+          </Button>
           {sent ? (
-            <p role="status">If the address is eligible, another message was queued.</p>
+            <p role="status" className="m-0 text-sm text-muted-foreground">
+              If the address is eligible, another message was queued.
+            </p>
           ) : null}
         </form>
       )}
-      <a href="/sign-in">Return to sign in</a>
+      <a className={LINK} href="/sign-in">
+        Return to sign in
+      </a>
     </PublicAuthShell>
   );
 }
@@ -193,20 +262,28 @@ export function VerifyEmailView() {
   return (
     <PublicAuthShell title="Verify developer email">
       {result === "working" ? (
-        <p role="status">Checking the single-use verification link…</p>
+        <p role="status" className="m-0 text-sm text-muted-foreground">
+          Checking the single-use verification link…
+        </p>
       ) : result === "verified" ? (
         <>
-          <p role="status">
+          <p role="status" className="m-0 text-sm">
             Your email is verified and your developer account is now waiting for review.
           </p>
-          <a className="button-link" href="/sign-in">
-            Sign in to view status
-          </a>
+          <Button asChild className="justify-self-start">
+            <a href="/sign-in">Sign in to view status</a>
+          </Button>
         </>
       ) : (
         <>
-          <p role="alert">This verification link is invalid, expired, or already used.</p>
-          <a href="/check-email">Request another verification email</a>
+          <Alert variant="destructive" role="alert">
+            <AlertDescription>
+              This verification link is invalid, expired, or already used.
+            </AlertDescription>
+          </Alert>
+          <a className={LINK} href="/check-email">
+            Request another verification email
+          </a>
         </>
       )}
     </PublicAuthShell>
@@ -219,8 +296,11 @@ export function ForgotPasswordView({ navigate }: { readonly navigate: Navigate }
   if (selfService === null) return <UnavailableAuthView />;
   return (
     <PublicAuthShell title="Recover your developer account">
-      <p>We will send a single-use reset link if the developer account is eligible.</p>
+      <p className="m-0 text-sm text-muted-foreground">
+        We will send a single-use reset link if the developer account is eligible.
+      </p>
       <form
+        className="grid gap-4"
         onSubmit={(event) => {
           event.preventDefault();
           const data = new FormData(event.currentTarget);
@@ -231,15 +311,23 @@ export function ForgotPasswordView({ navigate }: { readonly navigate: Navigate }
           );
         }}
       >
-        <label>
-          Developer email
-          <input name="email" type="email" autoComplete="email" maxLength={320} required />
-        </label>
-        <button type="submit" disabled={pending}>
+        <Field label="Developer email" htmlFor="recovery-email">
+          <Input
+            id="recovery-email"
+            name="email"
+            type="email"
+            autoComplete="email"
+            maxLength={320}
+            required
+          />
+        </Field>
+        <Button type="submit" className="w-full" disabled={pending}>
           {pending ? "Submitting…" : "Send recovery email"}
-        </button>
+        </Button>
       </form>
-      <a href="/sign-in">Return to sign in</a>
+      <a className={LINK} href="/sign-in">
+        Return to sign in
+      </a>
     </PublicAuthShell>
   );
 }
@@ -247,8 +335,12 @@ export function ForgotPasswordView({ navigate }: { readonly navigate: Navigate }
 export function CheckRecoveryEmailView() {
   return (
     <PublicAuthShell title="Check your email">
-      <p>If the developer account is eligible, a single-use password reset link has been queued.</p>
-      <a href="/sign-in">Return to sign in</a>
+      <p className="m-0 text-sm text-muted-foreground">
+        If the developer account is eligible, a single-use password reset link has been queued.
+      </p>
+      <a className={LINK} href="/sign-in">
+        Return to sign in
+      </a>
     </PublicAuthShell>
   );
 }
@@ -264,16 +356,23 @@ export function ResetPasswordView() {
   return (
     <PublicAuthShell title="Set a new developer password">
       {result === "failed" ? (
-        <p role="alert">This password reset link is invalid, expired, or already used.</p>
+        <Alert variant="destructive" role="alert">
+          <AlertDescription>
+            This password reset link is invalid, expired, or already used.
+          </AlertDescription>
+        </Alert>
       ) : result === "updated" ? (
         <>
-          <p role="status">Your password was updated. Existing sessions were revoked.</p>
-          <a className="button-link" href="/sign-in">
-            Sign in with the new password
-          </a>
+          <p role="status" className="m-0 text-sm">
+            Your password was updated. Existing sessions were revoked.
+          </p>
+          <Button asChild className="justify-self-start">
+            <a href="/sign-in">Sign in with the new password</a>
+          </Button>
         </>
       ) : (
         <form
+          className="grid gap-4"
           onSubmit={(event) => {
             event.preventDefault();
             const data = new FormData(event.currentTarget);
@@ -292,9 +391,9 @@ export function ResetPasswordView() {
             );
           }}
         >
-          <label>
-            New password
-            <input
+          <Field label="New password" htmlFor="reset-password">
+            <Input
+              id="reset-password"
               name="password"
               type="password"
               autoComplete="new-password"
@@ -302,11 +401,13 @@ export function ResetPasswordView() {
               maxLength={1024}
               required
             />
-          </label>
-          <p>Use at least 12 characters. Completing recovery signs out every existing session.</p>
-          <button type="submit" disabled={pending}>
+          </Field>
+          <p className="m-0 text-sm text-muted-foreground">
+            Use at least 12 characters. Completing recovery signs out every existing session.
+          </p>
+          <Button type="submit" className="w-full" disabled={pending}>
             {pending ? "Updating…" : "Update password"}
-          </button>
+          </Button>
         </form>
       )}
     </PublicAuthShell>
@@ -332,36 +433,42 @@ export function WaitListStatusView() {
   if (state.status === "authenticated" && state.session.audience === "mako-management") {
     return (
       <PublicAuthShell title="Your developer account is active">
-        <p>The wait-list review is complete.</p>
-        <a className="button-link" href="/">
-          Continue to the developer console
-        </a>
+        <p className="m-0 text-sm text-muted-foreground">The wait-list review is complete.</p>
+        <Button asChild className="justify-self-start">
+          <a href="/">Continue to the developer console</a>
+        </Button>
       </PublicAuthShell>
     );
   }
   return (
     <PublicAuthShell title="Your account is waiting for review">
-      <p>
+      <p className="m-0 text-sm text-muted-foreground">
         Your email is verified. A platform operator must approve this developer account before it
         can access teams, projects, data, or functions.
       </p>
       {status === "loading" ? (
-        <p role="status">Checking current wait-list status…</p>
-      ) : status === "failed" ? (
-        <p role="alert">The current wait-list status could not be loaded. Sign in again.</p>
-      ) : (
-        <p className="notice" role="status">
-          Status: pending review
+        <p role="status" className="m-0 text-sm text-muted-foreground">
+          Checking current wait-list status…
         </p>
+      ) : status === "failed" ? (
+        <Alert variant="destructive" role="alert">
+          <AlertDescription>
+            The current wait-list status could not be loaded. Sign in again.
+          </AlertDescription>
+        </Alert>
+      ) : (
+        <Alert role="status">
+          <AlertDescription className="text-foreground">Status: pending review</AlertDescription>
+        </Alert>
       )}
-      <p>
+      <p className="m-0 text-sm text-muted-foreground">
         Signed in as {state.status === "authenticated" ? state.session.profile.email : "developer"}.
         Queue position, reviewer notes, and approval estimates are not published.
       </p>
-      <div className="button-row">
-        <button type="button" className="secondary" onClick={() => void signOut()}>
+      <div className="flex flex-wrap gap-2">
+        <Button variant="outline" onClick={() => void signOut()}>
           Sign out
-        </button>
+        </Button>
       </div>
     </PublicAuthShell>
   );
@@ -388,6 +495,7 @@ export function consumeFragmentToken(): string | null {
   return token;
 }
 
+/** One card in the middle of an otherwise empty page: every public auth view. */
 function PublicAuthShell({
   title,
   children,
@@ -395,13 +503,22 @@ function PublicAuthShell({
   readonly title: string;
   readonly children: ReactNode;
 }) {
+  useTheme(THEME_KEY);
   return (
-    <main className="centered" id="main-content" tabIndex={-1}>
-      <section className="panel sign-in" aria-labelledby="public-auth-title">
-        <p className="eyebrow">Mako Cloud</p>
-        <h1 id="public-auth-title">{title}</h1>
-        {children}
-      </section>
+    <main
+      className="flex min-h-screen items-center justify-center bg-background p-6 text-foreground"
+      id="main-content"
+      tabIndex={-1}
+    >
+      <Card className="w-full max-w-md" aria-labelledby="public-auth-title">
+        <CardHeader className="gap-2">
+          <Eyebrow className="tracking-[0.18em] text-primary">Mako Cloud</Eyebrow>
+          <h1 id="public-auth-title" className="text-2xl">
+            {title}
+          </h1>
+        </CardHeader>
+        <CardContent className="grid gap-4">{children}</CardContent>
+      </Card>
     </main>
   );
 }
@@ -409,7 +526,11 @@ function PublicAuthShell({
 function UnavailableAuthView() {
   return (
     <PublicAuthShell title="Developer authentication unavailable">
-      <p role="alert">This console host does not have self-service developer authentication.</p>
+      <Alert variant="destructive" role="alert">
+        <AlertDescription>
+          This console host does not have self-service developer authentication.
+        </AlertDescription>
+      </Alert>
     </PublicAuthShell>
   );
 }

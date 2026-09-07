@@ -1,4 +1,32 @@
-import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  Alert,
+  AlertDescription,
+  Badge,
+  Button,
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  Eyebrow,
+  Field,
+  Input,
+  Progress,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  Tabs,
+  TabsContent,
+  TabsLine,
+  TabsTrigger,
+  cn,
+} from "@mako-cloud/ui";
+import { Download, Info } from "lucide-react";
+import { type FormEvent, useCallback, useEffect, useId, useMemo, useState } from "react";
 
 import type {
   ObservabilityPage,
@@ -23,6 +51,27 @@ const VIEW_LABELS: Record<ViewId, string> = {
   audit: "Audit history",
 };
 
+/** Columns whose values are identifiers, set in monospace. */
+const IDENTIFIER_COLUMNS: ReadonlySet<string> = new Set([
+  "Collection",
+  "Correlation",
+  "Request ID",
+  "Application user",
+  "Actor",
+  "Target",
+]);
+
+/** Columns whose values are quantities, set right-aligned in tabular figures so magnitudes line up. */
+const MEASURED_COLUMNS: ReadonlySet<string> = new Set([
+  "Quantity",
+  "Consumed",
+  "Limit",
+  "Utilization",
+]);
+
+/** A code snippet inline in a cell: an identifier. */
+const CODE = "rounded bg-muted px-1 py-0.5 font-mono text-[0.85em]";
+
 export function ObservabilityScreen({
   projectId,
   environmentId,
@@ -33,6 +82,7 @@ export function ObservabilityScreen({
   readonly onBack: () => void;
 }) {
   const client = useManagementClient();
+  const id = useId();
   const [activeView, setActiveView] = useState<ViewId>("usage");
   const [pages, setPages] = useState<ViewPages>({});
   const [query, setQuery] = useState<ObservabilityQuery>({ limit: 250 });
@@ -127,106 +177,122 @@ export function ObservabilityScreen({
   );
 
   return (
-    <section aria-labelledby="observability-title">
-      <button type="button" className="back-link" onClick={onBack}>
-        ← Project
-      </button>
-      <div className="section-heading">
-        <div>
-          <p className="eyebrow">Environment {environmentId}</p>
-          <h1 id="observability-title">Usage and observability</h1>
+    <section aria-labelledby="observability-title" className="grid gap-6">
+      <div className="grid gap-2">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="-ml-2 w-fit text-muted-foreground hover:text-foreground"
+          onClick={onBack}
+        >
+          ← Project
+        </Button>
+        <div className="grid gap-1">
+          <Eyebrow>Environment {environmentId}</Eyebrow>
+          <h1 id="observability-title" className="text-2xl">
+            Usage and observability
+          </h1>
         </div>
       </div>
       <ApiFailureNotice failure={failure} />
-      <section className="panel full-span" aria-labelledby="observability-filters-title">
-        <h2 id="observability-filters-title">Retained data window</h2>
-        <form className="filter-grid" onSubmit={applyRange}>
-          <label>
-            From
-            <input name="from" type="datetime-local" />
-          </label>
-          <label>
-            Until
-            <input name="until" type="datetime-local" />
-          </label>
-          <button type="submit">Apply time range</button>
-        </form>
-        {page === undefined ? null : <RetentionNotice page={page} />}
-      </section>
-      <div className="tab-list" role="tablist" aria-label="Observability views">
-        {VIEW_IDS.map((view) => (
-          <button
-            key={view}
-            type="button"
-            role="tab"
-            aria-selected={activeView === view}
-            className={activeView === view ? "active" : "secondary"}
-            onClick={() => {
-              setActiveView(view);
-              setSearch("");
-            }}
-          >
-            {VIEW_LABELS[view]}
-          </button>
-        ))}
-      </div>
-      <section className="panel full-span" aria-labelledby="observability-view-title">
-        <div className="button-row spread">
-          <div>
-            <h2 id="observability-view-title">{VIEW_LABELS[activeView]}</h2>
-            <p>{viewDescription(activeView)}</p>
-          </div>
-          <div className="button-row">
-            <button
-              type="button"
-              className="secondary"
-              disabled={visibleRecords.length === 0}
-              onClick={() => downloadExport(activeView, "json", visibleRecords)}
-            >
-              Export JSON
-            </button>
-            <button
-              type="button"
-              className="secondary"
-              disabled={visibleRecords.length === 0}
-              onClick={() => downloadExport(activeView, "csv", visibleRecords)}
-            >
-              Export CSV
-            </button>
-          </div>
-        </div>
-        <label className="search-field">
-          Search loaded records
-          <input
-            type="search"
-            value={search}
-            onChange={(event) => setSearch(event.currentTarget.value)}
-            placeholder={
-              activeView === "audit"
-                ? "Actor, action, target, outcome, or request ID"
-                : "Search any visible field"
-            }
-          />
-        </label>
-        {loading && page === undefined ? (
-          <p aria-live="polite">Loading retained signals…</p>
-        ) : (
-          <ObservabilityTable view={activeView} records={visibleRecords} />
-        )}
-        <div className="button-row spread">
-          <small>
-            Showing {visibleRecords.length} of {page?.items.length ?? 0} loaded records.
-          </small>
-          <button
-            type="button"
-            className="secondary"
-            disabled={page?.nextCursor == null || loading}
-            onClick={() => void loadMore()}
-          >
-            Load more retained records
-          </button>
-        </div>
-      </section>
+      <Card aria-labelledby="observability-filters-title">
+        <CardHeader>
+          <CardTitle id="observability-filters-title">Retained data window</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-4">
+          <form className="flex flex-wrap items-end gap-3" onSubmit={applyRange}>
+            <Field label="From" htmlFor={`${id}-from`} className="w-56">
+              <Input id={`${id}-from`} name="from" type="datetime-local" />
+            </Field>
+            <Field label="Until" htmlFor={`${id}-until`} className="w-56">
+              <Input id={`${id}-until`} name="until" type="datetime-local" />
+            </Field>
+            <Button type="submit">Apply time range</Button>
+          </form>
+          {page === undefined ? null : <RetentionNotice page={page} />}
+        </CardContent>
+      </Card>
+      <Tabs
+        value={activeView}
+        onValueChange={(value) => {
+          if ((VIEW_IDS as readonly string[]).includes(value)) {
+            setActiveView(value as ViewId);
+            setSearch("");
+          }
+        }}
+        className="gap-6"
+      >
+        <TabsLine aria-label="Observability views" className="overflow-x-auto">
+          {VIEW_IDS.map((view) => (
+            <TabsTrigger key={view} value={view}>
+              {VIEW_LABELS[view]}
+            </TabsTrigger>
+          ))}
+        </TabsLine>
+        <TabsContent value={activeView}>
+          <Card aria-labelledby="observability-view-title">
+            <CardHeader>
+              <CardTitle id="observability-view-title">{VIEW_LABELS[activeView]}</CardTitle>
+              <CardDescription>{viewDescription(activeView)}</CardDescription>
+              <CardAction className="flex flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={visibleRecords.length === 0}
+                  onClick={() => downloadExport(activeView, "json", visibleRecords)}
+                >
+                  <Download aria-hidden="true" />
+                  Export JSON
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={visibleRecords.length === 0}
+                  onClick={() => downloadExport(activeView, "csv", visibleRecords)}
+                >
+                  <Download aria-hidden="true" />
+                  Export CSV
+                </Button>
+              </CardAction>
+            </CardHeader>
+            <CardContent className="grid gap-4">
+              <Field label="Search loaded records" htmlFor={`${id}-search`} className="max-w-xl">
+                <Input
+                  id={`${id}-search`}
+                  type="search"
+                  value={search}
+                  onChange={(event) => setSearch(event.currentTarget.value)}
+                  placeholder={
+                    activeView === "audit"
+                      ? "Actor, action, target, outcome, or request ID"
+                      : "Search any visible field"
+                  }
+                />
+              </Field>
+              {loading && page === undefined ? (
+                <p className="m-0 text-sm text-muted-foreground" aria-live="polite">
+                  Loading retained signals…
+                </p>
+              ) : (
+                <ObservabilityTable view={activeView} records={visibleRecords} />
+              )}
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <small className="text-xs text-muted-foreground tabular-nums">
+                  Showing {visibleRecords.length} of {page?.items.length ?? 0} loaded records.
+                </small>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={page?.nextCursor == null || loading}
+                  onClick={() => void loadMore()}
+                >
+                  Load more retained records
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
       <IndexStatePanel projectId={projectId} environmentId={environmentId} query={query} />
     </section>
   );
@@ -234,11 +300,14 @@ export function ObservabilityScreen({
 
 export function RetentionNotice({ page }: { readonly page: ObservabilityPage }) {
   return (
-    <p className="notice" role="status">
-      Retained from {new Date(page.retention.retainedFrom).toLocaleString()}; observed at{" "}
-      {new Date(page.retention.observedAt).toLocaleString()} (
-      {formatDuration(page.retention.retentionSeconds)} retention).
-    </p>
+    <Alert role="status">
+      <Info aria-hidden="true" />
+      <AlertDescription className="block tabular-nums">
+        Retained from {new Date(page.retention.retainedFrom).toLocaleString()}; observed at{" "}
+        {new Date(page.retention.observedAt).toLocaleString()} (
+        {formatDuration(page.retention.retentionSeconds)} retention).
+      </AlertDescription>
+    </Alert>
   );
 }
 
@@ -250,33 +319,50 @@ function ObservabilityTable({
   readonly records: readonly ObservabilityRecord[];
 }) {
   if (records.length === 0) {
-    return <p>No retained records match this view and search.</p>;
+    return (
+      <p className="m-0 text-sm text-muted-foreground">
+        No retained records match this view and search.
+      </p>
+    );
   }
   return (
-    <div className="table-scroll">
-      <table>
-        <thead>
-          <tr>
-            <th scope="col">Time</th>
-            {columns(view).map((column) => (
-              <th scope="col" key={column}>
-                {column}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {records.map((record) => (
-            <tr key={`${record.timestamp}:${payloadIdentity(record.payload)}`}>
-              <td>{new Date(record.timestamp).toLocaleString()}</td>
-              {columns(view).map((column, cellIndex) => (
-                <td key={column}>{cells(view, record.payload)[cellIndex]}</td>
-              ))}
-            </tr>
+    <Table>
+      <TableHeader>
+        <TableRow className="hover:bg-transparent">
+          <TableHead scope="col">Time</TableHead>
+          {columns(view).map((column) => (
+            <TableHead
+              scope="col"
+              key={column}
+              className={cn(MEASURED_COLUMNS.has(column) && "text-right")}
+            >
+              {column}
+            </TableHead>
           ))}
-        </tbody>
-      </table>
-    </div>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {records.map((record) => (
+          <TableRow key={`${record.timestamp}:${payloadIdentity(record.payload)}`}>
+            <TableCell className="align-top text-muted-foreground tabular-nums">
+              {new Date(record.timestamp).toLocaleString()}
+            </TableCell>
+            {columns(view).map((column, cellIndex) => (
+              <TableCell
+                key={column}
+                className={cn(
+                  "max-w-md align-top whitespace-normal break-words",
+                  IDENTIFIER_COLUMNS.has(column) && "font-mono text-xs",
+                  MEASURED_COLUMNS.has(column) && "text-right tabular-nums",
+                )}
+              >
+                {cells(view, record.payload)[cellIndex]}
+              </TableCell>
+            ))}
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
   );
 }
 
@@ -522,99 +608,123 @@ function IndexStatePanel({
   const eventCount = groups.reduce((total, group) => total + group.history.length, 0);
 
   return (
-    <section className="panel full-span" aria-labelledby="index-state-title">
-      <div className="button-row spread">
-        <div>
-          <h2 id="index-state-title">Indexes</h2>
-          <p>
-            Build state per collection index from the retained index-state events, newest first.
+    <Card aria-labelledby="index-state-title">
+      <CardHeader>
+        <CardTitle id="index-state-title">Indexes</CardTitle>
+        <CardDescription>
+          Build state per collection index from the retained index-state events, newest first.
+        </CardDescription>
+        <CardAction>
+          <span className="text-sm text-muted-foreground tabular-nums">
+            {groups.length} {groups.length === 1 ? "index" : "indexes"} · {eventCount}{" "}
+            {eventCount === 1 ? "event" : "events"}
+          </span>
+        </CardAction>
+      </CardHeader>
+      <CardContent className="grid gap-4">
+        <ApiFailureNotice failure={failure} />
+        {loading && page === null ? (
+          <p className="m-0 text-sm text-muted-foreground" aria-live="polite">
+            Loading index states…
           </p>
-        </div>
-        <small>
-          {groups.length} {groups.length === 1 ? "index" : "indexes"} · {eventCount}{" "}
-          {eventCount === 1 ? "event" : "events"}
-        </small>
-      </div>
-      <ApiFailureNotice failure={failure} />
-      {loading && page === null ? (
-        <p aria-live="polite">Loading index states…</p>
-      ) : groups.length === 0 ? (
-        <p>No index build events are retained for this window.</p>
-      ) : (
-        <div className="table-scroll">
-          <table className="index-state-table">
-            <thead>
-              <tr>
-                <th scope="col">Collection</th>
-                <th scope="col">Index</th>
-                <th scope="col">Version</th>
-                <th scope="col">State</th>
-                <th scope="col">Progress</th>
-                <th scope="col">Message</th>
-                <th scope="col">Observed</th>
-                <th scope="col">History</th>
-              </tr>
-            </thead>
-            <tbody>
-              {groups.map((group) => (
-                <tr key={group.key}>
-                  <td>
-                    <code>{group.collectionId}</code>
-                  </td>
-                  <td>
-                    <strong>{group.indexName}</strong>
-                  </td>
-                  <td>v{group.latest.payload.indexVersion}</td>
-                  <td>
-                    <span className={`status-pill ${indexStateClass(group.latest.payload.state)}`}>
-                      {humanize(group.latest.payload.state)}
-                    </span>
-                  </td>
-                  <td>
-                    <IndexProgress
-                      percent={group.latest.payload.progressPercent}
-                      label={`${group.collectionId} ${group.indexName} build progress`}
-                    />
-                  </td>
-                  <td>{group.latest.payload.message ?? "—"}</td>
-                  <td>{new Date(group.latest.timestamp).toLocaleString()}</td>
-                  <td>
-                    {group.history.length < 2 ? (
-                      "—"
-                    ) : (
-                      <details>
-                        <summary>{group.history.length} events</summary>
-                        <ol className="index-history">
-                          {group.history.map((record) => (
-                            <li key={record.timestamp}>
-                              {new Date(record.timestamp).toLocaleString()}:{" "}
-                              {humanize(record.payload.state)} v{record.payload.indexVersion} (
-                              {clampPercent(record.payload.progressPercent)}%)
-                              {record.payload.message === null
-                                ? ""
-                                : ` — ${record.payload.message}`}
-                            </li>
-                          ))}
-                        </ol>
-                      </details>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </section>
+        ) : groups.length === 0 ? (
+          <p className="m-0 text-sm text-muted-foreground">
+            No index build events are retained for this window.
+          </p>
+        ) : (
+          <Table className="index-state-table">
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead scope="col">Collection</TableHead>
+                <TableHead scope="col">Index</TableHead>
+                <TableHead scope="col">Version</TableHead>
+                <TableHead scope="col">State</TableHead>
+                <TableHead scope="col">Progress</TableHead>
+                <TableHead scope="col">Message</TableHead>
+                <TableHead scope="col">Observed</TableHead>
+                <TableHead scope="col">History</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {groups.map((group) => {
+                const tone = indexStateTone(group.latest.payload.state);
+                return (
+                  <TableRow key={group.key}>
+                    <TableCell className="align-top">
+                      <code className={CODE}>{group.collectionId}</code>
+                    </TableCell>
+                    <TableCell className="align-top">
+                      <strong className="font-mono text-xs font-semibold">{group.indexName}</strong>
+                    </TableCell>
+                    <TableCell className="align-top font-mono text-xs">
+                      v{group.latest.payload.indexVersion}
+                    </TableCell>
+                    <TableCell className="align-top">
+                      <Badge className="status-pill" variant={tone}>
+                        {humanize(group.latest.payload.state)}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="align-top">
+                      <IndexProgress
+                        percent={group.latest.payload.progressPercent}
+                        tone={tone}
+                        label={`${group.collectionId} ${group.indexName} build progress`}
+                      />
+                    </TableCell>
+                    <TableCell className="max-w-md align-top whitespace-normal break-words">
+                      {group.latest.payload.message ?? "—"}
+                    </TableCell>
+                    <TableCell className="align-top text-muted-foreground tabular-nums">
+                      {new Date(group.latest.timestamp).toLocaleString()}
+                    </TableCell>
+                    <TableCell className="align-top whitespace-normal">
+                      {group.history.length < 2 ? (
+                        "—"
+                      ) : (
+                        <details>
+                          <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
+                            {group.history.length} events
+                          </summary>
+                          <ol className="m-0 mt-2 grid gap-1 pl-5 text-xs">
+                            {group.history.map((record) => (
+                              <li key={record.timestamp}>
+                                {new Date(record.timestamp).toLocaleString()}:{" "}
+                                {humanize(record.payload.state)} v{record.payload.indexVersion} (
+                                {clampPercent(record.payload.progressPercent)}%)
+                                {record.payload.message === null
+                                  ? ""
+                                  : ` — ${record.payload.message}`}
+                              </li>
+                            ))}
+                          </ol>
+                        </details>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
-function IndexProgress({ percent, label }: { readonly percent: number; readonly label: string }) {
+function IndexProgress({
+  percent,
+  tone,
+  label,
+}: {
+  readonly percent: number;
+  readonly tone: IndexStateTone;
+  readonly label: string;
+}) {
   const value = clampPercent(percent);
   return (
-    <span className="index-progress">
-      <progress value={value} max={100} aria-label={label} />
-      <small>{value}%</small>
+    <span className="flex min-w-36 items-center gap-2">
+      <Progress value={value} tone={tone} aria-label={label} className="h-1.5" />
+      <small className="text-xs text-muted-foreground tabular-nums">{value}%</small>
     </span>
   );
 }
@@ -645,15 +755,18 @@ export function groupIndexStates(records: readonly ObservabilityRecord[]): Index
   return Array.from(groups.values());
 }
 
-function indexStateClass(state: string): string {
+type IndexStateTone = "destructive" | "positive" | "warning";
+
+/** The colour an index state carries: failed is destructive, ready is positive, anything in between is a warning. */
+function indexStateTone(state: string): IndexStateTone {
   const lowered = state.toLowerCase();
   if (lowered.includes("fail") || lowered.includes("error")) {
-    return "index-failed";
+    return "destructive";
   }
   if (["ready", "active", "built", "complete", "completed"].includes(lowered)) {
-    return "index-ready";
+    return "positive";
   }
-  return "index-building";
+  return "warning";
 }
 
 function clampPercent(percent: number): number {

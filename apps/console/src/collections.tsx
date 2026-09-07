@@ -1,4 +1,22 @@
-import { type FormEvent, useCallback, useEffect, useState } from "react";
+import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
+  Button,
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  Eyebrow,
+  Field,
+  Input,
+  NativeSelect,
+  Textarea,
+} from "@mako-cloud/ui";
+import { AlertTriangle, CheckCircle2, Plus, RefreshCw, ShieldCheck } from "lucide-react";
+import { type FormEvent, type ReactNode, useCallback, useEffect, useState } from "react";
 
 import type {
   Collection,
@@ -26,6 +44,9 @@ const DEFAULT_SCHEMA = JSON.stringify(
   2,
 );
 const DEFAULT_PRIMARY_KEY = JSON.stringify({ kind: "field", field: "id" }, null, 2);
+
+/** An identifier inside an eyebrow keeps its case and typeface. */
+const IDENTIFIER = "font-mono normal-case tracking-normal";
 
 interface SchemaDraft {
   readonly schemaVersion: number;
@@ -83,65 +104,105 @@ export function CollectionsScreen({
   };
 
   return (
-    <section aria-labelledby="collections-title">
-      <button type="button" className="back-link" onClick={onBack}>
-        ← Project
-      </button>
-      <div className="section-heading">
+    <section aria-labelledby="collections-title" className="grid gap-6">
+      <div className="grid gap-3">
+        <BackButton onClick={onBack}>← Project</BackButton>
         <div>
-          <p className="eyebrow">Environment {environmentId}</p>
-          <h1 id="collections-title">Collections</h1>
+          <Eyebrow>
+            Environment <span className={IDENTIFIER}>{environmentId}</span>
+          </Eyebrow>
+          <h1 id="collections-title" className="m-0 text-2xl font-semibold tracking-tight">
+            Collections
+          </h1>
         </div>
       </div>
       <ApiFailureNotice failure={failure} />
-      <div className="split-grid">
-        <section className="panel" aria-labelledby="collection-list-title">
-          <h2 id="collection-list-title">Collection schemas</h2>
-          {collections === null ? (
-            <p>Loading collections…</p>
-          ) : collections.length === 0 ? (
-            <p>No collections have been created.</p>
-          ) : (
-            <div className="resource-list">
-              {collections.map((collection) => (
-                <button
-                  type="button"
-                  className="resource-row"
-                  key={collection.id}
-                  onClick={() => onOpen(collection.id)}
-                >
-                  <span>
-                    <strong>{collection.id}</strong>
-                    <small>Schema v{collection.schemaVersion}</small>
-                  </span>
-                  <LifecycleBadge state={collection.compatibility} />
-                </button>
-              ))}
-            </div>
-          )}
-        </section>
-        <section className="panel" aria-labelledby="create-collection-title">
-          <h2 id="create-collection-title">Create collection</h2>
-          <p>New collections remain default-deny until a policy is activated.</p>
-          <form onSubmit={(event) => void create(event)}>
-            <label>
-              Collection ID
-              <input name="id" required pattern="[a-z][a-z0-9_-]{0,62}" />
-            </label>
-            <label>
-              Schema version
-              <input name="schemaVersion" type="number" min="1" defaultValue="1" required />
-            </label>
-            <JsonField name="jsonSchema" label="JSON schema" defaultValue={DEFAULT_SCHEMA} />
-            <JsonField
-              name="primaryKey"
-              label="Primary-key definition"
-              defaultValue={DEFAULT_PRIMARY_KEY}
-              rows={4}
-            />
-            <button type="submit">Create collection</button>
-          </form>
-        </section>
+      <div className="grid items-start gap-6 lg:grid-cols-2">
+        <Card aria-labelledby="collection-list-title">
+          <CardHeader>
+            <CardTitle id="collection-list-title">Collection schemas</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {collections === null ? (
+              <p className="m-0 text-sm text-muted-foreground">Loading collections…</p>
+            ) : collections.length === 0 ? (
+              <p className="m-0 text-sm text-muted-foreground">No collections have been created.</p>
+            ) : (
+              <ul className="m-0 list-none divide-y overflow-hidden rounded-md border p-0">
+                {collections.map((collection) => (
+                  <li key={collection.id}>
+                    <Button
+                      variant="ghost"
+                      className="h-auto w-full justify-between gap-3 rounded-none px-3 py-2.5 text-left font-normal"
+                      onClick={() => onOpen(collection.id)}
+                    >
+                      <span className="grid min-w-0 gap-0.5">
+                        <strong className="truncate font-mono text-sm font-medium">
+                          {collection.id}
+                        </strong>
+                        <small className="text-xs text-muted-foreground">
+                          Schema v{collection.schemaVersion}
+                        </small>
+                      </span>
+                      <LifecycleBadge state={collection.compatibility} />
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+        <Card aria-labelledby="create-collection-title">
+          <CardHeader>
+            <CardTitle id="create-collection-title">Create collection</CardTitle>
+            <CardDescription>
+              New collections remain default-deny until a policy is activated.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form className="grid gap-4" onSubmit={(event) => void create(event)}>
+              <Field label="Collection ID" htmlFor="create-collection-id">
+                <Input
+                  id="create-collection-id"
+                  name="id"
+                  required
+                  pattern="[a-z][a-z0-9_-]{0,62}"
+                  className="font-mono"
+                />
+              </Field>
+              <Field label="Schema version" htmlFor="create-collection-schema-version">
+                <Input
+                  id="create-collection-schema-version"
+                  name="schemaVersion"
+                  type="number"
+                  min="1"
+                  defaultValue="1"
+                  required
+                  className="max-w-40"
+                />
+              </Field>
+              <JsonField
+                id="create-collection-json-schema"
+                name="jsonSchema"
+                label="JSON schema"
+                defaultValue={DEFAULT_SCHEMA}
+              />
+              <JsonField
+                id="create-collection-primary-key"
+                name="primaryKey"
+                label="Primary-key definition"
+                defaultValue={DEFAULT_PRIMARY_KEY}
+                rows={4}
+              />
+              <div>
+                <Button type="submit">
+                  <Plus aria-hidden="true" />
+                  Create collection
+                </Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
       </div>
     </section>
   );
@@ -205,60 +266,74 @@ export function CollectionScreen({
   };
 
   return (
-    <section aria-labelledby="collection-title">
-      <button type="button" className="back-link" onClick={onBack}>
-        ← Collections
-      </button>
-      <div className="section-heading">
-        <div>
-          <p className="eyebrow">Collection</p>
-          <h1 id="collection-title">{collectionId}</h1>
-        </div>
-        {collection === null ? null : (
-          <div className="button-row">
-            <LifecycleBadge state={collection.state} />
-            <button type="button" onClick={onOpenPolicies}>
-              Manage policies
-            </button>
+    <section aria-labelledby="collection-title" className="grid gap-6">
+      <div className="grid gap-3">
+        <BackButton onClick={onBack}>← Collections</BackButton>
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <Eyebrow>Collection</Eyebrow>
+            <h1 id="collection-title" className="m-0 text-2xl font-semibold tracking-tight">
+              {collectionId}
+            </h1>
           </div>
-        )}
+          {collection === null ? null : (
+            <div className="flex flex-wrap items-center gap-3">
+              <LifecycleBadge state={collection.state} />
+              <Button onClick={onOpenPolicies}>
+                <ShieldCheck aria-hidden="true" />
+                Manage policies
+              </Button>
+            </div>
+          )}
+        </div>
       </div>
       <ApiFailureNotice failure={failure} />
       {collection === null ? (
-        <p>Loading collection…</p>
+        <p className="m-0 text-sm text-muted-foreground">Loading collection…</p>
       ) : (
         <>
-          <div className="split-grid">
+          <div className="grid items-start gap-6 lg:grid-cols-2">
             <CollectionSchemaCard collection={collection} />
-            <section className="panel" aria-labelledby="publish-schema-title">
-              <h2 id="publish-schema-title">Publish schema version</h2>
-              <p>Compatibility is checked before the active schema changes.</p>
-              <form onSubmit={(event) => void publish(event)}>
-                <label>
-                  New schema version
-                  <input
-                    name="schemaVersion"
-                    type="number"
-                    min={collection.schemaVersion + 1}
-                    defaultValue={collection.schemaVersion + 1}
-                    required
+            <Card aria-labelledby="publish-schema-title">
+              <CardHeader>
+                <CardTitle id="publish-schema-title">Publish schema version</CardTitle>
+                <CardDescription>
+                  Compatibility is checked before the active schema changes.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-4">
+                <form className="grid gap-4" onSubmit={(event) => void publish(event)}>
+                  <Field label="New schema version" htmlFor="publish-schema-version">
+                    <Input
+                      id="publish-schema-version"
+                      name="schemaVersion"
+                      type="number"
+                      min={collection.schemaVersion + 1}
+                      defaultValue={collection.schemaVersion + 1}
+                      required
+                      className="max-w-40"
+                    />
+                  </Field>
+                  <JsonField
+                    id="publish-json-schema"
+                    name="jsonSchema"
+                    label="JSON schema"
+                    defaultValue={JSON.stringify(collection.jsonSchema, null, 2)}
                   />
-                </label>
-                <JsonField
-                  name="jsonSchema"
-                  label="JSON schema"
-                  defaultValue={JSON.stringify(collection.jsonSchema, null, 2)}
-                />
-                <JsonField
-                  name="primaryKey"
-                  label="Primary-key definition"
-                  defaultValue={JSON.stringify(collection.primaryKey, null, 2)}
-                  rows={4}
-                />
-                <button type="submit">Check and publish</button>
-              </form>
-              <CompatibilityResult result={publication} />
-            </section>
+                  <JsonField
+                    id="publish-primary-key"
+                    name="primaryKey"
+                    label="Primary-key definition"
+                    defaultValue={JSON.stringify(collection.primaryKey, null, 2)}
+                    rows={4}
+                  />
+                  <div>
+                    <Button type="submit">Check and publish</Button>
+                  </div>
+                </form>
+                <CompatibilityResult result={publication} />
+              </CardContent>
+            </Card>
           </div>
           <MigrationPanel
             projectId={projectId}
@@ -279,27 +354,26 @@ export function CollectionScreen({
 
 function CollectionSchemaCard({ collection }: { readonly collection: Collection }) {
   return (
-    <section className="panel" aria-labelledby="active-schema-title">
-      <h2 id="active-schema-title">Active JSON schema</h2>
-      <dl className="metadata-list">
-        <div>
-          <dt>Schema version</dt>
-          <dd>{collection.schemaVersion}</dd>
+    <Card aria-labelledby="active-schema-title">
+      <CardHeader>
+        <CardTitle id="active-schema-title">Active JSON schema</CardTitle>
+      </CardHeader>
+      <CardContent className="grid gap-4">
+        <dl className="m-0 grid gap-3 sm:grid-cols-3">
+          <MetaItem term="Schema version">{collection.schemaVersion}</MetaItem>
+          <MetaItem term="Metadata version">{collection.metadataVersion}</MetaItem>
+          <MetaItem term="Compatibility">{collection.compatibility.replaceAll("_", " ")}</MetaItem>
+        </dl>
+        <div className="grid gap-2">
+          <h3 className="m-0 text-sm font-medium">Primary key</h3>
+          <JsonPreview value={collection.primaryKey} />
         </div>
-        <div>
-          <dt>Metadata version</dt>
-          <dd>{collection.metadataVersion}</dd>
+        <div className="grid gap-2">
+          <h3 className="m-0 text-sm font-medium">Schema</h3>
+          <JsonPreview value={collection.jsonSchema} />
         </div>
-        <div>
-          <dt>Compatibility</dt>
-          <dd>{collection.compatibility.replaceAll("_", " ")}</dd>
-        </div>
-      </dl>
-      <h3>Primary key</h3>
-      <JsonPreview value={collection.primaryKey} />
-      <h3>Schema</h3>
-      <JsonPreview value={collection.jsonSchema} />
-    </section>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -308,29 +382,32 @@ function CompatibilityResult({ result }: { readonly result: SchemaPublicationRes
     return null;
   }
   const report = result.compatibility;
+  const migrationRequired = result.status === "migration_required";
   return (
-    <div
-      className={`notice ${result.status === "migration_required" ? "warning" : "success"}`}
-      role="status"
-    >
-      <strong>
+    <Alert variant={migrationRequired ? "warning" : "positive"} role="status">
+      {migrationRequired ? (
+        <AlertTriangle aria-hidden="true" />
+      ) : (
+        <CheckCircle2 aria-hidden="true" />
+      )}
+      <AlertTitle className="line-clamp-none">
         {result.status === "published"
           ? "Schema published."
           : "Migration required before this schema can be published."}
-      </strong>
+      </AlertTitle>
       {report === undefined ? null : (
-        <>
-          <p>{report.documentsChecked} stored documents checked.</p>
+        <AlertDescription>
+          <p className="m-0">{report.documentsChecked} stored documents checked.</p>
           {report.issues.length === 0 ? null : (
-            <ul>
+            <ul className="m-0 list-disc pl-4">
               {report.issues.map((issue) => (
                 <li key={issue}>{issue}</li>
               ))}
             </ul>
           )}
-        </>
+        </AlertDescription>
       )}
-    </div>
+    </Alert>
   );
 }
 
@@ -443,98 +520,119 @@ function MigrationPanel({
   };
 
   return (
-    <section className="panel full-span stacked-section" aria-labelledby="migration-title">
-      <h2 id="migration-title">Schema migration</h2>
-      <p>Incompatible schema changes use an explicit, observable workflow.</p>
-      <ApiFailureNotice failure={failure} />
-      <div className="split-grid">
-        <form key={suggested?.schemaVersion ?? "empty"} onSubmit={(event) => void create(event)}>
-          <label>
-            Target schema version
-            <input
-              name="targetSchemaVersion"
-              type="number"
-              min="1"
-              defaultValue={suggested?.schemaVersion}
-              required
+    <Card aria-labelledby="migration-title">
+      <CardHeader>
+        <CardTitle id="migration-title">Schema migration</CardTitle>
+        <CardDescription>
+          Incompatible schema changes use an explicit, observable workflow.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-4">
+        <ApiFailureNotice failure={failure} />
+        <div className="grid items-start gap-6 lg:grid-cols-2">
+          <form
+            key={suggested?.schemaVersion ?? "empty"}
+            className="grid gap-4"
+            onSubmit={(event) => void create(event)}
+          >
+            <Field label="Target schema version" htmlFor="migration-target-schema-version">
+              <Input
+                id="migration-target-schema-version"
+                name="targetSchemaVersion"
+                type="number"
+                min="1"
+                defaultValue={suggested?.schemaVersion}
+                required
+                className="max-w-40"
+              />
+            </Field>
+            <JsonField
+              id="migration-target-json-schema"
+              name="targetJsonSchema"
+              label="Target JSON schema"
+              defaultValue={
+                suggested === null ? DEFAULT_SCHEMA : JSON.stringify(suggested.jsonSchema, null, 2)
+              }
             />
-          </label>
-          <JsonField
-            name="targetJsonSchema"
-            label="Target JSON schema"
-            defaultValue={
-              suggested === null ? DEFAULT_SCHEMA : JSON.stringify(suggested.jsonSchema, null, 2)
-            }
-          />
-          <JsonField
-            name="targetPrimaryKey"
-            label="Target primary-key definition"
-            defaultValue={
-              suggested === null
-                ? DEFAULT_PRIMARY_KEY
-                : JSON.stringify(suggested.primaryKey, null, 2)
-            }
-            rows={4}
-          />
-          <label>
-            Migration reason
-            <input name="reason" required maxLength={500} />
-          </label>
-          <button type="submit">Plan migration</button>
-        </form>
-        <div>
-          <form className="inline-form" onSubmit={(event) => void lookup(event)}>
-            <label>
-              Migration ID
-              <input name="migrationId" required pattern="mig_[A-Za-z0-9_-]{8,64}" />
-            </label>
-            <button type="submit" className="secondary">
-              Inspect
-            </button>
+            <JsonField
+              id="migration-target-primary-key"
+              name="targetPrimaryKey"
+              label="Target primary-key definition"
+              defaultValue={
+                suggested === null
+                  ? DEFAULT_PRIMARY_KEY
+                  : JSON.stringify(suggested.primaryKey, null, 2)
+              }
+              rows={4}
+            />
+            <Field label="Migration reason" htmlFor="migration-reason">
+              <Input id="migration-reason" name="reason" required maxLength={500} />
+            </Field>
+            <div>
+              <Button type="submit">Plan migration</Button>
+            </div>
           </form>
-          {migration === null ? (
-            <p>No migration selected.</p>
-          ) : (
-            <article className="workflow-card" aria-live="polite">
-              <div className="button-row spread">
-                <strong>{migration.id}</strong>
-                <LifecycleBadge state={migration.state} />
-              </div>
-              <p>
-                Schema v{migration.fromSchemaVersion} → v{migration.toSchemaVersion}
-              </p>
-              <p>{migration.reason}</p>
-              {migration.compatibilityIssues.length === 0 ? null : (
-                <ul>
-                  {migration.compatibilityIssues.map((issue) => (
-                    <li key={issue}>{issue}</li>
-                  ))}
-                </ul>
-              )}
-              <div className="button-row">
-                <button type="button" onClick={() => void update("running")}>
-                  Start / retry
-                </button>
-                <button
-                  type="button"
-                  className="secondary"
-                  onClick={() => void update("completed")}
-                >
-                  Mark completed
-                </button>
-                <button
-                  type="button"
-                  className="danger-link"
-                  onClick={() => void update("cancelled")}
-                >
-                  Cancel
-                </button>
-              </div>
-            </article>
-          )}
+          <div className="grid gap-4">
+            <form
+              className="flex flex-wrap items-end gap-2"
+              onSubmit={(event) => void lookup(event)}
+            >
+              <Field label="Migration ID" htmlFor="migration-lookup-id" className="min-w-0 flex-1">
+                <Input
+                  id="migration-lookup-id"
+                  name="migrationId"
+                  required
+                  pattern="mig_[A-Za-z0-9_-]{8,64}"
+                  className="font-mono"
+                />
+              </Field>
+              <Button type="submit" variant="outline">
+                Inspect
+              </Button>
+            </form>
+            {migration === null ? (
+              <p className="m-0 text-sm text-muted-foreground">No migration selected.</p>
+            ) : (
+              <Card as="article" aria-live="polite" className="gap-3 py-4">
+                <CardContent className="grid gap-3 px-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <strong className="font-mono text-sm font-medium">{migration.id}</strong>
+                    <LifecycleBadge state={migration.state} />
+                  </div>
+                  <p className="m-0 text-sm">
+                    Schema v{migration.fromSchemaVersion} → v{migration.toSchemaVersion}
+                  </p>
+                  <p className="m-0 text-sm text-muted-foreground">{migration.reason}</p>
+                  {migration.compatibilityIssues.length === 0 ? null : (
+                    <ul className="m-0 list-disc pl-4 text-sm">
+                      {migration.compatibilityIssues.map((issue) => (
+                        <li key={issue}>{issue}</li>
+                      ))}
+                    </ul>
+                  )}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button size="sm" onClick={() => void update("running")}>
+                      Start / retry
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => void update("completed")}>
+                      Mark completed
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                      onClick={() => void update("cancelled")}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </div>
         </div>
-      </div>
-    </section>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -617,58 +715,91 @@ function IndexesPanel({
   };
 
   return (
-    <section className="panel full-span stacked-section" aria-labelledby="indexes-title">
-      <div className="button-row spread">
-        <div>
-          <h2 id="indexes-title">Indexes</h2>
-          <p>Online builds are fenced from queries until backfill and catch-up finish.</p>
-        </div>
-        <button type="button" className="secondary" onClick={() => void reload()}>
-          Refresh
-        </button>
-      </div>
-      <ApiFailureNotice failure={failure} />
-      {indexes === null ? (
-        <p>Loading indexes…</p>
-      ) : indexes.length === 0 ? (
-        <p>No indexes have been defined.</p>
-      ) : (
-        <div className="card-grid">
-          {indexes.map((index) => (
-            <IndexCard
-              key={`${index.name}:${index.version}`}
-              index={index}
-              onDelete={() => void remove(index)}
-            />
-          ))}
-        </div>
-      )}
-      <details>
-        <summary>Create index</summary>
-        <form onSubmit={(event) => void create(event)}>
-          <label>
-            Index name
-            <input name="name" required pattern="[A-Za-z0-9_-]{1,128}" />
-          </label>
-          <label>
-            Version
-            <input name="version" type="number" min="1" defaultValue="1" required />
-          </label>
-          <label>
-            Kind
-            <select name="kind" defaultValue="non_unique">
-              <option value="non_unique">Non-unique</option>
-              <option value="unique">Unique</option>
-            </select>
-          </label>
-          <label>
-            Fields (one per line: path direction)
-            <textarea name="fields" rows={4} required defaultValue="id ascending" />
-          </label>
-          <button type="submit">Start online build</button>
-        </form>
-      </details>
-    </section>
+    <Card aria-labelledby="indexes-title">
+      <CardHeader>
+        <CardTitle id="indexes-title">Indexes</CardTitle>
+        <CardDescription>
+          Online builds are fenced from queries until backfill and catch-up finish.
+        </CardDescription>
+        <CardAction>
+          <Button variant="outline" size="sm" onClick={() => void reload()}>
+            <RefreshCw aria-hidden="true" />
+            Refresh
+          </Button>
+        </CardAction>
+      </CardHeader>
+      <CardContent className="grid gap-4">
+        <ApiFailureNotice failure={failure} />
+        {indexes === null ? (
+          <p className="m-0 text-sm text-muted-foreground">Loading indexes…</p>
+        ) : indexes.length === 0 ? (
+          <p className="m-0 text-sm text-muted-foreground">No indexes have been defined.</p>
+        ) : (
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {indexes.map((index) => (
+              <IndexCard
+                key={`${index.name}:${index.version}`}
+                index={index}
+                onDelete={() => void remove(index)}
+              />
+            ))}
+          </div>
+        )}
+        <details className="group rounded-md border">
+          <summary className="cursor-pointer select-none px-4 py-2.5 text-sm font-medium marker:text-muted-foreground">
+            Create index
+          </summary>
+          <form
+            className="grid gap-4 border-t px-4 py-4 sm:grid-cols-2"
+            onSubmit={(event) => void create(event)}
+          >
+            <Field label="Index name" htmlFor="create-index-name">
+              <Input
+                id="create-index-name"
+                name="name"
+                required
+                pattern="[A-Za-z0-9_-]{1,128}"
+                className="font-mono"
+              />
+            </Field>
+            <Field label="Version" htmlFor="create-index-version">
+              <Input
+                id="create-index-version"
+                name="version"
+                type="number"
+                min="1"
+                defaultValue="1"
+                required
+                className="max-w-40"
+              />
+            </Field>
+            <Field label="Kind" htmlFor="create-index-kind">
+              <NativeSelect id="create-index-kind" name="kind" defaultValue="non_unique">
+                <option value="non_unique">Non-unique</option>
+                <option value="unique">Unique</option>
+              </NativeSelect>
+            </Field>
+            <Field
+              label="Fields (one per line: path direction)"
+              htmlFor="create-index-fields"
+              className="sm:col-span-2"
+            >
+              <Textarea
+                id="create-index-fields"
+                name="fields"
+                rows={4}
+                required
+                defaultValue="id ascending"
+                className="min-h-24 font-mono text-xs leading-5 md:text-xs"
+              />
+            </Field>
+            <div className="sm:col-span-2">
+              <Button type="submit">Start online build</Button>
+            </div>
+          </form>
+        </details>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -680,71 +811,133 @@ function IndexCard({
   readonly onDelete: () => void;
 }) {
   return (
-    <article className="resource-card index-card">
-      <div className="button-row spread">
-        <strong>
-          {index.name} v{index.version}
-        </strong>
-        <LifecycleBadge state={index.state} />
-      </div>
-      <span>{index.kind.replaceAll("_", " ")}</span>
-      <p>{index.fields.map((field) => `${field.path} ${field.direction}`).join(", ")}</p>
-      {index.progress === undefined ? null : (
-        <dl className="metadata-list compact">
-          <div>
-            <dt>Snapshot position</dt>
-            <dd>{index.progress.capturedPosition}</dd>
-          </div>
-          <div>
-            <dt>Caught up through</dt>
-            <dd>{index.progress.caughtUpPosition}</dd>
-          </div>
-          <div>
-            <dt>Backfill</dt>
-            <dd>{index.progress.backfillComplete ? "complete" : "running"}</dd>
-          </div>
-        </dl>
-      )}
-      {index.failure === undefined ? null : (
-        <div className="notice error" role="alert">
-          <strong>{index.failure.code.replaceAll("_", " ")}</strong>
-          <p>{index.failure.message}</p>
-          <small>{index.failure.affectedValues} affected values</small>
+    <Card as="article" className="gap-3 py-4">
+      <CardContent className="grid gap-3 px-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <strong className="font-mono text-sm font-medium">
+            {index.name} v{index.version}
+          </strong>
+          <LifecycleBadge state={index.state} />
         </div>
-      )}
-      <button
-        type="button"
-        className="danger-link"
-        disabled={index.state === "deleting"}
-        onClick={onDelete}
+        <span className="text-xs text-muted-foreground">{index.kind.replaceAll("_", " ")}</span>
+        <p className="m-0 font-mono text-xs">
+          {index.fields.map((field) => `${field.path} ${field.direction}`).join(", ")}
+        </p>
+        {index.progress === undefined ? null : (
+          <dl className="m-0 grid gap-2 text-xs">
+            <MetaItem term="Snapshot position" compact>
+              {index.progress.capturedPosition}
+            </MetaItem>
+            <MetaItem term="Caught up through" compact>
+              {index.progress.caughtUpPosition}
+            </MetaItem>
+            <MetaItem term="Backfill" compact>
+              {index.progress.backfillComplete ? "complete" : "running"}
+            </MetaItem>
+          </dl>
+        )}
+        {index.failure === undefined ? null : (
+          <Alert variant="destructive" role="alert">
+            <AlertTriangle aria-hidden="true" />
+            <AlertTitle>{index.failure.code.replaceAll("_", " ")}</AlertTitle>
+            <AlertDescription>
+              <p className="m-0">{index.failure.message}</p>
+              <small>{index.failure.affectedValues} affected values</small>
+            </AlertDescription>
+          </Alert>
+        )}
+        <div>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="-ml-2 text-destructive hover:bg-destructive/10 hover:text-destructive"
+            disabled={index.state === "deleting"}
+            onClick={onDelete}
+          >
+            Remove index
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+/** The quiet link back up the hierarchy that sits above every page title. */
+function BackButton({ onClick, children }: { readonly onClick: () => void; children: ReactNode }) {
+  return (
+    <div>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="-ml-2 text-muted-foreground hover:text-foreground"
+        onClick={onClick}
       >
-        Remove index
-      </button>
-    </article>
+        {children}
+      </Button>
+    </div>
+  );
+}
+
+/** One term and its value in a metadata list. */
+function MetaItem({
+  term,
+  compact = false,
+  children,
+}: {
+  readonly term: string;
+  readonly compact?: boolean;
+  readonly children: ReactNode;
+}) {
+  return (
+    <div className={compact ? "flex items-baseline justify-between gap-3" : "grid gap-0.5"}>
+      <dt
+        className={
+          compact
+            ? "text-muted-foreground"
+            : "text-xs font-medium uppercase tracking-wider text-muted-foreground"
+        }
+      >
+        {term}
+      </dt>
+      <dd className={compact ? "m-0 font-mono" : "m-0 text-sm"}>{children}</dd>
+    </div>
   );
 }
 
 function JsonField({
+  id,
   name,
   label,
   defaultValue,
   rows = 10,
 }: {
+  readonly id: string;
   readonly name: string;
   readonly label: string;
   readonly defaultValue: string;
   readonly rows?: number;
 }) {
   return (
-    <label>
-      {label}
-      <textarea name={name} rows={rows} required defaultValue={defaultValue} spellCheck={false} />
-    </label>
+    <Field label={label} htmlFor={id}>
+      <Textarea
+        id={id}
+        name={name}
+        rows={rows}
+        required
+        defaultValue={defaultValue}
+        spellCheck={false}
+        className={`${rows <= 4 ? "min-h-24" : "min-h-40"} max-h-[32rem] font-mono text-xs leading-5 md:text-xs`}
+      />
+    </Field>
   );
 }
 
 function JsonPreview({ value }: { readonly value: unknown }) {
-  return <pre className="json-preview">{JSON.stringify(value, null, 2)}</pre>;
+  return (
+    <pre className="m-0 overflow-x-auto rounded-md border bg-muted/40 p-3 font-mono text-xs leading-5">
+      {JSON.stringify(value, null, 2)}
+    </pre>
+  );
 }
 
 class FormInputError extends Error {}

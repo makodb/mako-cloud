@@ -1,3 +1,5 @@
+import { Button } from "@mako-cloud/ui";
+import { KeyRound } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 const AUTO_DISMISS_MILLISECONDS = 5 * 60 * 1_000;
@@ -59,36 +61,53 @@ export function OneTimeSecretValue({
     }
   };
 
+  // An `aside`, so the panel stays the complementary landmark its title names;
+  // the kit's Alert renders a div, so the warning tint is applied here.
   return (
-    <aside className="one-time-value" aria-labelledby="one-time-title">
-      <strong id="one-time-title" ref={heading} tabIndex={-1}>
-        Copy this {label} now. It will not be shown again.
-      </strong>
-      <p>
-        The value is hidden again when this tab moves to the background and removed after five
-        minutes.
-      </p>
+    <aside
+      className="grid gap-3 rounded-lg border border-warning/40 bg-warning/10 p-4 text-sm"
+      aria-labelledby="one-time-title"
+    >
+      <div className="flex items-start gap-3">
+        <KeyRound aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-warning" />
+        <div className="grid gap-1">
+          <strong
+            id="one-time-title"
+            ref={heading}
+            tabIndex={-1}
+            className="rounded-sm font-medium outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          >
+            Copy this {label} now. It will not be shown again.
+          </strong>
+          <p className="m-0 text-foreground/85">
+            The value is hidden again when this tab moves to the background and removed after five
+            minutes.
+          </p>
+        </div>
+      </div>
       {revealed ? (
-        <code className="secret-value">{value}</code>
+        <code className="block rounded-md border bg-card px-3 py-2 font-mono text-sm break-all select-all">
+          {value}
+        </code>
       ) : (
-        <span className="secret-placeholder">
+        <span className="block rounded-md border bg-card px-3 py-2 text-lg leading-6 tracking-[0.12em] text-muted-foreground select-none">
           <span aria-hidden="true">••••••••••••••••</span>
-          <span className="visually-hidden">Secret value hidden</span>
+          <span className="sr-only">Secret value hidden</span>
         </span>
       )}
-      <div className="button-row">
-        <button type="button" className="secondary" onClick={() => setRevealed((shown) => !shown)}>
+      <div className="flex flex-wrap gap-2">
+        <Button variant="outline" size="sm" onClick={() => setRevealed((shown) => !shown)}>
           {revealed ? "Hide value" : "Reveal value"}
-        </button>
-        <button type="button" className="secondary" onClick={() => void copy()}>
+        </Button>
+        <Button variant="outline" size="sm" onClick={() => void copy()}>
           Copy value
-        </button>
-        <button type="button" onClick={onDismiss}>
+        </Button>
+        <Button size="sm" onClick={onDismiss}>
           I have stored it securely
-        </button>
+        </Button>
       </div>
       {copyStatus === "" ? null : (
-        <p className="copy-status" aria-live="polite" aria-atomic="true">
+        <p className="m-0 text-xs text-muted-foreground" aria-live="polite" aria-atomic="true">
           {copyStatus}
         </p>
       )}

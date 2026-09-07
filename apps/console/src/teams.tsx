@@ -1,4 +1,25 @@
-import { type FormEvent, useCallback, useEffect, useState } from "react";
+import {
+  Alert,
+  AlertDescription,
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  Eyebrow,
+  Field,
+  Input,
+  Label,
+  NativeSelect,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@mako-cloud/ui";
+import { type FormEvent, useCallback, useEffect, useId, useState } from "react";
 
 import type { InvitationIssue, Team, TeamMembership, TeamRole } from "@mako-cloud/management-sdk";
 
@@ -39,51 +60,66 @@ export function TeamsScreen({
   const joinedTeams = teams?.filter((team) => team.kind === "team") ?? [];
 
   return (
-    <>
-      <section aria-labelledby="personal-space-title">
-        <div className="section-heading">
-          <div>
-            <p className="eyebrow">Personal space</p>
-            <h1 id="personal-space-title">Your projects</h1>
-          </div>
+    <div className="grid gap-8">
+      <section className="grid gap-4" aria-labelledby="personal-space-title">
+        <div className="grid gap-1">
+          <Eyebrow>Personal space</Eyebrow>
+          <h1 id="personal-space-title" className="text-2xl">
+            Your projects
+          </h1>
         </div>
         <ApiFailureNotice failure={failure} />
         {teams === null ? (
-          <p aria-live="polite">Loading your projects…</p>
+          <p className="m-0 text-sm text-muted-foreground" aria-live="polite">
+            Loading your projects…
+          </p>
         ) : personalSpace === undefined ? (
           <FirstProjectPanel onCreated={reload} />
         ) : (
           <ProjectsPanel teamId={personalSpace.id} scope="personal" onOpen={onOpenProject} />
         )}
       </section>
-      <section aria-labelledby="teams-title">
-        <div className="section-heading">
-          <div>
-            <p className="eyebrow">Workspace</p>
-            <h2 id="teams-title">Teams</h2>
-          </div>
+      <section className="grid gap-4" aria-labelledby="teams-title">
+        <div className="grid gap-1">
+          <Eyebrow>Workspace</Eyebrow>
+          <h2 id="teams-title" className="text-lg">
+            Teams
+          </h2>
         </div>
         {teams === null ? (
-          <p aria-live="polite">Loading teams…</p>
+          <p className="m-0 text-sm text-muted-foreground" aria-live="polite">
+            Loading teams…
+          </p>
         ) : joinedTeams.length === 0 ? (
-          <div className="panel empty-state">No teams are available for this account.</div>
+          <div className="rounded-xl border border-dashed px-6 py-8 text-center text-sm text-muted-foreground">
+            No teams are available for this account.
+          </div>
         ) : (
-          <div className="card-grid">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {joinedTeams.map((team) => (
-              <button
-                type="button"
-                className="resource-card"
-                key={team.id}
-                onClick={() => onOpen(team.id)}
-              >
-                <strong>{team.name}</strong>
-                <span>{team.state.replaceAll("_", " ")}</span>
-              </button>
+              <TeamCard key={team.id} team={team} onOpen={() => onOpen(team.id)} />
             ))}
           </div>
         )}
       </section>
-    </>
+    </div>
+  );
+}
+
+/** A team in a grid: its name, its state, and a click that opens it. */
+function TeamCard({ team, onOpen }: { readonly team: Team; readonly onOpen: () => void }) {
+  return (
+    <Button
+      variant="outline"
+      // `resource-card` is the hook the browser suite selects on.
+      className="resource-card h-auto flex-col items-start gap-1 px-4 py-3 text-left whitespace-normal"
+      onClick={onOpen}
+    >
+      <strong className="text-sm font-semibold">{team.name}</strong>
+      <span className="text-xs font-normal text-muted-foreground">
+        {team.state.replaceAll("_", " ")}
+      </span>
+    </Button>
   );
 }
 
@@ -124,27 +160,38 @@ export function TeamScreen({
   const currentRole = members?.find((member) => member.developerIdentityId === developerId)?.role;
   const canManage = currentRole === "owner" || currentRole === "administrator";
   const personal = team?.kind === "personal";
+  const switcherId = useId();
 
   return (
-    <section aria-labelledby="team-title">
-      <div className="section-heading">
-        <div>
-          <p className="eyebrow">{personal ? "Personal space" : "Team"}</p>
-          <h1 id="team-title">{team?.name ?? "Loading…"}</h1>
+    <section aria-labelledby="team-title" className="grid gap-6">
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div className="grid gap-1">
+          <Eyebrow>{personal ? "Personal space" : "Team"}</Eyebrow>
+          <h1 id="team-title" className="text-2xl">
+            {team?.name ?? "Loading…"}
+          </h1>
         </div>
-        <label>
-          Switch team
-          <select value={teamId} onChange={(event) => onOpen(event.currentTarget.value)}>
+        <div className="grid gap-1.5">
+          <Label htmlFor={switcherId} className="text-xs text-muted-foreground">
+            Switch team
+          </Label>
+          <NativeSelect
+            id={switcherId}
+            size="sm"
+            wrapperClassName="w-auto min-w-56"
+            value={teamId}
+            onChange={(event) => onOpen(event.currentTarget.value)}
+          >
             {teams.map((item) => (
               <option key={item.id} value={item.id}>
                 {teamLabel(item)}
               </option>
             ))}
-          </select>
-        </label>
+          </NativeSelect>
+        </div>
       </div>
       <ApiFailureNotice failure={failure} />
-      <div className="split-grid">
+      <div className="grid gap-4 lg:grid-cols-2">
         {team === null || personal ? null : (
           <>
             <MembersPanel
@@ -194,6 +241,7 @@ export function InvitationAcceptScreen({
   const client = useManagementClient();
   const [failure, setFailure] = useState<ConsoleApiFailure | null>(null);
   const [pending, setPending] = useState(false);
+  const tokenId = useId();
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setPending(true);
@@ -208,23 +256,35 @@ export function InvitationAcceptScreen({
     }
   };
   return (
-    <section className="panel" aria-labelledby="accept-invitation-title">
-      <p className="eyebrow">Team invitation</p>
-      <h1 id="accept-invitation-title">Accept invitation</h1>
-      <p>
-        Invitation <code>{invitationId}</code>
-      </p>
-      <ApiFailureNotice failure={failure} />
-      <form onSubmit={(event) => void submit(event)}>
-        <label>
-          Invitation token
-          <input name="token" type="password" required minLength={16} autoComplete="off" />
-        </label>
-        <button type="submit" disabled={pending}>
-          {pending ? "Accepting…" : "Accept invitation"}
-        </button>
-      </form>
-    </section>
+    <Card className="w-full max-w-lg" aria-labelledby="accept-invitation-title">
+      <CardHeader>
+        <Eyebrow>Team invitation</Eyebrow>
+        <CardTitle as="h1" id="accept-invitation-title" className="text-2xl">
+          Accept invitation
+        </CardTitle>
+        <CardDescription>
+          Invitation <code className="font-mono text-xs text-foreground">{invitationId}</code>
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-4">
+        <ApiFailureNotice failure={failure} />
+        <form className="grid gap-4" onSubmit={(event) => void submit(event)}>
+          <Field label="Invitation token" htmlFor={tokenId}>
+            <Input
+              id={tokenId}
+              name="token"
+              type="password"
+              required
+              minLength={16}
+              autoComplete="off"
+            />
+          </Field>
+          <Button type="submit" disabled={pending} className="justify-self-start">
+            {pending ? "Accepting…" : "Accept invitation"}
+          </Button>
+        </form>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -282,31 +342,37 @@ function MembersPanel({
     }
   };
   return (
-    <section className="panel" aria-labelledby="members-title">
-      <h2 id="members-title">Members</h2>
-      <p>Your role: {currentRole?.replaceAll("_", " ") ?? "unknown"}</p>
-      <ApiFailureNotice failure={failure} />
-      {members === null ? (
-        <p>Loading members…</p>
-      ) : (
-        <div className="table-scroll">
-          <table>
-            <thead>
-              <tr>
-                <th scope="col">Developer identity</th>
-                <th scope="col">Role</th>
-                <th scope="col">Action</th>
-              </tr>
-            </thead>
-            <tbody>
+    <Card aria-labelledby="members-title">
+      <CardHeader>
+        <CardTitle id="members-title">Members</CardTitle>
+        <CardDescription>
+          Your role: {currentRole?.replaceAll("_", " ") ?? "unknown"}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-4">
+        <ApiFailureNotice failure={failure} />
+        {members === null ? (
+          <p className="m-0 text-sm text-muted-foreground">Loading members…</p>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead scope="col">Developer identity</TableHead>
+                <TableHead scope="col">Role</TableHead>
+                <TableHead scope="col">Action</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {members.map((member) => (
-                <tr key={member.developerIdentityId}>
-                  <td>
-                    <code>{member.developerIdentityId}</code>
-                  </td>
-                  <td>
-                    <select
+                <TableRow key={member.developerIdentityId}>
+                  <TableCell>
+                    <code className="font-mono text-xs">{member.developerIdentityId}</code>
+                  </TableCell>
+                  <TableCell>
+                    <NativeSelect
                       aria-label={`Role for ${member.developerIdentityId}`}
+                      size="sm"
+                      wrapperClassName="w-auto min-w-36"
                       value={member.role}
                       disabled={!canManage}
                       onChange={(event) =>
@@ -323,25 +389,26 @@ function MembersPanel({
                           </option>
                         ),
                       )}
-                    </select>
-                  </td>
-                  <td>
-                    <button
-                      type="button"
-                      className="danger-link"
+                    </NativeSelect>
+                  </TableCell>
+                  <TableCell>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-destructive hover:text-destructive"
                       disabled={!canManage}
                       onClick={() => void remove(member.developerIdentityId)}
                     >
                       Remove
-                    </button>
-                  </td>
-                </tr>
+                    </Button>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </section>
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -357,6 +424,7 @@ function InvitationPanel({
   const client = useManagementClient();
   const [failure, setFailure] = useState<ConsoleApiFailure | null>(null);
   const [issue, setIssue] = useState<InvitationIssue | null>(null);
+  const id = useId();
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const form = event.currentTarget;
@@ -378,36 +446,45 @@ function InvitationPanel({
     }
   };
   return (
-    <section className="panel" aria-labelledby="invite-title">
-      <h2 id="invite-title">Invite a member</h2>
-      <ApiFailureNotice failure={failure} />
-      <form onSubmit={(event) => void submit(event)}>
-        <label>
-          Email
-          <input name="email" type="email" required autoComplete="email" disabled={!canManage} />
-        </label>
-        <label>
-          Role
-          <select name="role" defaultValue="viewer" disabled={!canManage}>
-            {ROLES.filter((role) => role !== "owner").map((role) => (
-              <option key={role} value={role}>
-                {role}
-              </option>
-            ))}
-          </select>
-        </label>
-        <button type="submit" disabled={!canManage}>
-          Create invitation
-        </button>
-      </form>
-      {issue === null ? null : (
-        <OneTimeSecretValue
-          label="invitation token"
-          value={issue.token}
-          onDismiss={() => setIssue(null)}
-        />
-      )}
-    </section>
+    <Card aria-labelledby="invite-title">
+      <CardHeader>
+        <CardTitle id="invite-title">Invite a member</CardTitle>
+      </CardHeader>
+      <CardContent className="grid gap-4">
+        <ApiFailureNotice failure={failure} />
+        <form className="grid max-w-md gap-4" onSubmit={(event) => void submit(event)}>
+          <Field label="Email" htmlFor={`${id}-email`}>
+            <Input
+              id={`${id}-email`}
+              name="email"
+              type="email"
+              required
+              autoComplete="email"
+              disabled={!canManage}
+            />
+          </Field>
+          <Field label="Role" htmlFor={`${id}-role`}>
+            <NativeSelect id={`${id}-role`} name="role" defaultValue="viewer" disabled={!canManage}>
+              {ROLES.filter((role) => role !== "owner").map((role) => (
+                <option key={role} value={role}>
+                  {role}
+                </option>
+              ))}
+            </NativeSelect>
+          </Field>
+          <Button type="submit" disabled={!canManage} className="justify-self-start">
+            Create invitation
+          </Button>
+        </form>
+        {issue === null ? null : (
+          <OneTimeSecretValue
+            label="invitation token"
+            value={issue.token}
+            onDismiss={() => setIssue(null)}
+          />
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -424,6 +501,7 @@ function RenameTeamPanel({
   const [failure, setFailure] = useState<ConsoleApiFailure | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const nameId = useId();
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const name = String(new FormData(event.currentTarget).get("name") ?? "").trim();
@@ -449,24 +527,29 @@ function RenameTeamPanel({
     }
   };
   return (
-    <section className="panel team-rename" aria-labelledby="rename-team-title">
-      <h2 id="rename-team-title">Team name</h2>
-      <p>The name appears everywhere the team is listed. Renaming is audited.</p>
-      <ApiFailureNotice failure={failure} />
-      <form className="inline-form" onSubmit={(event) => void submit(event)}>
-        <label>
-          New name
-          <input name="name" defaultValue={team.name} required maxLength={200} />
-        </label>
-        <button type="submit" disabled={pending}>
-          {pending ? "Renaming…" : "Rename team"}
-        </button>
-      </form>
-      {status === null ? null : (
-        <p className="notice success" role="status">
-          {status}
-        </p>
-      )}
-    </section>
+    <Card aria-labelledby="rename-team-title">
+      <CardHeader>
+        <CardTitle id="rename-team-title">Team name</CardTitle>
+        <CardDescription>
+          The name appears everywhere the team is listed. Renaming is audited.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-4">
+        <ApiFailureNotice failure={failure} />
+        <form className="flex flex-wrap items-end gap-3" onSubmit={(event) => void submit(event)}>
+          <Field label="New name" htmlFor={nameId} className="min-w-56 flex-1">
+            <Input id={nameId} name="name" defaultValue={team.name} required maxLength={200} />
+          </Field>
+          <Button type="submit" disabled={pending}>
+            {pending ? "Renaming…" : "Rename team"}
+          </Button>
+        </form>
+        {status === null ? null : (
+          <Alert variant="positive" role="status">
+            <AlertDescription className="block">{status}</AlertDescription>
+          </Alert>
+        )}
+      </CardContent>
+    </Card>
   );
 }
