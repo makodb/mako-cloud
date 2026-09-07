@@ -12,7 +12,10 @@ in [`examples/rational/MONARCH-PARITY.md`](../examples/rational/MONARCH-PARITY.m
 which `npm run validate:rational-parity` refuses under ninety percent. It lives in
 [`examples/rational`](../examples/rational/README.md), it is published from a
 repository of its own at <https://github.com/shuaimu/rational>, and the site
-GitHub Pages serves from it talks to a real project on the public beta.
+GitHub Pages serves from it talks to a real project on the public beta. It is
+dressed by the platform's [design system](design-system.md), the same kit the
+developer console uses, so a control, a chart, or the dark theme looks the same
+in both.
 
 It exists for two reasons, and the second is the important one.
 

@@ -77,4 +77,20 @@ classes from `src/kit` there and from `packages/ui/src` here with no change.
 
 ## Bundle size
 
-Recorded when each application moves onto the kit; see the tasks of the `ui-design-system` change.
+Rational, production build, gzipped. Before the screens moved onto the kit the app shipped one
+script of 266 KB with 17 KB of hand-written CSS. On the kit it ships 444 KB of script in six
+cacheable chunks and 11 KB of CSS; the growth is Recharts (117 KB, its own chunk) and the Radix
+primitives (30 KB), and it buys tooltips, formatted axes, keyboard-operable menus and dialogs,
+and one palette. The chunks:
+
+| Chunk | What is in it | Gzipped |
+| --- | --- | --- |
+| `index` | Rational's own screens, selectors, and data layer | 127 KB |
+| `charts` | Recharts and what it depends on | 117 KB |
+| `database` | RxDB, Dexie, RxJS, and the `@mako-cloud/rxdb` client | 73 KB |
+| `react` | React and the scheduler | 59 KB |
+| `vendor` | Lucide icons in use, Tailwind runtime helpers, everything else | 36 KB |
+| `primitives` | Radix primitives | 30 KB |
+
+The Inter variable font adds 48 KB for Latin, with the other scripts loaded only when a page
+uses them. The console's numbers are recorded when its re-skin lands.

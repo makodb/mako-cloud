@@ -16,8 +16,12 @@ percent.
 The app is React 19 + Vite on RxDB 17 with Dexie (IndexedDB) storage, replicating through
 `@mako-cloud/rxdb`. It is local-first: reads come from the device, writes queue while
 offline and push on reconnect, and a reload or an offline restart finds the household's
-data where it left it. Its charts are its own SVG; it has no dependency beyond React, RxDB,
-and the client.
+data where it left it. Its look comes from the platform's design system, `@mako-cloud/ui`
+(`packages/ui`, described in [`docs/design-system.md`](../../docs/design-system.md)): tokens
+with a light and a dark palette that follow the device or the theme toggle, Radix-based
+components, Lucide icons, Inter, and Recharts charts; the Sankey, the treemap, and the month
+calendar are its own SVG. The published repository carries the kit's sources under `src/kit`,
+so it depends on nothing that is not on npm.
 
 ## Run it
 
@@ -413,8 +417,9 @@ application where the edge SDK the function itself imports does not exist.
 - `src/data` — transport, conflict handler, database, replication wiring, replicated scopes with
   the coordinators, write helpers, and the application object
 - `src/selectors` — pure, memoized derivations
-- `src/ui` — the screens (hash router, no router dependency), `src/ui/charts` — the SVG charts,
-  `src/ui/styles` — one stylesheet per screen beside the shared `src/styles.css`
+- `src/ui` — the screens (hash router, no router dependency), built from the kit's components
+  and Tailwind utilities; `src/ui/charts` — the hand-drawn Sankey, treemap, and month calendar
+- `src/app.css` — the one stylesheet: it imports the design system and nothing else
 - `src/testing/fake-backend.ts` — the in-browser protocol fake
 - `test/`, `test-live/`, `test-unit/` — the three suites
 - `MONARCH-PARITY.md` — how close this is to Monarch, feature by feature

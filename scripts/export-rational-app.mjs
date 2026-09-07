@@ -362,8 +362,10 @@ import { defineConfig, type ProxyOptions } from "vite";
  * project" and runs the app entirely against its in-browser fake backend, so a
  * fork builds and runs before it has a project of its own.
  *
- * \`base\` is \`${pagesBase}\` because GitHub Pages serves a project page from a
- * subpath, and every asset the built \`index.html\` names has to be under it.
+ * \`base\` is \`${pagesBase}\` for the production build because GitHub Pages serves
+ * a project page from a subpath, and every asset the built \`index.html\` names
+ * has to be under it. The dev server and the browser suite stay at \`/\`, where
+ * the copied Playwright configuration expects them.
  *
  * The data plane sends no CORS headers, so in development the dev server
  * proxies \`/v1\` (and the function route) to the configured endpoint and the
@@ -441,7 +443,7 @@ export default defineConfig(({ command }) => {
     };
   }
   return {
-    base: "${pagesBase}",
+    base: command === "build" ? "${pagesBase}" : "/",
     plugins: [tailwindcss()],
     // The design system travels with this repository as sources under
     // \`src/kit\`; its package name resolves there.
@@ -466,7 +468,24 @@ export default defineConfig(({ command }) => {
       ],
     },
     define: { __RATIONAL_ENV__: JSON.stringify(runtimeEnvironment) },
-    build: { outDir: "${siteDirectory}", emptyOutDir: true },
+    build: {
+      outDir: "${siteDirectory}",
+      emptyOutDir: true,
+      // The libraries change on their own schedule; kept apart from the app's
+      // own code so a release does not invalidate every byte.
+      rollupOptions: {
+        output: {
+          manualChunks: (id) => {
+            if (!id.includes("node_modules")) return undefined;
+            if (/[\\\\/]node_modules[\\\\/](react|react-dom|scheduler)[\\\\/]/.test(id)) return "react";
+            if (/[\\\\/]node_modules[\\\\/](recharts|d3-|victory-vendor|internmap|decimal\\.js|fast-equals|es-toolkit|reselect|immer|@reduxjs|redux|use-sync-external-store|tiny-invariant)/.test(id)) return "charts";
+            if (/[\\\\/]node_modules[\\\\/](radix-ui|@radix-ui|@floating-ui|aria-hidden|react-remove-scroll)/.test(id)) return "primitives";
+            if (/[\\\\/]node_modules[\\\\/](?:@[^\\\\/]+[\\\\/])?(rxdb|rxjs|dexie)/.test(id)) return "database";
+            return "vendor";
+          },
+        },
+      },
+    },
     server: Object.keys(proxy).length === 0 ? {} : { proxy },
   };
 });

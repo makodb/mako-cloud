@@ -100,7 +100,35 @@ export default defineConfig(({ command }) => {
       ],
     },
     define: { __RATIONAL_ENV__: JSON.stringify(runtimeEnvironment) },
-    build: { outDir: "web-dist", emptyOutDir: true },
+    build: {
+      outDir: "web-dist",
+      emptyOutDir: true,
+      // The libraries change on their own schedule; kept apart from the app's
+      // own code so a release of Rational does not invalidate every byte.
+      rollupOptions: {
+        output: {
+          manualChunks: (id) => {
+            if (!id.includes("node_modules")) return undefined;
+            if (/[\\/]node_modules[\\/](react|react-dom|scheduler)[\\/]/.test(id)) return "react";
+            if (
+              /[\\/]node_modules[\\/](recharts|d3-|victory-vendor|internmap|decimal\.js|fast-equals|es-toolkit|reselect|immer|@reduxjs|redux|use-sync-external-store|tiny-invariant)/.test(
+                id,
+              )
+            )
+              return "charts";
+            if (
+              /[\\/]node_modules[\\/](radix-ui|@radix-ui|@floating-ui|aria-hidden|react-remove-scroll)/.test(
+                id,
+              )
+            )
+              return "primitives";
+            if (/[\\/]node_modules[\\/](?:@[^\\/]+[\\/])?(rxdb|rxjs|dexie)/.test(id))
+              return "database";
+            return "vendor";
+          },
+        },
+      },
+    },
     // Suites running side by side write their artefacts next to the sources;
     // a dev server must not reload every page each time one of them does.
     server: {
