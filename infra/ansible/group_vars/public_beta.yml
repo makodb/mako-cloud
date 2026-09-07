@@ -63,7 +63,7 @@ mako_operator_maximum_backoff_seconds: 300
 # Pre-gate rollback only. This is disabled after browser password qualification.
 mako_operator_break_glass_bearer_enabled: true
 mako_node_exporter_listen: 127.0.0.1:9100
-mako_release_digest: 3cb41721d101765e9946d78da10766319cf6d5c108a644d5a46da77d65bf9728
+mako_release_digest: 6152ce447d67a8fd534baa8b980feba77e65c1c80db1fd3b6ab0b0aaf57a795b
 mako_release_candidate_path: "{{ playbook_dir }}/../../../.local/public-beta-candidates/{{ mako_release_digest }}"
 mako_storage_region: us-east-1-beta
 mako_disk_warning_free_bytes: 17179869184

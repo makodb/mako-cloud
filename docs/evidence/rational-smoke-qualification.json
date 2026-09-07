@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "qualification": "rational-sample-application-smoke",
   "status": "passed",
-  "startedAt": "2026-09-07T15:25:02Z",
-  "completedAt": "2026-09-07T15:25:53Z",
+  "startedAt": "2026-09-07T22:19:22Z",
+  "completedAt": "2026-09-07T22:20:11Z",
   "host": {
     "kernel": "Linux",
     "release": "7.0.14-5-pve",

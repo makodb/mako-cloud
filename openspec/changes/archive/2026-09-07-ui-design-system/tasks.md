@@ -49,4 +49,4 @@
 ## 5. Ship
 
 - [x] 5.1 Update `docs/rational.md` and `examples/rational/README.md` for the new look and the kit
-- [ ] 5.2 Build a public-beta release, deploy, run the hosted and operator browser qualification, refresh evidence, commit
+- [x] 5.2 Build a public-beta release, deploy, run the hosted and operator browser qualification, refresh evidence, commit
