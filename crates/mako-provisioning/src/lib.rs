@@ -10,10 +10,11 @@ pub use bootstrap::{
     ProvisioningBackendConfig,
 };
 pub use workflow::{
-    OperatorRepair, OperatorRepairAction, Provisioner, ProvisioningBackend, ProvisioningComponent,
-    ProvisioningDiagnostic, ProvisioningFailure, ProvisioningOperation, ProvisioningResource,
-    ProvisioningState, ProvisioningStepStatus, ProvisioningStore, ProvisioningWorkflow,
-    ProvisioningWorkflowError, ProvisioningWorkflowId,
+    MAX_WORKFLOWS_PER_PASS, OperatorRepair, OperatorRepairAction, Provisioner, ProvisioningBackend,
+    ProvisioningComponent, ProvisioningDiagnostic, ProvisioningFailure, ProvisioningOperation,
+    ProvisioningResource, ProvisioningState, ProvisioningStepStatus, ProvisioningStore,
+    ProvisioningWorkflow, ProvisioningWorkflowError, ProvisioningWorkflowId, StrandedAction,
+    StrandedPolicy, reconciliation_workflow_id, stranded_actions,
 };
 
 /// Identifies this workspace component in diagnostics.

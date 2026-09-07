@@ -2,14 +2,20 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     error::Error,
     fmt,
+    future::Future,
     net::SocketAddr,
     num::NonZeroUsize,
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
     time::Duration,
 };
 
 use futures::executor::block_on;
-use mako_api::{ExplorerCapabilityKey, ExplorerCapabilityKeyRing};
+use mako_api::{
+    EnvironmentId, ExplorerCapabilityKey, ExplorerCapabilityKeyRing, ProjectId, TenantScope,
+};
 use mako_audit::{AuditStore, AuditStoreConfig, CursorSigningKey, TelemetryRedactor};
 use mako_auth_providers::ProviderSecretKey;
 use mako_config::{DeploymentEnvironment, ServiceConfig, ServiceKind};
@@ -20,16 +26,16 @@ use mako_control_plane::{
     DeveloperMailCipher, DeveloperMailEncryptionKey, DeveloperMailOutboxWorker,
     DeveloperMailTransport, DeveloperRegistrationConfig, DeveloperRegistrationService,
     DeveloperRegistrationStore, DeveloperRestoreService, DeveloperWorkspaceSecurity,
-    EmailTemplateService, ExplorerGrantService, FunctionAdminService, FunctionDeploymentBackend,
-    FunctionSecretEncryptionKey, LifecycleState, ManagementAuthorizer, ObservabilityBackend,
-    ObservabilityService, OperatorAuditSink, OperatorAuthenticationAuditSink,
+    EmailTemplateService, EnvironmentRecord, ExplorerGrantService, FunctionAdminService,
+    FunctionDeploymentBackend, FunctionSecretEncryptionKey, LifecycleState, ManagementAuthorizer,
+    ObservabilityBackend, ObservabilityService, OperatorAuditSink, OperatorAuthenticationAuditSink,
     OperatorAuthenticationConfig, OperatorAuthenticationKey, OperatorAuthenticationService,
-    OperatorAuthenticationStore, OperatorAuthenticator, OperatorService, OrganizationService,
-    OrganizationStore, PolicyAdminService, ProductionObservabilityBackend,
-    ProductionObservabilityConfig, ProjectEnvironmentService, ProjectStore,
-    RuntimeDeploymentClient, RuntimeDeploymentClientConfig, RuntimeSupervisorCredential,
-    TelemetryQueryCredential, WebhookService, WebhookStore, WebhookTransport, WebhookWorker,
-    WebhookWorkerConfig,
+    OperatorAuthenticationStore, OperatorAuthenticator, OperatorService, OrganizationId,
+    OrganizationRecord, OrganizationService, OrganizationStore, PolicyAdminService,
+    ProductionObservabilityBackend, ProductionObservabilityConfig, ProjectEnvironmentService,
+    ProjectRecord, ProjectStore, RuntimeDeploymentClient, RuntimeDeploymentClientConfig,
+    RuntimeSupervisorCredential, TelemetryQueryCredential, WebhookService, WebhookStore,
+    WebhookTransport, WebhookWorker, WebhookWorkerConfig,
 };
 use mako_control_plane::{
     CustomDomainService, CustomDomainStore, CustomDomainVerifier, FunctionScheduleInvoker,
@@ -38,14 +44,17 @@ use mako_control_plane::{
 };
 use mako_identity::KeyEncryptionKey;
 use mako_internal_rpc::{
-    ControlToDataClient, ControlToEdgeClient, DeploymentKey, InternalCaller, InternalHttpClient,
-    InternalHttpClientConfig, InternalRequestAuthenticator, RocksInternalReplayGuard,
+    ControlToDataClient, ControlToEdgeClient, DeploymentKey, IdentityAdminCommand,
+    IdentityAdminOperation, IdentityAdminPermission, InternalCaller, InternalClientError,
+    InternalHttpClient, InternalHttpClientConfig, InternalRequestAuthenticator,
+    RocksInternalReplayGuard,
 };
 use mako_object_store::{ObjectStore, S3Credentials, S3ObjectStore, S3ObjectStoreConfig};
 use mako_policy::PolicyCompiler;
 use mako_provisioning::{
-    KvProvisioningBackend, Provisioner, ProvisioningBackendConfig, ProvisioningResource,
-    ProvisioningState, ProvisioningStore,
+    KvProvisioningBackend, Provisioner, ProvisioningBackendConfig, ProvisioningOperation,
+    ProvisioningResource, ProvisioningState, ProvisioningStore, ProvisioningWorkflow,
+    ProvisioningWorkflowError, StrandedAction, StrandedPolicy, stranded_actions,
 };
 use mako_service_runtime::{ReadinessProbe, ReadinessSnapshot};
 use mako_storage::{
@@ -192,7 +201,28 @@ pub struct ControlPlaneGraph {
     storage: StorageOwner,
     adapter: Arc<dyn KvAdapter>,
     components: ControlPlaneComponents,
+    /// When the provisioning worker last looked for records stranded in
+    /// `provisioning` without a workflow; zero until it has.
+    last_stranded_sweep_unix_seconds: AtomicU64,
 }
+
+/// How long a project or environment may sit in `provisioning` with no
+/// workflow before the worker treats it as stranded and makes one. Long
+/// enough that a creation request still writing its workflow is never raced.
+const STRANDED_GRACE_SECONDS: u64 = 120;
+/// How often the worker sweeps for stranded records. Each sweep reads every
+/// organization, project, and environment, so it runs well under the pace of
+/// the ten-second workflow pass.
+const STRANDED_SWEEP_INTERVAL_SECONDS: u64 = 60;
+/// One page of a record listing during the stranded-record sweep, and the
+/// most records of one kind a sweep reads before leaving the rest to the
+/// next: a pass stays bounded however large the deployment grows.
+const SWEEP_PAGE: NonZeroUsize = NonZeroUsize::new(100).expect("page is positive");
+const SWEEP_RECORD_CAP: usize = 10_000;
+/// The actor the worker names when it installs an environment's plan limits.
+/// Not a developer: the install is the platform's own step, taken for every
+/// environment regardless of who asked for it.
+const PROVISIONING_WORKER_ACTOR_ID: &str = "control-plane-provisioning-worker";
 
 impl ControlPlaneGraph {
     pub fn open(config: &ServiceConfig) -> Result<Self, ControlPlaneGraphError> {
@@ -793,6 +823,7 @@ impl ControlPlaneGraph {
         Ok(Self {
             storage,
             adapter,
+            last_stranded_sweep_unix_seconds: AtomicU64::new(0),
             components: ControlPlaneComponents {
                 public_origin: public_origin.trim_end_matches('/').to_owned(),
                 telemetry_emitter,
@@ -1133,13 +1164,31 @@ impl ControlPlaneGraph {
     /// runs one pass and reports how many workflows it advanced. A workflow that
     /// fails does not stop the pass: it keeps its own diagnostics and is retried
     /// on the next one.
+    ///
+    /// Once a minute the pass also looks for records that are stranded: still
+    /// `provisioning` after the grace period with no workflow at all -- the
+    /// creation request died between writing the record and enqueueing -- or
+    /// with a workflow that failed for a reason worth retrying. It makes or
+    /// retries the workflow, then runs it in the same pass, so a stranded
+    /// resource heals without an operator.
     pub async fn run_pending_provisioning(&self, now_unix_seconds: u64) -> (usize, usize) {
-        let limit = NonZeroUsize::new(100).expect("provisioning batch is positive");
-        let Ok(workflows) = self.components.provisioning.list(limit).await else {
+        let Ok(mut workflows) = self.components.provisioning.list_all().await else {
             return (0, 0);
         };
         let mut advanced = 0;
         let mut failed = 0;
+        if self.stranded_sweep_is_due(now_unix_seconds) {
+            let (queued, sweep_failures) = self
+                .reconcile_stranded_records(&workflows, now_unix_seconds)
+                .await;
+            failed += sweep_failures;
+            if queued > 0 {
+                match self.components.provisioning.list_all().await {
+                    Ok(refreshed) => workflows = refreshed,
+                    Err(_) => return (advanced, failed + 1),
+                }
+            }
+        }
         for workflow in workflows {
             // A workflow that already finished still leaves its project or
             // environment in Provisioning if nothing transitioned the record,
@@ -1181,8 +1230,144 @@ impl ControlPlaneGraph {
         (advanced, failed)
     }
 
+    /// Whether a minute has passed since the last stranded-record sweep,
+    /// claiming this pass as the sweep when it has.
+    fn stranded_sweep_is_due(&self, now_unix_seconds: u64) -> bool {
+        let last = self
+            .last_stranded_sweep_unix_seconds
+            .load(Ordering::Acquire);
+        if last != 0 && now_unix_seconds < last.saturating_add(STRANDED_SWEEP_INTERVAL_SECONDS) {
+            return false;
+        }
+        self.last_stranded_sweep_unix_seconds
+            .compare_exchange(last, now_unix_seconds, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
+    }
+
+    /// Find every project and environment still in `provisioning`, and give
+    /// each one that has no live workflow the workflow it is missing.
+    ///
+    /// Returns how many workflows were made or retried, and how many steps
+    /// failed. Every listing is read to its end a page at a time: an active
+    /// record never leaves a listing, so a first-page-only sweep would stop
+    /// seeing new records once a hundred had accumulated.
+    async fn reconcile_stranded_records(
+        &self,
+        workflows: &[ProvisioningWorkflow],
+        now_unix_seconds: u64,
+    ) -> (usize, usize) {
+        let organizations = &self.components.organizations;
+        let projects = &self.components.projects;
+        let Ok(every_organization) = read_all_pages(
+            |after: Option<OrganizationId>| async move {
+                organizations
+                    .all_organizations_after(after.as_ref(), SWEEP_PAGE)
+                    .await
+                    .map_err(|_| ())
+            },
+            |organization: &OrganizationRecord| organization.id().clone(),
+        )
+        .await
+        else {
+            return (0, 1);
+        };
+        let mut failed = 0;
+        let mut records = Vec::new();
+        for organization in every_organization {
+            let organization_id = organization.id();
+            let Ok(every_project) = read_all_pages(
+                |after: Option<ProjectId>| async move {
+                    projects
+                        .list_projects_after(organization_id, after.as_ref(), SWEEP_PAGE)
+                        .await
+                        .map_err(|_| ())
+                },
+                |project: &ProjectRecord| project.id().clone(),
+            )
+            .await
+            else {
+                failed += 1;
+                continue;
+            };
+            for project in every_project {
+                let project_id = project.id();
+                if project.lifecycle() == LifecycleState::Provisioning {
+                    records.push((
+                        ProvisioningResource::Project(project_id.clone()),
+                        project.created_at_unix_seconds(),
+                    ));
+                }
+                let Ok(every_environment) = read_all_pages(
+                    |after: Option<EnvironmentId>| async move {
+                        projects
+                            .list_environments_after(project_id, after.as_ref(), SWEEP_PAGE)
+                            .await
+                            .map_err(|_| ())
+                    },
+                    |environment: &EnvironmentRecord| environment.id().clone(),
+                )
+                .await
+                else {
+                    failed += 1;
+                    continue;
+                };
+                for environment in every_environment {
+                    if environment.lifecycle() == LifecycleState::Provisioning {
+                        records.push((
+                            ProvisioningResource::Environment(TenantScope::new(
+                                project_id.clone(),
+                                environment.id().clone(),
+                            )),
+                            environment.created_at_unix_seconds(),
+                        ));
+                    }
+                }
+            }
+        }
+        let policy = StrandedPolicy {
+            grace_seconds: STRANDED_GRACE_SECONDS,
+            ..StrandedPolicy::default()
+        };
+        let mut queued = 0;
+        for action in stranded_actions(&records, workflows, now_unix_seconds, &policy) {
+            let outcome = match action {
+                StrandedAction::Enqueue { id, resource } => self
+                    .components
+                    .provisioning
+                    .enqueue(
+                        id,
+                        resource,
+                        ProvisioningOperation::Create,
+                        now_unix_seconds,
+                    )
+                    .await
+                    .map(|_| ()),
+                StrandedAction::Retry(id) => self
+                    .components
+                    .provisioning
+                    .retry(&id, now_unix_seconds)
+                    .await
+                    .map(|_| ()),
+            };
+            match outcome {
+                Ok(()) => queued += 1,
+                // Another pass got there first; its workflow is the one to run.
+                Err(
+                    ProvisioningWorkflowError::Conflict | ProvisioningWorkflowError::NotRetryable,
+                ) => {}
+                Err(_) => failed += 1,
+            }
+        }
+        (queued, failed)
+    }
+
     /// Move the project or environment a completed workflow provisioned out of
     /// its provisioning lifecycle state.
+    ///
+    /// An environment is given its organization's plan limits first, so it is
+    /// never active without them. When the data plane cannot take them the
+    /// environment stays `provisioning` and the next pass tries again; the
+    /// workflow is already complete, so nothing else is redone.
     async fn activate_provisioned_resource(
         &self,
         resource: &ProvisioningResource,
@@ -1219,6 +1404,13 @@ impl ControlPlaneGraph {
                 if current.lifecycle() != LifecycleState::Provisioning {
                     return Ok(false);
                 }
+                if let Err(error) = self.install_plan_limits(tenant, now_unix_seconds).await {
+                    eprintln!(
+                        "provisioning activation deferred: class=plan_limits environment={} reason={error}",
+                        tenant.environment_id().as_str()
+                    );
+                    return Err(());
+                }
                 let mut next = current.clone();
                 next.transition(LifecycleState::Active, now_unix_seconds, None)
                     .map_err(|_| ())?;
@@ -1230,6 +1422,59 @@ impl ControlPlaneGraph {
                     .map_err(|_| ())
             }
         }
+    }
+
+    /// Resolve what the environment's organization is entitled to and install
+    /// the limits that follow into the data plane that serves it.
+    ///
+    /// The plan and any exception made to it are control-plane state; the
+    /// limits they imply are what the gateway enforces. Translating here keeps
+    /// that in one place, so the data plane holds what it was given rather
+    /// than a second copy of the rules. Each attempt travels under its own
+    /// idempotency key: the policy is recomputed every time, so a retry after
+    /// a plan change installs the new limits rather than replaying the old.
+    pub async fn install_plan_limits(
+        &self,
+        tenant: &TenantScope,
+        now_unix_seconds: u64,
+    ) -> Result<(), PlanLimitInstallError> {
+        let project = self
+            .components
+            .projects
+            .get_project(tenant.project_id())
+            .await
+            .map_err(|_| PlanLimitInstallError::ControlStorage)?
+            .ok_or(PlanLimitInstallError::ProjectMissing)?;
+        let organization = self
+            .components
+            .organizations
+            .get_organization(project.organization_id())
+            .await
+            .map_err(|_| PlanLimitInstallError::ControlStorage)?
+            .ok_or(PlanLimitInstallError::OrganizationMissing)?;
+        let exceptions = self
+            .components
+            .operator_service
+            .plan_exceptions(project.organization_id(), now_unix_seconds)
+            .await
+            .map_err(|_| PlanLimitInstallError::ControlStorage)?;
+        let policy = plan_policy(organization.plan_id(), &exceptions, now_unix_seconds)?;
+        let command = quota_policy_command(PROVISIONING_WORKER_ACTOR_ID, &policy);
+        let attempt = format!(
+            "plan-limits_{}_{now_unix_seconds}",
+            tenant.environment_id().as_str()
+        );
+        let _: serde_json::Value = self
+            .components
+            .data_plane_identity_admin
+            .administer(
+                tenant,
+                &format!("req_{attempt}"),
+                &format!("idem_{attempt}"),
+                &command,
+            )
+            .map_err(PlanLimitInstallError::DataPlane)?;
+        Ok(())
     }
 
     #[must_use]
@@ -1341,11 +1586,97 @@ impl ControlPlaneGraph {
             storage,
             adapter,
             components,
+            last_stranded_sweep_unix_seconds: _,
         } = self;
         drop(components);
         drop(adapter);
         storage.shutdown().await.map_err(Into::into)
     }
+}
+
+/// Why an environment's plan limits could not be installed. Every variant is
+/// retried by the next worker pass; the environment stays `provisioning`
+/// until one succeeds.
+#[derive(Debug)]
+pub enum PlanLimitInstallError {
+    /// The project or organization record could not be read.
+    ControlStorage,
+    ProjectMissing,
+    OrganizationMissing,
+    /// The organization is on a plan the catalog no longer names -- a
+    /// deployment bug, and inventing limits for it would hide that.
+    PlanUnknown,
+    /// The plan's entitlements do not resolve to limits the gateway can hold.
+    PolicyInvalid,
+    DataPlane(InternalClientError),
+}
+
+impl fmt::Display for PlanLimitInstallError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::ControlStorage => f.write_str("control storage is unavailable"),
+            Self::ProjectMissing => f.write_str("project record is missing"),
+            Self::OrganizationMissing => f.write_str("organization record is missing"),
+            Self::PlanUnknown => f.write_str("the organization's plan is not in the catalog"),
+            Self::PolicyInvalid => f.write_str("plan limits could not be resolved"),
+            Self::DataPlane(error) => write!(f, "data plane refused the limits: {error}"),
+        }
+    }
+}
+
+impl Error for PlanLimitInstallError {}
+
+/// Read a bounded listing to its end, one page at a time, stopping after
+/// [`SWEEP_RECORD_CAP`] records so a pass stays bounded however large the
+/// deployment grows. `page` is asked for the records after the id it is given.
+async fn read_all_pages<T, Id, Page, Fut>(
+    mut page: Page,
+    id_of: impl Fn(&T) -> Id,
+) -> Result<Vec<T>, ()>
+where
+    Page: FnMut(Option<Id>) -> Fut,
+    Fut: Future<Output = Result<Vec<T>, ()>>,
+{
+    let mut all = Vec::new();
+    let mut after = None;
+    loop {
+        let batch = page(after).await?;
+        let last_page = batch.len() < SWEEP_PAGE.get();
+        after = batch.last().map(&id_of);
+        all.extend(batch);
+        if last_page || all.len() >= SWEEP_RECORD_CAP {
+            return Ok(all);
+        }
+    }
+}
+
+/// The command that installs the quota policy a tenant is held to, whoever
+/// delivers it: the provisioning worker at activation, a developer
+/// transferring a project, an operator changing a plan. The permission set
+/// carries exactly what the operation needs and nothing else.
+pub(crate) fn quota_policy_command(
+    actor_id: &str,
+    policy: &serde_json::Value,
+) -> IdentityAdminCommand {
+    IdentityAdminCommand {
+        operation: IdentityAdminOperation::InstallQuotaPolicy,
+        actor_id: actor_id.to_owned(),
+        permissions: BTreeSet::from([IdentityAdminPermission::ManageCollections]),
+        input: serde_json::json!({ "policy": policy }),
+    }
+}
+
+/// The limits an organization's plan implies, as the gateway will store them.
+pub fn plan_policy(
+    plan_id: &str,
+    exceptions: &[mako_billing::PlanException],
+    now_unix_seconds: u64,
+) -> Result<serde_json::Value, PlanLimitInstallError> {
+    let plan = mako_billing::plan(plan_id).ok_or(PlanLimitInstallError::PlanUnknown)?;
+    let plan = mako_billing::effective_plan(&plan, exceptions, now_unix_seconds);
+    let policy = mako_billing::enforcement_policy(&plan.entitlements)
+        .map_err(|_| PlanLimitInstallError::PolicyInvalid)?;
+    serde_json::to_value(&policy).map_err(|_| PlanLimitInstallError::PolicyInvalid)
 }
 
 impl ReadinessProbe for ControlPlaneGraph {
@@ -1716,6 +2047,137 @@ mod tests {
         assert_eq!(
             block_on(graph.adapter.get(b"\x01control-outage-test")).expect("control read"),
             Some(b"available".to_vec())
+        );
+        block_on(graph.shutdown()).expect("shutdown");
+    }
+
+    /// An environment whose creation request died between writing the record
+    /// and enqueueing its workflow -- the beta's `development` environment sat
+    /// in `provisioning` for a week that way while a checkpoint backup had the
+    /// data plane stopped (finding #49) -- is found by the worker's sweep once
+    /// the grace period has passed, given a workflow under a deterministic id,
+    /// and run in the same pass. A project heals the same way and activates at
+    /// once; an environment also needs its plan limits installed, so with the
+    /// data plane away it stays `provisioning`, the pass counts the deferral,
+    /// and it is retried rather than activated without limits.
+    #[test]
+    fn the_worker_gives_stranded_records_a_workflow_and_never_activates_without_limits() {
+        use mako_api::{EnvironmentId, ProjectId};
+        use mako_control_plane::{
+            EnvironmentRecord, MembershipRecord, OrganizationId, OrganizationRecord,
+            OrganizationRole, ProjectRecord,
+        };
+        use mako_provisioning::reconciliation_workflow_id;
+
+        let directory = local_tempdir("control-plane-stranded");
+        let config = config_for(directory.path(), DeploymentEnvironment::Local);
+        let unavailable = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("unused listener");
+        let endpoint = unavailable.local_addr().expect("unused endpoint");
+        drop(unavailable);
+        let graph = ControlPlaneGraph::open_with_data_plane_endpoint(&config, endpoint)
+            .expect("control-plane graph");
+
+        let created_at = 1_000;
+        let organization_id = OrganizationId::parse("org_stranded00").expect("organization id");
+        let owner = DeveloperIdentityId::parse("dev_owner000").expect("owner id");
+        let organization = OrganizationRecord::new(organization_id.clone(), "Stranded", created_at)
+            .expect("organization");
+        let membership = MembershipRecord::new(
+            organization_id.clone(),
+            owner,
+            OrganizationRole::Owner,
+            created_at,
+        );
+        block_on(
+            graph
+                .organization_store()
+                .create_organization(&organization, &membership),
+        )
+        .expect("organization stored");
+        let project_id = ProjectId::parse("prj_stranded00").expect("project id");
+        let project = ProjectRecord::new(
+            project_id.clone(),
+            organization_id,
+            "Stranded",
+            "us-east-1-beta",
+            created_at,
+        )
+        .expect("project");
+        block_on(graph.project_store().create_project(&project)).expect("project stored");
+        let environment_id = EnvironmentId::parse("env_stranded00").expect("environment id");
+        let environment = EnvironmentRecord::new(
+            environment_id.clone(),
+            project_id.clone(),
+            "development",
+            created_at,
+        )
+        .expect("environment");
+        block_on(graph.project_store().create_environment(&environment))
+            .expect("environment stored");
+        let project_resource = ProvisioningResource::Project(project_id.clone());
+        let environment_resource = ProvisioningResource::Environment(TenantScope::new(
+            project_id.clone(),
+            environment_id.clone(),
+        ));
+
+        // Inside the grace period the records are a creation request still in
+        // flight, and nothing touches them.
+        let (advanced, failed) =
+            block_on(graph.run_pending_provisioning(created_at + STRANDED_GRACE_SECONDS - 1));
+        assert_eq!((advanced, failed), (0, 0));
+        assert!(
+            block_on(
+                graph
+                    .provisioner()
+                    .list(NonZeroUsize::new(10).expect("limit"))
+            )
+            .expect("workflows")
+            .is_empty()
+        );
+
+        // The next sweep is a minute later: both records are past the grace
+        // period, both get a workflow, both workflows run. The project
+        // activates; the environment's plan limits cannot be installed
+        // because the data plane is away, so it waits and the pass says so.
+        let sweep_at = created_at + STRANDED_GRACE_SECONDS + STRANDED_SWEEP_INTERVAL_SECONDS;
+        let (advanced, failed) = block_on(graph.run_pending_provisioning(sweep_at));
+        assert_eq!((advanced, failed), (1, 1));
+        for resource in [&project_resource, &environment_resource] {
+            let workflow = block_on(
+                graph
+                    .provisioner()
+                    .inspect(&reconciliation_workflow_id(resource).expect("reconciliation id")),
+            )
+            .expect("reconciliation workflow");
+            assert_eq!(workflow.state(), ProvisioningState::Active);
+            assert_eq!(workflow.resource(), resource);
+        }
+        let project = block_on(graph.project_store().get_project(&project_id))
+            .expect("project read")
+            .expect("project");
+        assert_eq!(project.lifecycle(), LifecycleState::Active);
+        let environment = block_on(
+            graph
+                .project_store()
+                .get_environment(&project_id, &environment_id),
+        )
+        .expect("environment read")
+        .expect("environment");
+        assert_eq!(environment.lifecycle(), LifecycleState::Provisioning);
+
+        // Every later pass retries the install and nothing else: the workflow
+        // is complete, so no step is redone and no second workflow appears.
+        let (advanced, failed) = block_on(graph.run_pending_provisioning(sweep_at + 10));
+        assert_eq!((advanced, failed), (0, 1));
+        assert_eq!(
+            block_on(
+                graph
+                    .provisioner()
+                    .list(NonZeroUsize::new(10).expect("limit"))
+            )
+            .expect("workflows")
+            .len(),
+            2
         );
         block_on(graph.shutdown()).expect("shutdown");
     }

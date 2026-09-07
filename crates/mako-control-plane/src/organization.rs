@@ -115,6 +115,31 @@ impl OrganizationStore {
             .collect()
     }
 
+    /// The organizations whose ids sort after `after` -- every organization
+    /// when it is `None` -- in id order, at most `limit` of them: one page of
+    /// `all_organizations`, for a maintenance loop that must visit every
+    /// tenant however many there are.
+    pub async fn all_organizations_after(
+        &self,
+        after: Option<&OrganizationId>,
+        limit: NonZeroUsize,
+    ) -> Result<Vec<OrganizationRecord>, OrganizationStoreError> {
+        let after = after.map(ControlKeyspace::organization_key).transpose()?;
+        let Some(range) =
+            ControlKeyspace::range_after(ControlKeyspace::organizations_range()?, after)
+        else {
+            return Ok(Vec::new());
+        };
+        let entries = self
+            .adapter
+            .scan(ScanRequest::new(range, ScanDirection::Forward, limit))
+            .await?;
+        entries
+            .iter()
+            .map(|entry| serde_json::from_slice(&entry.value).map_err(OrganizationStoreError::from))
+            .collect()
+    }
+
     pub async fn get_organization(
         &self,
         organization_id: &OrganizationId,
@@ -1727,6 +1752,47 @@ mod tests {
             let mut degenerate = invoice;
             degenerate.period_end_unix_milliseconds = 1_000;
             assert!(store.close_invoice(&degenerate).await.is_err());
+        });
+    }
+    /// A maintenance loop reads every organization a page at a time; the
+    /// pages arrive in id order, without repeats, and end with an empty one.
+    #[test]
+    fn all_organizations_pages_past_the_first_hundred() {
+        futures::executor::block_on(async {
+            let adapter: Arc<dyn KvAdapter> = Arc::new(MemoryAdapter::new());
+            let store = OrganizationStore::new(adapter, Durability::Memory).expect("store");
+            let owner = DeveloperIdentityId::parse("dev_owner000").expect("owner");
+            for index in 0..130 {
+                let id = OrganizationId::parse(format!("org_{index:08}")).expect("id");
+                let organization =
+                    OrganizationRecord::new(id.clone(), "Team", 1).expect("organization");
+                let membership =
+                    MembershipRecord::new(id, owner.clone(), OrganizationRole::Owner, 1);
+                store
+                    .create_organization(&organization, &membership)
+                    .await
+                    .expect("create");
+            }
+            let limit = NonZeroUsize::new(100).expect("limit");
+            let first = store
+                .all_organizations_after(None, limit)
+                .await
+                .expect("first page");
+            assert_eq!(first.len(), 100);
+            assert_eq!(first[0].id().as_str(), "org_00000000");
+            let second = store
+                .all_organizations_after(first.last().map(OrganizationRecord::id), limit)
+                .await
+                .expect("second page");
+            assert_eq!(second.len(), 30);
+            assert_eq!(second[0].id().as_str(), "org_00000100");
+            assert!(
+                store
+                    .all_organizations_after(second.last().map(OrganizationRecord::id), limit)
+                    .await
+                    .expect("end")
+                    .is_empty()
+            );
         });
     }
 }

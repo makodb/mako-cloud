@@ -31,7 +31,7 @@ Every developer SHALL also have a personal space: an implicit team of exactly on
 ### Requirement: Project and environment lifecycle
 Authorized members SHALL be able to create, inspect, suspend, restore, and delete projects and isolated environments. Provisioning SHALL report explicit asynchronous states and MUST expose data-plane endpoints only after required storage, identity, policy, and function resources are ready.
 
-A project or environment reported as provisioning SHALL converge to an active or failed state without further caller action. The control plane MUST advance enqueued provisioning work on its own, and MUST reconcile a resource whose provisioning work has already completed but whose lifecycle state has not been updated, so that no resource remains indefinitely in a provisioning state.
+A project or environment reported as provisioning SHALL converge to an active or failed state without further caller action. The control plane MUST advance enqueued provisioning work on its own, and MUST reconcile a resource whose provisioning work has already completed but whose lifecycle state has not been updated, so that no resource remains indefinitely in a provisioning state. A creation request MUST enqueue the provisioning workflow directly after writing the record, with no call to another service between the two; a record found provisioning with no workflow after a grace period, or whose workflow failed for a retryable reason, MUST be given or retried its workflow by the control plane itself, however many records and workflows the store holds. An environment MUST NOT become active until its organization's plan limits are installed in the data plane that serves it.
 
 Authorized members SHALL also be able to rename a project and to transfer it between owners: from a personal space to a team the developer administers, from a team to the developer's personal space, or between two teams the developer administers. A transfer MUST change only the owner: identifiers, environments, data, policies, users, credentials, and functions are unchanged, quota policy is reinstalled from the new owner's plan, and the action is audited for both the previous and the new owner.
 
@@ -54,6 +54,10 @@ Authorized members SHALL also be able to rename a project and to transfer it bet
 #### Scenario: A project is transferred between owners
 - **WHEN** a developer who administers both the current owner and the target owner transfers a project and confirms
 - **THEN** the project is listed under the target owner only, keeps its identifier and every environment and resource, is limited by the target owner's plan, and the transfer is audited under both owners
+
+#### Scenario: A stranded resource is reconciled
+- **WHEN** a project or environment has been provisioning for longer than the grace period with no provisioning workflow, or with one that failed for a retryable reason
+- **THEN** the control plane makes or retries the workflow under a deterministic identifier and runs it, the project activates, and the environment activates only once its plan limits are installed, staying provisioning and being retried while the data plane cannot take them
 
 ### Requirement: Control availability is independent of tenant RocksDB
 The control plane SHALL start and authenticate developers and operators using its independent control authority without requiring data-plane RocksDB readiness. It SHALL continue to serve control-owned identity, wait-list, team, project metadata, audit, incident, and recovery-coordination operations during a tenant data-plane outage. Operations that require unavailable tenant authority MUST return a stable scoped unavailable result and MUST NOT make the entire control API or portal unavailable.

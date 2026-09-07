@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
-  "recordedAt": "2026-09-06T22:20:22.695Z",
+  "recordedAt": "2026-09-07T01:46:29.770Z",
   "environment": "public-beta",
   "vmId": 124,
   "publicOrigin": "https://cloud-test.makodb.com",
-  "releaseDigest": "d7e52bad05d3c47c4ca87acf2d568671bbbff0339f96ca5b88f01ce806274079",
+  "releaseDigest": "8dcc0149a23217030b171b68612a0def56ab56ed4fd1486b83847dfc96f68d4a",
   "planHash": "d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073",
   "qualificationMode": "existing-isolated-fixture",
   "tenant": {
@@ -39,14 +39,14 @@
       "bufferingDisabled": true,
       "firstEvent": "heartbeat",
       "firstFrameBytes": 1278,
-      "firstFrameMilliseconds": 418.03163799999993
+      "firstFrameMilliseconds": 650.5182369999993
     },
     "function": {
       "status": 200,
       "contentType": "text/plain; charset=utf-8",
       "bodyBytes": 130304,
       "bodySha256": "938a62d95c067364f1f94944f3a613dc69cc995699e47f4b018a3ed38c8e59d6",
-      "elapsedMilliseconds": 362.2283769999999,
+      "elapsedMilliseconds": 506.4973369999998,
       "requestIdPresent": true
     }
   },

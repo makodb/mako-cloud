@@ -871,64 +871,25 @@ fn handle_create_environment(
             }
             Err(error) => return Err(project_error(request, error)),
         };
-        let tenant = TenantScope::new(project_id, id);
-        // A new environment starts on its organization's plan. Without this it
-        // would be served under the deployment default instead, which is not
-        // what anyone subscribed to.
-        install_plan_limits(graph, request, &actor, &tenant, now).await?;
+        // The workflow is enqueued the moment the record exists, and nothing
+        // between the two talks to another service; the two writes are still
+        // separate, so a record the process dies between is picked up by the
+        // worker's stranded-record sweep. The environment's plan limits are
+        // installed by the provisioning worker when it activates the
+        // environment, so a data plane that is briefly away when someone
+        // creates an environment delays it rather than stranding it
+        // (finding #49).
         enqueue(
             graph,
             request,
             &idempotency,
-            ProvisioningResource::Environment(tenant),
+            ProvisioningResource::Environment(TenantScope::new(project_id, id)),
             ProvisioningOperation::Create,
             now,
         )
         .await?;
         json(request, 202, &environment_wire(request, &record)?)
     })
-}
-
-/// Resolve what an organization is entitled to and install the limits that
-/// follow into the data plane that serves the environment.
-///
-/// The plan and any exception made to it are control-plane state; the limits
-/// they imply are what the gateway enforces. Translating here keeps that in one
-/// place, so the data plane holds what it was given rather than a second copy
-/// of the rules.
-async fn install_plan_limits(
-    graph: &Arc<ControlPlaneGraph>,
-    request: &HttpRequest,
-    actor: &DeveloperPrincipal,
-    tenant: &TenantScope,
-    now: u64,
-) -> Result<(), HttpApiError> {
-    let project = graph
-        .project_store()
-        .get_project(tenant.project_id())
-        .await
-        .map_err(|_| unavailable(request, "project authorization is unavailable"))?
-        .ok_or_else(|| not_found(request, "project resource was not found"))?;
-    let organization = graph
-        .organization_store()
-        .get_organization(project.organization_id())
-        .await
-        .map_err(|_| unavailable(request, "team is unavailable"))?
-        .ok_or_else(|| not_found(request, "team was not found"))?;
-    let exceptions = graph
-        .operator_service()
-        .plan_exceptions(project.organization_id(), now)
-        .await
-        .map_err(|_| unavailable(request, "plan exceptions are unavailable"))?;
-    let policy = resolve_plan_policy(request, organization.plan_id(), &exceptions, now)?;
-    crate::identity_admin_http::install_quota_policy(
-        graph,
-        request,
-        actor.identity_id().as_str(),
-        tenant,
-        &policy,
-    )
-    .await
 }
 
 /// The limits an organization's plan implies, as the gateway will store them.
@@ -938,14 +899,14 @@ pub(crate) fn resolve_plan_policy(
     exceptions: &[mako_billing::PlanException],
     now_unix_seconds: u64,
 ) -> Result<serde_json::Value, HttpApiError> {
-    // An organization on a plan the catalog no longer names is a deployment
-    // bug, and inventing limits for it would hide that.
-    let plan = mako_billing::plan(plan_id)
-        .ok_or_else(|| internal(request, "the team's plan is not in the catalog"))?;
-    let plan = mako_billing::effective_plan(&plan, exceptions, now_unix_seconds);
-    let policy = mako_billing::enforcement_policy(&plan.entitlements)
-        .map_err(|_| internal(request, "plan limits could not be resolved"))?;
-    serde_json::to_value(&policy).map_err(|_| internal(request, "plan limits could not be encoded"))
+    crate::graph::plan_policy(plan_id, exceptions, now_unix_seconds).map_err(|error| match error {
+        // An organization on a plan the catalog no longer names is a
+        // deployment bug, and inventing limits for it would hide that.
+        crate::graph::PlanLimitInstallError::PlanUnknown => {
+            internal(request, "the team's plan is not in the catalog")
+        }
+        _ => internal(request, "plan limits could not be resolved"),
+    })
 }
 
 /// The organization's bill for the current period so far, and the balance it

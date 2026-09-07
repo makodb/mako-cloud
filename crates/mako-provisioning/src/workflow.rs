@@ -3,12 +3,15 @@ use std::{collections::BTreeMap, error::Error, fmt, num::NonZeroUsize, sync::Arc
 use async_trait::async_trait;
 use mako_api::{ProjectId, TenantScope};
 use mako_storage::{
-    AtomicWrite, CompareAndWriteResult, Durability, KeyCondition, KvAdapter, ScanDirection,
-    ScanRequest, StorageError, TenantKeyspace, WriteBatch,
+    AtomicWrite, CompareAndWriteResult, Durability, KeyCondition, KeyRange, KvAdapter,
+    ScanDirection, ScanRequest, StorageError, TenantKeyspace, WriteBatch,
 };
 use serde::{Deserialize, Deserializer, Serialize, de};
 
 const WORKFLOW_DOMAIN: &[u8] = b"provisioning/workflows";
+/// The most workflows one worker pass reads before leaving the rest to the
+/// next pass, so a pass stays bounded however long the store has lived.
+pub const MAX_WORKFLOWS_PER_PASS: usize = 10_000;
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(transparent)]
@@ -188,6 +191,144 @@ pub struct OperatorRepair {
     pub operation_key: Option<String>,
 }
 
+/// What a reconciliation pass should do about a project or environment whose
+/// record is still `provisioning` after the time a healthy creation needs.
+///
+/// Two things leave a record there for good. A creation request that wrote
+/// the record and then failed before it enqueued the workflow -- the data
+/// plane was down for the second it took -- leaves nothing for the worker to
+/// run at all. And a workflow that failed on a retryable step waits for a
+/// retry nobody is obliged to send. Neither is the developer's fault, and
+/// neither should need an operator: the pass repairs the first by enqueueing
+/// the missing workflow under an id derived from the resource, so every pass
+/// that finds the same gap names the same workflow, and the second by
+/// retrying, with a pause between attempts and a ceiling on them so a data
+/// plane that is really broken ends up in front of an operator rather than
+/// in a loop.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum StrandedAction {
+    /// No workflow describes the record: enqueue one.
+    Enqueue {
+        id: ProvisioningWorkflowId,
+        resource: ProvisioningResource,
+    },
+    /// The record's workflow failed on a retryable step and has waited long enough.
+    Retry(ProvisioningWorkflowId),
+}
+
+/// How long a record may sit in `provisioning` before it counts as stranded,
+/// how long a failed workflow rests before a retry, and how many attempts a
+/// workflow gets before it is left for an operator.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StrandedPolicy {
+    pub grace_seconds: u64,
+    pub retry_after_seconds: u64,
+    pub maximum_attempts: usize,
+}
+
+impl Default for StrandedPolicy {
+    fn default() -> Self {
+        Self {
+            grace_seconds: 120,
+            retry_after_seconds: 60,
+            maximum_attempts: 12,
+        }
+    }
+}
+
+/// The workflow id a reconciliation pass gives a record it found without one.
+/// Derived from the resource alone, so a gap found twice is one workflow.
+///
+/// `None` when the two identifiers together are longer than a workflow id
+/// may be. No writer today makes ids that long, but the worker thread has no
+/// panic recovery, so a record that cannot be named is skipped, not fatal.
+#[must_use]
+pub fn reconciliation_workflow_id(
+    resource: &ProvisioningResource,
+) -> Option<ProvisioningWorkflowId> {
+    let suffix = match resource {
+        ProvisioningResource::Project(project) => format!("reconcile-{}", project.as_str()),
+        ProvisioningResource::Environment(scope) => format!(
+            "reconcile-{}-{}",
+            scope.project_id().as_str(),
+            scope.environment_id().as_str()
+        ),
+    };
+    ProvisioningWorkflowId::parse(format!("wf_{suffix}")).ok()
+}
+
+/// Decide the reconciliation actions for every record still `provisioning`:
+/// `records` pairs each resource with when its record was created, and
+/// `workflows` is every workflow the store holds. Records younger than the
+/// grace period are left to the ordinary path.
+#[must_use]
+pub fn stranded_actions(
+    records: &[(ProvisioningResource, u64)],
+    workflows: &[ProvisioningWorkflow],
+    now_unix_seconds: u64,
+    policy: &StrandedPolicy,
+) -> Vec<StrandedAction> {
+    let mut actions = Vec::new();
+    for (resource, created_at) in records {
+        if now_unix_seconds < created_at.saturating_add(policy.grace_seconds) {
+            continue;
+        }
+        // Creation and restoration both end in `active`; a newer workflow for
+        // the resource speaks for it, whatever an older one did.
+        let Some(workflow) = workflows
+            .iter()
+            .filter(|workflow| {
+                workflow.resource() == resource
+                    && matches!(
+                        workflow.operation(),
+                        ProvisioningOperation::Create | ProvisioningOperation::Restore
+                    )
+            })
+            .max_by_key(|workflow| {
+                (
+                    workflow.updated_at_unix_seconds(),
+                    workflow.created_at_unix_seconds(),
+                )
+            })
+        else {
+            if let Some(id) = reconciliation_workflow_id(resource) {
+                actions.push(StrandedAction::Enqueue {
+                    id,
+                    resource: resource.clone(),
+                });
+            }
+            continue;
+        };
+        if workflow.state() != ProvisioningState::Failed {
+            // Queued and running work is the worker's; a finished one is the
+            // record's own activation, which the worker reconciles; repair
+            // required is an operator's.
+            continue;
+        }
+        let attempts = workflow
+            .diagnostics()
+            .iter()
+            .filter(|diagnostic| !diagnostic.compensation)
+            .count();
+        let retryable = workflow
+            .diagnostics()
+            .iter()
+            .rev()
+            .find(|diagnostic| !diagnostic.compensation)
+            .is_some_and(|diagnostic| diagnostic.failure.retryable);
+        if retryable
+            && attempts < policy.maximum_attempts
+            && now_unix_seconds
+                >= workflow
+                    .updated_at_unix_seconds()
+                    .saturating_add(policy.retry_after_seconds)
+        {
+            actions.push(StrandedAction::Retry(workflow.id().clone()));
+        }
+    }
+    actions
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct ProvisioningWorkflow {
@@ -236,6 +377,11 @@ impl ProvisioningWorkflow {
     #[must_use]
     pub fn operator_repairs(&self) -> &[OperatorRepair] {
         &self.operator_repairs
+    }
+
+    #[must_use]
+    pub const fn created_at_unix_seconds(&self) -> u64 {
+        self.created_at_unix_seconds
     }
 
     #[must_use]
@@ -335,6 +481,38 @@ impl ProvisioningStore {
             .collect()
     }
 
+    /// The workflows whose ids sort after `after` (every workflow when it is
+    /// `None`), in id order, at most `limit` of them. Pages through the whole
+    /// store where `list` shows only its first hundred rows.
+    pub async fn list_after(
+        &self,
+        after: Option<&ProvisioningWorkflowId>,
+        limit: NonZeroUsize,
+    ) -> Result<Vec<ProvisioningWorkflow>, ProvisioningWorkflowError> {
+        if limit.get() > 100 {
+            return Err(ProvisioningWorkflowError::InvalidWorkflow);
+        }
+        let domain = TenantKeyspace::system_domain_range(WORKFLOW_DOMAIN)?;
+        let range = match after {
+            None => domain,
+            Some(id) => {
+                // The shortest key that sorts strictly after the last one seen.
+                let mut start = workflow_key(id)?;
+                start.push(0);
+                if start >= domain.end_exclusive {
+                    return Ok(Vec::new());
+                }
+                KeyRange::new(start, domain.end_exclusive)?
+            }
+        };
+        self.adapter
+            .scan(ScanRequest::new(range, ScanDirection::Forward, limit))
+            .await?
+            .into_iter()
+            .map(|record| serde_json::from_slice(&record.value).map_err(Into::into))
+            .collect()
+    }
+
     async fn replace(
         &self,
         previous: &ProvisioningWorkflow,
@@ -425,6 +603,28 @@ impl Provisioner {
         limit: NonZeroUsize,
     ) -> Result<Vec<ProvisioningWorkflow>, ProvisioningWorkflowError> {
         self.store.list(limit).await
+    }
+
+    /// Every workflow in the store, in id order, read a page at a time.
+    ///
+    /// Workflows are never deleted, so a worker that only ever read the first
+    /// page would stop seeing new ones once a hundred had accumulated -- and
+    /// would never see a reconciliation workflow at all, since those ids sort
+    /// after every hashed one. The pass is still bounded: past
+    /// [`MAX_WORKFLOWS_PER_PASS`] the rest wait for the next one.
+    pub async fn list_all(&self) -> Result<Vec<ProvisioningWorkflow>, ProvisioningWorkflowError> {
+        let page = NonZeroUsize::new(100).expect("page is positive");
+        let mut workflows = Vec::new();
+        let mut after: Option<ProvisioningWorkflowId> = None;
+        loop {
+            let batch = self.store.list_after(after.as_ref(), page).await?;
+            let last_page = batch.len() < page.get();
+            after = batch.last().map(|workflow| workflow.id.clone());
+            workflows.extend(batch);
+            if last_page || workflows.len() >= MAX_WORKFLOWS_PER_PASS {
+                return Ok(workflows);
+            }
+        }
     }
 
     pub async fn run(
@@ -1061,6 +1261,184 @@ mod tests {
                     .await,
                 Err(ProvisioningWorkflowError::Conflict)
             ));
+        });
+    }
+    /// A record left in `provisioning` with no workflow -- the creation request
+    /// failed between writing the record and enqueueing -- gets a workflow
+    /// under an id derived from the resource, so every pass names the same
+    /// one; a failed retryable workflow is retried after a rest and only so
+    /// many times; queued, running, active, and repair-required workflows, and
+    /// records still inside the grace period, are left alone (finding #49).
+    #[test]
+    fn stranded_records_are_enqueued_and_retryable_failures_retried_with_a_ceiling() {
+        futures::executor::block_on(async {
+            let provisioner = provisioner();
+            let project =
+                ProvisioningResource::Project(ProjectId::parse("prj_stranded00").expect("project"));
+            let policy = StrandedPolicy {
+                grace_seconds: 120,
+                retry_after_seconds: 60,
+                maximum_attempts: 2,
+            };
+            let no_workflows: Vec<ProvisioningWorkflow> = Vec::new();
+
+            // Inside the grace period nothing happens; after it the missing
+            // workflow is enqueued under the same id every time.
+            assert!(
+                stranded_actions(&[(project.clone(), 1_000)], &no_workflows, 1_100, &policy)
+                    .is_empty()
+            );
+            let first =
+                stranded_actions(&[(project.clone(), 1_000)], &no_workflows, 1_200, &policy);
+            let second =
+                stranded_actions(&[(project.clone(), 1_000)], &no_workflows, 1_500, &policy);
+            assert_eq!(first, second);
+            let StrandedAction::Enqueue { id, resource } = &first[0] else {
+                panic!("expected an enqueue, got {first:?}");
+            };
+            assert_eq!(resource, &project);
+            assert_eq!(Some(id), reconciliation_workflow_id(&project).as_ref());
+            assert_eq!(id.as_str(), "wf_reconcile-prj_stranded00");
+
+            // A queued workflow for the record is the worker's business.
+            let queued = provisioner
+                .enqueue(
+                    id.clone(),
+                    project.clone(),
+                    ProvisioningOperation::Create,
+                    1_200,
+                )
+                .await
+                .expect("enqueue");
+            assert!(
+                stranded_actions(&[(project.clone(), 1_000)], &[queued], 1_500, &policy).is_empty()
+            );
+
+            // A retryable failure rests, then is retried -- but not forever.
+            let backend = FakeBackend {
+                apply_failure: Mutex::new(Some((
+                    ProvisioningComponent::Storage,
+                    failure("data_plane_unavailable", true),
+                ))),
+                compensation_failure: Mutex::new(None),
+                calls: Mutex::new(Vec::new()),
+            };
+            let failed = provisioner.run(id, &backend, 1_210).await.expect("run");
+            assert_eq!(failed.state(), ProvisioningState::Failed);
+            assert!(
+                stranded_actions(
+                    &[(project.clone(), 1_000)],
+                    std::slice::from_ref(&failed),
+                    1_250,
+                    &policy
+                )
+                .is_empty()
+            );
+            assert_eq!(
+                stranded_actions(
+                    &[(project.clone(), 1_000)],
+                    std::slice::from_ref(&failed),
+                    1_270,
+                    &policy
+                ),
+                vec![StrandedAction::Retry(id.clone())]
+            );
+            // A second retryable failure reaches the ceiling of two attempts.
+            provisioner.retry(id, 1_270).await.expect("retry");
+            *backend.apply_failure.lock().expect("failure") = Some((
+                ProvisioningComponent::Storage,
+                failure("data_plane_unavailable", true),
+            ));
+            let failed_twice = provisioner.run(id, &backend, 1_280).await.expect("rerun");
+            assert_eq!(failed_twice.state(), ProvisioningState::Failed);
+            assert!(
+                stranded_actions(&[(project.clone(), 1_000)], &[failed_twice], 9_999, &policy)
+                    .is_empty()
+            );
+
+            // A failure that is not retryable, and a workflow that needs an
+            // operator, are never retried by the pass.
+            let fixed_id = ProvisioningWorkflowId::parse("wf_notretry00").expect("id");
+            let other =
+                ProvisioningResource::Project(ProjectId::parse("prj_stranded01").expect("project"));
+            provisioner
+                .enqueue(
+                    fixed_id.clone(),
+                    other.clone(),
+                    ProvisioningOperation::Create,
+                    1_200,
+                )
+                .await
+                .expect("enqueue");
+            let backend = FakeBackend {
+                apply_failure: Mutex::new(Some((
+                    ProvisioningComponent::Policy,
+                    failure("policy_invalid", false),
+                ))),
+                compensation_failure: Mutex::new(None),
+                calls: Mutex::new(Vec::new()),
+            };
+            let not_retryable = provisioner
+                .run(&fixed_id, &backend, 1_210)
+                .await
+                .expect("run");
+            assert_eq!(not_retryable.state(), ProvisioningState::Failed);
+            assert!(
+                stranded_actions(&[(other, 1_000)], &[not_retryable], 9_999, &policy).is_empty()
+            );
+        });
+    }
+    /// The worker reads every workflow, not the first hundred: a
+    /// reconciliation id sorts after every hashed id, and workflows are never
+    /// deleted, so the first page alone would hide it forever (finding #49).
+    #[test]
+    fn listing_pages_through_every_workflow_including_reconciliation_ids() {
+        futures::executor::block_on(async {
+            let provisioner = provisioner();
+            for index in 0..120 {
+                let id = ProvisioningWorkflowId::parse(format!("wf_{index:032x}")).expect("id");
+                let project = ProjectId::parse(format!("prj_{index:08}")).expect("project");
+                provisioner
+                    .enqueue(
+                        id,
+                        ProvisioningResource::Project(project),
+                        ProvisioningOperation::Create,
+                        1,
+                    )
+                    .await
+                    .expect("enqueue");
+            }
+            let stranded =
+                ProvisioningResource::Project(ProjectId::parse("prj_stranded00").expect("project"));
+            let reconcile = reconciliation_workflow_id(&stranded).expect("reconciliation id");
+            provisioner
+                .enqueue(
+                    reconcile.clone(),
+                    stranded,
+                    ProvisioningOperation::Create,
+                    2,
+                )
+                .await
+                .expect("enqueue");
+
+            let first_page = provisioner
+                .list(NonZeroUsize::new(100).expect("limit"))
+                .await
+                .expect("first page");
+            assert_eq!(first_page.len(), 100);
+            assert!(
+                first_page
+                    .iter()
+                    .all(|workflow| workflow.id() != &reconcile)
+            );
+
+            let all = provisioner.list_all().await.expect("every workflow");
+            assert_eq!(all.len(), 121);
+            assert_eq!(all.last().map(ProvisioningWorkflow::id), Some(&reconcile));
+            let mut ids: Vec<_> = all.iter().map(|workflow| workflow.id().as_str()).collect();
+            let sorted = ids.clone();
+            ids.sort_unstable();
+            assert_eq!(ids, sorted, "pages arrive in id order without repeats");
         });
     }
 }

@@ -70,6 +70,42 @@ impl ProjectStore {
         self.read(&ControlKeyspace::project_key(project_id)?).await
     }
 
+    /// One page of an organization's projects: those whose ids sort after
+    /// `after` (all of them when it is `None`), in id order, at most `limit`.
+    pub async fn list_projects_after(
+        &self,
+        organization_id: &OrganizationId,
+        after: Option<&ProjectId>,
+        limit: NonZeroUsize,
+    ) -> Result<Vec<ProjectRecord>, ProjectStoreError> {
+        let after = after
+            .map(|project_id| {
+                ControlKeyspace::organization_project_key(organization_id, project_id)
+            })
+            .transpose()?;
+        let Some(range) = ControlKeyspace::range_after(
+            ControlKeyspace::organization_projects_range(organization_id)?,
+            after,
+        ) else {
+            return Ok(Vec::new());
+        };
+        let values = self
+            .adapter
+            .scan(ScanRequest::new(range, ScanDirection::Forward, limit))
+            .await?;
+        let records = values
+            .into_iter()
+            .map(|value| serde_json::from_slice::<ProjectRecord>(&value.value))
+            .collect::<Result<Vec<_>, _>>()?;
+        if records
+            .iter()
+            .any(|project| project.organization_id() != organization_id)
+        {
+            return Err(ProjectStoreError::CorruptRecord);
+        }
+        Ok(records)
+    }
+
     pub async fn list_projects(
         &self,
         organization_id: &OrganizationId,
@@ -199,13 +235,28 @@ impl ProjectStore {
         project_id: &ProjectId,
         limit: NonZeroUsize,
     ) -> Result<Vec<EnvironmentRecord>, ProjectStoreError> {
+        self.list_environments_after(project_id, None, limit).await
+    }
+
+    /// One page of a project's environments: those whose ids sort after
+    /// `after` (all of them when it is `None`), in id order, at most `limit`.
+    pub async fn list_environments_after(
+        &self,
+        project_id: &ProjectId,
+        after: Option<&EnvironmentId>,
+        limit: NonZeroUsize,
+    ) -> Result<Vec<EnvironmentRecord>, ProjectStoreError> {
+        let after = after
+            .map(|environment_id| ControlKeyspace::environment_key(project_id, environment_id))
+            .transpose()?;
+        let Some(range) =
+            ControlKeyspace::range_after(ControlKeyspace::environments_range(project_id)?, after)
+        else {
+            return Ok(Vec::new());
+        };
         let values = self
             .adapter
-            .scan(ScanRequest::new(
-                ControlKeyspace::environments_range(project_id)?,
-                ScanDirection::Forward,
-                limit,
-            ))
+            .scan(ScanRequest::new(range, ScanDirection::Forward, limit))
             .await?;
         let records = values
             .into_iter()
@@ -1327,6 +1378,85 @@ mod tests {
                     && event.action == ControlAuditAction::ProjectCreate
                     && event.outcome == ControlAuditOutcome::Denied
             }));
+        });
+    }
+    /// The stranded-record sweep reads an organization's projects and a
+    /// project's environments a page at a time, so a deployment with more
+    /// than a hundred of either is still visited in full.
+    #[test]
+    fn project_and_environment_listings_page_past_the_first_hundred() {
+        futures::executor::block_on(async {
+            let adapter: Arc<dyn KvAdapter> = Arc::new(MemoryAdapter::new());
+            let projects = ProjectStore::new(adapter, Durability::Memory).expect("project store");
+            let organization_id = OrganizationId::parse("org_paging0000").expect("organization id");
+            let first_project = ProjectId::parse("prj_00000000").expect("project id");
+            for index in 0..101 {
+                let id = ProjectId::parse(format!("prj_{index:08}")).expect("project id");
+                let project =
+                    ProjectRecord::new(id, organization_id.clone(), "Paging", "us-east-1-beta", 1)
+                        .expect("project");
+                projects
+                    .create_project(&project)
+                    .await
+                    .expect("create project");
+            }
+            for index in 0..101 {
+                let id = EnvironmentId::parse(format!("env_{index:08}")).expect("environment id");
+                let environment = EnvironmentRecord::new(id, first_project.clone(), "paged", 1)
+                    .expect("environment");
+                projects
+                    .create_environment(&environment)
+                    .await
+                    .expect("create environment");
+            }
+            let limit = NonZeroUsize::new(100).expect("limit");
+
+            let page = projects
+                .list_projects_after(&organization_id, None, limit)
+                .await
+                .expect("projects");
+            assert_eq!(page.len(), 100);
+            let rest = projects
+                .list_projects_after(&organization_id, page.last().map(ProjectRecord::id), limit)
+                .await
+                .expect("remaining projects");
+            assert_eq!(
+                rest.iter()
+                    .map(|project| project.id().as_str())
+                    .collect::<Vec<_>>(),
+                vec!["prj_00000100"]
+            );
+
+            let page = projects
+                .list_environments_after(&first_project, None, limit)
+                .await
+                .expect("environments");
+            assert_eq!(page.len(), 100);
+            let rest = projects
+                .list_environments_after(
+                    &first_project,
+                    page.last().map(EnvironmentRecord::id),
+                    limit,
+                )
+                .await
+                .expect("remaining environments");
+            assert_eq!(
+                rest.iter()
+                    .map(|environment| environment.id().as_str())
+                    .collect::<Vec<_>>(),
+                vec!["env_00000100"]
+            );
+            assert!(
+                projects
+                    .list_environments_after(
+                        &first_project,
+                        rest.last().map(EnvironmentRecord::id),
+                        limit,
+                    )
+                    .await
+                    .expect("end")
+                    .is_empty()
+            );
         });
     }
 }

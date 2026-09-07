@@ -490,10 +490,10 @@ fn identity_command_no_content(
 
 /// Install the quota policy a tenant is held to, as a named authority.
 ///
-/// Both a developer creating an environment and an operator changing a plan
-/// end here; who is acting differs, so the actor is explicit rather than
-/// derived from a developer session. The permission set carries exactly what
-/// the operation needs and nothing else.
+/// A developer transferring a project and an operator changing a plan end
+/// here; a new environment gets its limits from the provisioning worker when
+/// it activates, through the same command. Who is acting differs, so the
+/// actor is explicit rather than derived from a developer session.
 pub(crate) async fn install_quota_policy(
     graph: &ControlPlaneGraph,
     request: &HttpRequest,
@@ -501,12 +501,7 @@ pub(crate) async fn install_quota_policy(
     tenant: &TenantScope,
     policy: &serde_json::Value,
 ) -> Result<(), HttpApiError> {
-    let command = IdentityAdminCommand {
-        operation: IdentityAdminOperation::InstallQuotaPolicy,
-        actor_id: actor_id.to_owned(),
-        permissions: BTreeSet::from([IdentityAdminPermission::ManageCollections]),
-        input: serde_json::json!({ "policy": policy }),
-    };
+    let command = crate::graph::quota_policy_command(actor_id, policy);
     let _: Value = graph
         .data_plane_identity_admin()
         .administer(tenant, request.request_id(), request.request_id(), &command)

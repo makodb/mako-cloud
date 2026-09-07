@@ -722,6 +722,22 @@ impl ControlKeyspace {
         TenantKeyspace::system_domain_range(ORGANIZATIONS).map_err(ControlKeyspaceError)
     }
 
+    /// `domain` narrowed to the keys that sort strictly after `after`, so a
+    /// caller can read a listing page by page; `None` when nothing can follow
+    /// -- the page after the last one.
+    #[must_use]
+    pub fn range_after(domain: KeyRange, after: Option<Vec<u8>>) -> Option<KeyRange> {
+        let Some(mut start) = after else {
+            return Some(domain);
+        };
+        // The shortest key that sorts strictly after the last one seen.
+        start.push(0);
+        if start >= domain.end_exclusive {
+            return None;
+        }
+        KeyRange::new(start, domain.end_exclusive).ok()
+    }
+
     /// A webhook endpoint registered for an environment.
     pub fn webhook_endpoint_key(
         project_id: &ProjectId,
