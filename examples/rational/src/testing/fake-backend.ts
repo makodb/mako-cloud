@@ -74,6 +74,8 @@ export class FakeMakoBackend {
   #links = 0;
   #clock = 1_800_000_000_000;
   #lastMagicLink: string | null = null;
+  /** Pulls still to refuse with `schema_mismatch`, as an old build would be. */
+  #refusePulls = 0;
   readonly demoHouseholdId = "hh_demo";
   /**
    * Whether this fake deployment "holds" Plaid credentials. Tests flip it to
@@ -640,7 +642,20 @@ export class FakeMakoBackend {
     return role === "owner" || role === "editor";
   }
 
+  /**
+   * Refuse the next `count` pulls the way the server refuses a build whose
+   * schema the environment has moved past -- and, like the server when it
+   * cannot say, without naming the version it wants.
+   */
+  refusePullsWithSchemaMismatch(count = 1): void {
+    this.#refusePulls = count;
+  }
+
   async #pull(collectionId: CollectionId, user: FakeUser, init: RequestInit): Promise<Response> {
+    if (this.#refusePulls > 0) {
+      this.#refusePulls -= 1;
+      return apiError(409, "schema_mismatch", "the collection has moved to a newer schema");
+    }
     const body = await jsonBody<{
       checkpoint?: string | null;
       batchSize?: number;
@@ -706,6 +721,7 @@ export class FakeMakoBackend {
           mutationId: row.mutationId,
           status: "denied",
           error: {
+            apiVersion: "v1",
             error: {
               code: "permission_denied",
               message: "document mutation is not permitted",
@@ -971,9 +987,18 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
+/**
+ * A refusal in the shape the wire defines. `apiVersion` is part of that shape,
+ * and the client reads the envelope only when it is there: without it every
+ * refusal this backend sent arrived as a bare "internal", so a test that meant
+ * to exercise a permission or a schema refusal was exercising neither.
+ */
 function apiError(status: number, code: string, message: string): Response {
   return jsonResponse(
-    { error: { code, message, requestId: "req_rational_fake", retry: { kind: "never" } } },
+    {
+      apiVersion: "v1",
+      error: { code, message, requestId: "req_rational_fake", retry: { kind: "never" } },
+    },
     status,
   );
 }

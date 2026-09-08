@@ -11,6 +11,7 @@ import {
 } from "@mako-cloud/rxdb";
 import { BehaviorSubject, type Observable } from "rxjs";
 
+import { SCHEMA_VERSION } from "../model/collections.js";
 import type { CollectionId } from "../model/types.js";
 import {
   openDatabase,
@@ -270,7 +271,7 @@ export class ScopeController<Ids extends CollectionId> {
       environment: this.#environmentEpoch,
       user: userAuthorizationEpoch,
     });
-    if (recovery.kind === "schema_migration_required") {
+    if (recovery.kind === "schema_migration_required" && !this.#canSpeak(recovery)) {
       this.#patch((current) => ({
         ...current,
         recovery,
@@ -280,6 +281,14 @@ export class ScopeController<Ids extends CollectionId> {
         }).`,
       }));
       return;
+    }
+    if (recovery.kind === "schema_migration_required") {
+      // The refusal was recorded against a build that is no longer the one
+      // running: this one speaks a schema the environment asked for, so the
+      // verdict is out of date. Replication decides again, and latches
+      // straight back if the environment still refuses -- which is how a
+      // person who updates stops being told to update.
+      await this.#recovery.markActive();
     }
     await this.#open(state.replicationIdentifier);
     if (recovery.kind === "full_resync_required") {
@@ -484,6 +493,18 @@ export class ScopeController<Ids extends CollectionId> {
         this.#patch((state) => ({ ...state, initialSynced: true, syncedAt: Date.now() }));
       }
     });
+  }
+
+  /**
+   * Whether this build can speak the schema a recorded refusal named. An
+   * environment that did not say which version it wants leaves nothing to
+   * compare, and a build that has been updated since is the likelier story
+   * than one that is still behind, so it is given the benefit of the doubt.
+   */
+  #canSpeak(recovery: { readonly requiredSchemaVersion: number | null }): boolean {
+    return (
+      recovery.requiredSchemaVersion === null || SCHEMA_VERSION >= recovery.requiredSchemaVersion
+    );
   }
 
   async #fullResync(reason: string): Promise<void> {

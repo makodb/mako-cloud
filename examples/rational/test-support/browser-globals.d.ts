@@ -24,6 +24,7 @@ interface RationalScopeStateWire {
   streamResyncs: number;
   syncedAt: number | null;
   notice: string | null;
+  recovery: { kind: string; requiredSchemaVersion?: number | null; reason?: string };
 }
 
 interface RationalDiagnosticsWire {
@@ -165,6 +166,7 @@ interface RationalBrowserApplication {
   household: RationalHouseholdWire | null;
   directory: RationalHouseholdWire | null;
   writes: RationalWritesWire | null;
+  updateHousehold(patch: { name?: string; currency?: string }): Promise<unknown>;
   receipts: RationalReceiptsWire | null;
   plaid: {
     configured(): Promise<boolean>;
@@ -200,6 +202,7 @@ interface RationalFakeBackend {
   plaidConfigured: boolean;
   joinDemoOnSignup: boolean;
   putRemote(collectionId: string, document: RationalDocumentWire): void;
+  refusePullsWithSchemaMismatch(count?: number): void;
   deleteRemote(collectionId: string, id: string, updatedAt: number): void;
   remoteDocument(collectionId: string, id: string): RationalDocumentWire | undefined;
   setRole(email: string, householdId: string, role: string | null): void;

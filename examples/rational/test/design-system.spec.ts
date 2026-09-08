@@ -173,3 +173,37 @@ test("a chart names what it shows and explains the point under the pointer", asy
   expect(await table.locator("tbody tr").count()).toBeGreaterThan(1);
   await expect(table.locator("tbody tr").first().locator("td").first()).toContainText("$");
 });
+
+test("a build that speaks the schema stops being told to update", async ({ page }) => {
+  await openDemoHousehold(page);
+  await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+
+  // The environment refuses the next pull the way it refuses a build whose
+  // schema it has moved past, without naming the version it wants.
+  await page.evaluate(() => window.rationalFake?.refusePullsWithSchemaMismatch(50));
+  // Going offline and back is what makes replication pull again.
+  await page.evaluate(async () => {
+    await window.rational.setOnline(false);
+    await window.rational.setOnline(true);
+  });
+  await expect
+    .poll(() => page.evaluate(() => window.rational.state.household?.recovery.kind ?? null), {
+      timeout: 20_000,
+    })
+    .toBe("schema_migration_required");
+  await expect(page.getByRole("alert")).toContainText("needs an update");
+
+  // Reloading is what a person does when an application tells them to update,
+  // and this build is not the one that was refused: it opens and syncs.
+  await page.reload();
+  await page.waitForFunction(() => window.rational?.state.phase === "ready");
+  await expect
+    .poll(() => page.evaluate(() => window.rational.state.household?.recovery.kind ?? null), {
+      timeout: 20_000,
+    })
+    .toBe("active");
+  await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+  expect(await page.evaluate(() => window.rational.state.household?.notice ?? "")).not.toContain(
+    "needs an update",
+  );
+});
