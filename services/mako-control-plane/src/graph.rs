@@ -3172,6 +3172,77 @@ mod tests {
         block_on(graph.shutdown()).expect("shutdown");
     }
 
+    // A break-glass bearer is an incident credential, and it may read but never decide.
+    //
+    // Two separate rules produce that, and until now neither was asserted anywhere in
+    // Rust. Hosted deployments disable bearer acceptance, and an operator API must then
+    // reject the credential outright. Enabled during an incident, a mutation is still
+    // refused, because every wait-list decision needs a password verification from the
+    // preceding five minutes and a bearer session has none to offer. The only wire-level
+    // assertions of that second refusal were browser tests against a mocked route, which
+    // fabricate the very response they check, so removing the guard broke nothing.
+    #[test]
+    fn a_break_glass_bearer_may_never_decide_a_wait_list_application() {
+        for (break_glass_enabled, expected) in [
+            ("false", mako_api::ErrorCode::Unauthenticated),
+            ("true", mako_api::ErrorCode::OperatorStepUpRequired),
+        ] {
+            let directory = local_tempdir("control-plane-break-glass-mutation");
+            let config = config_with(
+                directory.path(),
+                DeploymentEnvironment::Local,
+                vec![(
+                    "MAKO_OPERATOR_BREAK_GLASS_BEARER_ENABLED",
+                    break_glass_enabled,
+                )],
+            );
+            let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("ready listener");
+            let endpoint = listener.local_addr().expect("listener address");
+            let server = thread::spawn(move || {
+                let (mut stream, _) = listener.accept().expect("ready request");
+                let mut request = [0_u8; 512];
+                let _ = stream.read(&mut request).expect("request bytes");
+                stream
+                    .write_all(
+                        b"HTTP/1.1 200 OK\r\ncontent-length: 0\r\nx-mako-request-id: req_readiness\r\nconnection: close\r\n\r\n",
+                    )
+                    .expect("ready response");
+            });
+            let graph = Arc::new(
+                ControlPlaneGraph::open_with_data_plane_endpoint(&config, endpoint)
+                    .expect("control-plane graph"),
+            );
+            let _ = graph.readiness();
+            seed_password_operator(&graph);
+            assert_eq!(
+                graph.operator_break_glass_bearer_enabled(),
+                break_glass_enabled == "true"
+            );
+            let router = crate::control_plane_router(Arc::clone(&graph)).expect("router");
+
+            // Same origin, well-formed body, entitled operator seeded: the only thing
+            // missing is the password-backed cookie.
+            let refused = dispatch(
+                &router,
+                request(
+                    HttpMethod::Post,
+                    "/v1/operator/developer-waitlist/dev_applicant01/actions/approve",
+                    Some("https://api.example.test"),
+                    None,
+                    br#"{"reason":"an incident token must not admit anybody"}"#,
+                    "127.0.0.2:1000",
+                ),
+            )
+            .expect_err("a cookieless operator mutation must be refused");
+            assert_eq!(refused.envelope().error.code, expected);
+
+            drop(router);
+            server.join().expect("ready server");
+            let graph = Arc::try_unwrap(graph).unwrap_or_else(|_| panic!("route owners dropped"));
+            block_on(graph.shutdown()).expect("shutdown");
+        }
+    }
+
     #[test]
     fn production_refuses_an_unprovisioned_control_volume() {
         let directory = local_tempdir("control-plane-empty-production");
