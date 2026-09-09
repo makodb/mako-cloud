@@ -223,6 +223,7 @@ jobs:
           npm run validate:public-beta-containers
           npm run validate:public-beta-services
           npm run validate:observability
+          npm run validate:alert-metrics
       - name: Scan beta sources and evidence for secrets
         run: npm run scan:public-beta-secrets
 

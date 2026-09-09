@@ -30,7 +30,11 @@ Actor, request, trace, session, document, raw URL, email, token, and secret valu
 
 Run `npm run validate:observability` to validate the dashboard inventory, JSON shape, data source binding, provisioning mount, and forbidden high-cardinality labels.
 
-Production storage exports bounded service/volume gauges and counters for open/readiness and lock state, available and threshold bytes, write stops and delayed rate, pending/running compaction and flush work, background/I/O/corruption errors, backup result and age, restore verification, and recovery duration. Tenant identifiers, keys, values, and signing material are excluded.
+Production storage is specified to export bounded service/volume gauges and counters for open/readiness and lock state, available and threshold bytes, write stops and delayed rate, pending/running compaction and flush work, background/I/O/corruption errors, backup result and age, restore verification, and recovery duration. Tenant identifiers, keys, values, and signing material are excluded.
+
+**None of those `mako_storage_*` series is published yet.** Only the control plane serves a `/metrics` endpoint; the data plane, edge gateway, and telemetry-query expose none, and the deployment's textfile collectors publish backup and health series only. Fifteen of the checked alert rules therefore watch metrics with no producer, ten of them critical, covering tenant isolation, audit write failure, corruption, sequencer gaps, and restore verification. A Prometheus expression over an absent series does not error: a threshold comparison simply never fires, and an `unless on()` absence check fires forever. Both are silent to a reader of the rule file.
+
+Run `npm run validate:alert-metrics` to check every alert expression against the metric names the workspace and the deployment actually publish. Rules with no producer are listed in that script's `UNPRODUCED` map with a reason. The list may only shrink: the gate fails if an entry starts being published, if it names a rule that no longer exists, or if a new untracked rule watches an absent metric. Delete an entry when its producer lands, and never add one to make the gate pass.
 
 Control SQLite separately exports `mako_control_sqlite_*` readiness, integrity,
 schema, file/WAL size, free-space thresholds, active/oldest transaction, busy,

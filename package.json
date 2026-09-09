@@ -25,6 +25,7 @@
     "benchmark:public-beta-hosted": "node scripts/run-public-beta-hosted-benchmark.js",
     "typecheck": "tsc -b --pretty false",
     "validate:observability": "node scripts/validate-observability-assets.js",
+    "validate:alert-metrics": "node scripts/validate-alert-metric-producers.js",
     "validate:operator-auth-assets": "node scripts/validate-operator-auth-assets.js",
     "validate:docs": "node scripts/validate-documentation.js",
     "validate:performance": "node scripts/validate-performance-baseline.js",
