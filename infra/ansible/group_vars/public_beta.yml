@@ -39,7 +39,9 @@ mako_public_preview_emergency_stop: false
 mako_acme_environment: staging
 mako_acme_contact: ""
 mako_hsts_enabled: false
-mako_alert_email: "msmummy@gmail.com"
+# The destination must be an inbox an operator actually reads: the role asserts a
+# single address, so this cannot be a list.
+mako_alert_email: "shuai@cs.stonybrook.edu"
 mako_alert_smtp_host: smtp.resend.com
 mako_alert_smtp_port: 587
 mako_alert_smtp_username: resend
