@@ -1,5 +1,7 @@
-import { access, readdir, readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
+
+import { requireMarkdownTarget } from "./markdown-anchors-lib.js";
 
 const root = resolve(import.meta.dirname, "..");
 const dashboardDirectory = resolve(root, "infra/local/grafana/dashboards");
@@ -176,7 +178,7 @@ for (const [name, block] of alertBlocks) {
   ) {
     throw new Error(`${name} is missing an expression, hold duration, severity, or runbook`);
   }
-  await access(resolve(root, runbook));
+  await requireMarkdownTarget(root, runbook, `${name} runbook`);
 }
 
 console.log(

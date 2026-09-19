@@ -42,7 +42,7 @@ docker compose -f infra/local/compose.yaml up -d    # mailpit, object store, ote
 cargo run --bin mako-data-plane                     # or mako-control-plane / mako-edge-gateway / mako-telemetry-query
 ```
 
-`ServiceConfig` reads the **process** environment — nothing auto-loads `.env`, so export it yourself (`set -a; . ./.env; set +a`). All local endpoints bind loopback only. See `docs/local-development.md` and `docs/configuration.md`.
+`ServiceConfig` reads the **process** environment — nothing auto-loads `.env`, so export it yourself (`set -a; . ./.env; set +a`). All local endpoints bind loopback only. See `docs/dev-book.md` (Local development, Configuration reference).
 
 ### Validators that gate CI
 
@@ -95,7 +95,7 @@ Proposing is planning-only — the propose workflow does not touch project code,
 - **Fail closed.** Startup refuses on mismatched database identity, wrong schema version, unsafe or symlinked paths, integrity failure, critical disk pressure, or incomplete migration. Readiness gates serving; degraded dependencies produce scoped errors rather than silent fallbacks. Preserve this when touching startup or readiness paths.
 - **Secrets are references, never inline values** — `env:NAME` or `file:/path`. Resolved values are redacted from `Debug`/`Display` and startup summaries.
 - **Config errors are addressed**: stable code + field path + non-sensitive explanation (`configuration error CONFIG_INVALID_VALUE at server.bind_address: ...`).
-- **Docs are part of the change.** `docs/README.md` is the index and `npm run validate:docs` checks it. Qualification reports state the host and scope they exercised — do not generalize a passing local report to another environment, and do not relax a release gate in `docs/release-gates.json` as a side effect.
+- **Docs are part of the change.** `docs/README.md` indexes the two books — `docs/user-book.md` for people building on the platform, `docs/dev-book.md` for people changing it — and `npm run validate:docs` checks the index, the books' required sections, and every link. Runbooks, the threat model, and the rollback procedures are chapters of the Dev Book, and validators read them there. Qualification reports state the host and scope they exercised — do not generalize a passing local report to another environment, and do not relax a release gate in `docs/release-gates.json` as a side effect.
 - Rust tests are predominantly inline `#[cfg(test)]` next to the code, with `crates/*/tests/` reserved for conformance, fault-injection, crash/recovery, and property suites (`mako-storage`, `mako-documents`, `mako-sync`, `mako-audit`).
 - Biome formats JS/TS/JSON at 100 columns, double quotes, semicolons, trailing commas. TypeScript is strict with `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, and `verbatimModuleSyntax`.
 - Node >= 24, npm >= 11, Rust 1.97 (edition 2024).

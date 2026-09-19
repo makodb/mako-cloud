@@ -15,7 +15,7 @@
     "storage"
   ],
   "license": "Apache-2.0",
-  "homepage": "https://github.com/makodb/mako-cloud/blob/main/docs/rxdb-client.md",
+  "homepage": "https://github.com/makodb/mako-cloud/blob/main/docs/user-book.md#building-a-local-first-app-with-rxdb",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/makodb/mako-cloud.git",

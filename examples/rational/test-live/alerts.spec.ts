@@ -16,7 +16,7 @@ import { type LiveTenant, tenantFile } from "./global-setup.js";
  * scheduled function running under a service credential; the delivery is the
  * control plane reading the environment's committed change log and signing a
  * POST. Both are real here, and the receiver in the global setup verifies the
- * signature the way `docs/webhooks.md` tells a receiver to.
+ * signature the way the User Book (database webhooks) tells a receiver to.
  *
  * It runs only with a container runtime for the pinned edge runtime
  * (`MAKO_RUN_EDGE_RUNTIME_TESTS=1`); without one there is no nightly function

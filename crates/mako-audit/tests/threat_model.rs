@@ -11,7 +11,7 @@ const MINIMUM_ABUSE_CASES: usize = 16;
 fn security_threat_model_is_complete_and_reviewable() {
     let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let registry_path = workspace.join("security/threat-model.json");
-    let document_path = workspace.join("docs/threat-model.md");
+    let document_path = workspace.join("docs/dev-book.md");
     let registry_text = fs::read_to_string(registry_path).expect("read threat-model registry");
     let document = fs::read_to_string(document_path).expect("read threat-model document");
     let registry: Value =
@@ -97,7 +97,7 @@ fn validate_catalog(
         assert!(ids.insert(id.to_owned()), "duplicate threat-model ID {id}");
         assert!(
             document.contains(&format!("`{id}`")),
-            "{id} is missing from docs/threat-model.md"
+            "{id} is missing from docs/dev-book.md"
         );
         for field in required_fields {
             assert_present(value, id, field);

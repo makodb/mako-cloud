@@ -67,7 +67,7 @@ export async function sendReplicationRequest(
 /**
  * A session failure as replication must report it: a renewal that never reached
  * a verdict is retryable and keeps the session (see the session-renewal table
- * in `docs/rxdb-client.md`); a definitive refusal is terminal.
+ * in `docs/user-book.md`); a definitive refusal is terminal.
  */
 function replicationSessionError(error: unknown) {
   return error instanceof MakoAuthError && error.retryable

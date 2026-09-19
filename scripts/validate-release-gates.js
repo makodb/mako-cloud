@@ -4,6 +4,8 @@ import { access, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { requireMarkdownTarget } from "./markdown-anchors-lib.js";
+
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const gates = await readJson("docs/release-gates.json");
 const storage = await readJson(gates.sources?.storageQualification);
@@ -48,7 +50,9 @@ assert(
   internalObserved.securitySuitesPassed >= internalThresholds.requiredSecuritySuites,
   "internal security suite count is below threshold",
 );
-for (const evidence of internal.securityEvidence ?? []) await access(resolve(root, evidence));
+for (const evidence of internal.securityEvidence ?? []) {
+  await requireMarkdownTarget(root, evidence, "internal security evidence");
+}
 assertAtMost(
   internalObserved.backupAgeSeconds,
   internalThresholds.maximumBackupAgeSeconds,

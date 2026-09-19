@@ -37,7 +37,7 @@
 
 ## 6. Close the loop
 
-- [ ] 6.1 Rewrite the section of `docs/observability.md` that currently documents the gap, so it describes what is published
+- [ ] 6.1 Rewrite the observability section of `docs/dev-book.md` that currently documents the gap, so it describes what is published
 - [ ] 6.2 Add traceability rows for the new capability's scenarios and cite the tests that cover them
 - [ ] 6.3 Watch each newly live critical rule for a full alert interval before declaring the change done, and record what each reads in steady state
 - [ ] 6.4 Confirm `validate:alert-metric-producers` reports every rule live and the tracked-gap list empty

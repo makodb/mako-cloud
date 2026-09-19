@@ -104,7 +104,7 @@ const FUNCTION_SOURCE: &str = r#"export default {
 "#;
 
 /// The second function's body. It reaches the data plane the way
-/// `docs/edge-functions.md` documents: the SDK comes from the runtime as
+/// the User Book's edge functions chapter documents: the SDK comes from the runtime as
 /// `@mako-cloud/edge-sdk`, the credential comes from an attached function
 /// secret, and the document id contains a character the SDK escapes in the
 /// path. Each data-plane call gets its own request id, because a quota
@@ -724,7 +724,7 @@ async fn deploy_function(deployment: FunctionDeployment<'_>) -> Result<(), Strin
     if !runtime.dependency_ready() {
         eprintln!(
             "no runtime supervisor at {supervisor}; skipping function deployment. See \
-             docs/edge-functions.md for how to run one locally. `mako functions serve` is not \
+             docs/user-book.md#running-a-hosted-function-locally for how to run one. `mako functions serve` is not \
              suitable: it generates a random supervisor credential, so the control plane cannot \
              authenticate to it."
         );

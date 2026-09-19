@@ -585,7 +585,7 @@ impl FunctionGateway {
         runtime: &dyn FunctionRuntimeInvoker,
     ) -> Result<FunctionGatewayResponse, FunctionGatewayError> {
         // The scheduler's headers say an invocation is a schedule's, and
-        // `docs/scheduled-functions.md` tells a function it may act on that.
+        // the User Book (scheduled functions) tells a function it may act on that.
         // A public caller may therefore not send them: otherwise anyone could
         // claim to be a schedule, and the documented check would be advice to
         // trust a stranger. They are dropped rather than refused -- a request
@@ -1794,7 +1794,7 @@ mod tests {
         });
     }
 
-    /// `docs/scheduled-functions.md` tells a function that must behave
+    /// The User Book (scheduled functions) tells a function that must behave
     /// differently when scheduled to check `x-mako-schedule-id`. That advice
     /// is only sound if a public caller cannot send one, so the public path
     /// drops the scheduler's headers before the function ever sees them.

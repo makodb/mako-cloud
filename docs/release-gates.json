@@ -49,11 +49,11 @@
         "costMeasurementScope": "existing qualification host; incremental cash spend only; excludes allocated shared-host cost"
       },
       "securityEvidence": [
-        "docs/auth-security-qualification.md",
-        "docs/policy-security-qualification.md",
-        "docs/rxdb-chaos-qualification.md",
-        "docs/tenant-boundary-qualification.md",
-        "docs/edge-security-qualification.md"
+        "docs/dev-book.md#authentication-security-qualification",
+        "docs/dev-book.md#policy-security-qualification",
+        "docs/dev-book.md#rxdb-chaos-qualification",
+        "docs/dev-book.md#tenant-boundary-qualification",
+        "docs/dev-book.md#edge-security-qualification"
       ],
       "blockers": []
     },

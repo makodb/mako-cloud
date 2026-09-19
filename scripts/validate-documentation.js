@@ -4,17 +4,28 @@ import { access, readFile, readdir } from "node:fs/promises";
 import { dirname, extname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { headingAnchors } from "./markdown-anchors-lib.js";
+
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const indexPath = "docs/README.md";
+const userBook = "docs/user-book.md";
+const devBook = "docs/dev-book.md";
+
+// Every product area must be documented in a named section of one of the two
+// books, and its evidence must exist. A section is named by its heading text;
+// the check is on the heading, so a renamed chapter is a visible decision.
 const coverage = [
   {
     area: "local development",
-    guides: ["docs/local-development.md", "docs/configuration.md"],
+    sections: [
+      [devBook, "Local development"],
+      [devBook, "Configuration reference"],
+    ],
     evidence: ["scripts/local/prepare.sh", "crates/mako-config/src/lib.rs"],
   },
   {
     area: "deployment",
-    guides: ["docs/deployment.md"],
+    sections: [[devBook, "Deployment"]],
     evidence: [
       "infra/production/storage-statefulsets.yaml",
       "scripts/validate-production-storage.js",
@@ -22,12 +33,12 @@ const coverage = [
   },
   {
     area: "operations",
-    guides: [
-      "docs/production-rocksdb-operations.md",
-      "docs/observability.md",
-      "docs/runbooks/README.md",
-      "docs/release-gates.md",
-      "docs/rollback-qualification.md",
+    sections: [
+      [devBook, "Production RocksDB operations"],
+      [devBook, "Observability"],
+      [devBook, "Runbooks"],
+      [devBook, "Release gates"],
+      [devBook, "Rollback qualification"],
     ],
     evidence: [
       "scripts/validate-observability-assets.js",
@@ -38,7 +49,10 @@ const coverage = [
   },
   {
     area: "security",
-    guides: ["docs/threat-model.md", "docs/tenant-boundary-qualification.md"],
+    sections: [
+      [devBook, "The threat model"],
+      [devBook, "Tenant-boundary qualification"],
+    ],
     evidence: [
       "scripts/run-tenant-boundary-qualification.sh",
       "crates/mako-audit/tests/threat_model.rs",
@@ -46,30 +60,34 @@ const coverage = [
   },
   {
     area: "end-to-end smoke",
-    guides: ["docs/e2e-smoke.md"],
+    sections: [[devBook, "The smoke suites"]],
     evidence: ["scripts/run-e2e-smoke-qualification.sh", "crates/mako-smoke/tests/happy_path.rs"],
   },
   {
     area: "API",
-    guides: ["docs/api.md"],
+    sections: [[userBook, "The public API and SDKs"]],
     evidence: ["api/openapi/mako-cloud-v1.yaml", "packages/management-sdk/test/client.test.mjs"],
   },
   {
     area: "RxDB",
-    guides: ["docs/rxdb-client.md", "examples/local-first/README.md"],
+    sections: [
+      [userBook, "Building a local-first app with RxDB"],
+      [userBook, "The replication protocol"],
+    ],
     evidence: [
+      "examples/local-first/README.md",
       "scripts/run-rxdb-chaos-qualification.sh",
       "examples/local-first/test/local-first.spec.ts",
     ],
   },
   {
     area: "document policy",
-    guides: ["docs/document-policies.md"],
+    sections: [[userBook, "Document policies"]],
     evidence: ["scripts/run-policy-security-qualification.sh", "crates/mako-policy/src/store.rs"],
   },
   {
     area: "project authentication",
-    guides: ["docs/project-auth.md"],
+    sections: [[userBook, "Application authentication"]],
     evidence: [
       "scripts/run-auth-security-qualification.sh",
       "crates/mako-identity/src/signing_keys.rs",
@@ -77,7 +95,11 @@ const coverage = [
   },
   {
     area: "edge functions",
-    guides: ["docs/edge-functions.md", "docs/local-functions.md", "docs/edge-runtime-protocol.md"],
+    sections: [
+      [userBook, "Edge functions"],
+      [userBook, "Serving a function locally"],
+      [devBook, "The edge runtime: pin and protocol"],
+    ],
     evidence: [
       "scripts/run-edge-security-qualification.sh",
       "scripts/run-edge-e2e-qualification.sh",
@@ -87,7 +109,10 @@ const coverage = [
   },
   {
     area: "sample application",
-    guides: ["docs/rational.md"],
+    sections: [
+      [userBook, "Sample applications"],
+      [devBook, "The sample applications as platform gates"],
+    ],
     evidence: [
       "scripts/run-rational-smoke-qualification.sh",
       "crates/mako-smoke/tests/rational.rs",
@@ -97,33 +122,60 @@ const coverage = [
 ];
 
 const index = await readFile(resolve(root, indexPath), "utf8");
-for (const { area, guides, evidence } of coverage) {
-  for (const path of [...guides, ...evidence]) await requirePath(path, `${area} coverage`);
-  for (const guide of guides) {
-    const relative = guide.replace(/^docs\//, "");
-    if (!index.includes(`(${relative})`) && !index.includes(`(../${relative})`)) {
-      throw new Error(`documentation index does not publish ${guide}`);
+for (const book of [userBook, devBook]) {
+  const relative = book.replace(/^docs\//, "");
+  if (!index.includes(`(${relative})`)) {
+    throw new Error(`documentation index does not publish ${book}`);
+  }
+}
+
+const headings = new Map();
+for (const book of [userBook, devBook]) {
+  headings.set(book, headingAnchors(await readFile(resolve(root, book), "utf8")));
+}
+
+for (const { area, sections, evidence } of coverage) {
+  for (const path of evidence) await requirePath(path, `${area} coverage`);
+  for (const [book, heading] of sections) {
+    if (!headings.get(book).texts.has(heading)) {
+      throw new Error(`${book} has no "${heading}" section for ${area} coverage`);
     }
   }
 }
 
-const markdownFiles = ["README.md", ...(await markdownBelow(resolve(root, "docs")))];
-for (const absolutePath of markdownFiles.map((path) =>
-  path === "README.md" ? resolve(root, path) : path,
-)) {
+// Every relative link in the published Markdown must resolve, and every
+// fragment into one of the books must name a heading that exists there.
+const markdownFiles = [resolve(root, "README.md"), ...(await markdownBelow(resolve(root, "docs")))];
+let links = 0;
+for (const absolutePath of markdownFiles) {
   const source = await readFile(absolutePath, "utf8");
+  const own = headingAnchors(source);
   for (const match of source.matchAll(/\[[^\]]*\]\(([^)]+)\)/g)) {
-    const target = match[1].trim().replace(/^<|>$/g, "").split("#", 1)[0];
-    if (target === "" || /^(?:https?:|mailto:)/.test(target)) continue;
-    await access(resolve(dirname(absolutePath), decodeURIComponent(target))).catch(() => {
-      throw new Error(`${absolutePath.slice(root.length + 1)} has a broken link: ${match[1]}`);
+    const raw = match[1].trim().replace(/^<|>$/g, "");
+    if (raw === "" || /^(?:https?:|mailto:)/.test(raw)) continue;
+    const [target, fragment] = raw.split("#", 2);
+    const targetPath =
+      target === "" ? absolutePath : resolve(dirname(absolutePath), decodeURIComponent(target));
+    await access(targetPath).catch(() => {
+      throw new Error(`${relativeTo(absolutePath)} has a broken link: ${match[1]}`);
     });
+    if (fragment !== undefined && extname(targetPath) === ".md") {
+      const { anchors } = target === "" ? own : headingAnchors(await readFile(targetPath, "utf8"));
+      if (!anchors.has(fragment)) {
+        throw new Error(`${relativeTo(absolutePath)} links to a missing section: ${match[1]}`);
+      }
+    }
+    links += 1;
   }
 }
 
 console.log(
-  `validated ${coverage.length} published documentation areas and ${markdownFiles.length} Markdown files`,
+  `validated ${coverage.length} documented areas, ${markdownFiles.length} Markdown files, and ${links} links`,
 );
+
+function relativeTo(absolutePath) {
+  return absolutePath.slice(root.length + 1);
+}
 
 async function requirePath(path, context) {
   await access(resolve(root, path)).catch(() => {

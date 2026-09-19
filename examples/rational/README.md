@@ -17,7 +17,7 @@ The app is React 19 + Vite on RxDB 17 with Dexie (IndexedDB) storage, replicatin
 `@mako-cloud/rxdb`. It is local-first: reads come from the device, writes queue while
 offline and push on reconnect, and a reload or an offline restart finds the household's
 data where it left it. Its look comes from the platform's design system, `@mako-cloud/ui`
-(`packages/ui`, described in [`docs/design-system.md`](../../docs/design-system.md)): tokens
+(`packages/ui`, described in the [Dev Book](../../docs/dev-book.md#the-design-system)): tokens
 with a light and a dark palette that follow the device or the theme toggle, Radix-based
 components, Lucide icons, Inter, and Recharts charts; the Sankey, the treemap, and the month
 calendar are its own SVG. The published repository carries the kit's sources under `src/kit`,
@@ -42,7 +42,7 @@ proxies `/v1` to the data plane so the browser talks same-origin (the data plane
 CORS headers, and a deployment fronts both behind one reverse proxy anyway):
 
 ```sh
-# a local stack: see docs/local-development.md, then
+# a local stack: see docs/dev-book.md#local-development, then
 cargo run --bin mako-local-bootstrap            # once, with the services stopped
 # in examples/rational, signed in with `mako auth login` or with MAKO_TOKEN set:
 node scripts/bootstrap.mjs --endpoint http://127.0.0.1:8081 --data-endpoint http://127.0.0.1:8080

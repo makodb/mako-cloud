@@ -63,4 +63,4 @@ reproduces that topology rather than loosening the server to suit a test.
 The implementation is in [`src/reference-app.ts`](src/reference-app.ts), the protocol fixture is in
 [`src/mock-backend.ts`](src/mock-backend.ts), and the assertions are in
 [`test/local-first.spec.ts`](test/local-first.spec.ts). Production setup, policy behavior, security
-resets, and migration handling are documented in [`docs/rxdb-client.md`](../../docs/rxdb-client.md).
+resets, and migration handling are documented in the [User Book](../../docs/user-book.md#building-a-local-first-app-with-rxdb).

@@ -186,7 +186,7 @@ ends itself.
 
 The full guide — provider and magic-link sign-in, redirect-fragment handling, conflict handling,
 authorization-epoch resets, schema migration and full resync, bucket objects, the replication error
-and retry rules, and the UI signals — is in [`docs/rxdb-client.md`](https://github.com/makodb/mako-cloud/blob/main/docs/rxdb-client.md).
+and retry rules, and the UI signals — is in the [Mako Cloud User Book](https://github.com/makodb/mako-cloud/blob/main/docs/user-book.md#building-a-local-first-app-with-rxdb).
 
 ## License
 

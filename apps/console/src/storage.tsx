@@ -58,7 +58,7 @@ const DEFINITION = "m-0 mt-0.5 text-sm font-medium break-words tabular-nums";
 const DANGER_OUTLINE =
   "border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive";
 
-/** The owner-only policy `docs/file-storage.md` describes, as a starting point. */
+/** The owner-only policy the User Book's file-storage chapter describes, as a starting point. */
 export const STARTER_RULES: readonly StorageBucketRule[] = [
   {
     id: "owner-creates",

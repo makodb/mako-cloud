@@ -8,7 +8,7 @@ const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const report = await readJson("docs/rollback-qualification.json");
 const releaseGates = await readJson("docs/release-gates.json");
 const hostedBeta = await readJson("docs/evidence/public-beta-release-rollback.json");
-const guide = await readFile(resolve(root, "docs/rollback-qualification.md"), "utf8");
+const guide = await readFile(resolve(root, "docs/dev-book.md"), "utf8");
 const runner = await readFile(resolve(root, report.runner ?? ""), "utf8");
 const required = ["service", "policy", "function", "schema", "signing-key", "storage-adapter"];
 
@@ -24,7 +24,10 @@ for (const id of required) {
   assert(drill !== undefined, `missing ${id} rollback drill`);
   assert(drill.status === "pass", `${id} rollback drill must pass`);
   assert(drill.procedure?.length > 40, `${id} rollback procedure is incomplete`);
-  assert(guide.includes(`## ${heading(id)}`), `guide is missing the ${id} procedure`);
+  assert(
+    guide.includes(`#### ${heading(id)}`),
+    `docs/dev-book.md is missing the ${id} rollback procedure`,
+  );
   assert(drill.evidence?.length > 0, `${id} rollback evidence is missing`);
   for (const reference of drill.evidence) {
     const separator = reference.indexOf("::");

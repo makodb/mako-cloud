@@ -18,7 +18,7 @@
 //! the running control plane, which stores artifacts in the S3 object store
 //! `MAKO_OBJECT_STORE_*` names -- without a reachable one, bundle upload and
 //! `functions deployments create` answer `503 function administration is
-//! unavailable`. See `docs/local-functions.md`.
+//! unavailable`. See `docs/user-book.md#deploying-a-function-locally-needs-an-object-store`.
 //!
 //! The second sample calls back into the data plane from inside the container,
 //! so the runtime needs a route to the host's loopback: see
