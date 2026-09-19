@@ -9,10 +9,10 @@
     "releaseDigest": "6152ce447d67a8fd534baa8b980feba77e65c1c80db1fd3b6ab0b0aaf57a795b",
     "valid": true
   },
-  "approvalFingerprint": "6f995a3f3bb1acf33dd304efd65fb210e7cf07e684b21f18317edd07f420dbd5",
+  "approvalFingerprint": "3bda47c411e6037e866ea8c9d7110ab34e2f4dd2820d4351c06830758b077ded",
   "approvalInvalidated": false,
-  "changed": false,
-  "evaluatedAt": "2026-09-07T22:20:39.858612Z",
+  "changed": true,
+  "evaluatedAt": "2026-09-19T03:12:21.498743Z",
   "mode": "risk_accepted_preview",
   "reasons": [],
   "schemaVersion": 1

@@ -2,7 +2,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     fmt, fs,
     fs::OpenOptions,
-    io::{Read, Write},
+    io::{self, Read, Write},
     num::NonZeroU32,
     path::{Component, Path, PathBuf},
     sync::{Arc, Mutex},
@@ -22,6 +22,8 @@ use crate::{
 pub const BACKUP_MANIFEST_VERSION: u32 = 1;
 const ENVELOPE_FILE_NAME: &str = "manifest-envelope.json";
 const CHECKPOINT_DIRECTORY_NAME: &str = "checkpoint";
+/// A checkpoint being staged, and any checkpoint a finished backup left behind.
+const STAGING_SUFFIX: &str = ".incomplete";
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 #[serde(transparent)]
@@ -205,7 +207,6 @@ impl FilesystemBackupTransport {
         completed_at_unix_seconds: u64,
     ) -> StorageResult<BackupMetrics> {
         let started = Instant::now();
-        inspect_backup(&artifact.root, signing_key)?;
         let target = self
             .root
             .join(artifact.envelope.manifest.backup_id.as_str());
@@ -221,6 +222,7 @@ impl FilesystemBackupTransport {
                 "immutable backup identifier already exists",
             ));
         }
+        inspect_backup(&artifact.root, signing_key)?;
         create_private_directory(&staging)?;
         if let Err(error) = copy_tree_contents(&artifact.root, &staging) {
             let _ignored = fs::remove_dir_all(&staging);
@@ -235,6 +237,7 @@ impl FilesystemBackupTransport {
             return Err(corrupt_backup("uploaded backup manifest changed"));
         }
         let retained_backups = self.apply_retention(retention_count, signing_key)?;
+        remove_staging_artifact(&artifact.root)?;
         Ok(BackupMetrics {
             backup_id: verified.backup_id,
             created_at_unix_seconds: verified.created_at_unix_seconds,
@@ -316,9 +319,10 @@ impl ProductionRocksDb {
         }
         fs::create_dir_all(&request.staging_root)
             .map_err(|_| io_backup_error("backup staging root is unavailable"))?;
+        sweep_stale_staging(&request.staging_root)?;
         let artifact_root = request
             .staging_root
-            .join(format!("{}.incomplete", request.backup_id.as_str()));
+            .join(format!("{}{STAGING_SUFFIX}", request.backup_id.as_str()));
         create_private_directory(&artifact_root)?;
         let checkpoint_path = artifact_root.join(CHECKPOINT_DIRECTORY_NAME);
         if let Err(error) = self.adapter().create_checkpoint(&checkpoint_path) {
@@ -784,6 +788,44 @@ fn sync_directory(path: &Path) -> StorageResult<()> {
     fs::File::open(path)
         .and_then(|directory| directory.sync_all())
         .map_err(|_| io_backup_error("backup directory cannot be synchronized"))
+}
+
+/// The staging copy exists only to be published. Once the destination holds
+/// the verified artifact it is redundant, and leaving it behind is how a
+/// staging root fills a disk one checkpoint at a time.
+fn remove_staging_artifact(root: &Path) -> StorageResult<()> {
+    match fs::remove_dir_all(root) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(_) => Err(io_backup_error(
+            "published backup staging copy cannot be removed",
+        )),
+    }
+}
+
+/// Removes the `*.incomplete` checkpoints earlier backups left in the staging
+/// root. A backup holds the database exclusively, so nothing else can be
+/// staging a checkpoint here; whatever is present is a leftover, and sweeping
+/// it bounds the staging root even when a publication could not remove its
+/// own copy. Other entries -- an orchestrator's verification scratch, say --
+/// are not touched.
+fn sweep_stale_staging(staging_root: &Path) -> StorageResult<()> {
+    for entry in fs::read_dir(staging_root)
+        .map_err(|_| io_backup_error("backup staging root cannot be listed"))?
+    {
+        let entry =
+            entry.map_err(|_| io_backup_error("backup staging entry cannot be inspected"))?;
+        let stale_checkpoint = entry.file_type().is_ok_and(|kind| kind.is_dir())
+            && entry
+                .file_name()
+                .to_str()
+                .is_some_and(|name| name.ends_with(STAGING_SUFFIX));
+        if stale_checkpoint {
+            fs::remove_dir_all(entry.path())
+                .map_err(|_| io_backup_error("stale backup staging cannot be removed"))?;
+        }
+    }
+    Ok(())
 }
 
 fn create_private_directory(path: &Path) -> StorageResult<()> {

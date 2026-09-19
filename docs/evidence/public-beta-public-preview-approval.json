@@ -10,7 +10,7 @@
     "measured auth, RxDB pull, and RxDB push latency exceed their single-region beta p95 budgets"
   ],
   "blockerDigest": "b8492baa802b961ba5cd240e211e0fccc87498d7fd589370dde5f44c8ef7e6a8",
-  "acceptedAt": "2026-09-07T22:20:35.467Z",
+  "acceptedAt": "2026-09-19T02:45:37.857Z",
   "expiresAt": null,
   "nonWaivableSafeguards": {
     "trustedHttpsAndHsts": true,

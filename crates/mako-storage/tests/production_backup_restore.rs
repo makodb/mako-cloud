@@ -131,6 +131,10 @@ fn checkpoint_publish_and_empty_target_restore_are_verified() {
             .expect("publish and verify");
         assert!(metrics.verified_after_upload);
         assert_eq!(metrics.retained_backups, 1);
+        assert!(
+            !artifact.root.exists(),
+            "a published checkpoint leaves no copy in the staging root"
+        );
 
         let published = transport.backup_path(&metrics.backup_id);
         let report = restore_backup(
@@ -448,4 +452,70 @@ fn missing_position_batch() -> WriteBatch {
         2_u64.to_be_bytes(),
     );
     batch
+}
+
+#[test]
+fn stale_staging_checkpoints_are_swept_and_published_copies_removed() {
+    block_on(async {
+        let (_root, database, staging, destination, _restore) = directories();
+        provision_production_volume(&database, identity()).expect("provision");
+        let storage = ProductionRocksDb::open(config(&database))
+            .await
+            .expect("open");
+        seed(&storage).await;
+        // What a fleet of finished backups left behind before the sweep existed,
+        // and the scratch directory an orchestrator keeps beside them.
+        let stale = staging.join("backup-0000.incomplete");
+        fs::create_dir_all(stale.join("checkpoint")).expect("stale checkpoint");
+        fs::write(stale.join("checkpoint").join("000001.sst"), b"stale").expect("stale file");
+        let scratch = staging.join("remote-verification.abc123");
+        fs::create_dir(&scratch).expect("scratch directory");
+
+        let signing_key = key();
+        let artifact = storage
+            .create_backup(
+                BackupRequest {
+                    backup_id: BackupId::new("backup-0001").expect("id"),
+                    created_at_unix_seconds: 1_000,
+                    staging_root: staging.clone(),
+                },
+                &signing_key,
+            )
+            .await
+            .expect("checkpoint backup");
+        assert!(
+            !stale.exists(),
+            "a leftover checkpoint is swept before a new one is staged"
+        );
+        assert!(
+            scratch.exists(),
+            "the sweep removes only *.incomplete checkpoints"
+        );
+        assert!(artifact.root.exists());
+
+        let transport = FilesystemBackupTransport::new(&destination).expect("transport");
+        transport
+            .publish(
+                &artifact,
+                &signing_key,
+                NonZeroU32::new(2).expect("retention"),
+                1_005,
+            )
+            .expect("publish");
+        assert!(
+            !artifact.root.exists(),
+            "publication removes its own staging copy"
+        );
+        let remaining: Vec<String> = fs::read_dir(&staging)
+            .expect("staging")
+            .filter_map(Result::ok)
+            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(remaining, vec!["remote-verification.abc123".to_owned()]);
+        assert!(
+            transport
+                .backup_path(&artifact.envelope.manifest.backup_id)
+                .exists()
+        );
+    });
 }

@@ -983,7 +983,7 @@ Use `--dry-run` first. `--accept-matching-marker` makes deployment initializatio
 
 #### Capacity expansion
 
-Alert on the configured warning reserve and stop discretionary writes before the critical reserve. Check pending compaction bytes, delayed write rate, and backup headroom together. Expand the existing retained claim through the CSI provider; do not replace its path. Confirm the filesystem sees the expansion, the critical alert clears, compaction pressure drains, and a new verified backup completes. Do not delete SST or WAL files manually.
+Alert on the configured warning reserve and stop discretionary writes before the critical reserve. Check pending compaction bytes, delayed write rate, and backup headroom together, and measure each btrfs subvolume separately (`du -x` stops at subvolume boundaries): the backup staging and publish roots are on the same disk as the databases, and a leak there starves the data plane exactly as data growth would. Expand the existing retained claim through the CSI provider; do not replace its path. Confirm the filesystem sees the expansion, the critical alert clears, compaction pressure drains, and a new verified backup completes. Do not delete SST or WAL files manually.
 
 #### Graceful shutdown and same-volume restart
 
@@ -1005,7 +1005,7 @@ mako-storage-ops backup \
   --signing-key-file=/run/secrets/mako-backup-signing-key
 ```
 
-Success means the immutable uploaded copy was read back, authenticated, and all file digests verified. Monitor backup failures and age. Inspect or verify without opening a database:
+Success means the immutable uploaded copy was read back, authenticated, and all file digests verified. The checkpoint is staged under `--staging-root` as `{backup-id}.incomplete`, copied into the destination, and the staging copy is **removed once the published artifact verifies**; the next backup also sweeps any `*.incomplete` leftover a crashed run left behind, so the staging root holds at most one checkpoint. (Before 2026-09-19 nothing removed the staging copy: every five-minute checkpoint on the beta left one behind, 11 492 of them filled the 256 GiB data disk, and the data plane failed closed at its critical reserve — see the [public beta runbook](#runbook-public-beta-environment).) Monitor backup failures, age, and the data disk's free bytes together. Inspect or verify without opening a database:
 
 ```bash
 mako-storage-ops inspect --artifact=/var/lib/mako-backups/data-plane/DP_ID --signing-key-file=/run/secrets/mako-backup-signing-key
@@ -1346,6 +1346,8 @@ npm run public-beta:preview-approval -- approve --plan .local/qualification/publ
 Converge with `mako_public_admission_mode: risk_accepted_preview`, the exact approval path, blocker digest, and all eight non-waivable safeguards asserted. Convergence starts Caddy in `pre_gate`; the guard checks the selected release, readiness, backup freshness, trusted TLS/HSTS, persistent acceptance, and immutable bindings before it atomically selects the preview configuration, and its one-minute timer falls back to `pre_gate` on drift. Inspect `/var/lib/mako-public-preview/last-guard.json`. To pause manually without stopping private services: `sudo /usr/local/sbin/mako-public-preview-admission pause` — this invalidates the installed acceptance, so create a fresh one to resume. Only the full release gate may select `approved_beta`; the Proxmox emergency stop is authoritative in every mode.
 
 **Certificate or renewal failure.** Disable Caddy and apply the Proxmox admission stop first. Do not expose a plaintext fallback. Validate DNS A/AAAA state, ACME reachability, the configured contact, staging issuance, production chain, hostname, expiry, and renewal before re-enabling restricted ingress. HSTS remains off until a trusted production certificate and external route checks pass.
+
+**Data disk full (data plane failed closed).** Symptom: `mako-data-plane` in a restart loop logging `data-plane storage could not be opened`, the other planes 503, the admission guard in `pre_gate` with `service readiness failed on port 8080`, `df /srv/mako-data` at 100 %. Find the consumer per subvolume (`du -sh /srv/mako-data/*/*`, not `du -x`); on 2026-09-19 it was 11 492 leaked checkpoint copies in `backup-staging/data-plane`. Pause the component's checkpoint timer, remove only the redundant `*.incomplete` staging copies (the published artifacts and the off-VM copies are the backups; the 8 GiB `.reserve/emergency-space` file is the last resort and stays), `systemctl reset-failed` and start the data plane, confirm all four `/readyz` answer 200, resume the timer and confirm the next checkpoint is remotely verified. The guard will have **invalidated the preview approval**; issue a fresh one and converge as under *Risk-accepted public preview* — a valid readiness alone does not reopen admission.
 
 **Capacity and saturation.** Review the public-beta operations, production RocksDB, saturation, latency, and error dashboards. Preserve the warning and critical filesystem reserves from `group_vars/public_beta.yml`. If pressure persists, stop admission, retain the measurement window, and either reduce qualification load or make a reviewed VM sizing change. Sizing a single VM does not create HA.
 
