@@ -12,6 +12,7 @@
   "scripts": {
     "build": "tsc -b",
     "build:public-beta-release": "node scripts/build-public-beta-release.js",
+    "build:user-book-docx": "python3 scripts/build-user-book-docx.py",
     "collect:public-beta-measurement": "node scripts/collect-public-beta-measurement-snapshot.js",
     "clean": "tsc -b --clean",
     "format": "biome format --write .",

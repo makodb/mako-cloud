@@ -87,6 +87,8 @@ npm run generate:api
 npm run generate:api:check
 ```
 
+`npm run build:user-book-docx` renders the User Book to `dist/user-book.docx` — a Word document with a table of contents, page numbers, and working section links — with pandoc; `scripts/build-user-book-docx.py` needs nothing else and is the one place the rendering is tuned. The Markdown stays the source the validators check.
+
 TypeScript unit tests are `node --test` over built output, so their scripts run `npm run build` first. To run a single file, build the workspace once and then `node --test packages/cli/test/<name>.test.mjs`. No workspace defines a plain `test` script, so root `npm test` matches nothing — use `test:unit` / `test:integration`, as CI does.
 
 Concurrent Cargo builds from several shells or agents contend on `target/`; give each its own `CARGO_TARGET_DIR`. The smoke suites do not rebuild service binaries — build them first (`cargo build --workspace --bins`) or point `MAKO_SMOKE_BINARY_DIR` at a build.
