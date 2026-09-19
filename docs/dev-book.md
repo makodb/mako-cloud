@@ -1069,7 +1069,10 @@ For binary rollback, stop writes, take and verify a checkpoint, and confirm the 
 sudo mako-release-operation inspect
 sudo mako-release-operation upgrade  DIGEST --confirm=UPGRADE_RELEASE:DIGEST
 sudo mako-release-operation rollback DIGEST --confirm=ROLLBACK_RELEASE:DIGEST
+sudo mako-release-operation prune                                            # housekeeping; also runs after every switch
 ```
+
+A release is ~93 MB of immutable binaries, console bundle, and runtime worker under `/opt/mako/releases/<digest>`, and it runs on the **same** data volume as every release before it — a switch fences and re-activates the databases in place; nothing is copied per release, and the checkpoint the switch takes lands in the bounded 14-slot backup ring the timers fill anyway. What did accumulate was the releases themselves (the beta reached 104). Every successful switch therefore ends with `mako-release prune --keep 5`, which keeps the selected release, the last-known-good release, and the five newest by build time and removes the rest along with their configuration snapshots under `/etc/mako/release-configs/`. Pruning is housekeeping after the recorded switch, never part of it: a pruning failure is reported and leaves the switch complete. `npm run test:release-retention` exercises the manager against a private root; `validate:public-beta-infrastructure` asserts the order of events.
 
 First verify Caddy is inactive and the Proxmox `mako-vm124-admission-stop.service` is active and enabled; `inspect` shows the current and last-known-good immutable digests. The operation drains all four services, pauses backup timers, checkpoints and fences every RocksDB path as its service owner, rejects incompatible or empty state, snapshots the outgoing release's three service JSON documents under its digest (rollback restores the target release's snapshot before starting its binaries, so a newer additive configuration section cannot strand the prior release), atomically changes `/opt/mako/current`, installs the release's edge-runtime main worker and restarts the runtime when it differs, waits for all private readiness endpoints, and resumes the timers. If any check fails, public admission remains off and the operation evidence is retained under `/var/lib/mako-release-operations/` for diagnosis. Operator keyspaces are additive and must remain untouched.
 
@@ -1573,7 +1576,8 @@ Every Mako web surface — the developer console and the Rational sample — is 
 | `mako-operator-projection` | `services/mako-control-plane/src/bin` | Offline control-center projection backfill and shadow validation |
 | `mako-qualification-fixture` | `crates/mako-qualification-fixture` | Creates and validates the protected hosted qualification fixture |
 | `mako-benchmarks` | `crates/mako-benchmarks` | The performance harness (`npm run benchmark`) |
-| `mako-release-operation` | `infra/ansible/roles/runtime/files/`, installed to `/usr/local/sbin` | `inspect`, `snapshot-current`, `upgrade`, `rollback` on the VM |
+| `mako-release` | `infra/ansible/roles/runtime/files/`, installed to `/usr/local/sbin` | `verify`, `install`, `select`, `mark-good`, `inspect`, `prune [--keep N]` for the immutable release root |
+| `mako-release-operation` | `infra/ansible/roles/runtime/files/`, installed to `/usr/local/sbin` | `inspect`, `snapshot-current`, `prune`, `upgrade`, `rollback` on the VM |
 | `mako-public-preview-admission` | Installed by the runtime role | The admission guard (`pause`, `activate`) |
 | `scripts/local/prepare.sh`, `generate-certs.sh` | `scripts/local` | Local directories, CA, certificate, and secrets |
 | `scripts/build-public-beta-release.js` | `scripts` | Builds the immutable release directory and manifest |

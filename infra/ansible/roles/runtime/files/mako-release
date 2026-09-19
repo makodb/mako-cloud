@@ -18,7 +18,7 @@ esac
 }
 
 usage() {
-  echo "usage: mako-release [--root ABSOLUTE_PATH] {verify PATH|install PATH|select DIGEST|mark-good DIGEST|inspect}" >&2
+  echo "usage: mako-release [--root ABSOLUTE_PATH] {verify PATH|install PATH|select DIGEST|mark-good DIGEST|inspect|prune [--keep COUNT]}" >&2
   exit 2
 }
 
@@ -281,6 +281,63 @@ selected_digest() {
   printf '%s\n' "${BASH_REMATCH[1]}"
 }
 
+# Every installed release is immutable and 90-odd megabytes, and nothing used
+# to remove one: the beta reached 104 of them. Retention keeps the selected
+# release, the last-known-good release, and the newest COUNT releases by the
+# build time their manifests record; everything older goes.
+prune_releases() {
+  local keep=$1 current last_good digest generated directory kept=0 removed=0
+  [[ "$keep" =~ ^[0-9]+$ && "$keep" -ge 1 ]] || {
+    echo "--keep must be a positive integer" >&2
+    exit 2
+  }
+  current=$(selected_digest current)
+  last_good=$(selected_digest last-known-good)
+  local -a newest_first=()
+  while IFS=$'\t' read -r generated digest; do
+    newest_first+=("$digest")
+  done < <(
+    for directory in "$release_root"/releases/*/; do
+      directory=${directory%/}
+      digest=$(basename "$directory")
+      [[ "$digest" =~ ^[0-9a-f]{64}$ && -d "$directory" && ! -L "$directory" ]] || continue
+      generated=$(jq -r '.generatedAt // empty' "$directory/manifest.json" 2>/dev/null || true)
+      [[ -n "$generated" ]] || generated=$(date -u -d "@$(stat -c '%Y' "$directory")" +%Y-%m-%dT%H:%M:%SZ)
+      printf '%s\t%s\n' "$generated" "$digest"
+    done | sort -r
+  )
+  for digest in "${newest_first[@]}"; do
+    if [[ "$digest" == "$current" || "$digest" == "$last_good" ]]; then
+      kept=$((kept + 1))
+      continue
+    fi
+    if (( kept < keep )); then
+      kept=$((kept + 1))
+      continue
+    fi
+    remove_release "$digest" "$current" "$last_good"
+    removed=$((removed + 1))
+  done
+  printf 'retained %d releases, pruned %d\n' "$kept" "$removed"
+}
+
+remove_release() {
+  local digest=$1 current=$2 last_good=$3 path
+  validate_digest "$digest"
+  path=$release_root/releases/$digest
+  [[ "$digest" != "$current" && "$digest" != "$last_good" ]] || {
+    echo "refusing to remove a selected release: $digest" >&2
+    exit 1
+  }
+  [[ -d "$path" && ! -L "$path" ]] || {
+    echo "refusing to remove a release that is not a real directory: $path" >&2
+    exit 1
+  }
+  chmod -R u+w "$path"
+  rm -rf -- "$path"
+  echo "pruned release: $digest"
+}
+
 inspect_release_state() {
   local current last_good
   current=$(selected_digest current)
@@ -321,6 +378,16 @@ case "$command_name" in
   inspect)
     [[ $# -eq 0 ]] || usage
     inspect_release_state
+    ;;
+  prune)
+    keep=5
+    if [[ $# -eq 2 && "$1" == "--keep" ]]; then
+      keep=$2
+    elif [[ $# -ne 0 ]]; then
+      usage
+    fi
+    prepare_root
+    with_lock prune_releases "$keep"
     ;;
   *) usage ;;
 esac

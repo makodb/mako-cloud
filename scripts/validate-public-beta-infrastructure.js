@@ -56,6 +56,7 @@ const [
   observabilityTasks,
   alertmanagerHardening,
   releaseOperation,
+  releaseManager,
 ] = await Promise.all([
   json("infra/proxmox/public-beta/plan.schema.json"),
   json("docs/evidence/public-beta-preflight-plan.json"),
@@ -90,6 +91,7 @@ const [
   read("infra/ansible/roles/observability/tasks/main.yml"),
   read("infra/ansible/roles/observability/files/prometheus-alertmanager-hardening.conf"),
   read("infra/ansible/roles/runtime/files/mako-release-operation"),
+  read("infra/ansible/roles/runtime/files/mako-release"),
 ]);
 
 const consoleBundlePath = consoleIndex.match(/src="(\/assets\/[^"/]+\.js)"/u)?.[1];
@@ -120,6 +122,7 @@ validateCloudInit({ metaData, networkData, userData });
 validateFirewalls({ guestFirewall, hostFirewall, emergencyFirewall });
 validateUnits({ serviceUnit, backupUnit, backupOrchestratorUnit, healthUnit });
 validateMixedStorageReleaseOperation(releaseOperation, runtimeTasks);
+validateReleaseRetention(releaseOperation, releaseManager);
 assert(
   backupOrchestrator.includes('lock_file="$' + '{status_root}/checkpoint-transfer.lock"') &&
     backupOrchestrator.includes("/usr/bin/flock --exclusive --wait 240 9") &&
@@ -749,4 +752,37 @@ function sha256(value) {
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
+}
+
+// Installed releases are immutable and nothing else removes them, so a switch
+// must end by pruning, and pruning must never reach a release that is still
+// selectable or any data path.
+function validateReleaseRetention(operation, manager) {
+  assert(
+    /^release_retention=[1-9][0-9]*$/mu.test(operation) &&
+      operation.includes('mako-release prune --keep "$release_retention"'),
+    "the release operation does not prune installed releases with a bounded retention",
+  );
+  const recorded = operation.indexOf(
+    'record_operation "$kind" "$current" "$target" "$started" "$completed"',
+  );
+  const pruned = operation.indexOf("prune_releases || true");
+  assert(
+    recorded > 0 && pruned > recorded,
+    "release pruning must follow the recorded switch, not be part of it",
+  );
+  const pruning = operation.slice(
+    operation.indexOf("prune_releases() {"),
+    operation.indexOf("record_operation() {"),
+  );
+  assert(
+    pruning.length > 0 && !pruning.includes("/srv/mako-data"),
+    "release pruning must not name the data volume",
+  );
+  assert(
+    manager.includes("refusing to remove a selected release") &&
+      manager.includes("with_lock prune_releases") &&
+      /\[\[ "\$digest" != "\$current" && "\$digest" != "\$last_good" \]\]/u.test(manager),
+    "the release manager must refuse to prune the selected or last-known-good release under its lock",
+  );
 }

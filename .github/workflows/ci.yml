@@ -211,6 +211,7 @@ jobs:
           npm run test:proxmox-plan
           npm run test:proxmox-apply
           npm run test:proxmox-teardown
+          npm run test:release-retention
       - name: Lint cloud-init and Ansible assets
         env:
           ANSIBLE_CONFIG: infra/ansible/ansible.cfg

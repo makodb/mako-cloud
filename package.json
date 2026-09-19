@@ -60,6 +60,7 @@
     "test:proxmox-plan": "node --test scripts/proxmox/test/public-beta-plan.test.js",
     "test:proxmox-apply": "node --test scripts/proxmox/test/public-beta-apply.test.js",
     "test:proxmox-teardown": "node --test scripts/proxmox/test/public-beta-teardown.test.js",
+    "test:release-retention": "node --test scripts/test/release-retention.test.js",
     "test:public-beta-preview": "node --test scripts/test/public-beta-preview-*.test.js",
     "test:operator-session-cleanup": "node --test scripts/test/operator-session-cleanup.test.js",
     "test:operator-auth": "bash scripts/run-operator-auth-qualification.sh",

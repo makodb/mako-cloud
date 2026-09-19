@@ -17,9 +17,12 @@ control_identity=mako-control-plane-us-east-1-beta
 runtime_account=mako-runtime
 runtime_main_root=/home/mako-runtime/.config/mako-cloud/edge-runtime/main
 runtime_unit=mako-edge-runtime.service
+# Releases kept on the host after a switch: the selected and last-known-good
+# releases always, plus this many of the newest.
+release_retention=5
 
 usage() {
-  echo "usage: mako-release-operation inspect | snapshot-current | upgrade DIGEST --confirm=UPGRADE_RELEASE:DIGEST | rollback DIGEST --confirm=ROLLBACK_RELEASE:DIGEST" >&2
+  echo "usage: mako-release-operation inspect | snapshot-current | prune | upgrade DIGEST --confirm=UPGRADE_RELEASE:DIGEST | rollback DIGEST --confirm=ROLLBACK_RELEASE:DIGEST" >&2
   exit 2
 }
 
@@ -265,6 +268,28 @@ install_release_runtime_worker() {
   printf 'runtime worker installed from release %s and the runtime restarted\n' "$release"
 }
 
+# Housekeeping after a switch, never part of it: a release that is neither
+# selected nor last-known-good and is older than the newest few is removed,
+# with the configuration snapshot that only that release could use. Data is
+# never touched -- the databases live on their own volume and are shared by
+# every release.
+prune_releases() {
+  local snapshot digest
+  /usr/local/sbin/mako-release prune --keep "$release_retention" || {
+    echo "release pruning failed; installed releases were left in place" >&2
+    return 1
+  }
+  for snapshot in "$configuration_snapshot_root"/*/; do
+    snapshot=${snapshot%/}
+    [[ -d "$snapshot" && ! -L "$snapshot" ]] || continue
+    digest=$(basename "$snapshot")
+    [[ "$digest" =~ ^[0-9a-f]{64}$ ]] || continue
+    [[ -d "$release_root/releases/$digest" ]] && continue
+    rm -rf -- "$snapshot"
+    printf 'pruned configuration snapshot: %s\n' "$digest"
+  done
+}
+
 record_operation() {
   local kind=$1 from=$2 to=$3 started=$4 completed=$5 record temporary operator
   operator=${SUDO_USER:-root}
@@ -382,6 +407,7 @@ switch_release() {
   record_operation "$kind" "$current" "$target" "$started" "$completed"
   trap - EXIT
   echo "$kind complete: from=$current to=$target duration_seconds=$((completed-started))"
+  prune_releases || true
 }
 
 command_name=${1:-}
@@ -394,6 +420,10 @@ case "$command_name" in
   snapshot-current)
     [[ $# -eq 0 ]] || usage
     snapshot_selected_configuration
+    ;;
+  prune)
+    [[ $# -eq 0 ]] || usage
+    prune_releases
     ;;
   upgrade|rollback)
     [[ $# -eq 2 ]] || usage

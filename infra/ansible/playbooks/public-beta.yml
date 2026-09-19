@@ -29,9 +29,11 @@
     - role: firewall
   post_tasks:
     - name: Apply service-unit changes after storage and dependencies exist
+      tags: [runtime]
       ansible.builtin.meta: flush_handlers
 
     - name: Converge the qualified Mako application service gate
+      tags: [runtime]
       ansible.builtin.systemd_service:
         name: "{{ item }}.service"
         enabled: "{{ mako_services_enabled | bool }}"
@@ -44,6 +46,7 @@
       when: not ansible_check_mode
 
     - name: Converge the explicit public Caddy admission gate
+      tags: [runtime]
       ansible.builtin.systemd_service:
         name: caddy.service
         enabled: "{{ mako_caddy_enabled | bool }}"
@@ -51,6 +54,7 @@
       when: not ansible_check_mode
 
     - name: Activate the dynamically verified risk-accepted public preview
+      tags: [runtime]
       ansible.builtin.command:
         argv:
           - /usr/local/sbin/mako-public-preview-admission
@@ -63,6 +67,7 @@
         - mako_public_admission_mode == 'risk_accepted_preview'
 
     - name: Converge the public-preview admission guard timer
+      tags: [runtime]
       ansible.builtin.systemd_service:
         name: mako-public-preview-admission.timer
         enabled: "{{ mako_public_admission_mode == 'risk_accepted_preview' }}"
