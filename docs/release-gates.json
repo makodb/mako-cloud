@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "recordedAt": "2026-09-07T22:20:28Z",
+  "recordedAt": "2026-09-19T05:25:12Z",
   "sources": {
     "storageQualification": "docs/production-rocksdb-qualification.json",
     "performanceBaseline": "docs/performance-baseline.json",
@@ -88,7 +88,7 @@
           "address": "130.245.173.11",
           "publicOrigin": "https://cloud-test.makodb.com",
           "planHash": "d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073",
-          "releaseDigest": "6152ce447d67a8fd534baa8b980feba77e65c1c80db1fd3b6ab0b0aaf57a795b",
+          "releaseDigest": "3d25eacc5dec6654f146ba26d3911f5fba62275c4ef007d57ad17ac4c1dfef30",
           "runtimeDigest": "b0e4ea7b66166492c3c29910858dc5d1b7f9786df81aed7057d80f34a1ad2abd"
         },
         "deploymentStorageQualification": {
@@ -112,8 +112,8 @@
         },
         "measurementWindow": {
           "status": "in-progress",
-          "startedAt": "2026-09-07T20:45:23Z",
-          "expectedCompleteAt": "2026-10-07T20:45:23Z",
+          "startedAt": "2026-09-19T03:26:36Z",
+          "expectedCompleteAt": "2026-10-19T03:26:36Z",
           "completedAt": null,
           "completeDays": 0
         },
@@ -135,12 +135,12 @@
           ]
         },
         "endToEndLatency": {
-          "auth": 507.10291499999994,
-          "pull": 17597.602236,
-          "push": 456.7352930000002,
-          "liveDelivery": 51.28835199999958,
-          "functionWarm": 286.6459219999997,
-          "functionCold": 603.6227550000003
+          "auth": 398.9935849999997,
+          "pull": 3638.7719290000023,
+          "push": 489.025028,
+          "liveDelivery": 88.3163999999997,
+          "functionWarm": 573.9237489999996,
+          "functionCold": 574.3900359999989
         },
         "capacityHeadroomPercent": 50,
         "monthlyFixedInfrastructureUsd": null,

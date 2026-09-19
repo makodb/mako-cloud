@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "recordedAt": "2026-09-07T20:48:03.539Z",
+  "recordedAt": "2026-09-19T03:31:03.266Z",
   "environment": "public-beta",
   "vmId": 124,
   "publicOrigin": "https://cloud-test.makodb.com",
   "planHash": "d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073",
-  "releaseDigest": "6152ce447d67a8fd534baa8b980feba77e65c1c80db1fd3b6ab0b0aaf57a795b",
+  "releaseDigest": "3d25eacc5dec6654f146ba26d3911f5fba62275c4ef007d57ad17ac4c1dfef30",
   "publicAdmissionMode": "restricted-pre-gate",
   "qualificationMode": "existing-isolated-fixture",
   "managementControlCoveredBy": "docs/evidence/public-beta-hosted-qualification.json",
@@ -18,23 +18,23 @@
   "latencyMilliseconds": {
     "authSignIn": {
       "samples": 10,
-      "p50": 222.23989200000005,
-      "p95": 507.10291499999994,
-      "maximum": 507.10291499999994
+      "p50": 286.80090600000005,
+      "p95": 398.9935849999997,
+      "maximum": 398.9935849999997
     },
     "rxdbPushBatch": {
       "samples": 4,
-      "p50": 355.19488700000056,
-      "p95": 456.7352930000002,
-      "maximum": 456.7352930000002
+      "p50": 439.09095899999966,
+      "p95": 489.025028,
+      "maximum": 489.025028
     },
-    "rxdbPullBeforeRecovery": 2415.0078620000004,
-    "rxdbLiveFirstEvent": 51.28835199999958,
+    "rxdbPullBeforeRecovery": 3121.8574020000005,
+    "rxdbLiveFirstEvent": 88.3163999999997,
     "controlRead": null,
-    "coldFunction": 603.6227550000003,
-    "warmFunction": 286.6459219999997,
-    "recoveryToReady": 1719.5890500000023,
-    "rxdbPullAfterRecovery": 17597.602236
+    "coldFunction": 574.3900359999989,
+    "warmFunction": 573.9237489999996,
+    "recoveryToReady": 2938.621168999998,
+    "rxdbPullAfterRecovery": 3638.7719290000023
   },
   "workload": {
     "acknowledgedDocuments": 32,
@@ -48,8 +48,8 @@
     "target": {
       "concurrency": 16,
       "requests": 64,
-      "elapsedMilliseconds": 4666.100468000001,
-      "requestsPerSecond": 13.715910590207649,
+      "elapsedMilliseconds": 4279.339571,
+      "requestsPerSecond": 14.955528271510259,
       "failedRequests": 0,
       "serverErrors": 0,
       "rateLimitedRequests": 0,
@@ -68,30 +68,30 @@
       "latencyMilliseconds": {
         "authUser": {
           "samples": 32,
-          "p50": 506.7253779999992,
-          "p95": 4538.046297999999,
-          "maximum": 4653.387337
+          "p50": 600.2097360000025,
+          "p95": 4056.9235719999997,
+          "maximum": 4216.240361999999
         },
         "control": null,
         "function": {
           "samples": 16,
-          "p50": 515.445001,
-          "p95": 1042.4723090000007,
-          "maximum": 1042.4723090000007
+          "p50": 974.4547180000009,
+          "p95": 1588.9068530000004,
+          "maximum": 1588.9068530000004
         },
         "pull": {
           "samples": 16,
-          "p50": 325.69497299999784,
-          "p95": 969.1345239999991,
-          "maximum": 969.1345239999991
+          "p50": 339.6898190000029,
+          "p95": 844.020876999999,
+          "maximum": 844.020876999999
         }
       }
     },
     "requiredHeadroom": {
       "concurrency": 24,
       "requests": 96,
-      "elapsedMilliseconds": 5248.010699000002,
-      "requestsPerSecond": 18.292641266454186,
+      "elapsedMilliseconds": 6720.875330999999,
+      "requestsPerSecond": 14.28385076820557,
       "failedRequests": 0,
       "serverErrors": 0,
       "rateLimitedRequests": 0,
@@ -110,33 +110,33 @@
       "latencyMilliseconds": {
         "authUser": {
           "samples": 48,
-          "p50": 567.1630570000016,
-          "p95": 5140.49928,
-          "maximum": 5245.327624999998
+          "p50": 766.2293500000014,
+          "p95": 6077.720218999999,
+          "maximum": 6719.921677999999
         },
         "control": null,
         "function": {
           "samples": 24,
-          "p50": 872.1657099999975,
-          "p95": 1543.619694000001,
-          "maximum": 2310.171860999999
+          "p50": 760.1029020000024,
+          "p95": 1939.1703020000023,
+          "maximum": 2760.2561029999997
         },
         "pull": {
           "samples": 24,
-          "p50": 305.2813950000018,
-          "p95": 974.4260079999985,
-          "maximum": 993.6367619999983
+          "p50": 437.4642739999981,
+          "p95": 1012.3535630000006,
+          "maximum": 1554.527783999998
         }
       }
     },
     "saturationProbe": {
       "concurrency": 64,
       "requests": 256,
-      "elapsedMilliseconds": 17195.185265000004,
-      "requestsPerSecond": 14.887887247485253,
-      "failedRequests": 12,
+      "elapsedMilliseconds": 17004.396184999998,
+      "requestsPerSecond": 15.054929246952685,
+      "failedRequests": 14,
       "serverErrors": 0,
-      "rateLimitedRequests": 12,
+      "rateLimitedRequests": 14,
       "statusCounts": {
         "authUser": {
           "200": 128
@@ -146,29 +146,29 @@
           "200": 64
         },
         "pull": {
-          "200": 52,
-          "429": 12
+          "200": 50,
+          "429": 14
         }
       },
       "latencyMilliseconds": {
         "authUser": {
           "samples": 128,
-          "p50": 1429.140417999999,
-          "p95": 15958.515104000002,
-          "maximum": 16838.972886
+          "p50": 1612.9772340000054,
+          "p95": 15658.300199000001,
+          "maximum": 16868.607533999995
         },
         "control": null,
         "function": {
           "samples": 64,
-          "p50": 725.2527609999997,
-          "p95": 6739.2027610000005,
-          "maximum": 8778.113374
+          "p50": 780.5331399999995,
+          "p95": 7946.0056110000005,
+          "maximum": 9861.876640999999
         },
         "pull": {
           "samples": 64,
-          "p50": 450.67789600000106,
-          "p95": 7987.070603,
-          "maximum": 8876.534952999998
+          "p50": 476.11047800000233,
+          "p95": 6943.804823999999,
+          "maximum": 8659.499498000001
         }
       }
     },
