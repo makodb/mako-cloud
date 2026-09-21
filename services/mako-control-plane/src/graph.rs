@@ -22,8 +22,8 @@ use mako_config::{DeploymentEnvironment, ServiceConfig, ServiceKind};
 use mako_control_plane::{
     AllowedOriginsService, ApplicationMailConfig, ApplicationMailStore, ApplicationMailWorker,
     ApplicationUserAccess, AutomationTokenService, CollectionAdminService, ControlAuditSink,
-    ControlPlaneAuthenticator, CredentialAdminService, DataJobService, DeveloperLookupKey,
-    DeveloperMailCipher, DeveloperMailEncryptionKey, DeveloperMailOutboxWorker,
+    ControlPlaneAuthenticator, CredentialAdminService, DataJobService, DataPlaneApplicationUsers,
+    DeveloperLookupKey, DeveloperMailCipher, DeveloperMailEncryptionKey, DeveloperMailOutboxWorker,
     DeveloperMailTransport, DeveloperRegistrationConfig, DeveloperRegistrationService,
     DeveloperRegistrationStore, DeveloperRestoreService, DeveloperWorkspaceSecurity,
     EmailTemplateService, EnvironmentRecord, ExplorerGrantService, FunctionAdminService,
@@ -537,6 +537,11 @@ impl ControlPlaneGraph {
         .map_err(|_| ControlPlaneGraphError::Composition("data-plane client"))?;
         let data_plane_identity_admin = ControlToDataClient::new(internal_client)
             .map_err(|_| ControlPlaneGraphError::Composition("data-plane identity client"))?;
+        // Application users live in the data plane; a policy preview must find
+        // the user it impersonates there, not in control storage.
+        let explorer_grants = explorer_grants.with_application_users(Arc::new(
+            DataPlaneApplicationUsers::new(Arc::new(data_plane_identity_admin.clone())),
+        ));
         let function_encryption_key = FunctionSecretEncryptionKey::from_bytes(blake3::derive_key(
             "mako/control-plane/function-secret-encryption/v1",
             secret.expose_secret().as_bytes(),

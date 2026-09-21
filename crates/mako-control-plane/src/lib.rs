@@ -82,7 +82,9 @@ pub use dns::{
     DnsError, QUERY_ATTEMPTS as DNS_QUERY_ATTEMPTS, QUERY_TIMEOUT as DNS_QUERY_TIMEOUT,
     TxtResolver, UdpTxtResolver, decode_txt_response, encode_txt_query,
 };
-pub use explorer::{ExplorerGrantError, ExplorerGrantService};
+pub use explorer::{
+    DataPlaneApplicationUsers, ExplorerApplicationUsers, ExplorerGrantError, ExplorerGrantService,
+};
 pub use function_schedule::{
     FunctionScheduleError, FunctionScheduleId, FunctionScheduleInvokeError,
     FunctionScheduleInvoker, FunctionScheduleMethod, FunctionScheduleRecord,

@@ -1,14 +1,19 @@
 use std::{collections::BTreeSet, error::Error, fmt, sync::Arc};
 
+use async_trait::async_trait;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use mako_api::{
     EXPLORER_CAPABILITY_AUDIENCE, EXPLORER_CAPABILITY_ISSUER, EXPLORER_MAX_GRANT_SECONDS,
     ExplorerAccessMode, ExplorerCapabilityClaims, ExplorerCapabilityError,
     ExplorerCapabilityKeyRing, ExplorerGrantRequest, ExplorerGrantRevocation, ExplorerGrantView,
-    ExplorerOperation,
+    ExplorerOperation, TenantScope,
 };
 use mako_documents::CollectionLifecycle;
-use mako_identity::{AppUserId, AppUserStatus, IdentityStore, IdentityStoreError};
+use mako_identity::{AdminUserView, AppUserId, AppUserStatus, IdentityStore, IdentityStoreError};
+use mako_internal_rpc::{
+    ControlToDataClient, IdentityAdminCommand, IdentityAdminOperation, IdentityAdminPermission,
+    InternalClientError,
+};
 use mako_policy::{
     ExplorerAuthorizationError, ExplorerAuthorizationStore, ExplorerGrantAuthorityRecord,
 };
@@ -33,6 +38,7 @@ pub struct ExplorerGrantService {
     collections: CollectionAdminService,
     key_ring: ExplorerCapabilityKeyRing,
     audit: Arc<dyn ControlAuditSink>,
+    application_users: Arc<dyn ExplorerApplicationUsers>,
 }
 
 impl fmt::Debug for ExplorerGrantService {
@@ -57,6 +63,10 @@ impl ExplorerGrantService {
         key_ring: ExplorerCapabilityKeyRing,
         audit: Arc<dyn ControlAuditSink>,
     ) -> Self {
+        let application_users = Arc::new(ControlStorageApplicationUsers {
+            adapter: Arc::clone(&adapter),
+            durability,
+        });
         Self {
             adapter,
             durability,
@@ -66,7 +76,17 @@ impl ExplorerGrantService {
             collections,
             key_ring,
             audit,
+            application_users,
         }
+    }
+
+    /// Answers "which application user is this preview for" from somewhere
+    /// other than control storage. A deployment passes the data plane, where
+    /// application users actually live.
+    #[must_use]
+    pub fn with_application_users(mut self, users: Arc<dyn ExplorerApplicationUsers>) -> Self {
+        self.application_users = users;
+        self
     }
 
     pub async fn issue(
@@ -171,17 +191,12 @@ impl ExplorerGrantService {
                     .and_then(|value| {
                         AppUserId::parse(value).map_err(|_| ExplorerGrantError::InvalidRequest)
                     })?;
-                let identities = IdentityStore::new(
-                    Arc::clone(&self.adapter),
-                    &request.tenant,
-                    &request.tenant,
-                    self.durability,
-                )?;
-                let user = identities
-                    .user_by_id(&user_id)
+                let status = self
+                    .application_users
+                    .status(actor, &request.tenant, &user_id)
                     .await?
                     .ok_or(ExplorerGrantError::NotFound)?;
-                if user.status() != AppUserStatus::Active {
+                if status != AppUserStatus::Active {
                     return Err(ExplorerGrantError::NotFound);
                 }
                 (Some(user_id.as_str().to_owned()), None)
@@ -396,6 +411,102 @@ fn grant_id_for_nonce(nonce: &str) -> Result<String, ExplorerGrantError> {
         .ok_or(ExplorerGrantError::InvalidRequest)
 }
 
+/// Where a policy preview confirms the application user it impersonates.
+///
+/// Application users live in the data plane's identity store, not in control
+/// storage, so a deployment answers this over the internal identity-admin RPC
+/// -- the same way the Users screen lists them. A single-store test answers
+/// it from the adapter the service was built on, which is where it registered
+/// its users; that is the default.
+#[async_trait]
+pub trait ExplorerApplicationUsers: Send + Sync {
+    /// The user's status, or `None` when no such user exists in the tenant.
+    async fn status(
+        &self,
+        actor: &DeveloperPrincipal,
+        tenant: &TenantScope,
+        user_id: &AppUserId,
+    ) -> Result<Option<AppUserStatus>, ExplorerGrantError>;
+}
+
+struct ControlStorageApplicationUsers {
+    adapter: Arc<dyn KvAdapter>,
+    durability: Durability,
+}
+
+#[async_trait]
+impl ExplorerApplicationUsers for ControlStorageApplicationUsers {
+    async fn status(
+        &self,
+        _actor: &DeveloperPrincipal,
+        tenant: &TenantScope,
+        user_id: &AppUserId,
+    ) -> Result<Option<AppUserStatus>, ExplorerGrantError> {
+        let identities =
+            IdentityStore::new(Arc::clone(&self.adapter), tenant, tenant, self.durability)?;
+        Ok(identities
+            .user_by_id(user_id)
+            .await?
+            .map(|user| user.status()))
+    }
+}
+
+/// Application users as the data plane knows them, over the internal
+/// identity-admin RPC.
+pub struct DataPlaneApplicationUsers {
+    client: Arc<ControlToDataClient>,
+}
+
+impl DataPlaneApplicationUsers {
+    #[must_use]
+    pub fn new(client: Arc<ControlToDataClient>) -> Self {
+        Self { client }
+    }
+}
+
+impl fmt::Debug for DataPlaneApplicationUsers {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("DataPlaneApplicationUsers")
+            .finish_non_exhaustive()
+    }
+}
+
+#[async_trait]
+impl ExplorerApplicationUsers for DataPlaneApplicationUsers {
+    async fn status(
+        &self,
+        actor: &DeveloperPrincipal,
+        tenant: &TenantScope,
+        user_id: &AppUserId,
+    ) -> Result<Option<AppUserStatus>, ExplorerGrantError> {
+        let command = IdentityAdminCommand {
+            operation: IdentityAdminOperation::InspectUser,
+            actor_id: actor.identity_id().as_str().to_owned(),
+            permissions: BTreeSet::from([IdentityAdminPermission::ReadApplicationUsers]),
+            input: serde_json::json!({ "userId": user_id.as_str() }),
+        };
+        // A lookup is a read. It travels under fresh ids every time so the
+        // data plane's response journal can never replay an earlier answer
+        // about this user -- a user disabled a minute ago must read as such.
+        let mut nonce = [0_u8; 32];
+        OsRng.fill_bytes(&mut nonce);
+        let nonce = blake3::hash(&nonce).to_hex();
+        let request_id = format!("req_{}", &nonce[..32]);
+        let idempotency_key = format!("idem_{}", &nonce[32..]);
+        match self.client.administer::<AdminUserView>(
+            tenant,
+            &request_id,
+            &idempotency_key,
+            &command,
+        ) {
+            Ok(view) => Ok(Some(view.user().status())),
+            Err(InternalClientError::Remote { status: 404, .. }) => Ok(None),
+            Err(error) => Err(ExplorerGrantError::ApplicationUsers(error)),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum ExplorerGrantError {
     InvalidRequest,
@@ -409,6 +520,7 @@ pub enum ExplorerGrantError {
     Identity(IdentityStoreError),
     Authority(ExplorerAuthorizationError),
     Capability(ExplorerCapabilityError),
+    ApplicationUsers(InternalClientError),
 }
 
 impl fmt::Display for ExplorerGrantError {
