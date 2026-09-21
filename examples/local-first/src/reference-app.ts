@@ -48,6 +48,7 @@ export interface ReferenceApplication {
   readonly collection: RxCollection<ReferenceTodo>;
   addTodo(document: ReferenceTodo): Promise<void>;
   close(): Promise<void>;
+  deleteTodo(id: string): Promise<void>;
   diagnostics(): ReferenceApplicationDiagnostics;
   forceReconnect(): Promise<void>;
   forceTokenRefresh(): Promise<void>;
@@ -271,6 +272,19 @@ class ReferenceApplicationImpl implements ReferenceApplication {
       throw new Error(`todo ${id} does not exist`);
     }
     await document.incrementalPatch({ title, updatedAt });
+  }
+
+  async deleteTodo(id: string): Promise<void> {
+    this.#assertAvailable();
+    const document = await this.collection.findOne(id).exec();
+    if (document === null) {
+      throw new Error(`todo ${id} does not exist`);
+    }
+    // One write, one push. Two writes in quick succession race the live
+    // stream: after an accepted push RxDB assumes the master state is what it
+    // pushed, which carries no server revision, and the second push is refused
+    // as invalid until the stream has delivered the new revision.
+    await document.incrementalRemove();
   }
 
   async listTodos(): Promise<ReferenceTodo[]> {

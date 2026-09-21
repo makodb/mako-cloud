@@ -21,6 +21,7 @@ interface ReferenceDiagnosticsWire {
 
 interface ReferenceBrowserApplication {
   addTodo(document: ReferenceTodoWire): Promise<void>;
+  deleteTodo(id: string): Promise<void>;
   diagnostics(): ReferenceDiagnosticsWire;
   forceReconnect(): Promise<void>;
   forceTokenRefresh(): Promise<void>;

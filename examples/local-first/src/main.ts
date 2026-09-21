@@ -31,17 +31,115 @@ if (form === null || title === null) {
 
 status.textContent = "starting";
 const application = await createReferenceApplication(selectBackend());
-let todoSequence = 0;
+
+// A failed local write used to vanish: the promise was dropped and nothing
+// on the page changed. Say what went wrong, where the todo was typed.
+const notice = document.createElement("p");
+notice.id = "notice";
+notice.setAttribute("role", "alert");
+form.insertAdjacentElement("afterend", notice);
+
+function report(action: string, error: unknown): void {
+  notice.textContent = `${action} failed: ${error instanceof Error ? error.message : String(error)}`;
+}
+
+let currentTodos: readonly ReferenceTodo[] = [];
+// The todo being edited, and the text typed so far. The list re-renders on
+// every change, local or pulled, so an edit in progress has to survive that.
+let editing: { readonly id: string; draft: string } | null = null;
+
+/** The next `todo-N`, above every todo already present -- including the ones
+ * pulled from the server, which a counter starting at zero collided with. */
+function nextTodoId(): string {
+  const highest = currentTodos.reduce((max, todo) => {
+    const match = /^todo-(\d+)$/u.exec(todo.id);
+    return match === null ? max : Math.max(max, Number(match[1]));
+  }, 0);
+  return `todo-${highest + 1}`;
+}
 
 function renderTodos(todos: readonly ReferenceTodo[]): void {
-  todoList.replaceChildren(
-    ...todos.map((todo) => {
-      const item = document.createElement("li");
-      item.dataset.testid = `todo-${todo.id}`;
-      item.textContent = todo.title;
-      return item;
-    }),
-  );
+  currentTodos = todos;
+  if (editing !== null && !todos.some((todo) => todo.id === editing?.id)) {
+    editing = null;
+  }
+  todoList.replaceChildren(...todos.map((todo) => renderTodo(todo)));
+}
+
+function renderTodo(todo: ReferenceTodo): HTMLLIElement {
+  const item = document.createElement("li");
+  item.className = "todo";
+  if (editing?.id === todo.id) {
+    const edit = editing;
+    const input = document.createElement("input");
+    input.type = "text";
+    input.value = edit.draft;
+    input.setAttribute("aria-label", `Edit ${todo.title}`);
+    input.addEventListener("input", () => {
+      edit.draft = input.value;
+    });
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        void saveEdit(todo);
+      } else if (event.key === "Escape") {
+        editing = null;
+        renderTodos(currentTodos);
+      }
+    });
+    const save = button("Save", () => void saveEdit(todo));
+    const cancel = button("Cancel", () => {
+      editing = null;
+      renderTodos(currentTodos);
+    });
+    item.append(input, save, cancel);
+    queueMicrotask(() => input.focus());
+    return item;
+  }
+  const label = document.createElement("span");
+  label.className = "todo-title";
+  label.dataset.testid = `todo-${todo.id}`;
+  label.textContent = todo.title;
+  const edit = button("Edit", () => {
+    editing = { id: todo.id, draft: todo.title };
+    renderTodos(currentTodos);
+  });
+  edit.setAttribute("aria-label", `Edit ${todo.title}`);
+  const remove = button("Delete", () => {
+    application
+      .deleteTodo(todo.id)
+      .then(() => {
+        notice.textContent = "";
+      })
+      .catch((error: unknown) => report("Delete", error));
+  });
+  remove.setAttribute("aria-label", `Delete ${todo.title}`);
+  item.append(label, edit, remove);
+  return item;
+}
+
+async function saveEdit(todo: ReferenceTodo): Promise<void> {
+  const draft = editing?.draft.trim() ?? "";
+  editing = null;
+  if (draft.length === 0 || draft === todo.title) {
+    renderTodos(currentTodos);
+    return;
+  }
+  try {
+    await application.updateTodo(todo.id, draft, Date.now());
+    notice.textContent = "";
+  } catch (error) {
+    report("Edit", error);
+    renderTodos(currentTodos);
+  }
+}
+
+function button(text: string, onClick: () => void): HTMLButtonElement {
+  const element = document.createElement("button");
+  element.type = "button";
+  element.textContent = text;
+  element.addEventListener("click", onClick);
+  return element;
 }
 
 function renderDiagnostics(): void {
@@ -56,22 +154,23 @@ renderDiagnostics();
 
 form.addEventListener("submit", (event) => {
   event.preventDefault();
-  todoSequence += 1;
   const value = title.value.trim();
   if (value.length === 0) {
     return;
   }
-  void application
+  application
     .addTodo({
-      id: `todo-${todoSequence}`,
+      id: nextTodoId(),
       ownerId: "user-example",
       title: value,
       updatedAt: Date.now(),
     })
     .then(() => {
       title.value = "";
+      notice.textContent = "";
       renderDiagnostics();
-    });
+    })
+    .catch((error: unknown) => report("Add", error));
 });
 
 requiredElement("offline").addEventListener("click", () => void application.setOnline(false));

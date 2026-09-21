@@ -60,6 +60,36 @@ button {
   cursor: pointer;
 }
 
+.todo {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0;
+}
+
+.todo-title,
+.todo input {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.todo button {
+  padding: 0.35rem 0.6rem;
+  font-size: 0.85rem;
+}
+
+#notice {
+  min-height: 1.2em;
+  margin: 0.4rem 0 0;
+  color: #9b2c2c;
+  font-size: 0.9rem;
+}
+
+#notice:empty {
+  display: none;
+}
+
 #status {
   font-weight: 700;
 }
