@@ -537,7 +537,7 @@ function collectionFixture() {
 function grantFixture() {
   return {
     grantId: "xgr_0123456789abcdef0123456789abcdef",
-    capability: "mx1_sensitive_explorer_capability_never_persisted",
+    capability: "mx1.xcap-v1.sensitive_explorer_capability_never_persisted",
     mode: "policy_preview",
     operations: ["get", "browse", "query", "plan", "simulate"],
     applicationUserId: "usr_abcdefgh",

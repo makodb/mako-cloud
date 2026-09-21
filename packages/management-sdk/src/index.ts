@@ -3522,11 +3522,13 @@ function validateAccessToken(token: string): string {
   return token;
 }
 
+// A capability is `mx1.<key id>.<payload>.<signature>`, as the control plane
+// mints it; the check here only keeps garbage out of the header.
 function explorerHeaders(capability: string): HeadersInit {
   if (
     capability.length < 32 ||
     capability.length > 16 * 1024 ||
-    !capability.startsWith("mx1_") ||
+    !capability.startsWith("mx1.") ||
     Array.from(capability).some((character) => /\s/u.test(character) || isControl(character))
   ) {
     throw new TypeError("explorer capability is invalid");
