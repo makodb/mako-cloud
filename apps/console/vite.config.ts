@@ -23,6 +23,12 @@ export default defineConfig({
     // Suites running side by side write their artefacts next to the sources;
     // a dev server must not reload every page each time one of them does.
     watch: { ignored: ["**/test-results*/**", "**/playwright-report*/**"] },
+    // Dev-only: the console is a same-origin app in production (the control
+    // plane serves the bundle and the /v1 API together). In dev, forward the
+    // API to the locally running control plane so sign-in and management work.
+    proxy: {
+      "/v1": { target: "http://127.0.0.1:8081", changeOrigin: true },
+    },
   },
   build: {
     outDir: "web-dist",

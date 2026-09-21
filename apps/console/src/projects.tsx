@@ -9,6 +9,7 @@ import {
   Eyebrow,
   Field,
   Input,
+  NativeSelect,
   Table,
   TableBody,
   TableCell,
@@ -188,14 +189,13 @@ function ProjectFormFields() {
         <Input id={`${id}-name`} name="name" required maxLength={200} />
       </Field>
       <Field label="Data region" htmlFor={`${id}-region`}>
-        <Input
-          id={`${id}-region`}
-          name="region"
-          required
-          maxLength={64}
-          placeholder="us-east"
-          className="font-mono"
-        />
+        <NativeSelect id={`${id}-region`} name="region" required defaultValue="local" className="font-mono">
+          <option value="local">local</option>
+          <option value="us-east">us-east</option>
+          <option value="us-west">us-west</option>
+          <option value="eu-west">eu-west</option>
+          <option value="ap-south">ap-south</option>
+        </NativeSelect>
       </Field>
     </>
   );

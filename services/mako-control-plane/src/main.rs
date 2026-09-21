@@ -315,6 +315,11 @@ fn start(service: ServiceKind) -> ExitCode {
             }
         })
     };
+    // Let project and environment creation unpark the worker so a new resource
+    // provisions at once instead of waiting for the next idle poll.
+    mako_control_plane_service::PROVISIONING_WAKE
+        .set(provisioning_worker.thread().clone())
+        .ok();
     // Function logs live in the runtime supervisor's bounded in-memory
     // buffer until this pass carries them into the retained telemetry store,
     // scrubbed. Off the request path like every other measurement.

@@ -4,14 +4,19 @@
 // `listTeams` → `listProjects` per owner, then — lazily, per card, with a
 // bounded number of requests in flight — the owner's plan, the project's
 // headline usage, and the developer's recent activity. One project's failing
-// summary marks only its own card. The guided first run sequences what the
-// environment "Connect" screen already does (create → wait for active → keys →
-// connection check) and keeps its progress in browser storage keyed by the
-// developer, never storing a credential value.
+// summary marks only its own card. The guided first run creates the first
+// project and hands off to that project's "Connect" screen for keys and the
+// connection check; whether it was dismissed is kept in browser storage keyed
+// by the developer, never storing a credential value.
+
+import type {
+  Environment,
+  MakoManagementClient,
+  ObservabilityRecord,
+  Project,
+  Team,
+} from "@mako-cloud/management-sdk";
 import {
-  Alert,
-  AlertDescription,
-  AlertTitle,
   Badge,
   Button,
   Card,
@@ -20,13 +25,13 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
+  cn,
   Eyebrow,
   Field,
   Input,
   NativeSelect,
-  cn,
 } from "@mako-cloud/ui";
-import { CheckCircle2, ChevronRight, Copy } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import {
   type FormEvent,
   type ReactNode,
@@ -34,26 +39,13 @@ import {
   useEffect,
   useId,
   useMemo,
-  useRef,
   useState,
 } from "react";
-
-import type {
-  ConnectionCheck,
-  ConnectMetadata,
-  Environment,
-  MakoManagementClient,
-  ObservabilityRecord,
-  Project,
-  Team,
-} from "@mako-cloud/management-sdk";
-import { createMakoRxdbConnectTemplateV1 } from "@mako-cloud/rxdb";
 
 import { ApiFailureNotice, type ConsoleApiFailure, toConsoleApiFailure } from "./api-error.js";
 import { useDeveloperAuth } from "./auth.js";
 import { useManagementClient } from "./management.js";
 import { FirstProjectPanel, LifecycleBadge } from "./projects.js";
-import { OneTimeSecretValue } from "./safety.js";
 
 /** Summary requests in flight at once across every card on the page. */
 const MAX_IN_FLIGHT = 4;
@@ -65,13 +57,6 @@ const ACTIVITY_LIMIT = 10;
 const ACTIVITY_PROJECTS = 3;
 /** Activity rows shown after merging. */
 const ACTIVITY_ROWS = 15;
-/** Provisioning and environment readiness are polled at this interval during the first run. */
-const POLL_MILLISECONDS = 2_000;
-/** The client version the connection check is run for, as on the Connect screen. */
-const RXDB_VERSION = "17.0.0";
-/** The snippet never embeds a credential; the copied key replaces this marker. */
-const PUBLIC_KEY_PLACEHOLDER = "mako_pk.PASTE_ONE_TIME_PUBLIC_KEY";
-
 /** A small label over a fact. `dt` keeps the definition list intact, so this is
  * the kit's Eyebrow styling on the term rather than the component. */
 const FACT_LABEL = "text-xs font-semibold uppercase tracking-wider text-muted-foreground";
@@ -181,42 +166,40 @@ export function HomeDashboard({
           onShowGuide={() => setProgress({ ...progress, dismissed: false })}
         />
       ) : null}
-      {teams !== null && !noProjects ? (
+      {teams !== null && !noProjects && !guideActive ? (
         <>
-          <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]">
-            <div className="grid min-w-0 gap-8">
-              {personalSpace === undefined ? (
-                <section className="grid gap-4" aria-labelledby="owner-personal-title">
-                  <div className="grid gap-1">
-                    <Eyebrow>Personal space</Eyebrow>
-                    <h2 id="owner-personal-title" className="text-lg">
-                      Your projects
-                    </h2>
-                  </div>
-                  <FirstProjectPanel onCreated={reload} />
-                </section>
-              ) : (
-                <OwnerGroup
-                  team={personalSpace}
-                  load={groups[personalSpace.id] ?? { status: "loading" }}
-                  loader={loader}
-                  ownerName={ownerName}
-                  onOpenProject={onOpenProject}
-                  onOpenTeam={onOpenTeam}
-                />
-              )}
-              {joinedTeams.map((team) => (
-                <OwnerGroup
-                  key={team.id}
-                  team={team}
-                  load={groups[team.id] ?? { status: "loading" }}
-                  loader={loader}
-                  ownerName={ownerName}
-                  onOpenProject={onOpenProject}
-                  onOpenTeam={onOpenTeam}
-                />
-              ))}
-            </div>
+          <div className="grid gap-8">
+            {personalSpace === undefined ? (
+              <section className="grid gap-4" aria-labelledby="owner-personal-title">
+                <div className="grid gap-1">
+                  <Eyebrow>Personal space</Eyebrow>
+                  <h2 id="owner-personal-title" className="text-lg">
+                    Your projects
+                  </h2>
+                </div>
+                <FirstProjectPanel onCreated={reload} />
+              </section>
+            ) : (
+              <OwnerGroup
+                team={personalSpace}
+                load={groups[personalSpace.id] ?? { status: "loading" }}
+                loader={loader}
+                ownerName={ownerName}
+                onOpenProject={onOpenProject}
+                onOpenTeam={onOpenTeam}
+              />
+            )}
+            {joinedTeams.map((team) => (
+              <OwnerGroup
+                key={team.id}
+                team={team}
+                load={groups[team.id] ?? { status: "loading" }}
+                loader={loader}
+                ownerName={ownerName}
+                onOpenProject={onOpenProject}
+                onOpenTeam={onOpenTeam}
+              />
+            ))}
             <RecentActivity projects={activityProjects} loader={loader} />
           </div>
           <section className="grid gap-4" aria-labelledby="teams-title">
@@ -287,24 +270,18 @@ function OwnerGroup({
 }) {
   const personal = team.kind === "personal";
   const headingId = `owner-${team.id}-title`;
+  const [creating, setCreating] = useState(false);
   return (
     <section
       className="grid gap-4"
       aria-labelledby={headingId}
       aria-busy={load.status === "loading"}
     >
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div className="grid gap-1">
-          <Eyebrow>{personal ? "Personal space" : "Team"}</Eyebrow>
-          <h2 id={headingId} className="text-lg">
-            {personal ? "Your projects" : team.name}
-          </h2>
-        </div>
-        {personal ? (
-          <Button variant="outline" size="sm" onClick={() => onOpenTeam(team.id)}>
-            Billing and plan
-          </Button>
-        ) : null}
+      <div className="grid gap-1">
+        <Eyebrow>{personal ? "Personal space" : "Team"}</Eyebrow>
+        <h2 id={headingId} className="text-lg">
+          {personal ? "Your projects" : team.name}
+        </h2>
       </div>
       {load.status === "loading" ? (
         <p className={MUTED} aria-live="polite">
@@ -330,22 +307,25 @@ function OwnerGroup({
         </div>
       )}
       {personal ? (
-        <details className="group rounded-lg border bg-card">
-          <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-2.5 text-sm font-medium text-muted-foreground select-none hover:text-foreground [&::-webkit-details-marker]:hidden">
-            <ChevronRight
-              aria-hidden="true"
-              className="size-4 shrink-0 transition-transform group-open:rotate-90"
-            />
-            Create project
-          </summary>
-          <div className="border-t px-4 py-4">
-            <ProjectCreateForm
-              teams={[]}
-              submitLabel="Create and provision"
-              onCreated={(project) => onOpenProject(project.id)}
-            />
+        <>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" onClick={() => setCreating((value) => !value)}>
+              {creating ? "Cancel" : "Create project"}
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => onOpenTeam(team.id)}>
+              Billing and plan
+            </Button>
           </div>
-        </details>
+          {creating ? (
+            <div className="rounded-lg border bg-card px-4 py-4">
+              <ProjectCreateForm
+                teams={[]}
+                submitLabel="Create and provision"
+                onCreated={(project) => onOpenProject(project.id)}
+              />
+            </div>
+          ) : null}
+        </>
       ) : null}
     </section>
   );
@@ -532,15 +512,15 @@ function RecentActivity({
   // The kit's Card renders a section, an article, or a div; a feed beside the
   // main content is a complementary landmark, so the card is drawn by hand.
   return (
-    <aside
-      className="flex min-w-0 flex-col gap-4 rounded-xl border bg-card py-4 text-card-foreground shadow-xs"
-      aria-labelledby="activity-title"
-      aria-busy={pending}
-    >
-      <CardHeader className="px-4">
-        <CardTitle id="activity-title">Recent activity</CardTitle>
-      </CardHeader>
-      <CardContent className="grid gap-3 px-4 text-sm">
+    <details className="group rounded-xl border bg-card" aria-busy={pending}>
+      <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-medium select-none hover:text-foreground [&::-webkit-details-marker]:hidden">
+        <ChevronRight
+          aria-hidden="true"
+          className="size-4 shrink-0 transition-transform group-open:rotate-90"
+        />
+        Recent activity
+      </summary>
+      <div className="grid gap-3 border-t px-4 py-4 text-sm">
         {projects.length === 0 ? <p className={MUTED}>No projects to report on yet.</p> : null}
         {unavailable.map((project) => (
           <p key={project.id} className="m-0 text-sm text-destructive" role="status">
@@ -578,8 +558,8 @@ function RecentActivity({
             ))}
           </ol>
         )}
-      </CardContent>
-    </aside>
+      </div>
+    </details>
   );
 }
 
@@ -676,14 +656,19 @@ function ProjectCreateForm({
         <Input id={`${id}-name`} name="name" required maxLength={200} />
       </Field>
       <Field label="Data region" htmlFor={`${id}-region`}>
-        <Input
+        <NativeSelect
           id={`${id}-region`}
           name="region"
           required
-          maxLength={64}
-          placeholder="us-east"
+          defaultValue="local"
           className="font-mono"
-        />
+        >
+          <option value="local">local</option>
+          <option value="us-east">us-east</option>
+          <option value="us-west">us-west</option>
+          <option value="eu-west">eu-west</option>
+          <option value="ap-south">ap-south</option>
+        </NativeSelect>
       </Field>
       <ApiFailureNotice failure={failure} />
       <Button type="submit" disabled={pending} className="justify-self-start">
@@ -694,13 +679,6 @@ function ProjectCreateForm({
 }
 
 // --- First-run guide ----------------------------------------------------------
-
-const GUIDE_STEPS = [
-  { id: "create", label: "Create a project" },
-  { id: "provision", label: "Wait for provisioning" },
-  { id: "keys", label: "Copy your keys" },
-  { id: "check", label: "Check the connection" },
-] as const;
 
 function FirstRunGuide({
   teams,
@@ -715,9 +693,6 @@ function FirstRunGuide({
   readonly onOpenProject: (projectId: string) => void;
   readonly onCompleted: () => void;
 }) {
-  const client = useManagementClient();
-  const stepIndex = GUIDE_STEPS.findIndex((step) => step.id === progress.step);
-  const projectId = progress.projectId;
   return (
     <Card aria-labelledby="guide-title">
       <CardHeader>
@@ -733,481 +708,25 @@ function FirstRunGuide({
           </Button>
         </CardAction>
       </CardHeader>
-      <CardContent className="grid gap-5">
-        <ol
-          className="m-0 grid list-none gap-2 p-0 sm:grid-cols-2 lg:grid-cols-4"
-          aria-label="First-run steps"
-        >
-          {GUIDE_STEPS.map((step, index) => {
-            const done = index < stepIndex;
-            const current = index === stepIndex;
-            return (
-              <li
-                key={step.id}
-                className={cn(
-                  "flex items-center gap-2.5 rounded-lg border px-3 py-2 text-sm font-medium text-muted-foreground",
-                  current && "border-primary/50 bg-accent text-foreground",
-                  done && "text-foreground",
-                )}
-                aria-current={current ? "step" : undefined}
-              >
-                <span
-                  className={cn(
-                    "inline-grid size-6 shrink-0 place-items-center rounded-full bg-muted text-xs font-semibold tabular-nums",
-                    (current || done) && "bg-primary text-primary-foreground",
-                  )}
-                  aria-hidden="true"
-                >
-                  {index + 1}
-                </span>
-                {step.label}
-              </li>
-            );
-          })}
-        </ol>
-        {progress.step === "create" || projectId === undefined ? (
-          <div className="grid gap-3">
-            <h3 className="text-base">Create a project</h3>
-            <p className="m-0 text-sm text-muted-foreground">
-              Choose where the project lives and the region that holds its data. Nothing is created
-              until you submit.
-            </p>
-            <ProjectCreateForm
-              teams={teams}
-              submitLabel="Create and provision"
-              onCreated={(project) =>
-                onProgress({ ...progress, step: "provision", projectId: project.id })
-              }
-            />
-          </div>
-        ) : progress.step === "provision" ? (
-          <ProvisionStep
-            client={client}
-            projectId={projectId}
-            onActive={() => onProgress({ ...progress, step: "keys" })}
-            onRestart={() => onProgress({ ...progress, step: "create" })}
-          />
-        ) : progress.step === "keys" ? (
-          <KeysStep
-            client={client}
-            projectId={projectId}
-            onContinue={() => onProgress({ ...progress, step: "check" })}
-          />
-        ) : (
-          <CheckStep
-            client={client}
-            projectId={projectId}
-            onBack={() => onProgress({ ...progress, step: "keys" })}
-            onOpenProject={() => {
+      <CardContent className="grid gap-4">
+        <div className="grid gap-3">
+          <h3 className="text-base">Create a project</h3>
+          <p className="m-0 text-sm text-muted-foreground">
+            Choose where the project lives and the region that holds its data. Nothing is created
+            until you submit. Once it exists, open the project for its keys, API URL, quickstart
+            snippet, and a connection check.
+          </p>
+          <ProjectCreateForm
+            teams={teams}
+            submitLabel="Create and provision"
+            onCreated={(project) => {
               onCompleted();
-              onOpenProject(projectId);
+              onOpenProject(project.id);
             }}
-            onCompleted={onCompleted}
           />
-        )}
+        </div>
       </CardContent>
     </Card>
-  );
-}
-
-function ProvisionStep({
-  client,
-  projectId,
-  onActive,
-  onRestart,
-}: {
-  readonly client: MakoManagementClient;
-  readonly projectId: string;
-  readonly onActive: () => void;
-  readonly onRestart: () => void;
-}) {
-  const [project, setProject] = useState<Project | null>(null);
-  const [failure, setFailure] = useState<ConsoleApiFailure | null>(null);
-  // The latest callback is read from a ref so a parent re-render never restarts
-  // the poll; the poll itself is keyed only by what it fetches.
-  const activeCallback = useRef(onActive);
-  activeCallback.current = onActive;
-  const settled = project?.state === "active" || project?.state === "failed";
-  useEffect(() => {
-    if (settled) {
-      return;
-    }
-    let active = true;
-    const poll = async () => {
-      try {
-        const next = await client.getProject(projectId);
-        if (!active) {
-          return;
-        }
-        setProject(next);
-        setFailure(null);
-        if (next.state === "active") {
-          active = false;
-          activeCallback.current();
-        }
-      } catch (error) {
-        if (active) {
-          setFailure(toConsoleApiFailure(error));
-        }
-      }
-    };
-    void poll();
-    const timer = window.setInterval(() => void poll(), POLL_MILLISECONDS);
-    return () => {
-      active = false;
-      window.clearInterval(timer);
-    };
-  }, [client, projectId, settled]);
-  return (
-    <div className="grid gap-3" aria-busy={!settled}>
-      <h3 className="text-base">Provisioning {project?.name ?? "your project"}</h3>
-      <ApiFailureNotice failure={failure} />
-      {project === null ? (
-        <p className={MUTED} aria-live="polite">
-          Checking the project…
-        </p>
-      ) : (
-        <p className="m-0 flex flex-wrap items-center gap-2 text-sm" aria-live="polite">
-          <LifecycleBadge state={project.state} />{" "}
-          {project.state === "failed"
-            ? "Provisioning failed."
-            : project.state === "active"
-              ? "The project is active."
-              : "The data plane is being prepared. This page checks again every few seconds."}
-        </p>
-      )}
-      {project?.state === "failed" ? (
-        <>
-          {project.failureDiagnostic === undefined ? null : (
-            <p role="alert" className="m-0 text-sm text-destructive">
-              {project.failureDiagnostic}
-            </p>
-          )}
-          <Button variant="outline" className="justify-self-start" onClick={onRestart}>
-            Start over with a new project
-          </Button>
-        </>
-      ) : null}
-    </div>
-  );
-}
-
-function KeysStep({
-  client,
-  projectId,
-  onContinue,
-}: {
-  readonly client: MakoManagementClient;
-  readonly projectId: string;
-  readonly onContinue: () => void;
-}) {
-  const [environment, setEnvironment] = useState<Environment | null>(null);
-  const [environmentState, setEnvironmentState] = useState<string | null>(null);
-  const [metadata, setMetadata] = useState<ConnectMetadata | null>(null);
-  const [metadataFailure, setMetadataFailure] = useState<ConsoleApiFailure | null>(null);
-  const [issued, setIssued] = useState<{ readonly id: string; readonly value: string } | null>(
-    null,
-  );
-  const [failure, setFailure] = useState<ConsoleApiFailure | null>(null);
-  const [pending, setPending] = useState(false);
-
-  // The first environment is created with the project and may still be
-  // provisioning when the project itself is active; wait for it here.
-  useEffect(() => {
-    if (environment !== null) {
-      return;
-    }
-    let active = true;
-    const poll = async () => {
-      try {
-        const environments = await client.listEnvironments(projectId);
-        const ready = environments.find((item) => item.state === "active");
-        if (!active) {
-          return;
-        }
-        if (ready !== undefined) {
-          setEnvironment(ready);
-        } else {
-          setEnvironmentState(environments[0]?.state ?? "provisioning");
-        }
-        setFailure(null);
-      } catch (error) {
-        if (active) {
-          setFailure(toConsoleApiFailure(error));
-        }
-      }
-    };
-    void poll();
-    const timer = window.setInterval(() => void poll(), POLL_MILLISECONDS);
-    return () => {
-      active = false;
-      window.clearInterval(timer);
-    };
-  }, [client, environment, projectId]);
-  useEffect(() => {
-    if (environment === null) {
-      return;
-    }
-    let active = true;
-    void client.getConnectMetadata(projectId, environment.id).then(
-      (value) => {
-        if (active) {
-          setMetadata(value);
-          setMetadataFailure(null);
-        }
-      },
-      (error: unknown) => active && setMetadataFailure(toConsoleApiFailure(error)),
-    );
-    return () => {
-      active = false;
-    };
-  }, [client, environment, projectId]);
-
-  const issueKey = async () => {
-    if (environment === null) {
-      return;
-    }
-    setPending(true);
-    setFailure(null);
-    try {
-      const issue = await client.createPublicProjectKey(
-        projectId,
-        environment.id,
-        publicKeyCredentialId(),
-        idempotencyKey(),
-      );
-      setIssued({ id: issue.credential.id, value: issue.value });
-    } catch (error) {
-      setFailure(toConsoleApiFailure(error));
-    } finally {
-      setPending(false);
-    }
-  };
-  const snippet =
-    environment === null || metadata === null
-      ? ""
-      : createMakoRxdbConnectTemplateV1({
-          endpoint: metadata.publicEndpoint,
-          projectId,
-          environmentId: environment.id,
-          collectionId: "todos",
-          schemaVersion: 1,
-          publicProjectKey: PUBLIC_KEY_PLACEHOLDER,
-        });
-
-  return (
-    <div className="grid gap-3" aria-busy={environment === null}>
-      <h3 className="text-base">Your API URL and public key</h3>
-      <p className="m-0 text-sm text-muted-foreground">
-        Only the public project key belongs in browser or mobile code. It is shown once; store it in
-        your application's secret store, then paste it into the snippet.
-      </p>
-      <ApiFailureNotice failure={failure} />
-      {environment === null ? (
-        <p className={MUTED} aria-live="polite">
-          Waiting for the environment to become active
-          {environmentState === null ? "" : ` (currently ${environmentState.replaceAll("_", " ")})`}
-          …
-        </p>
-      ) : (
-        <>
-          <dl className="m-0 grid gap-3 text-sm sm:grid-cols-3">
-            <KeyFact label="Environment">
-              {environment.name}{" "}
-              <code className="font-mono text-xs text-muted-foreground">{environment.id}</code>
-            </KeyFact>
-            <KeyFact label="API URL">
-              {metadata === null ? (
-                metadataFailure === null ? (
-                  <span className="text-muted-foreground italic">Loading…</span>
-                ) : (
-                  <span className="text-destructive">Unavailable: {metadataFailure.message}</span>
-                )
-              ) : (
-                <code className="font-mono text-xs">{metadata.publicEndpoint}</code>
-              )}
-            </KeyFact>
-            <KeyFact label="Public key ID">
-              {issued === null ? (
-                <span className="text-muted-foreground">Not issued yet</span>
-              ) : (
-                <code className="font-mono text-xs">{issued.id}</code>
-              )}
-            </KeyFact>
-          </dl>
-          {issued === null ? (
-            <Button
-              className="justify-self-start"
-              onClick={() => void issueKey()}
-              disabled={pending}
-            >
-              {pending ? "Issuing…" : "Issue public key"}
-            </Button>
-          ) : issued.value === "" ? (
-            <p className={MUTED}>
-              Public key <code className="font-mono text-xs">{issued.id}</code> was issued and its
-              value shown once. Rotate it from the Credentials page if you lost it.
-            </p>
-          ) : (
-            <OneTimeSecretValue
-              label="public project key"
-              value={issued.value}
-              onDismiss={() => setIssued({ id: issued.id, value: "" })}
-            />
-          )}
-          {snippet === "" ? null : (
-            <div className="relative overflow-hidden rounded-lg border bg-muted/40">
-              <Button
-                variant="outline"
-                size="sm"
-                className="absolute top-2 right-2"
-                onClick={() => void navigator.clipboard.writeText(snippet)}
-              >
-                <Copy aria-hidden="true" />
-                Copy
-              </Button>
-              <pre className="m-0 overflow-x-auto p-4 pr-28 font-mono text-xs leading-relaxed">
-                {snippet}
-              </pre>
-            </div>
-          )}
-          <div className="flex flex-wrap gap-2">
-            <Button onClick={onContinue}>Continue to connection check</Button>
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
-/** One fact of the connection: its name over its value, on a quiet tile. */
-function KeyFact({ label, children }: { readonly label: string; readonly children: ReactNode }) {
-  return (
-    <div className="grid min-w-0 content-start gap-1 rounded-lg border bg-muted/30 px-3 py-2">
-      <dt className={FACT_LABEL}>{label}</dt>
-      <dd className="m-0 break-all">{children}</dd>
-    </div>
-  );
-}
-
-function CheckStep({
-  client,
-  projectId,
-  onBack,
-  onOpenProject,
-  onCompleted,
-}: {
-  readonly client: MakoManagementClient;
-  readonly projectId: string;
-  readonly onBack: () => void;
-  readonly onOpenProject: () => void;
-  readonly onCompleted: () => void;
-}) {
-  const [check, setCheck] = useState<ConnectionCheck | null>(null);
-  const [failure, setFailure] = useState<ConsoleApiFailure | null>(null);
-  const [pending, setPending] = useState(false);
-  const run = async () => {
-    setPending(true);
-    setFailure(null);
-    try {
-      const environments = await client.listEnvironments(projectId);
-      const environment = environments.find((item) => item.state === "active");
-      if (environment === undefined) {
-        setFailure({ message: "The project has no active environment yet.", requestId: null });
-        return;
-      }
-      let publicKeyId: string | undefined;
-      try {
-        publicKeyId = (await client.getConnectMetadata(projectId, environment.id)).publicKeyId;
-      } catch {
-        publicKeyId = undefined;
-      }
-      setCheck(
-        await client.checkConnection(projectId, environment.id, {
-          ...(publicKeyId === undefined ? {} : { publicKeyId }),
-          rxdbVersion: RXDB_VERSION,
-        }),
-      );
-    } catch (error) {
-      setFailure(toConsoleApiFailure(error));
-    } finally {
-      setPending(false);
-    }
-  };
-  const passed = check?.steps.every((step) => step.state !== "failed") ?? false;
-  return (
-    <div className="grid gap-3" aria-busy={pending}>
-      <h3 className="text-base">Connection check</h3>
-      <p className="m-0 text-sm text-muted-foreground">
-        Checks DNS, TLS, public routing, readiness, key metadata, and replication routes without
-        reading documents or creating a user session.
-      </p>
-      <ApiFailureNotice failure={failure} />
-      <div className="flex flex-wrap gap-2">
-        <Button onClick={() => void run()} disabled={pending}>
-          {pending ? "Checking…" : check === null ? "Run connection check" : "Run again"}
-        </Button>
-        <Button variant="outline" onClick={onBack}>
-          Back to keys
-        </Button>
-      </div>
-      {check === null ? null : (
-        <ol className="m-0 grid list-none gap-2 p-0">
-          {check.steps.map((step) => (
-            <li key={step.id} className="flex items-start gap-3 text-sm">
-              <Badge
-                variant={
-                  step.state === "passed"
-                    ? "positive"
-                    : step.state === "failed"
-                      ? "destructive"
-                      : "secondary"
-                }
-                className={cn(
-                  "status-badge mt-0.5",
-                  step.state === "passed" && "success",
-                  step.state === "failed" && "error",
-                )}
-              >
-                {humanize(step.state)}
-              </Badge>
-              <span className="grid gap-0.5">
-                <strong className="font-medium">{humanize(step.id)}</strong>
-                {step.remediationCode === null || step.remediationCode === undefined ? null : (
-                  <small className="text-xs text-muted-foreground">
-                    {humanize(step.remediationCode)} ·{" "}
-                    {step.retryable ? "retryable" : "configuration change required"}
-                  </small>
-                )}
-              </span>
-            </li>
-          ))}
-        </ol>
-      )}
-      {check !== null && passed ? (
-        <Alert variant="positive" role="status">
-          <CheckCircle2 aria-hidden="true" />
-          <AlertTitle>Connected.</AlertTitle>
-          <AlertDescription className="block">
-            <p className="m-0">
-              Your project is reachable and ready for an RxDB client. Checked at{" "}
-              <time dateTime={new Date(check.checkedAtUnixSeconds * 1000).toISOString()}>
-                {new Date(check.checkedAtUnixSeconds * 1000).toLocaleString()}
-              </time>
-              .
-            </p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <Button size="sm" onClick={onOpenProject}>
-                Open project
-              </Button>
-              <Button variant="outline" size="sm" onClick={onCompleted}>
-                Go to the dashboard
-              </Button>
-            </div>
-          </AlertDescription>
-        </Alert>
-      ) : null}
-    </div>
   );
 }
 
@@ -1452,15 +971,6 @@ function formatBytes(value: number): string {
   return `${value} B`;
 }
 
-function humanize(value: string): string {
-  const spaced = value.replace(/([a-z])([A-Z])/gu, "$1 $2").replaceAll("_", " ");
-  return `${spaced.charAt(0).toUpperCase()}${spaced.slice(1)}`;
-}
-
 function idempotencyKey(): string {
   return globalThis.crypto.randomUUID();
-}
-
-function publicKeyCredentialId(): string {
-  return `pk_${globalThis.crypto.randomUUID().replaceAll("-", "").slice(0, 12)}`;
 }

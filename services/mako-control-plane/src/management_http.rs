@@ -526,6 +526,44 @@ fn handle_create_project(
             }
             Err(error) => return Err(project_error(request, error)),
         };
+        // A project with no environment cannot issue keys or serve data, and
+        // the first-run flow expects one to exist, so create and provision a
+        // default "Development" environment alongside the project. The id is
+        // derived from a fixed component so a retry lands on the same record.
+        let default_environment_id = EnvironmentId::parse(stable_id(
+            "env",
+            &[
+                id.as_str(),
+                actor.identity_id().as_str(),
+                "default-development",
+            ],
+        ))
+        .map_err(|_| internal(request, "default environment identifier generation failed"))?;
+        match graph
+            .project_service()
+            .create_environment(
+                &actor,
+                NewEnvironment {
+                    id: default_environment_id.clone(),
+                    project_id: id.clone(),
+                    name: "Development".to_owned(),
+                    now_unix_seconds: now,
+                },
+            )
+            .await
+        {
+            Ok(_) | Err(ProjectStoreError::Conflict) => {}
+            Err(error) => return Err(project_error(request, error)),
+        }
+        enqueue(
+            graph,
+            request,
+            &idempotency,
+            ProvisioningResource::Environment(TenantScope::new(id.clone(), default_environment_id)),
+            ProvisioningOperation::Create,
+            now,
+        )
+        .await?;
         enqueue(
             graph,
             request,
@@ -535,6 +573,8 @@ fn handle_create_project(
             now,
         )
         .await?;
+        // Provision now rather than at the next idle poll.
+        crate::wake_provisioning_worker();
         json(request, 202, &project_wire(request, &record)?)
     })
 }
@@ -888,6 +928,8 @@ fn handle_create_environment(
             now,
         )
         .await?;
+        // Provision now rather than at the next idle poll.
+        crate::wake_provisioning_worker();
         json(request, 202, &environment_wire(request, &record)?)
     })
 }
