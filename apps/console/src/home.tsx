@@ -1,10 +1,10 @@
 // Home dashboard and first-run onboarding.
 //
 // The dashboard is a read-only aggregation of existing management calls:
-// `listTeams` → `listProjects` per owner, then — lazily, per card, with a
+// `listTeams` → `listProjects` per owner, then — lazily, per project, with a
 // bounded number of requests in flight — the owner's plan, the project's
 // headline usage, and the developer's recent activity. One project's failing
-// summary marks only its own card. The guided first run creates the first
+// summary marks only its own row. The guided first run creates the first
 // project and hands off to that project's "Connect" screen for keys and the
 // connection check; whether it was dismissed is kept in browser storage keyed
 // by the developer, never storing a credential value.
@@ -31,7 +31,7 @@ import {
   Input,
   NativeSelect,
 } from "@mako-cloud/ui";
-import { BookOpen, ChevronRight, Database, FolderOpen, Plus, Search, Users } from "lucide-react";
+import { ChevronRight, Database, FolderOpen, Plus, Search, Users } from "lucide-react";
 import {
   type FormEvent,
   type ReactNode,
@@ -47,7 +47,7 @@ import { useDeveloperAuth } from "./auth.js";
 import { useManagementClient } from "./management.js";
 import { FirstProjectPanel, LifecycleBadge } from "./projects.js";
 
-/** Summary requests in flight at once across every card on the page. */
+/** Summary requests in flight at once across every project on the page. */
 const MAX_IN_FLIGHT = 4;
 /** Usage samples read per project; the newest level and the period's flows come out of them. */
 const USAGE_SAMPLE_LIMIT = 50;
@@ -174,13 +174,6 @@ export function HomeDashboard({
           >
             <FolderOpen className="size-4" aria-hidden="true" />
             Projects
-          </a>
-          <a
-            href="/docs/user-book"
-            className="flex items-center gap-3 rounded-md px-3 py-2 text-sm text-muted-foreground no-underline hover:bg-sidebar-accent"
-          >
-            <BookOpen className="size-4" aria-hidden="true" />
-            Documentation
           </a>
         </nav>
         <div className="grid gap-2">
@@ -392,7 +385,7 @@ export function HomeDashboard({
   );
 }
 
-// --- Project groups and cards ------------------------------------------------
+// --- Project groups and rows -------------------------------------------------
 
 type ProjectsLoad =
   | { readonly status: "loading" }
@@ -442,18 +435,22 @@ function OwnerGroup({
           {personal ? "No individual projects yet." : "This team has no projects yet."}
         </p>
       ) : (
-        <div className="grid gap-4 grid-cols-[repeat(auto-fill,minmax(17rem,1fr))]">
+        <ul
+          aria-labelledby={headingId}
+          className="m-0 grid list-none divide-y overflow-hidden rounded-lg border bg-card p-0"
+        >
           {load.projects.map((project) => (
-            <ProjectCard
-              key={project.id}
-              project={project}
-              owner={ownerName(project)}
-              loader={loader}
-              navigate={navigate}
-              onOpen={() => onOpenProject(project.id)}
-            />
+            <li key={project.id} className="min-w-0">
+              <ProjectRow
+                project={project}
+                owner={ownerName(project)}
+                loader={loader}
+                navigate={navigate}
+                onOpen={() => onOpenProject(project.id)}
+              />
+            </li>
           ))}
-        </div>
+        </ul>
       )}
       {personal ? (
         <>
@@ -485,7 +482,7 @@ type Summary<T> =
   | { readonly status: "ready"; readonly value: T }
   | { readonly status: "unavailable" };
 
-function ProjectCard({
+function ProjectRow({
   project,
   owner,
   loader,
@@ -524,25 +521,29 @@ function ProjectCard({
   }, [loader, project.id, project.teamId]);
   const headingId = `project-${project.id}-title`;
   return (
-    <Card
-      as="article"
-      // `home-project-card` is the hook the browser suite selects on.
-      className="home-project-card gap-4 py-4 aria-busy:border-dashed"
+    <article
+      className="grid min-w-0 gap-4 p-4 transition-colors hover:bg-muted/30 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center"
       aria-labelledby={headingId}
       aria-busy={plan.status === "loading" || usage.status === "loading"}
     >
-      <CardHeader className="px-4">
-        <CardTitle as="h3" id={headingId} className="leading-snug break-words">
-          {project.name}
-        </CardTitle>
-        <CardAction>
-          <LifecycleBadge state={project.state} />
-        </CardAction>
-      </CardHeader>
-      <CardContent className="grid gap-4 px-4">
-        <code className="truncate text-xs text-muted-foreground">{project.id}</code>
-        <dl className="m-0 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
-          <Fact label="Owner">{owner}</Fact>
+      <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] xl:items-center">
+        <div className="grid min-w-0 gap-1.5">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <h3 id={headingId} className="m-0 min-w-0 text-sm font-semibold">
+              <Button
+                variant="link"
+                className="h-auto max-w-full p-0 text-left text-foreground whitespace-normal break-words"
+                onClick={onOpen}
+              >
+                {project.name}
+              </Button>
+            </h3>
+            <LifecycleBadge state={project.state} />
+          </div>
+          <span className="text-xs text-muted-foreground">{owner}</span>
+          <code className="break-all text-xs text-muted-foreground">{project.id}</code>
+        </div>
+        <dl className="m-0 grid min-w-0 grid-cols-2 gap-x-4 gap-y-2 text-sm">
           <Fact label="Region">
             <span className="font-mono text-xs">{project.region}</span>
           </Fact>
@@ -569,40 +570,38 @@ function ProjectCard({
             )}
           </Fact>
         </dl>
-        {environment === null ? null : (
-          <div className="grid gap-2 border-t pt-3">
-            <span className="text-xs text-muted-foreground">Database · {environment.name}</span>
-            <div className="flex flex-wrap gap-2">
-              {[
-                ["data", "Browse data"],
-                ["collections", "Schema"],
-                ["connect", "Connect"],
-              ].map(([section, label]) => (
-                <Button
-                  key={section}
-                  size="sm"
-                  variant={section === "data" ? "default" : "outline"}
-                  onClick={() =>
-                    navigate(`/projects/${project.id}/environments/${environment.id}/${section}`)
-                  }
-                >
-                  {section === "data" ? <Database aria-hidden="true" /> : null}
-                  {label}
-                </Button>
-              ))}
-            </div>
+      </div>
+      {environment === null ? null : (
+        <div className="grid min-w-0 gap-2 lg:justify-items-end">
+          <span className="break-words text-xs text-muted-foreground">
+            Database · {environment.name}
+          </span>
+          <div className="flex flex-wrap gap-2">
+            {[
+              ["data", "Browse data"],
+              ["collections", "Schema"],
+              ["connect", "Connect"],
+            ].map(([section, label]) => (
+              <Button
+                key={section}
+                size="sm"
+                variant={section === "data" ? "default" : "outline"}
+                onClick={() =>
+                  navigate(`/projects/${project.id}/environments/${environment.id}/${section}`)
+                }
+              >
+                {section === "data" ? <Database aria-hidden="true" /> : null}
+                {label}
+              </Button>
+            ))}
           </div>
-        )}
-        <Button variant="ghost" size="sm" className="justify-self-start px-0" onClick={onOpen}>
-          Open <span className="sr-only">{project.name}</span>
-          <ChevronRight aria-hidden="true" />
-        </Button>
-      </CardContent>
-    </Card>
+        </div>
+      )}
+    </article>
   );
 }
 
-/** One fact on a card: its name over its value. */
+/** One project fact: its name over its value. */
 function Fact({
   label,
   className,
@@ -1012,8 +1011,8 @@ interface SummaryLoader {
 }
 
 /**
- * Per-card summaries behind one bounded queue. Each summary is requested once
- * per page (a team's plan is shared by all of its cards); a failed request is
+ * Per-project summaries behind one bounded queue. Each summary is requested once
+ * per page (a team's plan is shared by all of its projects); a failed request is
  * forgotten so a later mount can try again.
  */
 function createSummaryLoader(client: MakoManagementClient, limit = MAX_IN_FLIGHT): SummaryLoader {

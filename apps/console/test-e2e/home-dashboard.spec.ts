@@ -54,7 +54,7 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
-test("projects across the personal space and a team appear as cards with recent activity", async ({
+test("projects across the personal space and a team appear as a list with recent activity", async ({
   page,
 }) => {
   const api = new HomeApiHarness();
@@ -63,27 +63,27 @@ test("projects across the personal space and a team appear as cards with recent 
 
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Home" })).toBeVisible();
-  // Owners group the cards: the personal space leads, then each team, with
+  // Owners group the project lists: the personal space leads, then each team, with
   // no team to pick first.
   await expect(page.getByRole("heading", { name: "Your projects" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Mako Test Team" })).toBeVisible();
 
-  const personalCard = page.getByRole("article", { name: "Side project" });
-  await expect(personalCard).toBeVisible();
-  await expect(personalCard.getByText("Status: active")).toBeVisible();
-  await expect(personalCard.getByText("eu-west")).toBeVisible();
-  await expect(personalCard.getByText("Personal space")).toBeVisible();
-  await expect(personalCard.getByText("free", { exact: true })).toBeVisible();
-  await expect(personalCard.getByText("Storage 1.0 MiB")).toBeVisible();
+  const personalRow = page.getByRole("article", { name: "Side project" });
+  await expect(personalRow).toBeVisible();
+  await expect(personalRow.getByText("Status: active")).toBeVisible();
+  await expect(personalRow.getByText("eu-west")).toBeVisible();
+  await expect(personalRow.getByText("Personal space")).toBeVisible();
+  await expect(personalRow.getByText("free", { exact: true })).toBeVisible();
+  await expect(personalRow.getByText("Storage 1.0 MiB")).toBeVisible();
 
-  const teamCard = page.getByRole("article", { name: "Mako Test Project" });
-  await expect(teamCard).toBeVisible();
-  await expect(teamCard.getByText("Status: provisioning")).toBeVisible();
-  await expect(teamCard.getByText("local", { exact: true })).toBeVisible();
-  await expect(teamCard.getByText("Mako Test Team")).toBeVisible();
-  await expect(teamCard.getByText("pro", { exact: true })).toBeVisible();
-  await expect(teamCard.getByText("Storage 120.0 MiB · Replication 2.0 MiB")).toBeVisible();
-  await expect(page.locator(".home-project-card[aria-busy='true']")).toHaveCount(0);
+  const teamRow = page.getByRole("article", { name: "Mako Test Project" });
+  await expect(teamRow).toBeVisible();
+  await expect(teamRow.getByText("Status: provisioning")).toBeVisible();
+  await expect(teamRow.getByText("local", { exact: true })).toBeVisible();
+  await expect(teamRow.getByText("Mako Test Team")).toBeVisible();
+  await expect(teamRow.getByText("pro", { exact: true })).toBeVisible();
+  await expect(teamRow.getByText("Storage 120.0 MiB · Replication 2.0 MiB")).toBeVisible();
+  await expect(page.getByRole("article").and(page.locator("[aria-busy='true']"))).toHaveCount(0);
 
   // Activity merges the projects' audit feeds newest first, naming actor,
   // action, target, and time.
@@ -101,13 +101,13 @@ test("projects across the personal space and a team appear as cards with recent 
   await expect(rows.nth(1)).toContainText("Side project");
   await expect(rows.nth(1).locator("time")).toHaveAttribute("datetime", EARLIER);
 
-  // The plan was read once per owner, not per card, and every call the page
+  // The plan was read once per owner, not per row, and every call the page
   // made is part of the management contract.
   expect(api.billCalls).toEqual({ [PERSONAL_TEAM_ID]: 1, [TEAM_ID]: 1 });
   expect(api.unhandled).toEqual([]);
 
-  // Cards open the project.
-  await page.getByRole("button", { name: "Open Side project" }).click();
+  // Project names open the project.
+  await page.getByRole("button", { name: "Side project", exact: true }).click();
   await expect(page).toHaveURL(/\/projects\/prj_persona1$/u);
 });
 
@@ -145,8 +145,8 @@ test("project search and direct database entry avoid intermediate landing pages"
   await page.goto("/");
   await expect(page.getByRole("complementary", { name: "Workspace navigation" })).toBeVisible();
   await page.getByRole("textbox", { name: "Search projects" }).fill("eu-west");
-  const card = page.getByRole("article", { name: "Side project" });
-  await expect(card).toBeVisible();
+  const row = page.getByRole("article", { name: "Side project" });
+  await expect(row).toBeVisible();
   await expect(page.getByRole("article", { name: "Mako Test Project" })).toHaveCount(0);
   await page.getByRole("textbox", { name: "Search projects" }).fill("no-match");
   await expect(page.getByText("No projects match your search")).toBeVisible();
@@ -156,25 +156,25 @@ test("project search and direct database entry avoid intermediate landing pages"
     path: resolve(import.meta.dirname, "../../../.local/console-redesign/home-desktop.png"),
     fullPage: true,
   });
-  await card.getByRole("button", { name: "Browse data" }).click();
+  await row.getByRole("button", { name: "Browse data" }).click();
   await expect(page).toHaveURL(/\/projects\/prj_persona1\/environments\/env_[^/]+\/data$/u);
 });
 
-test("a usage source that fails marks only its own card", async ({ page }) => {
+test("a usage source that fails marks only its own row", async ({ page }) => {
   const api = new HomeApiHarness();
   api.withProjects();
   api.usageStatus[PERSONAL_PROJECT_ID] = 503;
   await api.install(page);
 
   await page.goto("/");
-  const personalCard = page.getByRole("article", { name: "Side project" });
-  await expect(personalCard.getByText("Usage unavailable")).toBeVisible();
-  await expect(personalCard.getByText("free", { exact: true })).toBeVisible();
-  await expect(personalCard.getByText("Status: active")).toBeVisible();
+  const personalRow = page.getByRole("article", { name: "Side project" });
+  await expect(personalRow.getByText("Usage unavailable")).toBeVisible();
+  await expect(personalRow.getByText("free", { exact: true })).toBeVisible();
+  await expect(personalRow.getByText("Status: active")).toBeVisible();
 
-  const teamCard = page.getByRole("article", { name: "Mako Test Project" });
-  await expect(teamCard.getByText("Storage 120.0 MiB · Replication 2.0 MiB")).toBeVisible();
-  await expect(teamCard.getByText("Usage unavailable")).toHaveCount(0);
+  const teamRow = page.getByRole("article", { name: "Mako Test Project" });
+  await expect(teamRow.getByText("Storage 120.0 MiB · Replication 2.0 MiB")).toBeVisible();
+  await expect(teamRow.getByText("Usage unavailable")).toHaveCount(0);
   await expect(page.getByRole("alert")).toHaveCount(0);
   await expect(page.getByRole("region", { name: "Recent activity" })).toContainText(
     "policy.activate",
