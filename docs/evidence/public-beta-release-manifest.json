@@ -10,7 +10,7 @@
   },
   "planHash": "d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073",
   "source": {
-    "digest": "810a29290d532915d8f9cb25547f30d723c7c9580d069978c139caf1651a51d8",
+    "digest": "92289373e5e43772de89633905b37551142264ae91e113902c1a171cb40a3d17",
     "files": [
       {
         "path": ".env.example",
@@ -200,8 +200,8 @@
       },
       {
         "path": "apps/console/src/home.tsx",
-        "sha256": "9356aff0c784defeddfa29462782c2d91f7b12a95134f27f65a2223c10956bd8",
-        "size": 41087,
+        "sha256": "ec5e0f4808d0f64094f1524f334f6ea102082b860a5302e025e79cba3d297ee6",
+        "size": 35133,
         "mode": 420
       },
       {
@@ -404,8 +404,8 @@
       },
       {
         "path": "apps/console/test-e2e/home-dashboard.spec.ts",
-        "sha256": "ee98b01ffb5e96ea98db203f1b58ccbcf4068c1f86f2c62827dd0c759a83a02f",
-        "size": 19896,
+        "sha256": "cac7388f0957070fcb43f7669c99ba69c1bc992c605226659c8930659f5383ec",
+        "size": 18898,
         "mode": 420
       },
       {
@@ -5512,7 +5512,7 @@
     ]
   },
   "artifacts": {
-    "digest": "24b21aee8d7235fe4d32118b1dcd285e3e8ad49f600e1f17ebaa8641e6bd3ef1",
+    "digest": "9e1453badaaa3eec298f3ea8f7921b9959fa247adce9f1db1e5e0b659e518b35",
     "files": [
       {
         "path": "bin/mako-control-plane",
@@ -5592,17 +5592,17 @@
         "mode": 493
       },
       {
-        "path": "console/assets/index-DDJK9Fgo.css",
-        "source": "apps/console/web-dist/assets/index-DDJK9Fgo.css",
-        "sha256": "cd0694257e5e893fa54ea8cc1f55fe12b69045f1f07b54007e4ed370e3a5b853",
-        "size": 74618,
+        "path": "console/assets/index-B8-IiXeA.css",
+        "source": "apps/console/web-dist/assets/index-B8-IiXeA.css",
+        "sha256": "d3f3978a966cee9fa1083f512c761042a1478aefb1cf851bcbcf2f7779e92843",
+        "size": 74906,
         "mode": 420
       },
       {
-        "path": "console/assets/index-KgGHY1Jj.js",
-        "source": "apps/console/web-dist/assets/index-KgGHY1Jj.js",
-        "sha256": "88492060bc597f5e6470dd601f2aaf03a11c451dab2099a058a0b083eead46d2",
-        "size": 565441,
+        "path": "console/assets/index-DruQLebC.js",
+        "source": "apps/console/web-dist/assets/index-DruQLebC.js",
+        "sha256": "9ddad599673088718ebfab752c12b5106fbcbb023dd565db49841cb19993d82b",
+        "size": 562771,
         "mode": 420
       },
       {
@@ -5678,14 +5678,14 @@
       {
         "path": "console/docs/user-book/index.html",
         "source": "apps/console/web-dist/docs/user-book/index.html",
-        "sha256": "32bcbebcb2926cc8db271031c2e60561a7cf4f0c05108fbef3300a535c572ac0",
-        "size": 317359,
+        "sha256": "dd215b15ed843a0bb8e0ed025a4d22201c66fd6e042ef6931ffcbf1ef5a4494a",
+        "size": 317427,
         "mode": 420
       },
       {
         "path": "console/index.html",
         "source": "apps/console/web-dist/index.html",
-        "sha256": "3614c4ea190a27143cb8a95972e6295617dcd40de1b6537ee30ebf98ec28dded",
+        "sha256": "740f76da96b9635684fd69b4ecaa27778f180c2a1842e357dc590929a396e5fd",
         "size": 1381,
         "mode": 420
       },
@@ -5712,10 +5712,10 @@
       }
     ]
   },
-  "releaseDigest": "d7bec53355decb88145469f70a9fd6e97aa53d9631449d936f9c8ca461a15d86",
-  "generatedAt": "2026-09-23T04:31:09.850Z",
+  "releaseDigest": "74de0ba2578288e1263f961223f6184384a998e620c02e395673a8e76ce593cd",
+  "generatedAt": "2026-09-23T23:30:52.884Z",
   "candidateLayout": {
-    "root": ".local/public-beta-candidates/d7bec53355decb88145469f70a9fd6e97aa53d9631449d936f9c8ca461a15d86",
+    "root": ".local/public-beta-candidates/74de0ba2578288e1263f961223f6184384a998e620c02e395673a8e76ce593cd",
     "manifest": "manifest.json",
     "binaries": "bin",
     "console": "console"
