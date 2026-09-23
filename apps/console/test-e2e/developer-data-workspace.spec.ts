@@ -1,4 +1,4 @@
-import { expect, test, type Route } from "@playwright/test";
+import { expect, type Route, test } from "@playwright/test";
 
 const PROJECT_ID = "prj_abcdefgh";
 const ENVIRONMENT_ID = "env_abcdefgh";
@@ -142,6 +142,7 @@ test("policy preview stays in memory, hides rows, simulates, and revokes on envi
   await page.getByRole("button", { name: "Parse, validate, and simulate" }).click();
   await expect(page.getByText("Simulation allowed")).toBeVisible();
   await expect(page.getByRole("button", { name: "Commit conditionally" })).toHaveCount(0);
+  await page.getByRole("tab", { name: "Query editor" }).click();
   await page.getByLabel("Field", { exact: true }).fill("ownerId");
   await page.getByLabel("JSON value").fill('"usr_abcdefgh"');
   await page.getByRole("button", { name: "Plan and run query" }).click();
@@ -357,6 +358,7 @@ test("administrative mode exposes audited conflicts, history, tombstones, and da
   await expect(page.getByRole("heading", { name: "Current", exact: true })).toBeVisible();
   await expect(page.getByText("audit_admin_mutation01")).toBeVisible();
 
+  await page.getByRole("tab", { name: "Import / export" }).click();
   await page.getByRole("button", { name: "Review execution" }).click();
   await expect(page.getByText("Confirm import execution")).toBeVisible();
   await page
@@ -380,11 +382,11 @@ test("overview preserves healthy sections when a provider is unavailable", async
       return json(route, {
         tenant: { projectId: PROJECT_ID, environmentId: ENVIRONMENT_ID },
         sections: {
-          readiness: {
+          lifecycle: {
             status: "current",
             observedAtUnixSeconds: 1_786_579_200,
             freshUntilUnixSeconds: 1_786_579_260,
-            payload: { state: "active" },
+            payload: { ready: true, environment: "active" },
           },
           sync: {
             status: "unavailable",
@@ -396,14 +398,21 @@ test("overview preserves healthy sections when a provider is unavailable", async
         },
       });
     }
+    if (path.endsWith("/collections")) return json(route, { items: [collection()] });
     return json(route, { error: "unhandled" }, 500);
   });
 
   await page.goto(`/projects/${PROJECT_ID}/environments/${ENVIRONMENT_ID}/overview`);
-  await expect(page.getByRole("heading", { name: "Readiness" })).toBeVisible();
-  await expect(page.getByText("State")).toBeVisible();
-  await expect(page.getByText("Unavailable", { exact: true })).toBeVisible();
-  await expect(page.getByText("Sync provider unavailable")).toBeVisible();
+  const environment = page.getByRole("article", { name: "Environment", exact: true });
+  await expect(environment.getByText("Active", { exact: true })).toBeVisible();
+  await expect(environment.getByText("Stale", { exact: true })).toBeVisible();
+  await expect(page.getByText("Sync error records")).toBeVisible();
+  await expect(
+    page
+      .getByRole("region", { name: "Collection inventory" })
+      .getByRole("link", { name: "todos", exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText("Unavailable", { exact: true }).first()).toBeVisible();
 });
 
 test("Connect uses live metadata and renders safe compatibility remediation", async ({ page }) => {
@@ -579,7 +588,7 @@ function collection() {
       properties: { id: { type: "string" }, ownerId: { type: "string" } },
       required: ["id", "ownerId"],
     },
-    primaryKey: { kind: "path", path: "id" },
+    primaryKey: { kind: "field", field: "id" },
     compatibility: "compatible",
     state: "active",
   };

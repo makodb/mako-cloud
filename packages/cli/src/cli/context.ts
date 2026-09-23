@@ -20,6 +20,7 @@ import {
   withProfile,
 } from "./credentials.js";
 import { authError, CliError, EXIT, usageError } from "./errors.js";
+import { CLI_NAME } from "./name.js";
 import {
   type OutputSink,
   renderRecord,
@@ -187,7 +188,7 @@ export class CommandContext {
       return this.#resolvedEndpoint;
     }
     throw usageError(
-      "no endpoint: pass --endpoint, set MAKO_ENDPOINT, or run `mako auth login --endpoint <url>`",
+      `no endpoint: pass --endpoint, set MAKO_ENDPOINT, or run \`${CLI_NAME} auth login --endpoint <url>\``,
     );
   }
 
@@ -223,7 +224,7 @@ export class CommandContext {
     const profile = await this.loadProfile();
     if (profile?.session === undefined) {
       throw authError(
-        `not signed in (profile "${this.globals.profile}"): run \`mako auth login\` or set MAKO_TOKEN`,
+        `not signed in (profile "${this.globals.profile}"): run \`${CLI_NAME} auth login\` or set MAKO_TOKEN`,
       );
     }
     const explicit = this.globals.endpoint;
@@ -242,7 +243,7 @@ export class CommandContext {
   async #renew(profile: Profile, session: StoredSession): Promise<StoredSession> {
     if (session.refreshCookie === undefined) {
       throw authError(
-        "the stored session has expired and cannot be renewed: run `mako auth login`",
+        `the stored session has expired and cannot be renewed: run \`${CLI_NAME} auth login\``,
       );
     }
     const { client, jar } = this.developerAuth(profile.endpoint, session.refreshCookie);
@@ -251,7 +252,7 @@ export class CommandContext {
       renewed = await client.refresh();
     } catch (error) {
       if (error instanceof ManagementApiError && (error.status === 401 || error.status === 403)) {
-        throw authError("the stored session could not be renewed: run `mako auth login`");
+        throw authError(`the stored session could not be renewed: run \`${CLI_NAME} auth login\``);
       }
       throw error;
     }

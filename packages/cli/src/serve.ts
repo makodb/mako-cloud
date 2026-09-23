@@ -5,6 +5,8 @@ import { basename, delimiter, isAbsolute, join, resolve } from "node:path";
 import type { Readable, Writable } from "node:stream";
 import { fileURLToPath } from "node:url";
 
+import { CLI_NAME } from "./cli/name.js";
+
 interface RuntimePin {
   readonly provider: "supabase-edge-runtime";
   readonly release: string;
@@ -55,7 +57,7 @@ export class LocalServeConfigurationError extends Error {
 export function parseServeArguments(args: readonly string[], cwd: string): LocalServeConfig {
   if (args[0] !== "functions" || args[1] !== "serve") {
     throw new LocalServeConfigurationError(
-      "usage: mako functions serve <directory> --project-id <id> --environment-id <id> [options]",
+      `usage: ${CLI_NAME} functions serve <directory> --project-id <id> --environment-id <id> [options]`,
     );
   }
   const directoryArgument = args[2];
@@ -162,7 +164,7 @@ export function parseServeArguments(args: readonly string[], cwd: string): Local
 
 /**
  * The same bounds the hosted deployment surface applies, so a declaration that
- * serves locally is one `mako functions deploy --allow-host` will accept: DNS
+ * serves locally is one `mako-cloud functions deploy --allow-host` will accept: DNS
  * names only, HTTPS implied, at most eight, never an IP literal, localhost, or
  * a cloud metadata name.
  */

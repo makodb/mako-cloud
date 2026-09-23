@@ -231,7 +231,7 @@ test("collections schema publish reads the schema from stdin and reports migrati
   assert.equal(blocked.code, 0, blocked.stderr);
   assert.match(blocked.stdout, /^status\s+migration_required\n/u);
   assert.match(blocked.stdout, /lack required field done/u);
-  assert.match(blocked.stderr, /mako collections migrations create todos/u);
+  assert.match(blocked.stderr, /mako-cloud collections migrations create todos/u);
 
   const noVersion = await cli(["collections", "schema", "publish", "todos", "--schema", "{}"]);
   assert.equal(noVersion.code, 2);

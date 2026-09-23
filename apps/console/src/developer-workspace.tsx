@@ -1,3 +1,15 @@
+import type {
+  Collection,
+  ConnectionCheck,
+  ConnectMetadata,
+  DeveloperBackup,
+  DeveloperRestore,
+  Environment,
+  Project,
+  SyncSummary,
+  WorkspaceDestination,
+} from "@mako-cloud/management-sdk";
+import { createMakoRxdbConnectTemplateV1 } from "@mako-cloud/rxdb";
 import {
   Alert,
   AlertDescription,
@@ -9,6 +21,7 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
+  cn,
   EmptyState,
   Eyebrow,
   Field,
@@ -22,11 +35,9 @@ import {
   TableHeader,
   TableRow,
   Textarea,
-  cn,
 } from "@mako-cloud/ui";
 import {
   Activity,
-  ArrowRight,
   BookOpen,
   Box,
   CalendarClock,
@@ -56,23 +67,10 @@ import {
 } from "lucide-react";
 import { type FormEvent, type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 
-import type {
-  Collection,
-  ConnectMetadata,
-  ConnectionCheck,
-  DeveloperBackup,
-  DeveloperRestore,
-  Environment,
-  Project,
-  SyncSummary,
-  WorkspaceDestination,
-  WorkspaceSummary,
-} from "@mako-cloud/management-sdk";
-import { createMakoRxdbConnectTemplateV1 } from "@mako-cloud/rxdb";
-
 import { AllowedOriginsSection } from "./allowed-origins.js";
 import { ApiFailureNotice, type ConsoleApiFailure, toConsoleApiFailure } from "./api-error.js";
 import { DataExplorer } from "./data-explorer.js";
+import { DatabaseOverview } from "./database-overview.js";
 import { useManagementClient } from "./management.js";
 
 export type EnvironmentSection =
@@ -136,27 +134,13 @@ export function EnvironmentWorkspaceScreen({
     content = <ConnectPage projectId={projectId} environmentId={environmentId} />;
   } else if (section === "policies") {
     content = (
-      <WorkspaceLinks
-        title="Policies"
-        description="Document policies are versioned per collection. Preview them as a selected application user before activation."
-        links={[
-          {
-            label: "Open collections and policies",
-            path: `/projects/${projectId}/environments/${environmentId}/collections`,
-          },
-          {
-            label: "Open application users",
-            path: `/projects/${projectId}/environments/${environmentId}/users`,
-          },
-        ]}
-        navigate={navigate}
-      />
+      <CollectionPolicies projectId={projectId} environmentId={environmentId} navigate={navigate} />
     );
   } else if (section === "settings") {
     content = <EnvironmentSettings projectId={projectId} environmentId={environmentId} />;
   } else {
     content = (
-      <WorkspaceOverview projectId={projectId} environmentId={environmentId} navigate={navigate} />
+      <DatabaseOverview projectId={projectId} environmentId={environmentId} navigate={navigate} />
     );
   }
   return (
@@ -212,6 +196,7 @@ const DESTINATION_ICONS: Readonly<Record<string, LucideIcon>> = {
   backups: DatabaseBackup,
   connect: Plug,
   settings: Settings,
+  credentials: KeyRound,
   storage: HardDrive,
   webhooks: Webhook,
   "auth-providers": KeyRound,
@@ -242,26 +227,62 @@ export function EnvironmentWorkspaceLayout({
   const [environments, setEnvironments] = useState<Environment[]>([]);
   const [destinations, setDestinations] = useState<WorkspaceDestination[]>([]);
   const [failure, setFailure] = useState<ConsoleApiFailure | null>(null);
+  const [navigationFailure, setNavigationFailure] = useState<ConsoleApiFailure | null>(null);
   useEffect(() => {
     let active = true;
-    void Promise.all([
-      client.getProject(projectId),
-      client.listEnvironments(projectId),
-      client.getWorkspaceNavigation(projectId, environmentId),
-    ]).then(
-      ([nextProject, nextEnvironments, nextDestinations]) => {
+    void Promise.all([client.getProject(projectId), client.listEnvironments(projectId)]).then(
+      ([nextProject, nextEnvironments]) => {
         if (!active) return;
         setProject(nextProject);
         setEnvironments(nextEnvironments);
-        setDestinations(nextDestinations);
         setFailure(null);
       },
       (error: unknown) => active && setFailure(toConsoleApiFailure(error)),
+    );
+    void client.getWorkspaceNavigation(projectId, environmentId).then(
+      (value) => {
+        if (active) {
+          setDestinations(value);
+          setNavigationFailure(null);
+        }
+      },
+      (error: unknown) => active && setNavigationFailure(toConsoleApiFailure(error)),
     );
     return () => {
       active = false;
     };
   }, [client, environmentId, projectId]);
+  const allDestinations = [
+    ...destinations.filter((destination) => destination.permitted),
+    ...(!destinations.some(
+      (destination) => ["overview", "data"].includes(destination.id) && destination.permitted,
+    )
+      ? []
+      : consoleDestinations(projectId, environmentId).filter(
+          (destination) => !destinations.some((item) => item.id === destination.id),
+        )),
+    ...(destinations.some(
+      (destination) => destination.id === "settings" && destination.permitted,
+    ) && !destinations.some((destination) => destination.id === "credentials")
+      ? [
+          {
+            id: "credentials",
+            label: "API keys",
+            path: `/projects/${projectId}/environments/${environmentId}/credentials`,
+            permitted: true,
+          },
+        ]
+      : []),
+  ];
+  const groups = [
+    { label: "Database", ids: ["overview", "data", "collections", "policies", "sync", "backups"] },
+    {
+      label: "Application",
+      ids: ["users", "auth-providers", "email-templates", "storage", "functions", "webhooks"],
+    },
+    { label: "Observe", ids: ["observability", "logs", "usage", "activity"] },
+    { label: "Configure", ids: ["connect", "credentials", "api-docs", "settings"] },
+  ];
   const currentEnvironment = environments.find((environment) => environment.id === environmentId);
   return (
     <div className="grid min-h-[calc(100vh-3.5rem)] grid-cols-1 md:grid-cols-[16rem_minmax(0,1fr)]">
@@ -272,6 +293,17 @@ export function EnvironmentWorkspaceLayout({
         aria-label="Environment navigation"
       >
         <div className="grid gap-3 px-3">
+          <a
+            href="/"
+            className="text-xs text-muted-foreground"
+            onClick={(event) => {
+              if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+              event.preventDefault();
+              navigate("/");
+            }}
+          >
+            ← All projects
+          </a>
           <Eyebrow>Database workspace</Eyebrow>
           <Button
             variant="ghost"
@@ -305,34 +337,75 @@ export function EnvironmentWorkspaceLayout({
           </div>
         </div>
         <nav aria-label="Environment destinations" className="min-w-0">
-          <ul className="m-0 flex list-none gap-0.5 overflow-x-auto p-0 md:grid md:overflow-visible">
-            {[
-              ...destinations.filter((destination) => destination.permitted),
-              ...consoleDestinations(projectId, environmentId),
-            ].map((destination) => {
-              const active = section === destination.id;
-              const Icon = DESTINATION_ICONS[destination.id] ?? Box;
-              return (
-                <li key={destination.id} className="shrink-0 md:shrink">
-                  <a
-                    className={cn(
-                      "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground no-underline transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground hover:no-underline",
-                      active && "bg-sidebar-accent text-sidebar-foreground",
-                    )}
-                    aria-current={active ? "page" : undefined}
-                    href={destination.path}
-                    onClick={(event) => {
-                      event.preventDefault();
-                      navigate(destination.path);
-                    }}
-                  >
-                    <Icon aria-hidden="true" className="size-4 shrink-0" />
-                    {destination.label}
-                  </a>
-                </li>
-              );
-            })}
-          </ul>
+          <div className="grid gap-1 px-3 md:hidden">
+            <Label htmlFor="workspace-destination" className="text-xs text-muted-foreground">
+              Go to
+            </Label>
+            <NativeSelect
+              id="workspace-destination"
+              value={section}
+              onChange={(event) => {
+                const destination = allDestinations.find(
+                  (item) => item.id === event.currentTarget.value,
+                );
+                if (destination) navigate(destination.path);
+              }}
+            >
+              {groups.map((group) => (
+                <optgroup key={group.label} label={group.label}>
+                  {allDestinations
+                    .filter((item) => group.ids.includes(item.id))
+                    .map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.label}
+                      </option>
+                    ))}
+                </optgroup>
+              ))}
+            </NativeSelect>
+          </div>
+          <div className="hidden md:grid md:gap-4">
+            {groups.map((group) => (
+              <div key={group.label} className="min-w-40 md:min-w-0">
+                <Eyebrow className="mb-1 px-3 text-[10px]">{group.label}</Eyebrow>
+                <ul className="m-0 grid list-none gap-0.5 p-0">
+                  {allDestinations
+                    .filter((destination) => group.ids.includes(destination.id))
+                    .map((destination) => {
+                      const Icon = DESTINATION_ICONS[destination.id] ?? Box;
+                      return (
+                        <li key={destination.id}>
+                          <a
+                            className={cn(
+                              "flex items-center gap-3 rounded-md border border-transparent px-3 py-1.5 text-sm text-muted-foreground no-underline hover:bg-sidebar-accent hover:text-sidebar-accent-foreground hover:no-underline",
+                              section === destination.id &&
+                                "border-primary/15 bg-primary/10 font-medium text-primary",
+                            )}
+                            aria-current={section === destination.id ? "page" : undefined}
+                            href={destination.path}
+                            onClick={(event) => {
+                              if (
+                                event.ctrlKey ||
+                                event.metaKey ||
+                                event.shiftKey ||
+                                event.altKey ||
+                                event.button !== 0
+                              )
+                                return;
+                              event.preventDefault();
+                              navigate(destination.path);
+                            }}
+                          >
+                            <Icon aria-hidden="true" className="size-4 shrink-0" />
+                            {destination.label}
+                          </a>
+                        </li>
+                      );
+                    })}
+                </ul>
+              </div>
+            ))}
+          </div>
         </nav>
       </aside>
       <div className="min-w-0 px-6 py-6">
@@ -347,7 +420,7 @@ export function EnvironmentWorkspaceLayout({
               navigate("/");
             }}
           >
-            Teams
+            Projects
           </a>
           <span aria-hidden="true" className="flex text-muted-foreground/60">
             <ChevronRight className="size-3.5" />
@@ -369,6 +442,7 @@ export function EnvironmentWorkspaceLayout({
           </strong>
         </nav>
         <ApiFailureNotice failure={failure} />
+        <ApiFailureNotice failure={navigationFailure} />
         {children}
       </div>
     </div>
@@ -412,96 +486,6 @@ function WarningNote({ children, className }: { children: ReactNode; className?:
       <TriangleAlert aria-hidden="true" />
       <AlertDescription className="block">{children}</AlertDescription>
     </Alert>
-  );
-}
-
-function WorkspaceOverview({
-  projectId,
-  environmentId,
-  navigate,
-}: {
-  readonly projectId: string;
-  readonly environmentId: string;
-  readonly navigate: (path: string) => void;
-}) {
-  const client = useManagementClient();
-  const [summary, setSummary] = useState<WorkspaceSummary | null>(null);
-  const [failure, setFailure] = useState<ConsoleApiFailure | null>(null);
-  const reload = useCallback(async () => {
-    try {
-      setSummary(await client.getWorkspaceSummary(projectId, environmentId));
-      setFailure(null);
-    } catch (error) {
-      setFailure(toConsoleApiFailure(error));
-    }
-  }, [client, environmentId, projectId]);
-  useEffect(() => {
-    void reload();
-  }, [reload]);
-  return (
-    <section className="grid gap-6">
-      <PageHeader
-        eyebrow="Environment overview"
-        title="Database health and activity"
-        description="Each card loads independently; unavailable providers do not erase healthy sections."
-        action={
-          <Button variant="outline" onClick={() => void reload()}>
-            <RefreshCw aria-hidden="true" />
-            Refresh
-          </Button>
-        }
-      />
-      <ApiFailureNotice failure={failure} />
-      {summary === null ? (
-        <p className="m-0 text-sm text-muted-foreground">Loading workspace summaries…</p>
-      ) : (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {Object.entries(summary.sections).map(([id, item]) => (
-            <Card as="article" key={id} className="gap-3 py-4">
-              <CardHeader className="flex flex-row items-center justify-between gap-3 px-4">
-                <CardTitle>{humanize(id)}</CardTitle>
-                <StatusBadge state={item.status} />
-              </CardHeader>
-              <CardContent className="grid gap-3 px-4">
-                <SummaryPayload value={item.payload} />
-                <small className="text-xs text-muted-foreground">
-                  Observed {formatTime(item.observedAtUnixSeconds)} · fresh until{" "}
-                  {formatTime(item.freshUntilUnixSeconds)}
-                  {item.retainedSinceUnixSeconds !== null &&
-                  item.retainedSinceUnixSeconds !== undefined
-                    ? ` · retained since ${formatTime(item.retainedSinceUnixSeconds)}`
-                    : ""}
-                </small>
-                {item.remediationCode !== null && item.remediationCode !== undefined ? (
-                  <WarningNote>
-                    <p>{humanize(item.remediationCode)}</p>
-                  </WarningNote>
-                ) : null}
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
-      <div className="flex flex-wrap gap-2">
-        <Button
-          onClick={() => navigate(`/projects/${projectId}/environments/${environmentId}/data`)}
-        >
-          Explore data
-        </Button>
-        <Button
-          variant="secondary"
-          onClick={() => navigate(`/projects/${projectId}/environments/${environmentId}/connect`)}
-        >
-          Connect RxDB
-        </Button>
-        <Button
-          variant="secondary"
-          onClick={() => navigate(`/projects/${projectId}/environments/${environmentId}/sync`)}
-        >
-          Inspect sync
-        </Button>
-      </div>
-    </section>
   );
 }
 
@@ -1071,36 +1055,97 @@ function EnvironmentSettings({
   );
 }
 
-function WorkspaceLinks({
-  title,
-  description,
-  links,
+function CollectionPolicies({
+  projectId,
+  environmentId,
   navigate,
 }: {
-  readonly title: string;
-  readonly description: string;
-  readonly links: readonly { readonly label: string; readonly path: string }[];
+  readonly projectId: string;
+  readonly environmentId: string;
   readonly navigate: (path: string) => void;
 }) {
+  const client = useManagementClient();
+  const [collections, setCollections] = useState<Collection[] | null>(null);
+  const [failure, setFailure] = useState<ConsoleApiFailure | null>(null);
+  useEffect(() => {
+    let active = true;
+    void client.listCollections(projectId, environmentId).then(
+      (value) => active && setCollections(value),
+      (error: unknown) => active && setFailure(toConsoleApiFailure(error)),
+    );
+    return () => {
+      active = false;
+    };
+  }, [client, projectId, environmentId]);
   return (
     <section className="grid gap-6">
-      <PageHeader eyebrow="Workspace" title={title} description={description} />
-      <div className="grid max-w-2xl gap-2">
-        {links.map((link) => (
-          <Button
-            variant="outline"
-            className="h-auto justify-between px-4 py-3 text-left text-sm font-medium"
-            key={link.path}
-            onClick={() => navigate(link.path)}
-          >
-            {link.label}
-            <ArrowRight aria-hidden="true" className="text-muted-foreground" />
-          </Button>
-        ))}
-      </div>
+      <PageHeader
+        eyebrow="Database access"
+        title="Collection policies"
+        description="Define which documents an application user can read or write. Validate and preview a policy before activating it."
+      />
+      <ApiFailureNotice failure={failure} />
+      {collections === null ? (
+        failure === null ? (
+          <p className="text-sm text-muted-foreground">Loading collections…</p>
+        ) : null
+      ) : collections.length === 0 ? (
+        <EmptyState
+          title="Create a collection first"
+          description="Policies belong to a collection and validate against its schema."
+          action={
+            <Button
+              onClick={() =>
+                navigate(`/projects/${projectId}/environments/${environmentId}/collections`)
+              }
+            >
+              Create collection
+            </Button>
+          }
+        />
+      ) : (
+        <Card>
+          <CardContent className="pt-1">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Collection</TableHead>
+                  <TableHead>Schema</TableHead>
+                  <TableHead>State</TableHead>
+                  <TableHead>Policy</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {collections.map((collection) => (
+                  <TableRow key={collection.id}>
+                    <TableCell className="font-mono">{collection.id}</TableCell>
+                    <TableCell>v{collection.schemaVersion}</TableCell>
+                    <TableCell>{collection.state}</TableCell>
+                    <TableCell>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          navigate(
+                            `/projects/${projectId}/environments/${environmentId}/collections/${collection.id}/policies`,
+                          )
+                        }
+                      >
+                        <ShieldCheck aria-hidden="true" />
+                        Manage policy
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
     </section>
   );
 }
+
 function DisabledWorkspaceFeature({ name }: { readonly name: string }) {
   return (
     <Card className="max-w-2xl">
@@ -1139,29 +1184,7 @@ function StatusBadge({ state }: { readonly state: string }) {
     </Badge>
   );
 }
-function SummaryPayload({ value }: { readonly value: unknown }) {
-  if (typeof value !== "object" || value === null || Array.isArray(value))
-    return (
-      <p className="m-0 text-sm">{value === undefined ? "No summary payload" : String(value)}</p>
-    );
-  return (
-    <dl className="m-0 grid text-sm">
-      {Object.entries(value)
-        .slice(0, 12)
-        .map(([key, item]) => (
-          <div
-            key={key}
-            className="flex items-baseline justify-between gap-3 border-b py-1.5 last:border-0"
-          >
-            <dt className="text-muted-foreground">{humanize(key)}</dt>
-            <dd className="m-0 text-right font-medium break-all">
-              {typeof item === "object" ? JSON.stringify(item) : String(item)}
-            </dd>
-          </div>
-        ))}
-    </dl>
-  );
-}
+
 function humanize(value: string): string {
   const spaced = value.replace(/([a-z])([A-Z])/gu, "$1 $2").replaceAll("_", " ");
   return `${spaced.charAt(0).toUpperCase()}${spaced.slice(1)}`;

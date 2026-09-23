@@ -1,32 +1,3 @@
-import {
-  Alert,
-  AlertDescription,
-  AlertTitle,
-  Badge,
-  Button,
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-  Checkbox,
-  Eyebrow,
-  Field,
-  Input,
-  Label,
-  NativeSelect,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-  Textarea,
-  cn,
-} from "@mako-cloud/ui";
-import { AlertTriangle, CheckCircle2, Info, RefreshCw, ShieldAlert } from "lucide-react";
-import { type FormEvent, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
-
 import type {
   ApplicationUserSummary,
   ArtifactGrant,
@@ -41,6 +12,46 @@ import type {
   ExplorerRevision,
   ExplorerSimulation,
 } from "@mako-cloud/management-sdk";
+import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  Checkbox,
+  cn,
+  Eyebrow,
+  Field,
+  Input,
+  Label,
+  NativeSelect,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  Tabs,
+  TabsContent,
+  TabsLine,
+  TabsTrigger,
+  Textarea,
+} from "@mako-cloud/ui";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Info,
+  RefreshCw,
+  Search,
+  ShieldAlert,
+  Table2,
+} from "lucide-react";
+import { type FormEvent, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 
 import { ApiFailureNotice, type ConsoleApiFailure, toConsoleApiFailure } from "./api-error.js";
 import { useDeveloperAuth } from "./auth.js";
@@ -90,6 +101,11 @@ export function DataExplorer({
   const client = useManagementClient();
   const [collections, setCollections] = useState<Collection[] | null>(null);
   const [users, setUsers] = useState<ApplicationUserSummary[]>([]);
+  const [tool, setTool] = useState("documents");
+  const [editing, setEditing] = useState(false);
+  const [collectionSearch, setCollectionSearch] = useState("");
+  const scopeVersion = useRef(0);
+  const [issuing, setIssuing] = useState(false);
   const [collectionId, setCollectionId] = useState("");
   const [grant, setGrant] = useState<ExplorerGrant | null>(null);
   const grantRef = useRef<ExplorerGrant | null>(null);
@@ -104,6 +120,8 @@ export function DataExplorer({
   const [auditReference, setAuditReference] = useState<string | null>(null);
 
   const clearExplorerState = useCallback(() => {
+    setTool("documents");
+    setEditing(false);
     setPage(null);
     setPageSource(null);
     setSelected(null);
@@ -116,6 +134,7 @@ export function DataExplorer({
   }, []);
 
   const revoke = useCallback(async () => {
+    scopeVersion.current += 1;
     const current = grantRef.current;
     grantRef.current = null;
     setGrant(null);
@@ -149,6 +168,7 @@ export function DataExplorer({
     );
     return () => {
       active = false;
+      scopeVersion.current += 1;
       const current = grantRef.current;
       grantRef.current = null;
       if (current !== null) {
@@ -168,6 +188,9 @@ export function DataExplorer({
     const form = event.currentTarget;
     const data = new FormData(form);
     const mode = requiredText(data, "mode");
+    if (issuing) return;
+    setIssuing(true);
+    let scope = scopeVersion.current;
     try {
       if (collectionId === "") throw new Error("Select a collection first.");
       if (mode === "administrative" && !adminEnabled) {
@@ -179,7 +202,9 @@ export function DataExplorer({
       ) {
         throw new Error("Confirm that administrative access bypasses document policies.");
       }
+      scope += 1;
       await revoke();
+      if (scope !== scopeVersion.current) return;
       const next = await client.issueExplorerGrant(projectId, environmentId, {
         tenant: { projectId, environmentId },
         collectionId,
@@ -190,26 +215,37 @@ export function DataExplorer({
         reason: mode === "administrative" ? requiredText(data, "reason") : null,
         durationSeconds: 300,
       });
+      if (scope !== scopeVersion.current) {
+        void client.revokeExplorerGrant(projectId, environmentId, next.grantId).catch(() => {});
+        return;
+      }
       grantRef.current = next;
       setGrant(next);
       setFailure(null);
       form.reset();
     } catch (error) {
-      setFailure(consoleFailure(error));
+      if (scope === scopeVersion.current) setFailure(consoleFailure(error));
+    } finally {
+      setIssuing(false);
     }
   };
 
   const requireCapability = () => {
     const current = grantRef.current;
     if (current === null || current.expiresAtUnixSeconds <= Math.floor(Date.now() / 1000)) {
+      scopeVersion.current += 1;
       grantRef.current = null;
       setGrant(null);
-      throw new Error("Explorer access expired. Create a new scoped grant.");
+      clearExplorerState();
+      const error = new Error("Explorer access expired. Create a new scoped grant.");
+      setFailure(consoleFailure(error));
+      throw error;
     }
     return current.capability;
   };
 
   const browse = async (cursor: string | null = null, includeRetainedTombstones = false) => {
+    const scope = scopeVersion.current;
     try {
       const result = await client.explorerBrowseDocuments(
         projectId,
@@ -218,16 +254,18 @@ export function DataExplorer({
         { limit: 25, cursor, includeRetainedTombstones },
         requireCapability(),
       );
+      if (scope !== scopeVersion.current) return;
       setPage(result);
       setPageSource({ kind: "browse", includeRetainedTombstones });
       setFailure(null);
     } catch (error) {
-      setFailure(consoleFailure(error));
+      if (scope === scopeVersion.current) setFailure(consoleFailure(error));
     }
   };
 
   const lookup = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    const scope = scopeVersion.current;
     try {
       const document = await client.explorerGetDocument(
         projectId,
@@ -236,15 +274,17 @@ export function DataExplorer({
         requiredText(new FormData(event.currentTarget), "documentId"),
         requireCapability(),
       );
+      if (scope !== scopeVersion.current) return;
       setSelected(document);
       setHistory(null);
       setFailure(null);
     } catch (error) {
-      setFailure(consoleFailure(error));
+      if (scope === scopeVersion.current) setFailure(consoleFailure(error));
     }
   };
 
   const executeQuery = async (form: HTMLFormElement, cursor: string | null = null) => {
+    const scope = scopeVersion.current;
     try {
       const request = queryFromForm(new FormData(form), cursor);
       const capability = requireCapability();
@@ -255,6 +295,7 @@ export function DataExplorer({
         request,
         capability,
       );
+      if (scope !== scopeVersion.current) return;
       setPlan(nextPlan);
       if (!nextPlan.supported) {
         setPage(null);
@@ -268,11 +309,12 @@ export function DataExplorer({
         request,
         capability,
       );
+      if (scope !== scopeVersion.current) return;
       setPage(result);
       setPageSource({ kind: "query", request: { ...request, cursor: null } });
       setFailure(null);
     } catch (error) {
-      setFailure(consoleFailure(error));
+      if (scope === scopeVersion.current) setFailure(consoleFailure(error));
     }
   };
 
@@ -282,6 +324,7 @@ export function DataExplorer({
       await browse(page.nextCursor, pageSource.includeRetainedTombstones);
       return;
     }
+    const scope = scopeVersion.current;
     try {
       const result = await client.explorerQueryDocuments(
         projectId,
@@ -290,33 +333,36 @@ export function DataExplorer({
         { ...pageSource.request, cursor: page.nextCursor },
         requireCapability(),
       );
+      if (scope !== scopeVersion.current) return;
       setPage(result);
       setFailure(null);
     } catch (error) {
-      setFailure(consoleFailure(error));
+      if (scope === scopeVersion.current) setFailure(consoleFailure(error));
     }
   };
 
   const loadHistory = async (document: ExplorerDocument) => {
+    const scope = scopeVersion.current;
     try {
-      setHistory(
-        await client.explorerDocumentHistory(
-          projectId,
-          environmentId,
-          collectionId,
-          document.documentId,
-          requireCapability(),
-        ),
+      const revisions = await client.explorerDocumentHistory(
+        projectId,
+        environmentId,
+        collectionId,
+        document.documentId,
+        requireCapability(),
       );
+      if (scope !== scopeVersion.current) return;
+      setHistory(revisions);
       setSelected(document);
       setFailure(null);
     } catch (error) {
-      setFailure(consoleFailure(error));
+      if (scope === scopeVersion.current) setFailure(consoleFailure(error));
     }
   };
 
   const mutate = async (event: FormEvent<HTMLFormElement>, simulateOnly: boolean) => {
     event.preventDefault();
+    const scope = scopeVersion.current;
     try {
       const data = new FormData(event.currentTarget);
       const kind = requiredText(data, "kind") as ExplorerMutationRequest["kind"];
@@ -329,15 +375,15 @@ export function DataExplorer({
         content: kind === "delete" ? null : parseJsonObject(requiredText(data, "content")),
       };
       if (simulateOnly) {
-        setSimulation(
-          await client.explorerSimulateMutation(
-            projectId,
-            environmentId,
-            collectionId,
-            proposed,
-            requireCapability(),
-          ),
+        const nextSimulation = await client.explorerSimulateMutation(
+          projectId,
+          environmentId,
+          collectionId,
+          proposed,
+          requireCapability(),
         );
+        if (scope !== scopeVersion.current) return;
+        setSimulation(nextSimulation);
         setConflict(null);
         return;
       }
@@ -351,6 +397,7 @@ export function DataExplorer({
         proposed,
         requireCapability(),
       );
+      if (scope !== scopeVersion.current) return;
       setAuditReference(result.auditReference);
       setSimulation(null);
       if (result.conflict !== null) {
@@ -361,78 +408,160 @@ export function DataExplorer({
       }
       setFailure(null);
     } catch (error) {
-      setFailure(consoleFailure(error));
+      if (scope === scopeVersion.current) setFailure(consoleFailure(error));
     }
   };
 
   const currentCollection = collections?.find((collection) => collection.id === collectionId);
   return (
-    <div className="grid gap-6">
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div className="grid gap-1">
-          <Eyebrow>Data explorer</Eyebrow>
-          <h2 className="m-0 text-2xl font-semibold tracking-tight">Documents</h2>
-          <p className="m-0 text-sm text-muted-foreground">
-            Browse through a short-lived, collection-scoped access grant.
-          </p>
+    <div className="grid min-w-0 items-start gap-5 xl:grid-cols-[12rem_minmax(0,1fr)]">
+      <aside
+        aria-label="Collections browser"
+        className="grid min-w-0 gap-3 rounded-lg border bg-card p-3 xl:sticky xl:top-4"
+      >
+        <div className="flex items-center gap-2 text-sm font-semibold">
+          <Table2 aria-hidden="true" className="size-4 text-primary" />
+          Collections
+          <Badge variant="secondary" className="ml-auto">
+            {collections?.length ?? "…"}
+          </Badge>
         </div>
-        <Field label="Collection" htmlFor="explorer-collection" className="min-w-48">
-          <NativeSelect
-            id="explorer-collection"
-            className="font-mono"
-            value={collectionId}
-            onChange={(event) => switchCollection(event.currentTarget.value)}
-          >
-            {collections?.map((collection) => (
-              <option key={collection.id} value={collection.id}>
-                {collection.id}
-              </option>
+        <div className="relative">
+          <Search
+            aria-hidden="true"
+            className="absolute top-2.5 left-2 size-3.5 text-muted-foreground"
+          />
+          <Input
+            aria-label="Search collections"
+            value={collectionSearch}
+            onChange={(event) => setCollectionSearch(event.currentTarget.value)}
+            placeholder="Find a collection…"
+            className="pl-7 text-xs"
+          />
+        </div>
+        <nav
+          aria-label="Browse collections"
+          className="flex gap-1 overflow-x-auto xl:grid xl:max-h-[60vh] xl:overflow-y-auto"
+        >
+          {(collections ?? [])
+            .filter((collection) =>
+              collection.id.toLowerCase().includes(collectionSearch.toLowerCase()),
+            )
+            .map((collection) => (
+              <Button
+                key={collection.id}
+                size="sm"
+                variant="ghost"
+                aria-current={collection.id === collectionId ? "true" : undefined}
+                onClick={() => switchCollection(collection.id)}
+                className={cn(
+                  "shrink-0 justify-start gap-2 font-mono text-xs",
+                  collection.id === collectionId && "bg-primary/10 text-primary",
+                )}
+              >
+                <Table2 aria-hidden="true" className="size-3.5" />
+                <span className="truncate">{collection.id}</span>
+              </Button>
             ))}
-          </NativeSelect>
-        </Field>
-      </header>
-      <ApiFailureNotice failure={failure} />
-      {collections === null ? (
-        <p className="m-0 text-sm text-muted-foreground">Loading collections…</p>
-      ) : collections.length === 0 ? (
-        <Alert>
-          <Info aria-hidden="true" />
-          <AlertDescription>
-            Create and activate a collection schema before opening the explorer.
-          </AlertDescription>
-        </Alert>
-      ) : null}
-      {grant === null && collectionId !== "" ? (
-        <GrantForm users={users} adminEnabled={adminEnabled} onSubmit={issueGrant} />
-      ) : grant !== null ? (
-        <GrantBanner grant={grant} users={users} onRevoke={() => void revoke()} />
-      ) : null}
-      {grant !== null ? (
-        <>
-          <div className="grid items-start gap-4 md:grid-cols-2">
-            <Card>
-              <CardHeader>
-                <CardTitle as="h3">Canonical browse</CardTitle>
-                <CardDescription>
-                  Snapshot-consistent primary-key order; hidden policy rows are not counted.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="flex flex-wrap items-center gap-2">
-                <Button onClick={() => void browse(null, false)}>Browse documents</Button>
+        </nav>
+        {collections !== null &&
+        collections.filter((collection) =>
+          collection.id.toLowerCase().includes(collectionSearch.toLowerCase()),
+        ).length === 0 ? (
+          <p className="m-0 text-xs text-muted-foreground">No collections found.</p>
+        ) : null}
+        {currentCollection ? (
+          <div className="hidden border-t pt-3 text-xs text-muted-foreground xl:grid xl:gap-1">
+            <span>Schema v{currentCollection.schemaVersion}</span>
+            <span>{currentCollection.state}</span>
+            <span>
+              {Object.keys(currentCollection.jsonSchema.properties ?? {}).length} schema fields
+            </span>
+          </div>
+        ) : null}
+      </aside>
+      <div className="grid min-w-0 gap-5">
+        <header className="flex flex-wrap items-end justify-between gap-4">
+          <div className="grid gap-1">
+            <Eyebrow>Data explorer</Eyebrow>
+            <h2 className="m-0 text-2xl font-semibold tracking-tight">Documents</h2>
+            <p className="m-0 text-sm text-muted-foreground">
+              Browse document fields, run indexed queries, and edit JSON.
+            </p>
+          </div>
+          <Field label="Collection" htmlFor="explorer-collection" className="min-w-48">
+            <NativeSelect
+              id="explorer-collection"
+              className="font-mono"
+              value={collectionId}
+              onChange={(event) => switchCollection(event.currentTarget.value)}
+            >
+              {collections?.map((collection) => (
+                <option key={collection.id} value={collection.id}>
+                  {collection.id}
+                </option>
+              ))}
+            </NativeSelect>
+          </Field>
+        </header>
+        <ApiFailureNotice failure={failure} />
+        {collections === null ? (
+          <p className="m-0 text-sm text-muted-foreground">Loading collections…</p>
+        ) : collections.length === 0 ? (
+          <Alert>
+            <Info aria-hidden="true" />
+            <AlertDescription>
+              Create and activate a collection schema before opening the explorer.
+            </AlertDescription>
+          </Alert>
+        ) : null}
+        {grant === null && collectionId !== "" ? (
+          <GrantForm
+            key={collectionId}
+            users={users}
+            adminEnabled={adminEnabled}
+            pending={issuing}
+            onSubmit={issueGrant}
+          />
+        ) : grant !== null ? (
+          <GrantBanner grant={grant} users={users} onRevoke={() => void revoke()} />
+        ) : null}
+        {grant !== null ? (
+          <Tabs value={tool} onValueChange={setTool} className="min-w-0 gap-5">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-1">
+              <TabsLine aria-label="Data tools" className="w-auto border-0">
+                <TabsTrigger value="documents">Documents</TabsTrigger>
+                <TabsTrigger value="query">Query editor</TabsTrigger>
+                {jobsEnabled ? <TabsTrigger value="jobs">Import / export</TabsTrigger> : null}
+              </TabsLine>
+              {tool !== "jobs" ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setSelected(null);
+                    setSimulation(null);
+                    setHistory(null);
+                    setEditing(true);
+                  }}
+                >
+                  New document
+                </Button>
+              ) : null}
+            </div>
+            <TabsContent value="documents" className="grid gap-4">
+              <div className="flex flex-wrap items-end gap-3 rounded-lg border bg-card p-3">
+                <Button onClick={() => void browse(null, false)}>
+                  <RefreshCw aria-hidden="true" />
+                  Browse documents
+                </Button>
                 {grant.mode === "administrative" ? (
                   <Button variant="outline" onClick={() => void browse(null, true)}>
                     Include retained tombstones
                   </Button>
                 ) : null}
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader>
-                <CardTitle as="h3">Exact primary key</CardTitle>
-              </CardHeader>
-              <CardContent>
                 <form
-                  className="flex flex-wrap items-end gap-2"
+                  className="ml-auto flex min-w-0 flex-wrap items-end gap-2"
                   onSubmit={(event) => void lookup(event)}
                 >
                   <Field
@@ -446,69 +575,94 @@ export function DataExplorer({
                       required
                       maxLength={512}
                       className="font-mono"
+                      placeholder="Find by primary key"
                     />
                   </Field>
-                  <Button type="submit">Get</Button>
+                  <Button variant="outline" type="submit">
+                    Get
+                  </Button>
                 </form>
-              </CardContent>
-            </Card>
-          </div>
-          <QueryBuilder
-            onSubmit={(form) => void executeQuery(form)}
-            plan={plan}
-            onCreateIndex={() =>
-              plan?.requiredIndex !== null &&
-              onCreateIndex(collectionId, JSON.stringify(plan?.requiredIndex ?? {}))
-            }
-          />
-          {page !== null ? (
-            <DocumentResults
-              page={page}
-              canViewHistory={grant.operations.includes("history")}
-              onSelect={setSelected}
-              onHistory={(document) => void loadHistory(document)}
-              onNext={() => void nextPage()}
-            />
-          ) : null}
-          {selected !== null ? <DocumentDetail document={selected} history={history} /> : null}
-          <MutationEditor
-            collection={currentCollection ?? null}
-            selected={selected}
-            simulation={simulation}
-            canCommit={grant.mode === "administrative"}
-            onSubmit={mutate}
-          />
-          {conflict !== null ? (
-            <ConflictComparison
-              conflict={conflict}
-              onReload={() => {
-                setSelected(conflict.current);
-                setConflict(null);
-              }}
-              onCancel={() => setConflict(null)}
-              onPrepare={() => {
-                setSelected(conflict.current);
-                setConflict(null);
-              }}
-            />
-          ) : null}
-          {auditReference !== null ? (
-            <Alert>
-              <Info aria-hidden="true" />
-              <AlertDescription className="block">
-                Audit reference <code className={CODE}>{auditReference}</code>
-              </AlertDescription>
-            </Alert>
-          ) : null}
-          {jobsEnabled ? (
-            <DataJobs
-              projectId={projectId}
-              environmentId={environmentId}
-              collectionId={collectionId}
-            />
-          ) : null}
-        </>
-      ) : null}
+              </div>
+            </TabsContent>
+            <TabsContent value="query">
+              <QueryBuilder
+                key={collectionId}
+                onSubmit={(form) => void executeQuery(form)}
+                plan={plan}
+                onCreateIndex={() =>
+                  plan?.requiredIndex !== null &&
+                  onCreateIndex(collectionId, JSON.stringify(plan?.requiredIndex ?? {}))
+                }
+              />
+            </TabsContent>
+            {tool !== "jobs" ? (
+              <div className="grid min-w-0 gap-5">
+                {page !== null ? (
+                  <DocumentResults
+                    page={page}
+                    collection={currentCollection ?? null}
+                    canViewHistory={grant.operations.includes("history")}
+                    onSelect={setSelected}
+                    onHistory={(document) => void loadHistory(document)}
+                    onNext={() => void nextPage()}
+                  />
+                ) : (
+                  <div className="grid min-h-48 place-items-center rounded-lg border border-dashed bg-card p-6 text-center text-sm text-muted-foreground">
+                    <div>
+                      <Table2 aria-hidden="true" className="mx-auto mb-3 size-7" />
+                      <p>Browse documents or run a query to load this collection.</p>
+                    </div>
+                  </div>
+                )}
+                {selected !== null ? (
+                  <DocumentDetail document={selected} history={history} />
+                ) : null}
+                {selected !== null || editing ? (
+                  <MutationEditor
+                    key={`${collectionId}:${selected?.documentId ?? "new"}:${selected?.revision ?? ""}`}
+                    collection={currentCollection ?? null}
+                    selected={selected}
+                    simulation={simulation}
+                    canCommit={grant.mode === "administrative"}
+                    onSubmit={mutate}
+                  />
+                ) : null}
+                {conflict !== null ? (
+                  <ConflictComparison
+                    conflict={conflict}
+                    onReload={() => {
+                      setSelected(conflict.current);
+                      setConflict(null);
+                    }}
+                    onCancel={() => setConflict(null)}
+                    onPrepare={() => {
+                      setSelected(conflict.current);
+                      setConflict(null);
+                    }}
+                  />
+                ) : null}
+                {auditReference !== null ? (
+                  <Alert>
+                    <Info aria-hidden="true" />
+                    <AlertDescription className="block">
+                      Audit reference <code className={CODE}>{auditReference}</code>
+                    </AlertDescription>
+                  </Alert>
+                ) : null}
+              </div>
+            ) : null}
+            {jobsEnabled ? (
+              <TabsContent value="jobs">
+                <DataJobs
+                  projectId={projectId}
+                  environmentId={environmentId}
+                  collectionId={collectionId}
+                />
+              </TabsContent>
+            ) : null}
+          </Tabs>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -517,7 +671,9 @@ function GrantForm({
   users,
   onSubmit,
   adminEnabled,
+  pending,
 }: {
+  readonly pending: boolean;
   readonly users: ApplicationUserSummary[];
   readonly onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   readonly adminEnabled: boolean;
@@ -586,7 +742,10 @@ function GrantForm({
             </>
           )}
           <div>
-            <Button type="submit" disabled={mode === "policy_preview" && users.length === 0}>
+            <Button
+              type="submit"
+              disabled={pending || (mode === "policy_preview" && users.length === 0)}
+            >
               Create access grant
             </Button>
           </div>
@@ -768,24 +927,42 @@ function QueryBuilder({
 
 function DocumentResults({
   page,
+  collection,
   canViewHistory,
   onSelect,
   onHistory,
   onNext,
 }: {
   readonly page: ExplorerDocumentPage;
+  readonly collection: Collection | null;
   readonly canViewHistory: boolean;
   readonly onSelect: (document: ExplorerDocument) => void;
   readonly onHistory: (document: ExplorerDocument) => void;
   readonly onNext: () => void;
 }) {
+  const schema = collection?.jsonSchema.properties;
+  const fields = [
+    ...new Set([
+      ...(typeof schema === "object" && schema !== null && !Array.isArray(schema)
+        ? Object.keys(schema)
+        : []),
+      ...page.items.flatMap((document) => Object.keys(document.content ?? {})),
+    ]),
+  ]
+    .filter(
+      (field) => collection?.primaryKey.kind !== "field" || field !== collection.primaryKey.field,
+    )
+    .slice(0, 6);
   return (
-    <Card>
+    <Card aria-label="Document results" className="min-w-0">
       <CardHeader>
-        <CardTitle as="h3">Results</CardTitle>
+        <CardTitle as="h3">
+          Results <Badge variant="secondary">{page.items.length} documents on this page</Badge>
+        </CardTitle>
         <CardDescription>
           <small className="text-xs">
-            Snapshot <span className="font-mono">{page.snapshot}</span>
+            Showing up to six fields. View JSON for the complete document. Snapshot{" "}
+            <span className="font-mono">{page.snapshot}</span>
           </small>
         </CardDescription>
       </CardHeader>
@@ -798,6 +975,11 @@ function DocumentResults({
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
                   <TableHead scope="col">Primary key</TableHead>
+                  {fields.map((field) => (
+                    <TableHead scope="col" key={field} className="font-mono text-xs">
+                      {field}
+                    </TableHead>
+                  ))}
                   <TableHead scope="col">Revision</TableHead>
                   <TableHead scope="col">State</TableHead>
                   <TableHead scope="col">Actions</TableHead>
@@ -809,6 +991,11 @@ function DocumentResults({
                     <TableCell>
                       <code className={CODE}>{document.documentId}</code>
                     </TableCell>
+                    {fields.map((field) => (
+                      <TableCell key={field} className="max-w-52 truncate font-mono text-xs">
+                        <DocumentField content={document.content} field={field} />
+                      </TableCell>
+                    ))}
                     <TableCell>
                       <code className={CODE}>{document.revision}</code>
                     </TableCell>
@@ -838,6 +1025,32 @@ function DocumentResults({
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+function DocumentField({
+  content,
+  field,
+}: {
+  readonly content: ExplorerDocument["content"];
+  readonly field: string;
+}) {
+  if (content === null || !Object.hasOwn(content, field))
+    return <span className="text-muted-foreground italic">missing</span>;
+  const value = content[field];
+  const rendered =
+    value === null
+      ? "null"
+      : typeof value === "string"
+        ? value === ""
+          ? '""'
+          : value
+        : JSON.stringify(value);
+  return (
+    <span className={value === null ? "text-muted-foreground italic" : undefined}>
+      {rendered?.slice(0, 160)}
+      {(rendered?.length ?? 0) > 160 ? "…" : ""}
+    </span>
   );
 }
 
@@ -914,7 +1127,9 @@ function MutationEditor({
   readonly onSubmit: (event: FormEvent<HTMLFormElement>, simulateOnly: boolean) => void;
 }) {
   const formRef = useRef<HTMLFormElement>(null);
-  const [kind, setKind] = useState<ExplorerMutationRequest["kind"]>("update");
+  const [kind, setKind] = useState<ExplorerMutationRequest["kind"]>(
+    selected === null ? "create" : "update",
+  );
   const accepted = simulation?.allowed === true && simulation.schemaValid;
   return (
     <Card>

@@ -5,6 +5,7 @@ import type {
 
 import type { CommandContext } from "../cli/context.js";
 import { usageError } from "../cli/errors.js";
+import { CLI_NAME } from "../cli/name.js";
 import type { TableColumn } from "../cli/output.js";
 import type { Command, CommandArgs, OptionSpec, PositionalSpec } from "../cli/registry.js";
 import { isJsonObject } from "./collections.js";
@@ -27,7 +28,7 @@ const USER_ID: PositionalSpec = {
 
 const SESSION_ID: PositionalSpec = {
   name: "session-id",
-  description: "Session id (see `mako users get`)",
+  description: `Session id (see \`${CLI_NAME} users get\`)`,
   required: true,
 };
 

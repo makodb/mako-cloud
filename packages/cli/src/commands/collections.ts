@@ -7,6 +7,7 @@ import type {
 
 import type { CommandContext } from "../cli/context.js";
 import { usageError } from "../cli/errors.js";
+import { CLI_NAME } from "../cli/name.js";
 import type { TableColumn } from "../cli/output.js";
 import type { Command, CommandArgs, OptionSpec, PositionalSpec } from "../cli/registry.js";
 import { TENANT_OPTIONS, tenantFrom } from "./shared.js";
@@ -178,7 +179,7 @@ async function publish(context: CommandContext, args: CommandArgs): Promise<void
   );
   if (result.status === "migration_required") {
     context.info(
-      `schema version ${schemaVersion} does not fit the existing documents; plan a migration with: mako collections migrations create ${collectionId} --input <@file|-|json>`,
+      `schema version ${schemaVersion} does not fit the existing documents; plan a migration with: ${CLI_NAME} collections migrations create ${collectionId} --input <@file|-|json>`,
     );
   }
   context.out(result);

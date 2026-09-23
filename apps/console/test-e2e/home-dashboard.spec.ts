@@ -1,4 +1,5 @@
-import { expect, test, type Page, type Route } from "@playwright/test";
+import { resolve } from "node:path";
+import { expect, type Page, type Route, test } from "@playwright/test";
 
 const NOW = "2026-08-06T12:00:00.000Z";
 const EARLIER = "2026-08-05T09:30:00.000Z";
@@ -107,6 +108,55 @@ test("projects across the personal space and a team appear as cards with recent 
   // Cards open the project.
   await page.getByRole("button", { name: "Open Side project" }).click();
   await expect(page).toHaveURL(/\/projects\/prj_persona1$/u);
+});
+
+test("an unavailable owner listing does not pretend the developer has no projects", async ({
+  page,
+}) => {
+  await page.route("**/v1/**", async (route) => {
+    await route.fulfill({
+      status: 503,
+      contentType: "application/json",
+      body: JSON.stringify({
+        apiVersion: "v1",
+        error: {
+          code: "service_unavailable",
+          message: "Project owners unavailable",
+          requestId: "req_test01",
+          retry: { kind: "never" },
+        },
+      }),
+    });
+  });
+  await page.goto("/");
+  await expect(page.getByRole("alert")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Create your first project" })).toHaveCount(0);
+  await expect(page.getByText("No individual projects yet.")).toHaveCount(0);
+  await expect(page.getByText("No projects match your search")).toHaveCount(0);
+});
+
+test("project search and direct database entry avoid intermediate landing pages", async ({
+  page,
+}) => {
+  const api = new HomeApiHarness();
+  api.withProjects();
+  await api.install(page);
+  await page.goto("/");
+  await expect(page.getByRole("complementary", { name: "Workspace navigation" })).toBeVisible();
+  await page.getByRole("textbox", { name: "Search projects" }).fill("eu-west");
+  const card = page.getByRole("article", { name: "Side project" });
+  await expect(card).toBeVisible();
+  await expect(page.getByRole("article", { name: "Mako Test Project" })).toHaveCount(0);
+  await page.getByRole("textbox", { name: "Search projects" }).fill("no-match");
+  await expect(page.getByText("No projects match your search")).toBeVisible();
+  await page.getByRole("button", { name: "Clear search" }).click();
+  await expect(page.getByRole("article", { name: "Mako Test Project" })).toBeVisible();
+  await page.screenshot({
+    path: resolve(import.meta.dirname, "../../../.local/console-redesign/home-desktop.png"),
+    fullPage: true,
+  });
+  await card.getByRole("button", { name: "Browse data" }).click();
+  await expect(page).toHaveURL(/\/projects\/prj_persona1\/environments\/env_[^/]+\/data$/u);
 });
 
 test("a usage source that fails marks only its own card", async ({ page }) => {

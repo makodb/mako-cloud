@@ -724,7 +724,7 @@ async fn deploy_function(deployment: FunctionDeployment<'_>) -> Result<(), Strin
     if !runtime.dependency_ready() {
         eprintln!(
             "no runtime supervisor at {supervisor}; skipping function deployment. See \
-             docs/user-book.md#running-a-hosted-function-locally for how to run one. `mako functions serve` is not \
+             docs/user-book.md#running-a-hosted-function-locally for how to run one. `mako-cloud functions serve` is not \
              suitable: it generates a random supervisor credential, so the control plane cannot \
              authenticate to it."
         );

@@ -18,7 +18,7 @@ export interface SignInProviderSetting {
 
 /**
  * Which sign-in methods this environment offers, as the bootstrap read them
- * from `mako auth-settings get`. A method the environment does not enable is
+ * from `mako-cloud auth-settings get`. A method the environment does not enable is
  * shown and refused here rather than failing on use.
  */
 export interface SignInSettings {

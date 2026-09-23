@@ -154,7 +154,7 @@ test("a person signs up, links a bank, and wakes to filed transactions", async (
   // --- The sync runs the way it always runs: on the schedule. ------------
   // Plaid's sandbox backfills history asynchronously, so the schedule may
   // need a few passes before the ride shares arrive.
-  const schedules = mako(["schedules", "list", "--function", "institution-sync"]) as {
+  const schedules = makoCloud(["schedules", "list", "--function", "institution-sync"]) as {
     id: string;
     name: string;
   }[];
@@ -163,7 +163,13 @@ test("a person signs up, links a bank, and wakes to filed transactions", async (
   await expect
     .poll(
       async () => {
-        mako(["schedules", "run-now", syncSchedule?.id ?? "", "--function", "institution-sync"]);
+        makoCloud([
+          "schedules",
+          "run-now",
+          syncSchedule?.id ?? "",
+          "--function",
+          "institution-sync",
+        ]);
         await new Promise((resolve) => setTimeout(resolve, 15_000));
         return await page.evaluate(async () => {
           const collection = window.rational.household?.session?.collections.transactions;
@@ -189,14 +195,20 @@ test("a person signs up, links a bank, and wakes to filed transactions", async (
 
   // --- The night runs, and the rule files the ride. ----------------------
   const nightly = (
-    mako(["schedules", "list", "--function", "nightly"]) as { id: string; name: string }[]
+    makoCloud(["schedules", "list", "--function", "nightly"]) as { id: string; name: string }[]
   ).find((entry) => entry.name === "nightly");
   expect(nightly, "the bootstrap created the nightly schedule").toBeDefined();
-  mako(["schedules", "run-now", nightly?.id ?? "", "--function", "nightly"]);
+  makoCloud(["schedules", "run-now", nightly?.id ?? "", "--function", "nightly"]);
   await expect
     .poll(
       () => {
-        const listed = mako(["schedules", "runs", nightly?.id ?? "", "--function", "nightly"]) as {
+        const listed = makoCloud([
+          "schedules",
+          "runs",
+          nightly?.id ?? "",
+          "--function",
+          "nightly",
+        ]) as {
           items?: { outcome: string | null }[];
         };
         return (listed.items ?? []).filter((run) => run.outcome !== null).length;
@@ -228,8 +240,8 @@ async function plaidSandbox(path: string, payload: Record<string, unknown>): Pro
 }
 
 /** The management API, driven as the developer's own tooling drives it. */
-function mako(args: readonly string[]): unknown {
-  const cli = join(process.cwd(), "..", "..", "node_modules", ".bin", "mako");
+function makoCloud(args: readonly string[]): unknown {
+  const cli = join(process.cwd(), "..", "..", "node_modules", ".bin", "mako-cloud");
   const run = spawnSync(cli, [...args, "--json"], {
     encoding: "utf8",
     env: {
@@ -243,7 +255,7 @@ function mako(args: readonly string[]): unknown {
     },
   });
   if (run.status !== 0) {
-    throw new Error(`mako ${args.join(" ")} failed (${run.status}): ${run.stderr}`);
+    throw new Error(`mako-cloud ${args.join(" ")} failed (${run.status}): ${run.stderr}`);
   }
   return JSON.parse(run.stdout) as unknown;
 }

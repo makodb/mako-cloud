@@ -259,17 +259,19 @@ Run `npm run validate:traceability` whenever a scenario or row changes. The vali
 
 | ID | Scenario | Primary automated evidence | Status |
 | --- | --- | --- | --- |
-| CL-01 | The API grows an operation the CLI does not expose | `packages/cli/test/parity.test.mjs` (loads the OpenAPI document; fails on any unmapped developer-facing operation) | Automated |
-| CL-02 | A developer completes a console workflow from the terminal | `crates/mako-smoke/tests/developer_cli.rs::a_developer_completes_a_console_workflow_from_the_terminal` (end-to-end) | Automated |
-| CL-03 | A developer signs in and the session is kept safely | `packages/cli/test/foundation.test.mjs` "login stores the session privately, later commands use it, logout revokes it" and "a credential store other users can read is refused" (mocked backend) | Automated |
-| CL-04 | CI runs with a token from the environment | `packages/cli/test/foundation.test.mjs` "MAKO_TOKEN authenticates without touching the store and names the missing permission" (mocked backend) and `crates/mako-smoke/tests/developer_cli.rs` (end-to-end, environment token) | Automated |
-| CL-05 | A step-up action without a terminal | `packages/cli/test/foundation.test.mjs` "a step-up action without a terminal fails closed" (mocked backend) | Automated |
-| CL-06 | A script reads a list | `packages/cli/test/foundation.test.mjs` "--all follows cursors into one document; without it one page and its cursor" (mocked backend) | Automated |
-| CL-07 | An API refusal reaches a script | `packages/cli/test/foundation.test.mjs` "errors map to exit codes and carry the API's retry advice" (mocked backend) | Automated |
-| CL-08 | A key is issued from the terminal | `packages/cli/test/users-keys.test.mjs` "public keys print their secret exactly once: block, JSON field, or 0600 file" (mocked backend) and `crates/mako-smoke/tests/developer_cli.rs` (end-to-end) | Automated |
-| CL-09 | Deletion without confirmation | `packages/cli/test/foundation.test.mjs` "destructive commands need --yes or the typed resource name" and `packages/cli/test/ownership.test.mjs` "teams delete needs confirmation and sends the confirmation header" (mocked backend) | Automated |
-| CL-10 | A function is deployed in one command | `packages/cli/test/functions.test.mjs` "functions deploy uploads, creates the version, checks health, and promotes in order" (mocked backend) | Automated |
-| CL-11 | A lifecycle wait times out | `packages/cli/test/ownership.test.mjs` "projects create sends an idempotency key, waits for provisioning, and exits 6 on the deadline" and `packages/cli/test/foundation.test.mjs` "--wait polls to a terminal state and exits 6 on the deadline" (mocked backend) | Automated |
+| CL-01 | The CLI package is installed | `packages/cli/test/cli-name.test.mjs` "the package installs only the mako-cloud executable" | Automated |
+| CL-02 | The CLI tells a developer how to continue | `packages/cli/test/foundation.test.mjs` "usage errors exit 2 and help prints for groups and commands" and `packages/cli/test/cli-name.test.mjs` "current sources and documentation do not use the old developer command" | Automated |
+| CL-03 | The API grows an operation the CLI does not expose | `packages/cli/test/parity.test.mjs` (loads the OpenAPI document; fails on any unmapped developer-facing operation) | Automated |
+| CL-04 | A developer completes a console workflow from the terminal | `crates/mako-smoke/tests/developer_cli.rs::a_developer_completes_a_console_workflow_from_the_terminal` (end-to-end) | Automated |
+| CL-05 | A developer signs in and the session is kept safely | `packages/cli/test/foundation.test.mjs` "login stores the session privately, later commands use it, logout revokes it" and "a credential store other users can read is refused" (mocked backend) | Automated |
+| CL-06 | CI runs with a token from the environment | `packages/cli/test/foundation.test.mjs` "MAKO_TOKEN authenticates without touching the store and names the missing permission" (mocked backend) and `crates/mako-smoke/tests/developer_cli.rs` (end-to-end, environment token) | Automated |
+| CL-07 | A step-up action without a terminal | `packages/cli/test/foundation.test.mjs` "a step-up action without a terminal fails closed" (mocked backend) | Automated |
+| CL-08 | A script reads a list | `packages/cli/test/foundation.test.mjs` "--all follows cursors into one document; without it one page and its cursor" (mocked backend) | Automated |
+| CL-09 | An API refusal reaches a script | `packages/cli/test/foundation.test.mjs` "errors map to exit codes and carry the API's retry advice" (mocked backend) | Automated |
+| CL-10 | A key is issued from the terminal | `packages/cli/test/users-keys.test.mjs` "public keys print their secret exactly once: block, JSON field, or 0600 file" (mocked backend) and `crates/mako-smoke/tests/developer_cli.rs` (end-to-end) | Automated |
+| CL-11 | Deletion without confirmation | `packages/cli/test/foundation.test.mjs` "destructive commands need --yes or the typed resource name" and `packages/cli/test/ownership.test.mjs` "teams delete needs confirmation and sends the confirmation header" (mocked backend) | Automated |
+| CL-12 | A function is deployed in one command | `packages/cli/test/functions.test.mjs` "functions deploy uploads, creates the version, checks health, and promotes in order" (mocked backend) | Automated |
+| CL-13 | A lifecycle wait times out | `packages/cli/test/ownership.test.mjs` "projects create sends an idempotency key, waits for provisioning, and exits 6 on the deadline" and `packages/cli/test/foundation.test.mjs` "--wait polls to a terminal state and exits 6 on the deadline" (mocked backend) | Automated |
 
 ## Storage / application file storage
 
@@ -407,4 +409,3 @@ Run `npm run validate:traceability` whenever a scenario or row changes. The vali
 | DS-05 | A series is shown | `examples/rational/test/design-system.spec.ts::a chart names what it shows and explains the point under the pointer` (mocked backend) | Automated |
 | DS-06 | A chart comes to rest | `examples/rational/test/design-system.spec.ts::a chart settles instead of redrawing itself forever` (mocked backend) | Automated |
 | DS-07 | The exported application builds alone | `scripts/test/export-rational-app.test.js::the export vendors the kit and resolves its package name to the vendored copy` | Automated |
-

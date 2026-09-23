@@ -552,7 +552,7 @@ pub(crate) async fn administer(
 /// it lists -- and they all carried the same key, so the second command looked
 /// like the first one being replayed with a different body. The journal
 /// refused it, correctly, and listing indexes failed with a conflict for any
-/// collection holding more than one: the console's index view, `mako indexes
+/// collection holding more than one: the console's index view, `mako-cloud indexes
 /// list`, and every setup script. Deriving the key from the caller's key *and
 /// the command* keeps both properties -- distinct commands are distinct
 /// requests, and a retry of the same command under the same caller key is

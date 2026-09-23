@@ -4,6 +4,17 @@
 // workspace summary, connect metadata, usage, health, and audit events. Every
 // summary loads on its own and states when it was observed, so one failing
 // source marks only its own panel.
+
+import type {
+  ConnectMetadata,
+  Environment,
+  MakoManagementClient,
+  ObservabilityPage,
+  Project,
+  Team,
+  WorkspaceSummary,
+} from "@mako-cloud/management-sdk";
+import { createMakoRxdbConnectTemplateV1 } from "@mako-cloud/rxdb";
 import {
   Alert,
   AlertDescription,
@@ -16,6 +27,7 @@ import {
   CardFooter,
   CardHeader,
   CardTitle,
+  cn,
   EmptyState,
   Eyebrow,
   Field,
@@ -27,11 +39,11 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-  cn,
 } from "@mako-cloud/ui";
 import {
   Activity,
   Copy,
+  Database,
   Gauge,
   Globe,
   Layers,
@@ -50,17 +62,6 @@ import {
   useMemo,
   useState,
 } from "react";
-
-import type {
-  ConnectMetadata,
-  Environment,
-  MakoManagementClient,
-  ObservabilityPage,
-  Project,
-  Team,
-  WorkspaceSummary,
-} from "@mako-cloud/management-sdk";
-import { createMakoRxdbConnectTemplateV1 } from "@mako-cloud/rxdb";
 
 import { ActivityScreen } from "./activity.js";
 import { ApiFailureNotice, type ConsoleApiFailure, toConsoleApiFailure } from "./api-error.js";
@@ -286,6 +287,27 @@ export function ProjectHome({
             </ul>
           )}
         </div>
+        {selectedEnvironment === null ? null : (
+          <nav aria-label="Database tools" className="grid gap-1">
+            <Eyebrow className="mb-1 px-3">Database · {selectedEnvironment.name}</Eyebrow>
+            {[
+              ["data", "Browse data"],
+              ["collections", "Collections & schema"],
+              ["connect", "Connect application"],
+              ["backups", "Backups"],
+            ].map(([destination, label]) => (
+              <ConsoleLink
+                key={destination}
+                className="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-foreground no-underline hover:bg-sidebar-accent"
+                path={`/projects/${projectId}/environments/${selectedEnvironment.id}/${destination}`}
+                navigate={navigate}
+              >
+                <Database className="size-4 text-muted-foreground" aria-hidden="true" />
+                {label}
+              </ConsoleLink>
+            ))}
+          </nav>
+        )}
         <nav aria-label="Project destinations">
           <ul className="m-0 grid list-none gap-0.5 p-0">
             {PROJECT_DESTINATIONS.map((destination) => {

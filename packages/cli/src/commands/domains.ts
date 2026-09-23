@@ -2,6 +2,7 @@ import type { CustomDomain, CustomDomainCreate } from "@mako-cloud/management-sd
 
 import type { CommandContext } from "../cli/context.js";
 import { usageError } from "../cli/errors.js";
+import { CLI_NAME } from "../cli/name.js";
 import type { TableColumn } from "../cli/output.js";
 import type { Command, CommandArgs, OptionSpec, PositionalSpec } from "../cli/registry.js";
 import { PROJECT_OPTION, TENANT_OPTIONS, projectFrom, tenantFrom } from "./shared.js";
@@ -121,7 +122,7 @@ async function addDomain(context: CommandContext, args: CommandArgs): Promise<vo
   if (!context.json) {
     context.info(
       `domain ${domain.id} is ${domain.state}; publish the DNS record below, then run: ` +
-        `mako domains verify ${domain.id} --project ${projectId}`,
+        `${CLI_NAME} domains verify ${domain.id} --project ${projectId}`,
     );
   }
   printWithRecord(context, domain);

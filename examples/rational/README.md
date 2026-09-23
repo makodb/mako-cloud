@@ -44,13 +44,13 @@ CORS headers, and a deployment fronts both behind one reverse proxy anyway):
 ```sh
 # a local stack: see docs/dev-book.md#local-development, then
 cargo run --bin mako-local-bootstrap            # once, with the services stopped
-# in examples/rational, signed in with `mako auth login` or with MAKO_TOKEN set:
+# in examples/rational, signed in with `mako-cloud auth login` or with MAKO_TOKEN set:
 node scripts/bootstrap.mjs --endpoint http://127.0.0.1:8081 --data-endpoint http://127.0.0.1:8080
 node scripts/seed.mjs                            # the demo household as owner@rational.test
 npm run dev
 ```
 
-`scripts/bootstrap.mjs` drives the `mako` CLI and is idempotent — rerunning reuses what it
+`scripts/bootstrap.mjs` drives the `mako-cloud` CLI and is idempotent — rerunning reuses what it
 finds, and publishes a higher schema version of a collection when the model moved. Its flags:
 
 | flag | default | does |
@@ -66,7 +66,7 @@ finds, and publishes a higher schema version of a collection when the model move
 | `--functions` | off | deploy the three functions with their own service credentials and secrets |
 | `--functions-endpoint` | `http://127.0.0.1:8082` | the edge gateway the app calls functions through; written to `mako.env.json` |
 | `--function-name` | `households` | the function name to deploy to |
-| `--cli` | `node_modules/.bin/mako` | the CLI to run |
+| `--cli` | `node_modules/.bin/mako-cloud` | the CLI to run |
 
 It publishes every collection of `mako/collections.json` with its indexes, activates the
 policies in `mako/policies/`, creates the `receipts` bucket from `mako/buckets/receipts.json`,
@@ -89,7 +89,7 @@ so an environment without a function runtime still has a working demo household.
 }
 ```
 
-`signIn` comes from `mako auth-settings get`: every provider the environment knows, with
+`signIn` comes from `mako-cloud auth-settings get`: every provider the environment knows, with
 whether it is enabled, and whether magic links are on. The sign-in screen renders a button per
 provider and shows a provider that is switched off as "not enabled for this environment"
 rather than failing when it is pressed; without the file (or against an environment that
@@ -290,7 +290,7 @@ it with the default groups and categories once.
 ## The scheduled functions
 
 Two functions run on their own, under their own service credentials, on schedules the
-bootstrap creates with `mako schedules`:
+bootstrap creates with `mako-cloud schedules`:
 
 | function | schedule | what it does |
 | -------- | -------- | ------------ |
@@ -386,7 +386,7 @@ application where the edge SDK the function itself imports does not exist.
 | ---------------- | ------------------- |
 | sign up, sign in, session across reloads | project auth password sign-up/sign-in, refresh, `MakoAuthClient` behind `src/auth.ts`, session kept by `BrowserAuthSessionPersistence` |
 | provider sign-in, magic links | `startProviderSignIn` / `completeProviderSignIn` and `requestMagicLink` / `redeemMagicLink`, with `MakoAuthClient.signInFragment` classifying the fragment the browser lands with |
-| which methods to offer | `mako auth-settings get` at bootstrap time, written into `mako.env.json` |
+| which methods to offer | `mako-cloud auth-settings get` at bootstrap time, written into `mako.env.json` |
 | households and roles | trusted app metadata `households: {<id>: role}` surfaced as token claims; document policies with `claims.households[…]`; the `households` edge function writing them through the service app-metadata route |
 | membership changes taking effect | the authorization epoch the write advances, a session refresh, and `MakoAuthorizationEpochCoordinator` per scope |
 | household switcher, household settings | `memberships` and `households` replicated into a per-user directory database; the owner-only update rule on `households` |

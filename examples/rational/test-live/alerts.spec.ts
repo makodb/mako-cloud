@@ -147,13 +147,13 @@ test("an alert the nightly job decided reaches the app and the household's endpo
 
   // `schedules list --json` prints the schedules themselves; `schedules runs`
   // prints a page. Both shapes are the CLI's, and both are read as they are.
-  const schedules = mako(["schedules", "list", "--function", "nightly"]) as {
+  const schedules = makoCloud(["schedules", "list", "--function", "nightly"]) as {
     id: string;
     name: string;
   }[];
   const nightly = schedules.find((entry) => entry.name === "nightly");
   expect(nightly, "the bootstrap did not create the nightly schedule").toBeDefined();
-  mako(["schedules", "run-now", nightly?.id ?? "", "--function", "nightly"]);
+  makoCloud(["schedules", "run-now", nightly?.id ?? "", "--function", "nightly"]);
   // The run's own record says what happened; without checking it, a function
   // that refused or crashed looks exactly like one that found nothing to do.
   await expect
@@ -216,14 +216,14 @@ test("an alert the nightly job decided reaches the app and the household's endpo
   expect(payload).not.toContain("Everyday");
 
   // Running the night again does not fire, or deliver, the same alert twice.
-  mako(["schedules", "run-now", nightly?.id ?? "", "--function", "nightly"]);
+  makoCloud(["schedules", "run-now", nightly?.id ?? "", "--function", "nightly"]);
   await expect.poll(() => finished(nightly?.id ?? "").length, { timeout: 90_000 }).toBe(2);
   expect(deliveries().filter((entry) => entry.body?.documentId === alertId)).toHaveLength(1);
 });
 
 /** The management API, driven as the developer's own tooling drives it. */
-function mako(args: readonly string[]): unknown {
-  const cli = join(process.cwd(), "..", "..", "node_modules", ".bin", "mako");
+function makoCloud(args: readonly string[]): unknown {
+  const cli = join(process.cwd(), "..", "..", "node_modules", ".bin", "mako-cloud");
   const run = spawnSync(cli, [...args, "--json"], {
     encoding: "utf8",
     env: {
@@ -237,7 +237,7 @@ function mako(args: readonly string[]): unknown {
     },
   });
   if (run.status !== 0) {
-    throw new Error(`mako ${args.join(" ")} failed (${run.status}): ${run.stderr}`);
+    throw new Error(`mako-cloud ${args.join(" ")} failed (${run.status}): ${run.stderr}`);
   }
   return JSON.parse(run.stdout) as unknown;
 }
@@ -251,7 +251,7 @@ interface ScheduleRun {
 /** Runs that are over, whatever they concluded. */
 function finished(scheduleId: string): readonly ScheduleRun[] {
   if (scheduleId === "") return [];
-  const listed = mako(["schedules", "runs", scheduleId, "--function", "nightly"]) as {
+  const listed = makoCloud(["schedules", "runs", scheduleId, "--function", "nightly"]) as {
     items?: ScheduleRun[];
   };
   return (listed.items ?? []).filter((run) => run.outcome !== null);

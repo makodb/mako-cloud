@@ -2,6 +2,7 @@ import { parseArgs } from "node:util";
 
 import { usageError } from "./errors.js";
 import type { CommandContext } from "./context.js";
+import { CLI_NAME } from "./name.js";
 
 export type OptionType = "string" | "boolean";
 
@@ -169,10 +170,10 @@ export class CommandRegistry {
     const wantsHelp = argv.includes("--help") || argv.includes("-h");
     const unknown = argv.find((token) => !token.startsWith("-") && !words.includes(token));
     if (!wantsHelp && unknown !== undefined && words.length > 0) {
-      throw usageError(`unknown command: mako ${[...words, unknown].join(" ")}`);
+      throw usageError(`unknown command: ${CLI_NAME} ${[...words, unknown].join(" ")}`);
     }
     if (!wantsHelp && unknown !== undefined) {
-      throw usageError(`unknown command: mako ${unknown}`);
+      throw usageError(`unknown command: ${CLI_NAME} ${unknown}`);
     }
     return { kind: "help", text: this.help(words) };
   }
@@ -196,7 +197,7 @@ export class CommandRegistry {
       });
     } catch (error) {
       throw usageError(
-        `${error instanceof Error ? error.message : String(error)} (see: mako ${command.path.join(" ")} --help)`,
+        `${error instanceof Error ? error.message : String(error)} (see: ${CLI_NAME} ${command.path.join(" ")} --help)`,
       );
     }
     const values = parsed.values as Record<string, OptionValue>;
@@ -207,13 +208,13 @@ export class CommandRegistry {
       if (parsed.positionals.length < required) {
         const missing = specs[parsed.positionals.length];
         throw usageError(
-          `<${missing?.name ?? "argument"}> is required (see: mako ${command.path.join(" ")} --help)`,
+          `<${missing?.name ?? "argument"}> is required (see: ${CLI_NAME} ${command.path.join(" ")} --help)`,
         );
       }
       const variadic = specs.some((spec) => spec.variadic);
       if (!variadic && parsed.positionals.length > specs.length) {
         throw usageError(
-          `unexpected argument: ${parsed.positionals[specs.length]} (see: mako ${command.path.join(" ")} --help)`,
+          `unexpected argument: ${parsed.positionals[specs.length]} (see: ${CLI_NAME} ${command.path.join(" ")} --help)`,
         );
       }
       for (const [name, spec] of Object.entries(command.options ?? {})) {
@@ -243,7 +244,7 @@ export class CommandRegistry {
       );
       groups.set(head, list);
     }
-    const lines = [`usage: mako ${prefix}<command> [options]`, ""];
+    const lines = [`usage: ${CLI_NAME} ${prefix}<command> [options]`, ""];
     const width = Math.max(...[...groups.keys()].map((key) => key.length), 4);
     for (const [head, entries] of groups) {
       if (entries.length === 1 && !entries[0]?.includes(": ")) {
@@ -252,7 +253,7 @@ export class CommandRegistry {
         lines.push(`  ${head.padEnd(width)}  ${entries.length} commands`);
       }
     }
-    lines.push("", `Run "mako ${prefix}<command> --help" for details.`);
+    lines.push("", `Run "${CLI_NAME} ${prefix}<command> --help" for details.`);
     return `${lines.join("\n")}\n`;
   }
 }
@@ -280,7 +281,7 @@ export function renderCommandHelp(command: Command): string {
     )
     .join(" ");
   const lines = [
-    `usage: mako ${command.path.join(" ")}${positionals ? ` ${positionals}` : ""} [options]`,
+    `usage: ${CLI_NAME} ${command.path.join(" ")}${positionals ? ` ${positionals}` : ""} [options]`,
     "",
     command.summary,
   ];

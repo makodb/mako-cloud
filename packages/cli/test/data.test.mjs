@@ -425,7 +425,7 @@ test("data export creates the job, waits, downloads the artifact to a file, and 
   assert.equal(parsed.bytes, Buffer.byteLength(EXPORT_LINES));
   assert.equal(parsed.digest, `sha256:${sha256(EXPORT_LINES)}`);
   assert.match(result.stderr, /^job job_abcdefgh\n/u);
-  assert.match(result.stderr, /resume with: mako data export --job job_abcdefgh/u);
+  assert.match(result.stderr, /resume with: mako-cloud data export --job job_abcdefgh/u);
   assert.match(result.stderr, /job job_abcdefgh: running/u);
   assert.match(result.stderr, /job job_abcdefgh: succeeded/u);
   assert.equal(result.stderr.includes(ARTIFACT_GRANT), false, "the grant URL is never printed");
@@ -533,7 +533,7 @@ test("data import uploads with the digest, shows the dry run, and confirms only 
   assert.equal(refused.code, 2, refused.stderr);
   assert.equal(refused.stdout, "");
   assert.match(refused.stderr, /^job job_abcdefgh\n/u);
-  assert.match(refused.stderr, /resume with: mako data import --job job_abcdefgh/u);
+  assert.match(refused.stderr, /resume with: mako-cloud data import --job job_abcdefgh/u);
   assert.match(refused.stderr, new RegExp(`uploaded ${Buffer.byteLength(IMPORT_LINES)} bytes`, "u"));
   assert.match(refused.stderr, /dry run for import job job_abcdefgh/u);
   assert.match(refused.stderr, /2 rows/u);
@@ -564,7 +564,7 @@ test("data import uploads with the digest, shows the dry run, and confirms only 
   const dryRunOnly = await runCli([...common, "--dry-run-only", "--json"], { configDir: directory, env: WAIT_FAST });
   assert.equal(dryRunOnly.code, 0, dryRunOnly.stderr);
   assert.equal(JSON.parse(dryRunOnly.stdout).state, "awaiting_confirmation");
-  assert.match(dryRunOnly.stderr, /confirm later with: mako data import --job job_abcdefgh --yes/u);
+  assert.match(dryRunOnly.stderr, /confirm later with: mako-cloud data import --job job_abcdefgh --yes/u);
   assert.equal(confirms(), 1, "--dry-run-only never confirms");
 
   const typed = await runCli(common, { configDir: directory, env: WAIT_FAST, isTTY: true, stdin: `${JOB_ID}\n` });

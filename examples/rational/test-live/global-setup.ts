@@ -160,7 +160,7 @@ async function startRuntimeContainer(state: string, canary: string): Promise<boo
   const engine = containerEngine();
   const network = runtimeNetwork(engine);
   mkdirSync(state, { recursive: true });
-  // The main worker serves both the supervisor and `mako functions serve`, so
+  // The main worker serves both the supervisor and `mako-cloud functions serve`, so
   // it insists on a function to serve even when only the supervisor is used.
   mkdirSync(canary, { recursive: true });
   writeFileSync(

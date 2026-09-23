@@ -8,7 +8,7 @@
     "runtime"
   ],
   "bin": {
-    "mako": "dist/main.js"
+    "mako-cloud": "dist/main.js"
   },
   "scripts": {
     "build": "tsc -b && tsc -p runtime/tsconfig.json --pretty false",

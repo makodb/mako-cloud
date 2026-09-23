@@ -12,7 +12,7 @@
 - [x] 2.1 `FunctionConfiguration` gains `allowedHosts` with `#[serde(default)]` (stored records are `deny_unknown_fields` blobs — old rows must keep deserializing, with a test loading a pre-change record); `validate` refuses IP literals, non-443 ports, wildcards, platform origins and internal names, duplicates, >8 hosts, and malformed names with addressed configuration errors — unit tests for every refusal
 - [x] 2.2 Add optional `allowedHosts` to `FunctionConfiguration` in `api/openapi/mako-cloud-v1.yaml`; `npm run generate:api` and check
 - [x] 2.3 `runtime_backend.rs` manifest builder maps a non-empty stored list onto the protocol variant (today's single `DenyAll` hardcode), with a test that a deployed declaration reaches the worker manifest verbatim and an empty one stays `DenyAll`
-- [x] 2.4 CLI: repeatable `--allow-host <name>` on `mako functions deploy` via `configurationFromArgs`, declaration shown by `functions list`/`show` — unit tests for parse and display
+- [x] 2.4 CLI: repeatable `--allow-host <name>` on `mako-cloud functions deploy` via `configurationFromArgs`, declaration shown by `functions list`/`show` — unit tests for parse and display
 
 ## 3. Platform docs and qualification
 

@@ -8,6 +8,17 @@
 // environment "Connect" screen already does (create → wait for active → keys →
 // connection check) and keeps its progress in browser storage keyed by the
 // developer, never storing a credential value.
+
+import type {
+  ConnectionCheck,
+  ConnectMetadata,
+  Environment,
+  MakoManagementClient,
+  ObservabilityRecord,
+  Project,
+  Team,
+} from "@mako-cloud/management-sdk";
+import { createMakoRxdbConnectTemplateV1 } from "@mako-cloud/rxdb";
 import {
   Alert,
   AlertDescription,
@@ -20,13 +31,23 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
+  cn,
   Eyebrow,
   Field,
   Input,
   NativeSelect,
-  cn,
 } from "@mako-cloud/ui";
-import { CheckCircle2, ChevronRight, Copy } from "lucide-react";
+import {
+  BookOpen,
+  CheckCircle2,
+  ChevronRight,
+  Copy,
+  Database,
+  FolderOpen,
+  Plus,
+  Search,
+  Users,
+} from "lucide-react";
 import {
   type FormEvent,
   type ReactNode,
@@ -37,17 +58,6 @@ import {
   useRef,
   useState,
 } from "react";
-
-import type {
-  ConnectionCheck,
-  ConnectMetadata,
-  Environment,
-  MakoManagementClient,
-  ObservabilityRecord,
-  Project,
-  Team,
-} from "@mako-cloud/management-sdk";
-import { createMakoRxdbConnectTemplateV1 } from "@mako-cloud/rxdb";
 
 import { ApiFailureNotice, type ConsoleApiFailure, toConsoleApiFailure } from "./api-error.js";
 import { useDeveloperAuth } from "./auth.js";
@@ -82,13 +92,17 @@ const MUTED = "m-0 text-sm text-muted-foreground";
 export function HomeDashboard({
   onOpenTeam,
   onOpenProject,
+  navigate,
 }: {
+  readonly navigate: (path: string) => void;
   readonly onOpenTeam: (teamId: string) => void;
   readonly onOpenProject: (projectId: string) => void;
 }) {
   const client = useManagementClient();
   const { state } = useDeveloperAuth();
   const developerId = state.status === "authenticated" ? state.session.profile.id : "";
+  const [search, setSearch] = useState("");
+  const [creating, setCreating] = useState(false);
   const [teams, setTeams] = useState<Team[] | null>(null);
   const [groups, setGroups] = useState<Record<string, ProjectsLoad>>({});
   const [failure, setFailure] = useState<ConsoleApiFailure | null>(null);
@@ -135,6 +149,7 @@ export function HomeDashboard({
   // "No reachable projects" is only known once every owner answered; a failed
   // listing is reported in place rather than mistaken for an empty account.
   const noProjects =
+    failure === null &&
     (teams?.every((team) => groups[team.id]?.status === "ready") ?? false) &&
     readyProjects.length === 0;
   const guideInFlight = progress.step !== "done" && progress.projectId !== undefined;
@@ -146,120 +161,259 @@ export function HomeDashboard({
       ? "Personal space"
       : (teams?.find((team) => team.id === project.teamId)?.name ?? project.teamId);
 
+  const matches = (project: Project) =>
+    `${project.name} ${project.id} ${project.region} ${ownerName(project)}`
+      .toLowerCase()
+      .includes(search.trim().toLowerCase());
+  const visibleGroups = Object.fromEntries(
+    Object.entries(groups).map(([id, group]) => [
+      id,
+      group.status === "ready" ? { ...group, projects: group.projects.filter(matches) } : group,
+    ]),
+  );
   const completeGuide = () => {
     setProgress({ ...progress, step: "done", dismissed: false });
     void reload();
   };
 
   return (
-    <section className="grid gap-6" aria-labelledby="home-title" aria-busy={loading}>
-      <div className="grid gap-1">
-        <Eyebrow>Dashboard</Eyebrow>
-        <h1 id="home-title" className="text-2xl">
-          Home
-        </h1>
-      </div>
-      <ApiFailureNotice failure={failure} />
-      {teams === null ? (
-        <p className={MUTED} aria-live="polite">
-          Loading your projects…
-        </p>
-      ) : null}
-      {guideActive ? (
-        <FirstRunGuide
-          teams={joinedTeams}
-          progress={progress}
-          onProgress={setProgress}
-          onOpenProject={onOpenProject}
-          onCompleted={completeGuide}
-        />
-      ) : null}
-      {noProjects && !guideActive ? (
-        <NoProjectsPanel
-          teams={joinedTeams}
-          onOpenProject={onOpenProject}
-          onShowGuide={() => setProgress({ ...progress, dismissed: false })}
-        />
-      ) : null}
-      {teams !== null && !noProjects ? (
-        <>
-          <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]">
-            <div className="grid min-w-0 gap-8">
-              {personalSpace === undefined ? (
-                <section className="grid gap-4" aria-labelledby="owner-personal-title">
-                  <div className="grid gap-1">
-                    <Eyebrow>Personal space</Eyebrow>
-                    <h2 id="owner-personal-title" className="text-lg">
-                      Your projects
-                    </h2>
-                  </div>
-                  <FirstProjectPanel onCreated={reload} />
-                </section>
-              ) : (
-                <OwnerGroup
-                  team={personalSpace}
-                  load={groups[personalSpace.id] ?? { status: "loading" }}
-                  loader={loader}
-                  ownerName={ownerName}
-                  onOpenProject={onOpenProject}
-                  onOpenTeam={onOpenTeam}
-                />
-              )}
-              {joinedTeams.map((team) => (
-                <OwnerGroup
-                  key={team.id}
-                  team={team}
-                  load={groups[team.id] ?? { status: "loading" }}
-                  loader={loader}
-                  ownerName={ownerName}
-                  onOpenProject={onOpenProject}
-                  onOpenTeam={onOpenTeam}
-                />
-              ))}
-            </div>
-            <RecentActivity projects={activityProjects} loader={loader} />
+    <div className="grid min-h-[calc(100vh-3.5rem)] md:grid-cols-[15rem_minmax(0,1fr)]">
+      <aside
+        aria-label="Workspace navigation"
+        className="flex flex-col gap-6 border-b bg-sidebar p-4 md:border-r md:border-b-0"
+      >
+        <div className="flex items-center gap-3 px-2 py-2">
+          <div className="grid size-9 place-items-center rounded-lg bg-primary/10 text-primary">
+            <Database className="size-5" aria-hidden="true" />
           </div>
-          <section className="grid gap-4" aria-labelledby="teams-title">
-            <div className="grid gap-1">
-              <Eyebrow>Workspace</Eyebrow>
-              <h2 id="teams-title" className="text-lg">
-                Teams
-              </h2>
+          <div>
+            <strong className="text-sm">Your workspace</strong>
+            <p className="m-0 text-xs text-muted-foreground">Mako Cloud</p>
+          </div>
+        </div>
+        <nav aria-label="Workspace destinations" className="grid gap-1">
+          <a
+            href="/"
+            aria-current="page"
+            className="flex items-center gap-3 rounded-md bg-sidebar-accent px-3 py-2 text-sm font-medium text-foreground no-underline"
+          >
+            <FolderOpen className="size-4" aria-hidden="true" />
+            Projects
+          </a>
+          <a
+            href="/docs/user-book"
+            className="flex items-center gap-3 rounded-md px-3 py-2 text-sm text-muted-foreground no-underline hover:bg-sidebar-accent"
+          >
+            <BookOpen className="size-4" aria-hidden="true" />
+            Documentation
+          </a>
+        </nav>
+        <div className="grid gap-2">
+          <Eyebrow className="px-3">Teams & billing</Eyebrow>
+          {(teams ?? []).map((team) => (
+            <a
+              key={team.id}
+              href={`/teams/${team.id}`}
+              className="flex items-center gap-2 rounded-md px-3 py-2 text-sm text-foreground no-underline hover:bg-sidebar-accent"
+              onClick={(event) => {
+                if (
+                  event.button !== 0 ||
+                  event.metaKey ||
+                  event.ctrlKey ||
+                  event.shiftKey ||
+                  event.altKey
+                )
+                  return;
+                event.preventDefault();
+                onOpenTeam(team.id);
+              }}
+            >
+              <Users className="size-4 shrink-0" aria-hidden="true" />
+              {team.kind === "personal" ? "Personal space" : team.name}
+            </a>
+          ))}
+        </div>
+        <p className="mt-auto hidden border-t px-3 pt-4 text-xs leading-5 text-muted-foreground md:block">
+          Each project has isolated environments, collections, and application credentials.
+        </p>
+      </aside>
+      <section
+        className="grid min-w-0 content-start gap-6 p-5 lg:p-8"
+        aria-labelledby="home-title"
+        aria-busy={loading}
+      >
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="grid gap-1">
+            <Eyebrow>Cloud databases</Eyebrow>
+            <h1 id="home-title" className="text-2xl">
+              Home
+            </h1>
+            <p className="m-0 text-sm text-muted-foreground">
+              Manage your databases, connect applications, and inspect your data.
+            </p>
+          </div>
+          <Button onClick={() => setCreating((value) => !value)} aria-expanded={creating}>
+            <Plus aria-hidden="true" />
+            New project
+          </Button>
+        </div>
+        {creating ? (
+          <Card aria-label="New project">
+            <CardHeader>
+              <CardTitle>Create a database project</CardTitle>
+              <CardDescription>
+                Choose an owner and region. Your first environment is provisioned with the project.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ProjectCreateForm
+                teams={joinedTeams}
+                submitLabel="Create and provision"
+                onCreated={(project) => onOpenProject(project.id)}
+              />
+              <Button variant="ghost" className="mt-3" onClick={() => setCreating(false)}>
+                Cancel
+              </Button>
+            </CardContent>
+          </Card>
+        ) : null}
+        {!noProjects && teams !== null && failure === null ? (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card p-3">
+            <div className="relative w-full max-w-md">
+              <Search
+                aria-hidden="true"
+                className="absolute top-2.5 left-3 size-4 text-muted-foreground"
+              />
+              <Input
+                aria-label="Search projects"
+                placeholder="Search projects, owners, or regions…"
+                className="pl-9"
+                value={search}
+                onChange={(event) => setSearch(event.currentTarget.value)}
+              />
             </div>
-            {joinedTeams.length === 0 ? (
-              <p className={MUTED}>No teams are available for this account.</p>
-            ) : (
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <span className="text-xs text-muted-foreground">
+              {readyProjects.filter(matches).length} of {readyProjects.length} projects
+            </span>
+          </div>
+        ) : null}
+        {!loading &&
+        failure === null &&
+        search.trim() !== "" &&
+        readyProjects.filter(matches).length === 0 ? (
+          <Card>
+            <CardContent className="grid justify-items-start gap-3 pt-1">
+              <strong>No projects match your search</strong>
+              <Button variant="outline" onClick={() => setSearch("")}>
+                Clear search
+              </Button>
+            </CardContent>
+          </Card>
+        ) : null}
+        <ApiFailureNotice failure={failure} />
+        {teams === null ? (
+          <p className={MUTED} aria-live="polite">
+            Loading your projects…
+          </p>
+        ) : null}
+        {guideActive ? (
+          <FirstRunGuide
+            teams={joinedTeams}
+            progress={progress}
+            onProgress={setProgress}
+            onOpenProject={onOpenProject}
+            onCompleted={completeGuide}
+          />
+        ) : null}
+        {noProjects && !guideActive ? (
+          <NoProjectsPanel
+            teams={joinedTeams}
+            onOpenProject={onOpenProject}
+            onShowGuide={() => setProgress({ ...progress, dismissed: false })}
+          />
+        ) : null}
+        {teams !== null && !noProjects && failure === null ? (
+          <>
+            <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]">
+              <div className="grid min-w-0 gap-8">
+                {personalSpace === undefined ? (
+                  <section className="grid gap-4" aria-labelledby="owner-personal-title">
+                    <div className="grid gap-1">
+                      <Eyebrow>Personal space</Eyebrow>
+                      <h2 id="owner-personal-title" className="text-lg">
+                        Your projects
+                      </h2>
+                    </div>
+                    <FirstProjectPanel onCreated={reload} />
+                  </section>
+                ) : (
+                  <OwnerGroup
+                    team={personalSpace}
+                    load={visibleGroups[personalSpace.id] ?? { status: "loading" }}
+                    loader={loader}
+                    ownerName={ownerName}
+                    onOpenProject={onOpenProject}
+                    onOpenTeam={onOpenTeam}
+                    navigate={navigate}
+                  />
+                )}
                 {joinedTeams.map((team) => (
-                  <Button
+                  <OwnerGroup
                     key={team.id}
-                    variant="outline"
-                    className="resource-card h-auto flex-col items-start gap-1 px-4 py-3 text-left whitespace-normal"
-                    onClick={() => onOpenTeam(team.id)}
-                  >
-                    <strong className="text-sm font-semibold">{team.name}</strong>
-                    <span className="text-xs font-normal text-muted-foreground">
-                      {team.state.replaceAll("_", " ")}
-                    </span>
-                  </Button>
+                    team={team}
+                    load={visibleGroups[team.id] ?? { status: "loading" }}
+                    loader={loader}
+                    ownerName={ownerName}
+                    onOpenProject={onOpenProject}
+                    onOpenTeam={onOpenTeam}
+                    navigate={navigate}
+                  />
                 ))}
               </div>
-            )}
-          </section>
-        </>
-      ) : null}
-      {showGuideAgain && !noProjects ? (
-        <p className="m-0">
-          <Button
-            variant="link"
-            className="h-auto p-0"
-            onClick={() => setProgress({ ...progress, dismissed: false })}
-          >
-            Show the guide again
-          </Button>
-        </p>
-      ) : null}
-    </section>
+              <RecentActivity projects={activityProjects} loader={loader} />
+            </div>
+            <section className="grid gap-4" aria-labelledby="teams-title">
+              <div className="grid gap-1">
+                <Eyebrow>Workspace</Eyebrow>
+                <h2 id="teams-title" className="text-lg">
+                  Teams
+                </h2>
+              </div>
+              {joinedTeams.length === 0 ? (
+                <p className={MUTED}>No teams are available for this account.</p>
+              ) : (
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {joinedTeams.map((team) => (
+                    <Button
+                      key={team.id}
+                      variant="outline"
+                      className="resource-card h-auto flex-col items-start gap-1 px-4 py-3 text-left whitespace-normal"
+                      onClick={() => onOpenTeam(team.id)}
+                    >
+                      <strong className="text-sm font-semibold">{team.name}</strong>
+                      <span className="text-xs font-normal text-muted-foreground">
+                        {team.state.replaceAll("_", " ")}
+                      </span>
+                    </Button>
+                  ))}
+                </div>
+              )}
+            </section>
+          </>
+        ) : null}
+        {showGuideAgain && !noProjects ? (
+          <p className="m-0">
+            <Button
+              variant="link"
+              className="h-auto p-0"
+              onClick={() => setProgress({ ...progress, dismissed: false })}
+            >
+              Show the guide again
+            </Button>
+          </p>
+        ) : null}
+      </section>
+    </div>
   );
 }
 
@@ -277,7 +431,9 @@ function OwnerGroup({
   ownerName,
   onOpenProject,
   onOpenTeam,
+  navigate,
 }: {
+  readonly navigate: (path: string) => void;
   readonly team: Team;
   readonly load: ProjectsLoad;
   readonly loader: SummaryLoader;
@@ -324,6 +480,7 @@ function OwnerGroup({
               project={project}
               owner={ownerName(project)}
               loader={loader}
+              navigate={navigate}
               onOpen={() => onOpenProject(project.id)}
             />
           ))}
@@ -361,17 +518,25 @@ function ProjectCard({
   owner,
   loader,
   onOpen,
+  navigate,
 }: {
+  readonly navigate: (path: string) => void;
   readonly project: Project;
   readonly owner: string;
   readonly loader: SummaryLoader;
   readonly onOpen: () => void;
 }) {
+  const [environment, setEnvironment] = useState<Environment | null>(null);
   const [plan, setPlan] = useState<Summary<string>>({ status: "loading" });
   const [usage, setUsage] = useState<Summary<UsageSummary>>({ status: "loading" });
   useEffect(() => {
     let active = true;
     setPlan({ status: "loading" });
+    setEnvironment(null);
+    void loader.environment(project.id).then(
+      (value) => active && setEnvironment(value),
+      () => {},
+    );
     setUsage({ status: "loading" });
     void loader.plan(project.teamId).then(
       (value) => active && setPlan({ status: "ready", value }),
@@ -403,6 +568,7 @@ function ProjectCard({
         </CardAction>
       </CardHeader>
       <CardContent className="grid gap-4 px-4">
+        <code className="truncate text-xs text-muted-foreground">{project.id}</code>
         <dl className="m-0 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
           <Fact label="Owner">{owner}</Fact>
           <Fact label="Region">
@@ -431,8 +597,33 @@ function ProjectCard({
             )}
           </Fact>
         </dl>
-        <Button variant="outline" size="sm" className="justify-self-start" onClick={onOpen}>
+        {environment === null ? null : (
+          <div className="grid gap-2 border-t pt-3">
+            <span className="text-xs text-muted-foreground">Database · {environment.name}</span>
+            <div className="flex flex-wrap gap-2">
+              {[
+                ["data", "Browse data"],
+                ["collections", "Schema"],
+                ["connect", "Connect"],
+              ].map(([section, label]) => (
+                <Button
+                  key={section}
+                  size="sm"
+                  variant={section === "data" ? "default" : "outline"}
+                  onClick={() =>
+                    navigate(`/projects/${project.id}/environments/${environment.id}/${section}`)
+                  }
+                >
+                  {section === "data" ? <Database aria-hidden="true" /> : null}
+                  {label}
+                </Button>
+              ))}
+            </div>
+          </div>
+        )}
+        <Button variant="ghost" size="sm" className="justify-self-start px-0" onClick={onOpen}>
           Open <span className="sr-only">{project.name}</span>
+          <ChevronRight aria-hidden="true" />
         </Button>
       </CardContent>
     </Card>
@@ -1299,6 +1490,7 @@ interface UsageSummary {
 }
 
 interface SummaryLoader {
+  environment(projectId: string): Promise<Environment | null>;
   plan(teamId: string): Promise<string>;
   usage(projectId: string): Promise<UsageSummary>;
   activity(projectId: string): Promise<readonly ActivityEntry[]>;
@@ -1323,6 +1515,7 @@ function createSummaryLoader(client: MakoManagementClient, limit = MAX_IN_FLIGHT
       return list.find((environment) => environment.state === "active") ?? null;
     });
   return {
+    environment: (projectId) => queue.run(() => activeEnvironment(projectId)),
     plan: (teamId) =>
       memoize(plans, teamId, () =>
         queue.run(async () => (await client.getTeamBill(teamId)).planId),

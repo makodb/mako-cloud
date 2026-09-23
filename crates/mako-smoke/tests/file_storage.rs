@@ -482,6 +482,46 @@ fn applications_store_files_under_policy_and_developers_govern_the_buckets() {
     );
     assert_eq!(status, 200, "{body}");
     let summary: Value = serde_json::from_str(&body).expect("summary json");
+    // This fixture runs no telemetry service. Failure stays local to usage,
+    // while the audit store and database inventories remain available.
+    assert_eq!(summary["sections"]["usage"]["status"], "unavailable");
+    assert!(summary["sections"]["usage"]["payload"].is_null());
+    assert_eq!(summary["sections"]["activity"]["status"], "current");
+    let activity = &summary["sections"]["activity"]["payload"];
+    assert!(activity["limited"].is_boolean());
+    assert!(activity["windowStartUnixSeconds"].is_u64());
+    assert!(
+        activity["events"]
+            .as_array()
+            .is_some_and(|events| events.len() <= 8)
+    );
+    let (status, body) = request(
+        control_port,
+        "GET",
+        &format!("{scope}/workspace/navigation"),
+        &bearer,
+        None,
+    );
+    assert_eq!(status, 200, "{body}");
+    let navigation: Value = serde_json::from_str(&body).expect("navigation json");
+    assert!(
+        navigation
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item["id"] == "credentials" && item["permitted"] == true)
+    );
+    let (status, _) = request(
+        control_port,
+        "GET",
+        &format!("{scope}/workspace/summary"),
+        &BTreeMap::new(),
+        None,
+    );
+    assert_eq!(
+        status, 401,
+        "workspace observations require developer authentication"
+    );
     let inventory = &summary["sections"]["backups"]["payload"]["objectStorage"];
     assert_eq!(
         inventory["bucketCount"], 1,

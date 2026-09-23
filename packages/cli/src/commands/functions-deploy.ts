@@ -11,6 +11,7 @@ import {
 
 import type { CommandContext } from "../cli/context.js";
 import { CliError, EXIT, usageError } from "../cli/errors.js";
+import { CLI_NAME } from "../cli/name.js";
 import type { Command, CommandArgs } from "../cli/registry.js";
 import {
   CONFIGURATION_OPTIONS,
@@ -171,7 +172,7 @@ async function deploy(context: CommandContext, args: CommandArgs): Promise<void>
     if (!(error instanceof ManagementApiError && error.status === 404)) throw error;
     if (!create) {
       throw new CliError(
-        `function ${functionName} does not exist; pass --create with --region <region> to create it, or run mako functions create ${functionName} ${tenant}`,
+        `function ${functionName} does not exist; pass --create with --region <region> to create it, or run ${CLI_NAME} functions create ${functionName} ${tenant}`,
         EXIT.notFound,
         "CLI_FUNCTION_MISSING",
       );
@@ -207,7 +208,7 @@ async function deploy(context: CommandContext, args: CommandArgs): Promise<void>
   report.bundle = artifact;
   step(`bundle ${artifact.digest}`);
   context.info(
-    `resume: mako functions deployments create ${functionName} --bundle ${artifact.digest} --entrypoint ${artifact.entrypoint} --runtime ${runtimeVersion} ${tenant}`,
+    `resume: ${CLI_NAME} functions deployments create ${functionName} --bundle ${artifact.digest} --entrypoint ${artifact.entrypoint} --runtime ${runtimeVersion} ${tenant}`,
   );
 
   const version = await chooseVersion(client, projectId, environmentId, functionName, args);
@@ -222,7 +223,7 @@ async function deploy(context: CommandContext, args: CommandArgs): Promise<void>
   report.deployment = deployment;
   step(`version ${deployment.version}`);
   context.info(
-    `resume: mako functions deployments health ${functionName} ${deployment.version} ${tenant}`,
+    `resume: ${CLI_NAME} functions deployments health ${functionName} ${deployment.version} ${tenant}`,
   );
 
   const checked = await client.checkFunctionDeploymentHealth(
@@ -237,7 +238,7 @@ async function deploy(context: CommandContext, args: CommandArgs): Promise<void>
   if (checked.diagnostic) context.info(`diagnostic: ${checked.diagnostic}`);
   if (checked.state !== "healthy") {
     context.info(
-      `resume: mako functions deployments health ${functionName} ${deployment.version} ${tenant}`,
+      `resume: ${CLI_NAME} functions deployments health ${functionName} ${deployment.version} ${tenant}`,
     );
     throw new CliError(
       `version ${deployment.version} of ${functionName} is ${checked.state}; it was not promoted`,
@@ -246,7 +247,7 @@ async function deploy(context: CommandContext, args: CommandArgs): Promise<void>
     );
   }
   context.info(
-    `resume: mako functions deployments promote ${functionName} ${deployment.version} ${tenant} --yes`,
+    `resume: ${CLI_NAME} functions deployments promote ${functionName} ${deployment.version} ${tenant} --yes`,
   );
 
   if (promote) {

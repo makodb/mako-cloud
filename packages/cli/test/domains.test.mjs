@@ -139,7 +139,7 @@ test("domains add sends hostname and environment with an idempotency key and pri
   assert.match(added.stdout, /\ntype\s+TXT\n/u);
   assert.match(added.stdout, new RegExp(`\\nvalue\\s+${RECORD_VALUE}\\n`, "u"));
   assert.equal(occurrences(added.stdout, RECORD_VALUE), 1, "the record is printed once, in its block");
-  assert.match(added.stderr, /domain dom_api000000001 is pending; publish the DNS record below, then run: mako domains verify dom_api000000001 --project prj_abcdefgh/u);
+  assert.match(added.stderr, /domain dom_api000000001 is pending; publish the DNS record below, then run: mako-cloud domains verify dom_api000000001 --project prj_abcdefgh/u);
 
   const fromEnv = await cli(["domains", "add", "--hostname", "app.example.com", "--json"], {
     env: { MAKO_ENVIRONMENT_ID: ENVIRONMENT_ID },

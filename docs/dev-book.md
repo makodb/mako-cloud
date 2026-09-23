@@ -291,7 +291,7 @@ For this pin, the supervisor's main worker creates a user worker with `EdgeRunti
 | `allow_import` | `null` | a module fetched over the network is never loaded; the bundle validator already refuses remote specifiers, and this closes the runtime half |
 | `allow_run`, `allow_ffi`, `allow_sys` | `null` | withheld even though this image also blocks subprocesses outright and exposes no `Deno.dlopen`, so a widened image surface does not become a widened sandbox |
 
-The SDK is reached through the worker's inline import map, which resolves the one first-party specifier onto a file inside the worker directory, so it needs no network or import grant. `mako functions serve` gives the local worker the same grants.
+The SDK is reached through the worker's inline import map, which resolves the one first-party specifier onto a file inside the worker directory, so it needs no network or import grant. `mako-cloud functions serve` gives the local worker the same grants.
 
 Protocol v1's `outboundNetwork` allowlist variant carries `hosts` and nothing else. It once also defined `maxRequestsPerInvocation`, and the supervisor refused any manifest carrying the variant rather than half-enforce it: a per-invocation request count cannot be enforced from inside an isolate the tenant controls — tenant code can reach the network through `fetch`, `WebSocket`, or `Deno.connect`, and can replace any counter installed beside it. The count left the contract for that reason, and a manifest still naming it is refused by deserialization. The host bound is real: the supervisor unions each declared host, pinned to port 443, into `allow_net` beside the API origin. A request count can return only together with a mandatory network proxy that can actually enforce it.
 
@@ -437,7 +437,7 @@ Local endpoints are bound only to loopback:
 
 Rust services running on the host use `.env` loopback URLs. Services later added to the Compose network should use the Compose names `mailpit`, `object-store`, `otel-collector`, `prometheus`, and `grafana` for discovery.
 
-The compose object store starts with **no S3 identity of its own**, so the platform's signed requests are refused (`InvalidAccessKeyId ... Available keys: 0`) until one is configured that matches the access and secret key the services resolve. `mako-local-bootstrap` does not need it (it uses an in-memory store); `mako functions deploy` and the management API do.
+The compose object store starts with **no S3 identity of its own**, so the platform's signed requests are refused (`InvalidAccessKeyId ... Available keys: 0`) until one is configured that matches the access and secret key the services resolve. `mako-local-bootstrap` does not need it (it uses an in-memory store); `mako-cloud functions deploy` and the management API do.
 
 For local mail, set the plaintext SMTP mode described under [Application and developer mail](#application-and-developer-mail); Mailpit shows what was sent.
 
@@ -454,7 +454,7 @@ Both validators report exactly the build command if the directory is missing.
 
 ### Running the edge runtime locally
 
-`mako functions serve` runs one function in the pinned runtime and answers directly — what a developer wants while writing code ([User Book](user-book.md#serving-a-function-locally)). The **hosted path** — gateway → control plane resolution → supervisor holding a registered deployment — needs a supervisor the control plane can authenticate to, which `serve` cannot be (it generates a random `MAKO_RUNTIME_AUTHORIZATION`). Run the runtime on the contract a deployment uses; `infra/ansible/roles/dependencies/files/quadlet/mako-edge-runtime.container` is the authoritative form:
+`mako-cloud functions serve` runs one function in the pinned runtime and answers directly — what a developer wants while writing code ([User Book](user-book.md#serving-a-function-locally)). The **hosted path** — gateway → control plane resolution → supervisor holding a registered deployment — needs a supervisor the control plane can authenticate to, which `serve` cannot be (it generates a random `MAKO_RUNTIME_AUTHORIZATION`). Run the runtime on the contract a deployment uses; `infra/ansible/roles/dependencies/files/quadlet/mako-edge-runtime.container` is the authoritative form:
 
 - `MAKO_RUNTIME_AUTHORIZATION` must equal the internal auth secret the services use;
 - `MAKO_RUNTIME_REGION` must equal `MAKO_REGION`, or the control plane reports the function unavailable in that region;
@@ -602,7 +602,7 @@ A gate that silently skips stops being a gate. Suites that need something the ho
 | Suite | Covers |
 | --- | --- |
 | `happy_path.rs` | Bootstrap, application sign-up and sign-in, push, pull, and the negative control without a session (`npm run test:e2e-smoke`; writes `docs/evidence/e2e-smoke-qualification.json`) |
-| `developer_cli.rs` | The built `mako` CLI through a console workflow (skips with a notice when `packages/cli/dist` is absent) |
+| `developer_cli.rs` | The built `mako-cloud` CLI through a console workflow (skips with a notice when `packages/cli/dist` is absent) |
 | `database_service.rs` | Document and `/service/` routes: encoded ids, request-id reuse, idempotency |
 | `auth_providers.rs` | Provider start/callback/exchange and magic links against a loopback provider stub |
 | `file_storage.rs` | Buckets, objects, policy, conditional uploads, public buckets, totals, removal (with `ObjectStoreStub`) |
@@ -675,7 +675,7 @@ Skills are installed for Claude Code (`.claude/skills/`) and Codex (`.agents/ski
 1. Propose the change (spec deltas, design, tasks). Say what is out of scope.
 2. Domain logic and its inline tests in the crate; fail-closed refusals first.
 3. A route module in the service, registered in `lib.rs`; readiness if the route has a new dependency.
-4. The OpenAPI entry, then `npm run generate:api`; a typed method in `packages/management-sdk`; a `mako` command (the parity test will insist); console surface where the User Book promises one.
+4. The OpenAPI entry, then `npm run generate:api`; a typed method in `packages/management-sdk`; a `mako-cloud` command (the parity test will insist); console surface where the User Book promises one.
 5. A smoke or integration test that drives the real binaries when the behavior crosses a service boundary.
 6. Traceability rows; the User Book chapter and, for operational surface, this book; `npm run validate:docs` and `validate:traceability`.
 7. If the change touches storage, startup, release, or a security boundary: the threat model registry and its review section, the rollback drill it affects, and the release-gate evidence it changes.

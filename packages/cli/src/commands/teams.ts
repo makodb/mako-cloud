@@ -2,6 +2,7 @@ import type { Team, TeamMembership, TeamRole } from "@mako-cloud/management-sdk"
 
 import type { CommandContext } from "../cli/context.js";
 import { usageError } from "../cli/errors.js";
+import { CLI_NAME } from "../cli/name.js";
 import type { TableColumn } from "../cli/output.js";
 import type { Command, CommandArgs, OptionSpec } from "../cli/registry.js";
 import { expiresAtFrom } from "./auth-tokens.js";
@@ -74,7 +75,7 @@ function noteDeletion(context: CommandContext, team: Team): void {
   if (context.json || team.deletionDeadline === undefined) return;
   context.info(
     `Team ${team.id} is in its deletion grace period until ${team.deletionDeadline}; ` +
-      `undo with: mako teams restore ${team.id}`,
+      `undo with: ${CLI_NAME} teams restore ${team.id}`,
   );
 }
 

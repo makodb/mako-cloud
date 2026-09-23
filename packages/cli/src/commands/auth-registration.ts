@@ -1,5 +1,6 @@
 import type { CommandContext } from "../cli/context.js";
 import { authError, usageError } from "../cli/errors.js";
+import { CLI_NAME } from "../cli/name.js";
 import { promptLine, promptSecret } from "../cli/prompt.js";
 import type { Command, CommandArgs, OptionSpec } from "../cli/registry.js";
 
@@ -39,7 +40,7 @@ function report(context: CommandContext, value: unknown, line: string): void {
 
 function statusLine(status: "waitlisted" | "password_updated"): string {
   return status === "password_updated"
-    ? "Password updated. Sign in with `mako auth login`."
+    ? `Password updated. Sign in with \`${CLI_NAME} auth login\`.`
     : "Email verified. Your registration is on the wait-list; you will hear when it is approved.";
 }
 
@@ -72,7 +73,7 @@ async function waitListStatus(context: CommandContext, args: CommandArgs): Promi
   const { client } = context.developerAuth(endpoint);
   const email = args.string("email");
   if (email !== undefined) {
-    // `mako auth login` refuses to store a wait-listed session, so the token
+    // `mako-cloud auth login` refuses to store a wait-listed session, so the token
     // that can answer this question is obtained here and kept in memory only.
     if (!email.includes("@")) throw usageError("an email address is required");
     const password = await passwordFrom(context, args, "Password: ");
@@ -81,7 +82,7 @@ async function waitListStatus(context: CommandContext, args: CommandArgs): Promi
       report(
         context,
         { status: session.status, email },
-        "Your registration was approved; sign in with `mako auth login`.",
+        `Your registration was approved; sign in with \`${CLI_NAME} auth login\`.`,
       );
       return;
     }

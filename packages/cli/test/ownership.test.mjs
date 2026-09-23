@@ -109,7 +109,7 @@ test("teams delete needs confirmation and sends the confirmation header; restore
   assert.equal(deletion.headers.authorization, BEARER);
   assert.equal(deletion.headers.confirmation, TEAM_ID, "the confirmation header names the team");
   assert.match(deleted.stdout, /state\s+deletion_grace/u);
-  assert.match(deleted.stderr, /mako teams restore org_abcdefgh/u);
+  assert.match(deleted.stderr, /mako-cloud teams restore org_abcdefgh/u);
   const typed = await runCli(["teams", "delete", TEAM_ID, "--json"], { configDir: directory, stdin: `${TEAM_ID}\n`, isTTY: true });
   assert.equal(typed.code, 0, typed.stderr);
   assert.equal(JSON.parse(typed.stdout).state, "deletion_grace");
@@ -459,7 +459,7 @@ test("projects get, suspend, restore, and delete", async (t) => {
   assert.equal(deleted.code, 0, deleted.stderr);
   assert.equal(api.find(path, "DELETE")[0].headers.confirmation, PROJECT_ID);
   assert.match(deleted.stdout, /state\s+deletion_grace/u);
-  assert.match(deleted.stderr, /mako projects restore prj_abcdefgh/u);
+  assert.match(deleted.stderr, /mako-cloud projects restore prj_abcdefgh/u);
 });
 
 test("projects rename sends the new name; transfer needs confirmation, names the new owner, and maps refusals to exit codes", async (t) => {
@@ -619,6 +619,6 @@ test("envs take the project from --project or MAKO_PROJECT_ID and follow the sam
   assert.equal(deleted.code, 0, deleted.stderr);
   assert.equal(api.find(one, "DELETE")[0].headers.confirmation, ENVIRONMENT_ID);
   assert.match(deleted.stdout, /state\s+deletion_grace/u);
-  assert.match(deleted.stderr, /mako envs restore env_abcdefgh --project prj_abcdefgh/u);
+  assert.match(deleted.stderr, /mako-cloud envs restore env_abcdefgh --project prj_abcdefgh/u);
   assert.equal(api.unhandled.length, 0, `unhandled: ${api.unhandled.join(", ")}`);
 });

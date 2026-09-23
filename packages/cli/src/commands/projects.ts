@@ -1,6 +1,7 @@
 import type { Project, Team } from "@mako-cloud/management-sdk";
 
 import type { CommandContext } from "../cli/context.js";
+import { CLI_NAME } from "../cli/name.js";
 import type { TableColumn } from "../cli/output.js";
 import type { Command, CommandArgs, OptionSpec } from "../cli/registry.js";
 import { settleLifecycle } from "./shared.js";
@@ -75,7 +76,7 @@ async function settleAndPrint(context: CommandContext, project: Project): Promis
   if (!context.json && settled.deletionDeadline !== undefined) {
     context.info(
       `Project ${settled.id} is in its deletion grace period until ${settled.deletionDeadline}; ` +
-        `undo with: mako projects restore ${settled.id}`,
+        `undo with: ${CLI_NAME} projects restore ${settled.id}`,
     );
   }
 }

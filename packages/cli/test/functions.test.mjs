@@ -1,4 +1,4 @@
-// `mako functions …`: functions, deployments, logs, secrets, the test route,
+// `mako-cloud functions …`: functions, deployments, logs, secrets, the test route,
 // and the composed `functions deploy` flow, against the loopback mock API.
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
@@ -487,9 +487,9 @@ test("functions deploy uploads, creates the version, checks health, and promotes
   const created = api.find(`${BASE}/functions/hello/versions`, "POST")[0];
   assert.deepEqual(created.body, { version: 2, bundleDigest: DIGEST, entrypoint: "index.ts", runtimeVersion: PINNED_RUNTIME });
   assert.equal(result.stdout, `bundle ${DIGEST}\nversion 2\nhealth healthy\nactive 2\n`);
-  assert.match(result.stderr, new RegExp(`resume: mako functions deployments create hello --bundle ${DIGEST} --entrypoint index.ts --runtime ${PINNED_RUNTIME} --project ${PROJECT_ID} --env ${ENVIRONMENT_ID}`, "u"));
-  assert.match(result.stderr, new RegExp(`resume: mako functions deployments health hello 2 --project ${PROJECT_ID} --env ${ENVIRONMENT_ID}`, "u"));
-  assert.match(result.stderr, new RegExp(`resume: mako functions deployments promote hello 2 --project ${PROJECT_ID} --env ${ENVIRONMENT_ID} --yes`, "u"));
+  assert.match(result.stderr, new RegExp(`resume: mako-cloud functions deployments create hello --bundle ${DIGEST} --entrypoint index.ts --runtime ${PINNED_RUNTIME} --project ${PROJECT_ID} --env ${ENVIRONMENT_ID}`, "u"));
+  assert.match(result.stderr, new RegExp(`resume: mako-cloud functions deployments health hello 2 --project ${PROJECT_ID} --env ${ENVIRONMENT_ID}`, "u"));
+  assert.match(result.stderr, new RegExp(`resume: mako-cloud functions deployments promote hello 2 --project ${PROJECT_ID} --env ${ENVIRONMENT_ID} --yes`, "u"));
 });
 
 test("functions deploy promotes only with --yes; without it the version stands ready", async (t) => {
@@ -502,7 +502,7 @@ test("functions deploy promotes only with --yes; without it the version stands r
   assert.ok(!state.calls.some((call) => call.endsWith("/actions/promote")), "nothing was promoted");
   assert.ok(state.calls.some((call) => call.endsWith("/actions/health-check")), "the version was created and checked");
   assert.match(refused.stdout, /^bundle .*\nversion 2\nhealth healthy\n$/u);
-  assert.match(refused.stderr, /resume: mako functions deployments promote hello 2/u);
+  assert.match(refused.stderr, /resume: mako-cloud functions deployments promote hello 2/u);
 });
 
 test("functions deploy --no-promote stops after the health check; --json prints one document", async (t) => {
@@ -586,7 +586,7 @@ test("functions deploy exits non-zero on a failed health check or a rejected bun
   assert.equal(unhealthy.stdout, `bundle ${DIGEST}\nversion 2\nhealth failed\n`);
   assert.match(unhealthy.stderr, /worker exited with status 1/u);
   assert.match(unhealthy.stderr, /CLI_DEPLOYMENT_UNHEALTHY/u);
-  assert.match(unhealthy.stderr, new RegExp(`resume: mako functions deployments health hello 2 --project ${PROJECT_ID} --env ${ENVIRONMENT_ID}`, "u"));
+  assert.match(unhealthy.stderr, new RegExp(`resume: mako-cloud functions deployments health hello 2 --project ${PROJECT_ID} --env ${ENVIRONMENT_ID}`, "u"));
   assert.equal(api.find(`${BASE}/functions/hello/versions/2/actions/promote`, "POST").length, 0);
 
   state.upload = {

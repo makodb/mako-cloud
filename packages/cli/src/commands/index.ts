@@ -24,7 +24,7 @@ import { usersCommands } from "./users.js";
 import { webhooksCommands } from "./webhooks.js";
 import { workspaceCommands } from "./workspace.js";
 
-/** `mako functions serve` is dispatched before the registry; it is listed for help and parity. */
+/** `mako-cloud functions serve` is dispatched before the registry; it is listed for help and parity. */
 const serveCommand: Command = {
   path: ["functions", "serve"],
   summary: "Run a function locally in the pinned edge runtime",

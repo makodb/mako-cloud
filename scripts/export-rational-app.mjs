@@ -371,7 +371,7 @@ import { defineConfig, type ProxyOptions } from "vite";
  * proxies \`/v1\` (and the function route) to the configured endpoint and the
  * app calls same-origin -- the topology a deployment has behind its reverse
  * proxy. A deployed site calls the endpoint cross-origin instead, which is
- * what \`mako allowed-origins set --origin\` allows.
+ * what \`mako-cloud allowed-origins set --origin\` allows.
  */
 interface RationalConfigFile {
   readonly endpoint: string;

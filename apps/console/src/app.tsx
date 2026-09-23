@@ -5,18 +5,19 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
+  cn,
   Eyebrow,
   ThemeToggle,
-  cn,
   useTheme,
 } from "@mako-cloud/ui";
 import { type ReactNode, useEffect } from "react";
-
+import { ActivityScreen } from "./activity.js";
+import { ApiDocsScreen } from "./api-docs.js";
 import { ApplicationUserScreen, ApplicationUsersScreen } from "./application-users.js";
 import { useDeveloperAuth } from "./auth.js";
+import { AuthProvidersScreen } from "./auth-providers.js";
 import { CollectionScreen, CollectionsScreen } from "./collections.js";
 import { CredentialsScreen } from "./credentials.js";
-import { EnvironmentWorkspaceLayout, EnvironmentWorkspaceScreen } from "./developer-workspace.js";
 import {
   CheckEmailView,
   CheckRecoveryEmailView,
@@ -26,29 +27,28 @@ import {
   VerifyEmailView,
   WaitListStatusView,
 } from "./developer-auth-views.js";
+import { EnvironmentWorkspaceLayout, EnvironmentWorkspaceScreen } from "./developer-workspace.js";
+import { EmailTemplatesScreen } from "./email-templates.js";
 import { ConsoleErrorBoundary } from "./error-boundary.js";
 import { FunctionScreen, FunctionsScreen } from "./functions.js";
+import { HomeDashboard } from "./home.js";
+import { LogsScreen } from "./logs.js";
 import { ObservabilityScreen } from "./observability.js";
 import { RequireOperatorSession } from "./operator.js";
 import { OperatorWorkspaceScreen } from "./operator-control-center.js";
-import { ActivityScreen } from "./activity.js";
-import { HomeDashboard } from "./home.js";
-import { LogsScreen } from "./logs.js";
 import { PolicyScreen } from "./policies.js";
 import { ProjectHome } from "./project-home.js";
-import { ApiDocsScreen } from "./api-docs.js";
-import { AuthProvidersScreen } from "./auth-providers.js";
-import { EmailTemplatesScreen } from "./email-templates.js";
-import { StorageScreen } from "./storage.js";
-import { InvitationAcceptScreen, TeamScreen } from "./teams.js";
-import { UsageScreen } from "./usage.js";
-import { WebhooksScreen } from "./webhooks.js";
+import { PublicHome } from "./public-home.js";
 import {
   type ConsoleRoute,
   RequireDeveloperSession,
   SignInView,
   useConsoleRoute,
 } from "./router.js";
+import { StorageScreen } from "./storage.js";
+import { InvitationAcceptScreen, TeamScreen } from "./teams.js";
+import { UsageScreen } from "./usage.js";
+import { WebhooksScreen } from "./webhooks.js";
 
 export function ConsoleApp({
   developerWorkspaceEnabled = true,
@@ -63,6 +63,7 @@ export function ConsoleApp({
   readonly developerSyncDetailsEnabled?: boolean;
   readonly developerRestoreEnabled?: boolean;
 }) {
+  const { state } = useDeveloperAuth();
   const { route, navigate } = useConsoleRoute();
   const focusPath = window.location.pathname;
   useEffect(() => {
@@ -104,11 +105,17 @@ export function ConsoleApp({
         <RequireDeveloperSession>
           <WaitListStatusView />
         </RequireDeveloperSession>
+      ) : route.name === "home" && state.status === "anonymous" ? (
+        <PublicHome navigate={navigate} />
       ) : (
         <RequireDeveloperSession>
-          <AuthenticatedShell fullBleed={bringsOwnShell(route, developerWorkspaceEnabled)}>
+          <AuthenticatedShell
+            key={`${state.status === "authenticated" ? state.session.profile.id : ""}:${workspaceIdentity(route)}`}
+            fullBleed={route.name === "home" || bringsOwnShell(route, developerWorkspaceEnabled)}
+          >
             {route.name === "home" ? (
               <HomeDashboard
+                navigate={navigate}
                 onOpenTeam={(teamId) => navigate(`/teams/${teamId}`)}
                 onOpenProject={(projectId) => navigate(`/projects/${projectId}`)}
               />
@@ -261,7 +268,7 @@ export function ConsoleApp({
                 enabled={developerWorkspaceEnabled}
                 projectId={route.projectId}
                 environmentId={route.environmentId}
-                section="settings"
+                section="credentials"
                 navigate={navigate}
               >
                 <CredentialsScreen
@@ -518,6 +525,12 @@ function StagedEnvironmentLayout({
 /** The developer's theme preference lives under this key, per device. */
 export const CONSOLE_THEME_KEY = "mako.console.theme";
 
+function workspaceIdentity(route: ConsoleRoute): string {
+  return "projectId" in route
+    ? `${route.projectId}:${"environmentId" in route ? route.environmentId : "project"}`
+    : route.name;
+}
+
 function AuthenticatedShell({
   fullBleed,
   children,
@@ -558,6 +571,9 @@ function AuthenticatedShell({
           <span className="hidden max-w-64 min-w-0 truncate text-sm text-muted-foreground sm:block">
             {state.session.profile.email}
           </span>
+          <a href="/docs/user-book" className="hidden text-sm text-muted-foreground sm:block">
+            Docs
+          </a>
           <ThemeToggle resolved={resolved} onToggle={toggle} data-testid="theme-toggle" />
           <Button variant="outline" size="sm" onClick={() => void signOut()}>
             Sign out

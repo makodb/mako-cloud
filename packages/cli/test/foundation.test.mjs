@@ -176,12 +176,12 @@ test("errors map to exit codes and carry the API's retry advice", async (t) => {
 test("usage errors exit 2 and help prints for groups and commands", async () => {
   const unknown = await runCli(["auth", "frobnicate"]);
   assert.equal(unknown.code, 2);
-  assert.match(unknown.stderr, /unknown command/u);
+  assert.match(unknown.stderr, /unknown command: mako-cloud auth frobnicate/u);
   const badOption = await runCli(["auth", "status", "--nope"]);
   assert.equal(badOption.code, 2);
   const root = await runCli(["--help"]);
   assert.equal(root.code, 0);
-  assert.match(root.stdout, /usage: mako <command>/u);
+  assert.match(root.stdout, /usage: mako-cloud <command>/u);
   const group = await runCli(["auth", "--help"]);
   assert.match(group.stdout, /login/u);
   const command = await runCli(["auth", "login", "--help"]);

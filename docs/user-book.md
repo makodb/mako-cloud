@@ -58,7 +58,7 @@ Mako Cloud keeps three identity domains strictly apart. A credential from one ne
 
 | Identity | Who | How they authenticate | What they reach |
 | --- | --- | --- | --- |
-| **Developer** | You — the person or team building on Mako Cloud | Developer session (console or `mako auth login`) or a team **automation token** | The management API: teams, projects, environments, collections, policies, keys, functions, observability |
+| **Developer** | You — the person or team building on Mako Cloud | Developer session (console or `mako-cloud auth login`) or a team **automation token** | The management API: teams, projects, environments, collections, policies, keys, functions, observability |
 | **Application user** | The people who use *your* application | Password, an external provider (Google, GitHub, OpenID Connect), or a magic link, always scoped to one project **and** one environment | The application API: their own documents (as policies allow), replication, file storage, function invocations |
 | **Operator** | Mako Cloud platform staff | A separate operator identity with its own entitlements | `/v1/operator/…`, never reachable from a developer or application token |
 
@@ -107,7 +107,7 @@ The supported client is `@mako-cloud/rxdb`. Your application reads from an on-de
 
 ### Identifiers
 
-Identifiers are prefixed strings: `org_` teams (including your personal space), `dev_` developer identities, `inv_` team invitations, `atm_` automation tokens, `prj_` projects, `env_` environments, `mig_` schema migrations, `usr_` application users, `ses_` application sessions, `sch_` schedules, `run_` schedule runs, `whk_` webhook endpoints, `whd_` deliveries, `dom_` domains, `opr_` operators, `aml_` mail intents. Credential ids are the name you give them (`mako keys service create --id key_households`), collection ids are lowercase slugs, and document ids are whatever your primary key holds. Treat them as opaque; only their uniqueness is promised.
+Identifiers are prefixed strings: `org_` teams (including your personal space), `dev_` developer identities, `inv_` team invitations, `atm_` automation tokens, `prj_` projects, `env_` environments, `mig_` schema migrations, `usr_` application users, `ses_` application sessions, `sch_` schedules, `run_` schedule runs, `whk_` webhook endpoints, `whd_` deliveries, `dom_` domains, `opr_` operators, `aml_` mail intents. Credential ids are the name you give them (`mako-cloud keys service create --id key_households`), collection ids are lowercase slugs, and document ids are whatever your primary key holds. Treat them as opaque; only their uniqueness is promised.
 
 ---
 
@@ -120,9 +120,9 @@ Mako Cloud's hosted registration is a wait list. On the console's **Create accou
 The same flow is available from a terminal:
 
 ```bash
-mako auth register            # prompts for email and password
-mako auth verify-email <token from the mail>
-mako auth waitlist-status
+mako-cloud auth register            # prompts for email and password
+mako-cloud auth verify-email <token from the mail>
+mako-cloud auth waitlist-status
 ```
 
 Registration, resend, and recovery responses are deliberately generic: they never say whether an address is already known. Password recovery invalidates every existing session.
@@ -136,8 +136,8 @@ In the console, sign in at `/login`. Your access token lives in tab-scoped sessi
 From a terminal:
 
 ```bash
-mako auth login --endpoint https://cloud-test.makodb.com    # prompts for email and password
-mako auth whoami
+mako-cloud auth login --endpoint https://cloud-test.makodb.com    # prompts for email and password
+mako-cloud auth whoami
 ```
 
 `--endpoint` is the platform host that serves the management API. The CLI stores the session per profile in a credential file only you can read and renews it automatically. For CI, mint an automation token instead (see [Running in CI](#running-in-ci)).
@@ -145,8 +145,8 @@ mako auth whoami
 ### 3. Create a project and an environment
 
 ```bash
-mako projects create "Todos" --region <region> --wait      # lands in your personal space; `local` on a local stack
-mako envs create production --project prj_… --wait
+mako-cloud projects create "Todos" --region <region> --wait      # lands in your personal space; `local` on a local stack
+mako-cloud envs create production --project prj_… --wait
 ```
 
 `--wait` polls until provisioning is `active` (or `failed`, with the diagnostic). Add `--team org_…` to create the project in a team. The console offers the same on the home page, and its guided first run walks a new developer through exactly these steps.
@@ -171,8 +171,8 @@ cat > todos.schema.json <<'JSON'
   }
 }
 JSON
-mako collections create todos --schema @todos.schema.json --primary-key id      # schema version 1
-mako indexes create todos --name by_owner --version 1 --field ownerId --field updatedAt
+mako-cloud collections create todos --schema @todos.schema.json --primary-key id      # schema version 1
+mako-cloud indexes create todos --name by_owner --version 1 --field ownerId --field updatedAt
 ```
 
 Indexes build in the background and report `active` when ready. See [Collections, schemas, and indexes](#collections-schemas-and-indexes) for schema evolution and the query planner's rules.
@@ -192,9 +192,9 @@ cat > todos-policy.json <<'JSON'
   ]
 }
 JSON
-mako policies draft todos --input @todos-policy.json
-mako policies validate todos 1
-mako policies activate todos 1 --yes
+mako-cloud policies draft todos --input @todos-policy.json
+mako-cloud policies validate todos 1
+mako-cloud policies activate todos 1 --yes
 ```
 
 A draft is immutable; validation compiles it against the collection's active schema; activation is atomic and advances the environment's authorization epoch exactly once. [Document policies](#document-policies) has the full expression language.
@@ -202,15 +202,15 @@ A draft is immutable; validation compiles it against the collection's active sch
 ### 6. Issue keys
 
 ```bash
-mako keys signing init                     # the environment's first JWT signing key
-mako keys public create --secret-file ./mako_pk.txt   # the public project key your client ships
+mako-cloud keys signing init                     # the environment's first JWT signing key
+mako-cloud keys public create --secret-file ./mako_pk.txt   # the public project key your client ships
 ```
 
 The public key's value is shown exactly once, here or in the console's **API & Connect** page; nothing can read it back later, only rotate it.
 
 ### 7. Connect a client
 
-**API & Connect** in the console shows the API URL, the active public key id, the supported RxDB range, and copyable quickstarts; `mako workspace connect` prints the same metadata and `mako workspace check` probes DNS, TLS, routes, the key, the schema, and the replication route without reading a document. Then, in your application:
+**API & Connect** in the console shows the API URL, the active public key id, the supported RxDB range, and copyable quickstarts; `mako-cloud workspace connect` prints the same metadata and `mako-cloud workspace check` probes DNS, TLS, routes, the key, the schema, and the replication route without reading a document. Then, in your application:
 
 ```ts
 import { MakoAuthClient, BrowserAuthSessionPersistence, normalizeMakoRxdbConfig } from "@mako-cloud/rxdb";
@@ -234,7 +234,7 @@ await auth.signInWithPassword("person@example.com", "correct horse battery stapl
 Before a browser page on another origin can call the API, list that origin under the environment's **Allowed origins** ([details](#allowed-origins-cors)):
 
 ```bash
-mako allowed-origins set --origin http://127.0.0.1:5173 --origin https://app.example.com
+mako-cloud allowed-origins set --origin http://127.0.0.1:5173 --origin https://app.example.com
 ```
 
 [Building a local-first app with RxDB](#building-a-local-first-app-with-rxdb) continues from here to a replicating collection.
@@ -251,7 +251,7 @@ cargo run --bin mako-data-plane             # 127.0.0.1:8080
 cargo run --bin mako-control-plane          # 127.0.0.1:8081, in a second shell
 ```
 
-The bootstrap prints the identifiers and the public project key as JSON. Point `mako auth login --endpoint http://127.0.0.1:8081` and your client's `endpoint: "http://127.0.0.1:8080"` at it; plain `http` is accepted only for `localhost` and `127.0.0.1`. The local data plane sends CORS headers only for listed origins, exactly like production, so either list your dev-server origin or proxy `/v1` same-origin as the sample applications do.
+The bootstrap prints the identifiers and the public project key as JSON. Point `mako-cloud auth login --endpoint http://127.0.0.1:8081` and your client's `endpoint: "http://127.0.0.1:8080"` at it; plain `http` is accepted only for `localhost` and `127.0.0.1`. The local data plane sends CORS headers only for listed origins, exactly like production, so either list your dev-server origin or proxy `/v1` same-origin as the sample applications do.
 
 ### Where this is tested
 
@@ -267,6 +267,8 @@ The console is what a developer sees from sign-in onward. It is organised in thr
 
 Signing in lands on the home dashboard: every project you can reach, across your personal space ("Your projects") and every team you belong to, as cards carrying lifecycle state, region, plan, and headline usage for the current period, with recent activity beside them. Each card loads its summaries on its own, so one project whose usage cannot be read marks only its own card.
 
+Search projects by name, identifier, region, or owner. Each project with an active environment offers **Browse data**, **Schema**, and **Connect** shortcuts, with the selected environment named. **New project** opens the creation form. The workspace sidebar links to your teams, billing, and the User Book. An unmatched search offers **Clear search** and keeps your projects intact.
+
 A developer with no projects is offered a **guided first run** — create a project, wait for it to become active, copy its keys, check a connection — that can be dismissed and reopened and resumes where it was left. Its progress is kept in the browser tab's session storage, never on the server and never in durable local storage, so a closed tab simply shows the guide again when there is still nothing to show.
 
 ### Project
@@ -281,11 +283,11 @@ Routes: `/projects/{projectId}` and `/projects/{projectId}/{overview|usage|activ
 
 ### Environment
 
-Inside an environment the sidebar lists every destination the platform authorises for you:
+Inside an environment the sidebar groups destinations under **Database**, **Application**, **Observe**, and **Configure**. The project name and environment selector remain visible. On narrow screens, **Go to** selects a destination without a wide sidebar. Navigation follows the permissions returned by the platform.
 
 | Destination | What it holds |
 | --- | --- |
-| **Overview** | Summary sections, each with its own freshness |
+| **Overview** | Environment lifecycle, collection inventory, function and recovery-point counts, usage observations, recent activity, and database setup actions |
 | **Data** | The [data explorer](#the-data-workspace): browse, query, history, policy preview, administrative mutations, import and export jobs |
 | **Collections** | Collections, schema versions, migrations, and indexes |
 | **Sync** | Aggregate RxDB replication diagnostics |
@@ -302,14 +304,17 @@ Inside an environment the sidebar lists every destination the platform authorise
 | **Activity** | The audit trail as you may read it |
 | **Backups** | Verified recovery points and isolated restore requests |
 | **API & Connect** | Endpoint, active public key id, compatibility, the RxDB connect template, and the connection check |
+| **API keys** | Public and service credential management, subject to your permissions |
 | **API docs** | The environment's own generated API reference (below) |
 | **Settings** | Allowed origins and environment lifecycle |
+
+**Overview** loads collection inventory separately from summary metrics, so a telemetry failure does not hide your schemas. Each summary marks when it was observed and whether it is current, stale, or unavailable. **Refresh** reloads both sources. Usage shows the latest returned sample per resource within the displayed one-hour window, not a billing total. Partial counts and truncated observations are labelled. Recent activity shows at most eight audit events without free-form audit details. Lifecycle state describes the project and environment, not database service health.
 
 **Allowed origins** live in Settings: the browser origins that may call this environment's application API from a page served somewhere else. The section shows what is allowed now ("None" when the list is empty) and edits the whole list one origin per line, matched exactly as the browser sends it, at most 16. The list is checked in the browser before anything is sent — a path, a query, a trailing slash, a default port, or plain `http` off loopback is refused with its reason — and Save replaces the whole list with an idempotency key.
 
 **API docs** (`…/api-docs`) is the environment's own API reference, generated in the browser from what the console already reads and stamped with the time it was observed — nothing is rendered by the server or stored. It shows the API URL, the public key id, and the headers each route takes; the auth endpoints with request and response bodies; for each collection its document shape from the schema, its indexes, the operations the active policy allows (an allow rule whose expression is `true` makes an operation allowed, any other allow expression makes it conditional, an operation no allow rule names is denied, and deny rules are listed beside), and example create, read, query, update, delete, and RxDB pull, push, and stream requests built from a sample document; each function's route, active version, and an invocation; each bucket's upload, download, list, and delete; and copyable curl, JavaScript (`fetch`), and RxDB replication quickstarts. Only public key material can appear in a snippet; a service credential is refused before it can reach one.
 
-Routes: `/projects/{projectId}/environments/{environmentId}/{overview|data|collections|sync|users|policies|functions|storage|webhooks|auth-providers|email-templates|observability|logs|usage|activity|backups|connect|api-docs|settings}`, plus `…/storage/{bucketId}`, `…/webhooks/{webhookId}`, and per-resource pages for collections, policies, functions, and users. Every deep link opens inside the shell with its context shown.
+Routes: `/projects/{projectId}/environments/{environmentId}/{overview|data|collections|sync|users|policies|functions|storage|webhooks|auth-providers|email-templates|observability|logs|usage|activity|backups|connect|credentials|api-docs|settings}`, plus `…/storage/{bucketId}`, `…/webhooks/{webhookId}`, and per-resource pages for collections, policies, functions, and users. Every deep link opens inside the shell with its context shown.
 
 ### Where this is tested
 
@@ -319,11 +324,11 @@ Routes: `/projects/{projectId}/environments/{environmentId}/{overview|data|colle
 
 ## The developer CLI
 
-`mako` is the terminal counterpart of the console. Everything a developer can do in a browser — sign in, own teams and projects, shape collections and policies, issue keys, deploy functions, read logs, move data, manage file storage, register webhooks, serve on custom domains — can be done from a shell, a script, or CI with the same authorization and the same audit trail. It lives in `packages/cli` (`@mako-cloud/cli`) and drives the management API through `@mako-cloud/management-sdk`.
+`mako-cloud` is the terminal counterpart of the console. Everything a developer can do in a browser — sign in, own teams and projects, shape collections and policies, issue keys, deploy functions, read logs, move data, manage file storage, register webhooks, serve on custom domains — can be done from a shell, a script, or CI with the same authorization and the same audit trail. It lives in `packages/cli` (`@mako-cloud/cli`) and drives the management API through `@mako-cloud/management-sdk`.
 
 ```bash
 npm run build -w @mako-cloud/cli
-node packages/cli/dist/main.js --help        # or, once linked: mako --help
+node packages/cli/dist/main.js --help        # or, once linked: mako-cloud --help
 ```
 
 Node 24 or newer is required. There are no other runtime dependencies.
@@ -335,13 +340,13 @@ The command tree is hand-written, but coverage is machine-checked: `packages/cli
 ### Signing in
 
 ```bash
-mako auth login --endpoint https://cloud-test.makodb.com     # prompts for email and password
-mako auth status
-mako auth whoami
-mako auth logout                                             # revokes the session server-side first
+mako-cloud auth login --endpoint https://cloud-test.makodb.com     # prompts for email and password
+mako-cloud auth status
+mako-cloud auth whoami
+mako-cloud auth logout                                             # revokes the session server-side first
 ```
 
-Passwords are typed at a prompt with echo off or read from a file (`--password-file`); they are never accepted as an argument, so they never land in shell history or process listings. Registration, email verification, and password recovery are `mako auth register`, `verify-email`, `resend-verification`, `recover-password`, and `reset-password`.
+Passwords are typed at a prompt with echo off or read from a file (`--password-file`); they are never accepted as an argument, so they never land in shell history or process listings. Registration, email verification, and password recovery are `mako-cloud auth register`, `verify-email`, `resend-verification`, `recover-password`, and `reset-password`.
 
 The session is stored per **profile** in a credential file readable only by you: `$MAKO_CONFIG_DIR/credentials.json`, else `$XDG_CONFIG_HOME/mako-cloud/credentials.json`, else `~/.config/mako-cloud/credentials.json`. The directory is created `0700` and the file `0600`; a file other users can read is refused with exit code 7 rather than used. A profile records the endpoint, the access token, its expiry, your email, and the refresh cookie the API sets on sign-in — the only thing that can renew the session, which the CLI does automatically shortly before expiry. `--profile <name>` (or `MAKO_PROFILE`) keeps several sign-ins apart; a profile signed in to one endpoint is never sent to another.
 
@@ -349,7 +354,7 @@ Developer-auth calls (sign-in, refresh, sign-out, step-up) carry the endpoint as
 
 ### Running in CI
 
-Set `MAKO_TOKEN` and `MAKO_ENDPOINT`. The token is used as given and never written to disk. Automation tokens (`mako auth token create`) are the intended credential: they are team-scoped, optionally narrowed to one project or environment, and carry a fixed permission list — `project_read`, `project_write`, `environment_read`, `environment_write`, `collection_write`, `policy_write`, `function_deploy`, `audit_read`, `organization_read`. A command the token's permissions do not allow fails with exit code 3 and the API's message naming the permission. A developer session token can be supplied the same way with `MAKO_TOKEN_KIND=developer_session`.
+Set `MAKO_TOKEN` and `MAKO_ENDPOINT`. The token is used as given and never written to disk. Automation tokens (`mako-cloud auth token create`) are the intended credential: they are team-scoped, optionally narrowed to one project or environment, and carry a fixed permission list — `project_read`, `project_write`, `environment_read`, `environment_write`, `collection_write`, `policy_write`, `function_deploy`, `audit_read`, `organization_read`. A command the token's permissions do not allow fails with exit code 3 and the API's message naming the permission. A developer session token can be supplied the same way with `MAKO_TOKEN_KIND=developer_session`.
 
 Actions the console gates behind a fresh password (data explorer grants and other step-up actions) prompt on a terminal; without one, set `MAKO_STEP_UP_PASSWORD_FILE` to a file holding the password, or the command fails with exit code 3 and creates nothing.
 
@@ -384,18 +389,18 @@ Environment-scoped commands take `--project <id>` (`-p`) and `--env <id>` (`-e`)
 
 Some commands run several API calls and print each identifier they produce with the lower-level command that resumes from there, so a failed run is never a mystery:
 
-- `mako projects create <name> --region <r> [--team <id>] --wait` polls until the project is active or failed (deadline `--timeout`, default 600 s; exit 6 on the deadline, after printing the id and the last observed state). Without `--team` the project lands in your personal space.
-- `mako functions deploy <dir> --name <fn>` bundles the directory, uploads it, creates a deployment, runs the health check, and promotes it unless `--no-promote`. `--dependency <specifier>=<path>` maps a bare import onto an uploaded module; `--allow-host <name>` declares an external HTTPS host (repeatable, at most 8).
-- `mako data export --collection <id> --output <file>` creates an export job, waits for it, obtains a download grant, and streams the artifact to the file. `mako data import --collection <id> --input <file>` obtains an upload grant, streams the file with its digest, runs the dry run, shows the result, and confirms only with `--yes` or a typed confirmation.
-- `mako explorer …` issues a scoped explorer grant for the one call, performs it with the capability held in memory, and revokes the grant afterwards — also on failure. The capability is never printed or stored.
-- `mako functions serve <dir>` runs a function locally in the pinned edge runtime ([details](#serving-a-function-locally)).
-- `mako storage buckets create <id> [--access policy|public] [--max-object-bytes n] [--content-type t ...] [--rules <@file|-|json>]` declares a bucket; `update` sends only the options given; `delete` is refused while the bucket still holds objects unless `--delete-objects` confirms their loss. `mako storage objects list <id>` pages a bucket's objects by prefix and `objects delete <id> <path>` removes one.
-- `mako email-templates list|get|set|reset|preview` manages the four application mails; `set <kind> --subject <text> --body <@file|-|text>` refuses an unknown `{{variable}}` or a stray brace with the API's message.
-- `mako auth-settings get` shows an environment's providers (client ids and whether a secret is installed, never the secret), redirect allowlist, and magic-link settings; `mako auth-settings set --input <@file|-|json>` replaces them whole. A provider given without `clientSecret` keeps the installed one.
-- `mako allowed-origins get` prints the origins one per line (`(none)` when empty); `mako allowed-origins set --origin <url>…` replaces the list whole and `--none` clears it. Both say on stderr that the management and operator APIs never answer cross-origin.
-- `mako webhooks create --url <https-url> --subscribe <collection>[:<insert,update,delete>] ...` registers an endpoint; the signing secret is printed exactly once, after a warning on stderr, or written to `--secret-file`. `rotate-secret`, `update`, `resume`, `deliveries [--state …]`, and `redeliver` follow.
-- `mako schedules create --function <name> --cron "<expr>" [--name <text>] [--method <m>] [--path </p>] [--header k=v ...] [--content-type <t>] [--body <@file|-|text>] [--disabled]` attaches a five-field UTC cron schedule to a deployed function; `update`, `run-now`, `runs [--outcome …]`, and `delete` follow.
-- `mako domains add --hostname <name> --env <environment-id>` registers a hostname (here `--env` names the environment served, not the command's scope) and prints the TXT record to publish; `verify`, `list`, `get`, and `remove` follow.
+- `mako-cloud projects create <name> --region <r> [--team <id>] --wait` polls until the project is active or failed (deadline `--timeout`, default 600 s; exit 6 on the deadline, after printing the id and the last observed state). Without `--team` the project lands in your personal space.
+- `mako-cloud functions deploy <dir> --name <fn>` bundles the directory, uploads it, creates a deployment, runs the health check, and promotes it unless `--no-promote`. `--dependency <specifier>=<path>` maps a bare import onto an uploaded module; `--allow-host <name>` declares an external HTTPS host (repeatable, at most 8).
+- `mako-cloud data export --collection <id> --output <file>` creates an export job, waits for it, obtains a download grant, and streams the artifact to the file. `mako-cloud data import --collection <id> --input <file>` obtains an upload grant, streams the file with its digest, runs the dry run, shows the result, and confirms only with `--yes` or a typed confirmation.
+- `mako-cloud explorer …` issues a scoped explorer grant for the one call, performs it with the capability held in memory, and revokes the grant afterwards — also on failure. The capability is never printed or stored.
+- `mako-cloud functions serve <dir>` runs a function locally in the pinned edge runtime ([details](#serving-a-function-locally)).
+- `mako-cloud storage buckets create <id> [--access policy|public] [--max-object-bytes n] [--content-type t ...] [--rules <@file|-|json>]` declares a bucket; `update` sends only the options given; `delete` is refused while the bucket still holds objects unless `--delete-objects` confirms their loss. `mako-cloud storage objects list <id>` pages a bucket's objects by prefix and `objects delete <id> <path>` removes one.
+- `mako-cloud email-templates list|get|set|reset|preview` manages the four application mails; `set <kind> --subject <text> --body <@file|-|text>` refuses an unknown `{{variable}}` or a stray brace with the API's message.
+- `mako-cloud auth-settings get` shows an environment's providers (client ids and whether a secret is installed, never the secret), redirect allowlist, and magic-link settings; `mako-cloud auth-settings set --input <@file|-|json>` replaces them whole. A provider given without `clientSecret` keeps the installed one.
+- `mako-cloud allowed-origins get` prints the origins one per line (`(none)` when empty); `mako-cloud allowed-origins set --origin <url>…` replaces the list whole and `--none` clears it. Both say on stderr that the management and operator APIs never answer cross-origin.
+- `mako-cloud webhooks create --url <https-url> --subscribe <collection>[:<insert,update,delete>] ...` registers an endpoint; the signing secret is printed exactly once, after a warning on stderr, or written to `--secret-file`. `rotate-secret`, `update`, `resume`, `deliveries [--state …]`, and `redeliver` follow.
+- `mako-cloud schedules create --function <name> --cron "<expr>" [--name <text>] [--method <m>] [--path </p>] [--header k=v ...] [--content-type <t>] [--body <@file|-|text>] [--disabled]` attaches a five-field UTC cron schedule to a deployed function; `update`, `run-now`, `runs [--outcome …]`, and `delete` follow.
+- `mako-cloud domains add --hostname <name> --env <environment-id>` registers a hostname (here `--env` names the environment served, not the command's scope) and prints the TXT record to publish; `verify`, `list`, `get`, and `remove` follow.
 
 ### Hosted deployment note
 
@@ -405,299 +410,299 @@ The public beta's reverse proxy allows every management route by an explicit pat
 
 Generated from the command registry; every command also answers `--help` with its full option list. *(confirmed)* marks a command that requires `--yes` or a typed identifier; *(prints a secret once)* marks one whose output contains a secret shown exactly once.
 
-#### `mako activity`
+#### `mako-cloud activity`
 
 | command | does |
 | ------- | ---- |
-| `mako activity` | Audited actions in this environment, newest first |
+| `mako-cloud activity` | Audited actions in this environment, newest first |
 
-#### `mako allowed-origins`
-
-| command | does |
-| ------- | ---- |
-| `mako allowed-origins get` | Show the browser origins allowed to call this environment's application API |
-| `mako allowed-origins set` | Replace the browser origins allowed to call this environment's application API; --none allows no cross-origin access |
-
-#### `mako auth`
+#### `mako-cloud allowed-origins`
 
 | command | does |
 | ------- | ---- |
-| `mako auth login` | Sign in with email and password and store the session for this profile |
-| `mako auth logout` | Revoke the stored session server-side and remove it |
-| `mako auth recover-password --email <email>` | Send a password recovery mail |
-| `mako auth register` | Register a developer account with the hosted registration flow |
-| `mako auth resend-verification --email <email>` | Send the verification mail again |
-| `mako auth reset-password <token>` | Set a new password with the token from the recovery mail |
-| `mako auth status` | Show which credential and endpoint commands will use |
-| `mako auth token create --team <team-id> --name <name> --permission <permission> --expires-in <duration>` | Issue an automation token for a team; its secret is shown once *(prints a secret once)* |
-| `mako auth token list --team <team-id>` | List a team's automation tokens |
-| `mako auth token revoke <token-id> --team <team-id>` | Revoke an automation token; automation using it loses access immediately *(confirmed)* |
-| `mako auth token rotate <token-id> --team <team-id> --replacement-id <token-id> --expires-in <duration>` | Replace an automation token with a new one; the old token stops working *(confirmed, prints a secret once)* |
-| `mako auth verify-email <token>` | Confirm an email address with the token from the verification mail |
-| `mako auth waitlist-status` | Show whether a registration is still on the wait-list |
-| `mako auth whoami` | Show the signed-in developer, their personal space, and teams |
+| `mako-cloud allowed-origins get` | Show the browser origins allowed to call this environment's application API |
+| `mako-cloud allowed-origins set` | Replace the browser origins allowed to call this environment's application API; --none allows no cross-origin access |
 
-#### `mako auth-settings`
+#### `mako-cloud auth`
 
 | command | does |
 | ------- | ---- |
-| `mako auth-settings get` | Show the environment's sign-in providers (without secrets), redirect allowlist, and magic-link settings |
-| `mako auth-settings set --input <@file\|-\|json>` | Replace the environment's sign-in settings from a JSON document; a provider without clientSecret keeps the installed one |
+| `mako-cloud auth login` | Sign in with email and password and store the session for this profile |
+| `mako-cloud auth logout` | Revoke the stored session server-side and remove it |
+| `mako-cloud auth recover-password --email <email>` | Send a password recovery mail |
+| `mako-cloud auth register` | Register a developer account with the hosted registration flow |
+| `mako-cloud auth resend-verification --email <email>` | Send the verification mail again |
+| `mako-cloud auth reset-password <token>` | Set a new password with the token from the recovery mail |
+| `mako-cloud auth status` | Show which credential and endpoint commands will use |
+| `mako-cloud auth token create --team <team-id> --name <name> --permission <permission> --expires-in <duration>` | Issue an automation token for a team; its secret is shown once *(prints a secret once)* |
+| `mako-cloud auth token list --team <team-id>` | List a team's automation tokens |
+| `mako-cloud auth token revoke <token-id> --team <team-id>` | Revoke an automation token; automation using it loses access immediately *(confirmed)* |
+| `mako-cloud auth token rotate <token-id> --team <team-id> --replacement-id <token-id> --expires-in <duration>` | Replace an automation token with a new one; the old token stops working *(confirmed, prints a secret once)* |
+| `mako-cloud auth verify-email <token>` | Confirm an email address with the token from the verification mail |
+| `mako-cloud auth waitlist-status` | Show whether a registration is still on the wait-list |
+| `mako-cloud auth whoami` | Show the signed-in developer, their personal space, and teams |
 
-#### `mako backups`
-
-| command | does |
-| ------- | ---- |
-| `mako backups list` | Verified recovery points for an environment |
-| `mako backups restore-requests create --project <project-id> --input <@file\|-\|json>` | Restore a verified backup into a new isolated environment (step-up verified) *(confirmed)* |
-| `mako backups restore-requests list` | Restore requests for a project and their verification state |
-
-#### `mako collections`
-
-| command | does |
-| ------- | ---- |
-| `mako collections create <collection-id> --schema <@file\|-\|json>` | Create a collection with its first schema (`--primary-key <field>` unless the schema carries `primaryKey`; `--schema-version`, default 1) |
-| `mako collections get <collection-id>` | Show a collection, its active schema, and its state |
-| `mako collections list` | List the environment's collections and their active schema versions |
-| `mako collections migrations create <collection-id> --input <@file\|-\|json>` | Plan a schema migration to a target schema version |
-| `mako collections migrations get <collection-id> <migration-id>` | Show a schema migration and its state |
-| `mako collections migrations update <collection-id> <migration-id> --state <state>` | Move a schema migration to another state |
-| `mako collections schema publish <collection-id> --schema <@file\|-\|json> --schema-version <n>` | Publish a new schema version; reports migration_required when documents do not fit |
-
-#### `mako data`
+#### `mako-cloud auth-settings`
 
 | command | does |
 | ------- | ---- |
-| `mako data export --output <path\|->` | Export a collection snapshot as JSON Lines: create the job, wait, download |
-| `mako data import` | Import JSON Lines: upload with its digest, dry-run, then confirm |
-| `mako data jobs cancel <job-id>` | Cancel a queued or running data job (committed rows are kept) *(confirmed)* |
-| `mako data jobs get <job-id>` | Show one data job; --wait polls it to a terminal state |
-| `mako data jobs list` | List import and export jobs of an environment |
+| `mako-cloud auth-settings get` | Show the environment's sign-in providers (without secrets), redirect allowlist, and magic-link settings |
+| `mako-cloud auth-settings set --input <@file\|-\|json>` | Replace the environment's sign-in settings from a JSON document; a provider without clientSecret keeps the installed one |
 
-#### `mako domains`
+#### `mako-cloud backups`
 
 | command | does |
 | ------- | ---- |
-| `mako domains add` | Add a custom domain that serves one environment's API and functions; prints the TXT record to publish |
-| `mako domains get <domain-id>` | Show a custom domain, its DNS verification record, and why the last check failed |
-| `mako domains list` | List the project's custom domains with the environment each serves, its state, and the last check |
-| `mako domains remove <domain-id>` | Remove a custom domain; serving on its name stops and its certificate is no longer renewed *(confirmed)* |
-| `mako domains verify <domain-id>` | Check a domain's DNS record now instead of at the next periodic check and show the outcome |
+| `mako-cloud backups list` | Verified recovery points for an environment |
+| `mako-cloud backups restore-requests create --project <project-id> --input <@file\|-\|json>` | Restore a verified backup into a new isolated environment (step-up verified) *(confirmed)* |
+| `mako-cloud backups restore-requests list` | Restore requests for a project and their verification state |
 
-#### `mako email-templates`
+#### `mako-cloud collections`
 
 | command | does |
 | ------- | ---- |
-| `mako email-templates get <kind>` | Show one email template's subject and body as they are in effect |
-| `mako email-templates list` | List the environment's application email templates; defaults are marked until customized |
-| `mako email-templates preview <kind>` | Render an email template with placeholder data; --subject or --body previews unsaved text |
-| `mako email-templates reset <kind>` | Reset an email template to the built-in default |
-| `mako email-templates set <kind>` | Customize an email template's subject and plain-text body; unknown {{variables}} are refused |
+| `mako-cloud collections create <collection-id> --schema <@file\|-\|json>` | Create a collection with its first schema (`--primary-key <field>` unless the schema carries `primaryKey`; `--schema-version`, default 1) |
+| `mako-cloud collections get <collection-id>` | Show a collection, its active schema, and its state |
+| `mako-cloud collections list` | List the environment's collections and their active schema versions |
+| `mako-cloud collections migrations create <collection-id> --input <@file\|-\|json>` | Plan a schema migration to a target schema version |
+| `mako-cloud collections migrations get <collection-id> <migration-id>` | Show a schema migration and its state |
+| `mako-cloud collections migrations update <collection-id> <migration-id> --state <state>` | Move a schema migration to another state |
+| `mako-cloud collections schema publish <collection-id> --schema <@file\|-\|json> --schema-version <n>` | Publish a new schema version; reports migration_required when documents do not fit |
 
-#### `mako envs`
-
-| command | does |
-| ------- | ---- |
-| `mako envs create <name>` | Create an environment in a project (--wait for provisioning) |
-| `mako envs delete <env-id>` | Start an environment's deletion grace period *(confirmed)* |
-| `mako envs get <env-id>` | Show an environment |
-| `mako envs list` | List a project's environments |
-| `mako envs restore <env-id>` | Restore a suspended environment or one in its deletion grace period |
-| `mako envs suspend <env-id>` | Suspend an environment; it stops serving *(confirmed)* |
-
-#### `mako explorer`
+#### `mako-cloud data`
 
 | command | does |
 | ------- | ---- |
-| `mako explorer browse <collection-id>` | Page through a collection in primary-key order over a stable snapshot |
-| `mako explorer get <collection-id> <document-id>` | Read one document under a short-lived explorer grant |
-| `mako explorer history <collection-id> <document-id>` | List the retained revisions and tombstones of one document |
-| `mako explorer mutate <collection-id> --mutation <@file\|-\|json>` | Commit a create, update, or delete with administrative access *(confirmed)* |
-| `mako explorer plan <collection-id> --query <@file\|-\|json>` | Show which index a query would use, or the index it needs |
-| `mako explorer query <collection-id> --query <@file\|-\|json>` | Run an indexed query and page through its results |
-| `mako explorer simulate <collection-id> --mutation <@file\|-\|json>` | Validate a mutation against the schema, revision, and policy without committing |
+| `mako-cloud data export --output <path\|->` | Export a collection snapshot as JSON Lines: create the job, wait, download |
+| `mako-cloud data import` | Import JSON Lines: upload with its digest, dry-run, then confirm |
+| `mako-cloud data jobs cancel <job-id>` | Cancel a queued or running data job (committed rows are kept) *(confirmed)* |
+| `mako-cloud data jobs get <job-id>` | Show one data job; --wait polls it to a terminal state |
+| `mako-cloud data jobs list` | List import and export jobs of an environment |
 
-#### `mako functions`
+#### `mako-cloud domains`
 
 | command | does |
 | ------- | ---- |
-| `mako functions create <name>` | Create a function with its configuration (`--region` required; `--no-verify-jwt`, `--secret`, `--allow-host`, `--cpu-ms`, `--wall-ms`, `--memory-bytes`, `--request-bytes`, `--response-bytes`, `--concurrency`); deploy code with `functions deploy` |
-| `mako functions delete <name>` | Delete a function and every deployment it has *(confirmed)* |
-| `mako functions deploy <directory> --name <function-name>` | Upload a function directory, create a version, check its health, and promote it (promotion needs --yes or a typed confirmation) |
-| `mako functions deployments create <name> --bundle <digest>` | Create a deployment version from an uploaded bundle digest |
-| `mako functions deployments delete <name> <version>` | Delete a deployment version that is not active *(confirmed)* |
-| `mako functions deployments get <name> <version>` | Show one deployment version |
-| `mako functions deployments health <name> <version>` | Run the health check on a deployment version and record the outcome |
-| `mako functions deployments list <name>` | List a function's immutable deployment versions |
-| `mako functions deployments promote <name> <version>` | Make a healthy deployment version the active one *(confirmed)* |
-| `mako functions deployments rollback <name> <version>` | Switch the active version back to a previously healthy one *(confirmed)* |
-| `mako functions get <name>` | Show a function, its configuration, and its active version |
-| `mako functions list` | List the functions in an environment |
-| `mako functions logs <name>` | Read a function's sanitized logs, newest page first |
-| `mako functions secrets create <name>` | Create a function secret: generated and shown once, or stored from `--value <v>` / `--value-file <path>` (a service credential, say) and never shown *(prints a secret once)* |
-| `mako functions secrets get <name>` | Show a function secret's version and state, never its value |
-| `mako functions secrets retire <name>` | Retire a function secret so no new deployment can attach it *(confirmed)* |
-| `mako functions secrets rotate <name>` | Rotate a function secret and show the new value once *(confirmed, prints a secret once)* |
-| `mako functions serve` | Run a function locally in the pinned edge runtime |
-| `mako functions test <name>` | Invoke a function through the management test route and show the response |
-| `mako functions update <name> --config <json>` | Replace a function's configuration |
+| `mako-cloud domains add` | Add a custom domain that serves one environment's API and functions; prints the TXT record to publish |
+| `mako-cloud domains get <domain-id>` | Show a custom domain, its DNS verification record, and why the last check failed |
+| `mako-cloud domains list` | List the project's custom domains with the environment each serves, its state, and the last check |
+| `mako-cloud domains remove <domain-id>` | Remove a custom domain; serving on its name stops and its certificate is no longer renewed *(confirmed)* |
+| `mako-cloud domains verify <domain-id>` | Check a domain's DNS record now instead of at the next periodic check and show the outcome |
 
-#### `mako indexes`
+#### `mako-cloud email-templates`
 
 | command | does |
 | ------- | ---- |
-| `mako indexes create <collection-id> --name <name> --version <n> --field <path[:ascending\|descending]>… [--unique]` | Create an index; it is built in the background and reported active when ready |
-| `mako indexes delete <collection-id> <name> <version>` | Delete one index version *(confirmed)* |
-| `mako indexes get <collection-id> <name> <version>` | Show one index version, its fields, progress, and any failure |
-| `mako indexes list <collection-id>` | List a collection's indexes and their build state |
+| `mako-cloud email-templates get <kind>` | Show one email template's subject and body as they are in effect |
+| `mako-cloud email-templates list` | List the environment's application email templates; defaults are marked until customized |
+| `mako-cloud email-templates preview <kind>` | Render an email template with placeholder data; --subject or --body previews unsaved text |
+| `mako-cloud email-templates reset <kind>` | Reset an email template to the built-in default |
+| `mako-cloud email-templates set <kind>` | Customize an email template's subject and plain-text body; unknown {{variables}} are refused |
 
-#### `mako keys`
-
-| command | does |
-| ------- | ---- |
-| `mako keys get <credential-id>` | Show a credential's kind, scope, and state (never its secret) |
-| `mako keys public create` | Issue a public key for client apps; the secret is shown once *(prints a secret once)* |
-| `mako keys retire <credential-id>` | Retire a credential; requests signed with it are refused from then on *(confirmed)* |
-| `mako keys rotate <credential-id> --replacement-id <credential-id> --overlap <seconds>` | Issue a replacement credential and retire this one after the overlap *(confirmed, prints a secret once)* |
-| `mako keys service create --collection <id>… --operation <op>…` | Issue a service credential scoped to collections and operations; shown once *(prints a secret once)* |
-| `mako keys signing init` | Create the environment's first JWT signing key |
-| `mako keys signing list` | List the environment's JWT signing keys and their states |
-| `mako keys signing rotate --overlap <seconds>` | Rotate the JWT signing key; the old key verifies tokens until the overlap ends *(confirmed)* |
-
-#### `mako logs`
+#### `mako-cloud envs`
 
 | command | does |
 | ------- | ---- |
-| `mako logs` | Retained, scrubbed log lines from functions, the data plane, and sync (newest first) |
+| `mako-cloud envs create <name>` | Create an environment in a project (--wait for provisioning) |
+| `mako-cloud envs delete <env-id>` | Start an environment's deletion grace period *(confirmed)* |
+| `mako-cloud envs get <env-id>` | Show an environment |
+| `mako-cloud envs list` | List a project's environments |
+| `mako-cloud envs restore <env-id>` | Restore a suspended environment or one in its deletion grace period |
+| `mako-cloud envs suspend <env-id>` | Suspend an environment; it stops serving *(confirmed)* |
 
-#### `mako observability`
-
-| command | does |
-| ------- | ---- |
-| `mako observability audit` | Append-only administration history for this environment, newest first |
-| `mako observability auth-events` | Sanitized application authentication outcomes, without credentials |
-| `mako observability function-metrics` | Invocation, error, latency, and compute counts per function version and region |
-| `mako observability health` | Regional data-plane service status and sanitized diagnostics |
-| `mako observability index-state` | Index build state events per collection index, newest first |
-| `mako observability logs` | Retained, scrubbed log lines from functions, the data plane, and sync (newest first) |
-| `mako observability quotas` | Consumption against enforced limits, with the retry time when work was throttled |
-| `mako observability replication-errors` | RxDB replication failures with retry guidance and correlation identifiers |
-| `mako observability usage` | Retained usage samples per resource (flows sum their records; levels average their samples) |
-
-#### `mako policies`
+#### `mako-cloud explorer`
 
 | command | does |
 | ------- | ---- |
-| `mako policies activate <collection-id> <version>` | Activate a policy version; every client is authorized by it from then on *(confirmed)* |
-| `mako policies draft <collection-id> --input <@file\|-\|json>` | Create a policy draft from {version, rules} |
-| `mako policies get <collection-id>` | Show the active policy of a collection, or one version with --version |
-| `mako policies rollback <collection-id> <version>` | Make an earlier policy version active again *(confirmed)* |
-| `mako policies test <collection-id> <version> --examples <@file\|-\|json>` | Evaluate a policy version against example requests |
-| `mako policies validate <collection-id> <version>` | Validate a policy version and report its diagnostics |
+| `mako-cloud explorer browse <collection-id>` | Page through a collection in primary-key order over a stable snapshot |
+| `mako-cloud explorer get <collection-id> <document-id>` | Read one document under a short-lived explorer grant |
+| `mako-cloud explorer history <collection-id> <document-id>` | List the retained revisions and tombstones of one document |
+| `mako-cloud explorer mutate <collection-id> --mutation <@file\|-\|json>` | Commit a create, update, or delete with administrative access *(confirmed)* |
+| `mako-cloud explorer plan <collection-id> --query <@file\|-\|json>` | Show which index a query would use, or the index it needs |
+| `mako-cloud explorer query <collection-id> --query <@file\|-\|json>` | Run an indexed query and page through its results |
+| `mako-cloud explorer simulate <collection-id> --mutation <@file\|-\|json>` | Validate a mutation against the schema, revision, and policy without committing |
 
-#### `mako projects`
-
-| command | does |
-| ------- | ---- |
-| `mako projects create <name> --region <region>` | Create a project in your personal space or a team (--wait for provisioning) |
-| `mako projects delete <project-id>` | Start a project's deletion grace period *(confirmed)* |
-| `mako projects get <project-id>` | Show a project |
-| `mako projects list` | List projects in one team, or in every team you belong to |
-| `mako projects rename <project-id> <name>` | Rename a project |
-| `mako projects restore <project-id>` | Restore a suspended project or one in its deletion grace period |
-| `mako projects suspend <project-id>` | Suspend a project; its environments stop serving *(confirmed)* |
-| `mako projects transfer <project-id>` | Move a project to a team you administer, or to your personal space *(confirmed)* |
-
-#### `mako schedules`
+#### `mako-cloud functions`
 
 | command | does |
 | ------- | ---- |
-| `mako schedules create --function <name>` | Attach a UTC cron schedule to a deployed function; an invalid expression is refused at once |
-| `mako schedules delete <schedule-id> --function <name>` | Remove a schedule and its run history *(confirmed)* |
-| `mako schedules get <schedule-id> --function <name>` | Show a schedule, the request it sends, its next run, and its last run |
-| `mako schedules list --function <name>` | List a function's cron schedules with their state, next run, and last run |
-| `mako schedules run-now <schedule-id> --function <name>` | Queue one run of a schedule outside its cron times, recorded as manual; refused while a run is executing |
-| `mako schedules runs <schedule-id> --function <name>` | List a schedule's runs, newest first, including ones skipped for overlap; --all follows the cursor to the end |
-| `mako schedules update <schedule-id> --function <name>` | Change a schedule's expression, name, request, or enabled flag; only given options are sent |
+| `mako-cloud functions create <name>` | Create a function with its configuration (`--region` required; `--no-verify-jwt`, `--secret`, `--allow-host`, `--cpu-ms`, `--wall-ms`, `--memory-bytes`, `--request-bytes`, `--response-bytes`, `--concurrency`); deploy code with `functions deploy` |
+| `mako-cloud functions delete <name>` | Delete a function and every deployment it has *(confirmed)* |
+| `mako-cloud functions deploy <directory> --name <function-name>` | Upload a function directory, create a version, check its health, and promote it (promotion needs --yes or a typed confirmation) |
+| `mako-cloud functions deployments create <name> --bundle <digest>` | Create a deployment version from an uploaded bundle digest |
+| `mako-cloud functions deployments delete <name> <version>` | Delete a deployment version that is not active *(confirmed)* |
+| `mako-cloud functions deployments get <name> <version>` | Show one deployment version |
+| `mako-cloud functions deployments health <name> <version>` | Run the health check on a deployment version and record the outcome |
+| `mako-cloud functions deployments list <name>` | List a function's immutable deployment versions |
+| `mako-cloud functions deployments promote <name> <version>` | Make a healthy deployment version the active one *(confirmed)* |
+| `mako-cloud functions deployments rollback <name> <version>` | Switch the active version back to a previously healthy one *(confirmed)* |
+| `mako-cloud functions get <name>` | Show a function, its configuration, and its active version |
+| `mako-cloud functions list` | List the functions in an environment |
+| `mako-cloud functions logs <name>` | Read a function's sanitized logs, newest page first |
+| `mako-cloud functions secrets create <name>` | Create a function secret: generated and shown once, or stored from `--value <v>` / `--value-file <path>` (a service credential, say) and never shown *(prints a secret once)* |
+| `mako-cloud functions secrets get <name>` | Show a function secret's version and state, never its value |
+| `mako-cloud functions secrets retire <name>` | Retire a function secret so no new deployment can attach it *(confirmed)* |
+| `mako-cloud functions secrets rotate <name>` | Rotate a function secret and show the new value once *(confirmed, prints a secret once)* |
+| `mako-cloud functions serve` | Run a function locally in the pinned edge runtime |
+| `mako-cloud functions test <name>` | Invoke a function through the management test route and show the response |
+| `mako-cloud functions update <name> --config <json>` | Replace a function's configuration |
 
-#### `mako storage`
-
-| command | does |
-| ------- | ---- |
-| `mako storage buckets create <bucket-id>` | Create a storage bucket; without rules a policy bucket refuses every request |
-| `mako storage buckets delete <bucket-id>` | Delete a storage bucket; one that still holds objects is refused unless --delete-objects confirms their loss *(confirmed)* |
-| `mako storage buckets get <bucket-id>` | Show a storage bucket, its limits, its rules, and its totals |
-| `mako storage buckets list` | List the environment's storage buckets with their object counts and totals |
-| `mako storage buckets update <bucket-id>` | Change a storage bucket's access, limits, content types, or rules; only given options are sent |
-| `mako storage objects delete <bucket-id> <path>` | Delete one object from a bucket by its path *(confirmed)* |
-| `mako storage objects list <bucket-id>` | List a bucket's objects in path order; --all follows the cursor to the end |
-
-#### `mako sync`
-
-| command | does |
-| ------- | ---- |
-| `mako sync summary` | Aggregate RxDB synchronization diagnostics for a window (default: the last hour) |
-
-#### `mako teams`
+#### `mako-cloud indexes`
 
 | command | does |
 | ------- | ---- |
-| `mako teams bill <team-id>` | Show a team's bill for the current month or a closed period |
-| `mako teams create <name>` | Create a team |
-| `mako teams delete <team-id>` | Start a team's deletion grace period; its projects lose access immediately *(confirmed)* |
-| `mako teams get <team-id>` | Show a team |
-| `mako teams invitations accept <invitation-id> <token>` | Join a team with an invitation id and its token |
-| `mako teams invitations create <team-id> --email <email> --role <role>` | Invite a developer to a team; the invitation token is shown once *(prints a secret once)* |
-| `mako teams list` | List the teams you belong to, including your personal space |
-| `mako teams members list <team-id>` | List a team's members and their roles |
-| `mako teams members remove <team-id> <developer-id>` | Remove a member from a team *(confirmed)* |
-| `mako teams members update <team-id> <developer-id> --role <role>` | Change a member's role |
-| `mako teams rename <team-id> <name>` | Rename a team |
-| `mako teams restore <team-id>` | Restore a team from its deletion grace period |
+| `mako-cloud indexes create <collection-id> --name <name> --version <n> --field <path[:ascending\|descending]>… [--unique]` | Create an index; it is built in the background and reported active when ready |
+| `mako-cloud indexes delete <collection-id> <name> <version>` | Delete one index version *(confirmed)* |
+| `mako-cloud indexes get <collection-id> <name> <version>` | Show one index version, its fields, progress, and any failure |
+| `mako-cloud indexes list <collection-id>` | List a collection's indexes and their build state |
 
-#### `mako usage`
+#### `mako-cloud keys`
 
 | command | does |
 | ------- | ---- |
-| `mako usage` | Retained usage samples per resource (flows sum their records; levels average their samples) |
+| `mako-cloud keys get <credential-id>` | Show a credential's kind, scope, and state (never its secret) |
+| `mako-cloud keys public create` | Issue a public key for client apps; the secret is shown once *(prints a secret once)* |
+| `mako-cloud keys retire <credential-id>` | Retire a credential; requests signed with it are refused from then on *(confirmed)* |
+| `mako-cloud keys rotate <credential-id> --replacement-id <credential-id> --overlap <seconds>` | Issue a replacement credential and retire this one after the overlap *(confirmed, prints a secret once)* |
+| `mako-cloud keys service create --collection <id>… --operation <op>…` | Issue a service credential scoped to collections and operations; shown once *(prints a secret once)* |
+| `mako-cloud keys signing init` | Create the environment's first JWT signing key |
+| `mako-cloud keys signing list` | List the environment's JWT signing keys and their states |
+| `mako-cloud keys signing rotate --overlap <seconds>` | Rotate the JWT signing key; the old key verifies tokens until the overlap ends *(confirmed)* |
 
-#### `mako users`
-
-| command | does |
-| ------- | ---- |
-| `mako users create --email <email>` | Create an application user directly, without an invitation |
-| `mako users delete <user-id>` | Delete a user *(confirmed)* |
-| `mako users disable <user-id>` | Disable a user; their sessions stop working until restored *(confirmed)* |
-| `mako users get <user-id>` | Show an application user, their metadata, and their sessions |
-| `mako users invite --email <email>` | Invite an application user; they finish signing up themselves |
-| `mako users restore <user-id>` | Restore a disabled user |
-| `mako users revoke-session <user-id> <session-id>` | Revoke one session of a user *(confirmed)* |
-| `mako users revoke-sessions <user-id>` | Revoke every session of a user *(confirmed)* |
-| `mako users search` | Search application users by id or email (bounded; no credential material) |
-| `mako users update-metadata <user-id> --input <@file\|-\|json>` | Replace a user's trusted and profile metadata |
-
-#### `mako webhooks`
+#### `mako-cloud logs`
 
 | command | does |
 | ------- | ---- |
-| `mako webhooks create` | Register a webhook endpoint for collection events; the signing secret is shown once *(prints a secret once)* |
-| `mako webhooks delete <webhook-id>` | Remove a webhook endpoint with its subscriptions and delivery log *(confirmed)* |
-| `mako webhooks deliveries <webhook-id>` | List a webhook endpoint's recent deliveries, newest first; --all follows the cursor to the end |
-| `mako webhooks get <webhook-id>` | Show a webhook endpoint, its subscriptions, and why it is paused if it is |
-| `mako webhooks list` | List the environment's webhook endpoints with their state and failure counts |
-| `mako webhooks redeliver <webhook-id> <delivery-id>` | Queue a new signed delivery of one event, logged as a redelivery of the original |
-| `mako webhooks resume <webhook-id>` | Resume a webhook endpoint the platform paused after sustained failure |
-| `mako webhooks rotate-secret <webhook-id>` | Replace a webhook endpoint's signing secret; the new one is shown once and the old one stops signing at once *(confirmed, prints a secret once)* |
-| `mako webhooks update <webhook-id>` | Change a webhook endpoint's URL, subscriptions, description, or enabled flag; only given options are sent |
+| `mako-cloud logs` | Retained, scrubbed log lines from functions, the data plane, and sync (newest first) |
 
-#### `mako workspace`
+#### `mako-cloud observability`
 
 | command | does |
 | ------- | ---- |
-| `mako workspace check` | Probe DNS, TLS, routes, key, schema, and replication without reading documents |
-| `mako workspace connect` | Public RxDB connection metadata: endpoint, active public key id, compatibility |
-| `mako workspace nav` | Workspace destinations and whether your memberships permit each |
-| `mako workspace summary` | Overview sections for an environment, each with its own freshness |
+| `mako-cloud observability audit` | Append-only administration history for this environment, newest first |
+| `mako-cloud observability auth-events` | Sanitized application authentication outcomes, without credentials |
+| `mako-cloud observability function-metrics` | Invocation, error, latency, and compute counts per function version and region |
+| `mako-cloud observability health` | Regional data-plane service status and sanitized diagnostics |
+| `mako-cloud observability index-state` | Index build state events per collection index, newest first |
+| `mako-cloud observability logs` | Retained, scrubbed log lines from functions, the data plane, and sync (newest first) |
+| `mako-cloud observability quotas` | Consumption against enforced limits, with the retry time when work was throttled |
+| `mako-cloud observability replication-errors` | RxDB replication failures with retry guidance and correlation identifiers |
+| `mako-cloud observability usage` | Retained usage samples per resource (flows sum their records; levels average their samples) |
+
+#### `mako-cloud policies`
+
+| command | does |
+| ------- | ---- |
+| `mako-cloud policies activate <collection-id> <version>` | Activate a policy version; every client is authorized by it from then on *(confirmed)* |
+| `mako-cloud policies draft <collection-id> --input <@file\|-\|json>` | Create a policy draft from {version, rules} |
+| `mako-cloud policies get <collection-id>` | Show the active policy of a collection, or one version with --version |
+| `mako-cloud policies rollback <collection-id> <version>` | Make an earlier policy version active again *(confirmed)* |
+| `mako-cloud policies test <collection-id> <version> --examples <@file\|-\|json>` | Evaluate a policy version against example requests |
+| `mako-cloud policies validate <collection-id> <version>` | Validate a policy version and report its diagnostics |
+
+#### `mako-cloud projects`
+
+| command | does |
+| ------- | ---- |
+| `mako-cloud projects create <name> --region <region>` | Create a project in your personal space or a team (--wait for provisioning) |
+| `mako-cloud projects delete <project-id>` | Start a project's deletion grace period *(confirmed)* |
+| `mako-cloud projects get <project-id>` | Show a project |
+| `mako-cloud projects list` | List projects in one team, or in every team you belong to |
+| `mako-cloud projects rename <project-id> <name>` | Rename a project |
+| `mako-cloud projects restore <project-id>` | Restore a suspended project or one in its deletion grace period |
+| `mako-cloud projects suspend <project-id>` | Suspend a project; its environments stop serving *(confirmed)* |
+| `mako-cloud projects transfer <project-id>` | Move a project to a team you administer, or to your personal space *(confirmed)* |
+
+#### `mako-cloud schedules`
+
+| command | does |
+| ------- | ---- |
+| `mako-cloud schedules create --function <name>` | Attach a UTC cron schedule to a deployed function; an invalid expression is refused at once |
+| `mako-cloud schedules delete <schedule-id> --function <name>` | Remove a schedule and its run history *(confirmed)* |
+| `mako-cloud schedules get <schedule-id> --function <name>` | Show a schedule, the request it sends, its next run, and its last run |
+| `mako-cloud schedules list --function <name>` | List a function's cron schedules with their state, next run, and last run |
+| `mako-cloud schedules run-now <schedule-id> --function <name>` | Queue one run of a schedule outside its cron times, recorded as manual; refused while a run is executing |
+| `mako-cloud schedules runs <schedule-id> --function <name>` | List a schedule's runs, newest first, including ones skipped for overlap; --all follows the cursor to the end |
+| `mako-cloud schedules update <schedule-id> --function <name>` | Change a schedule's expression, name, request, or enabled flag; only given options are sent |
+
+#### `mako-cloud storage`
+
+| command | does |
+| ------- | ---- |
+| `mako-cloud storage buckets create <bucket-id>` | Create a storage bucket; without rules a policy bucket refuses every request |
+| `mako-cloud storage buckets delete <bucket-id>` | Delete a storage bucket; one that still holds objects is refused unless --delete-objects confirms their loss *(confirmed)* |
+| `mako-cloud storage buckets get <bucket-id>` | Show a storage bucket, its limits, its rules, and its totals |
+| `mako-cloud storage buckets list` | List the environment's storage buckets with their object counts and totals |
+| `mako-cloud storage buckets update <bucket-id>` | Change a storage bucket's access, limits, content types, or rules; only given options are sent |
+| `mako-cloud storage objects delete <bucket-id> <path>` | Delete one object from a bucket by its path *(confirmed)* |
+| `mako-cloud storage objects list <bucket-id>` | List a bucket's objects in path order; --all follows the cursor to the end |
+
+#### `mako-cloud sync`
+
+| command | does |
+| ------- | ---- |
+| `mako-cloud sync summary` | Aggregate RxDB synchronization diagnostics for a window (default: the last hour) |
+
+#### `mako-cloud teams`
+
+| command | does |
+| ------- | ---- |
+| `mako-cloud teams bill <team-id>` | Show a team's bill for the current month or a closed period |
+| `mako-cloud teams create <name>` | Create a team |
+| `mako-cloud teams delete <team-id>` | Start a team's deletion grace period; its projects lose access immediately *(confirmed)* |
+| `mako-cloud teams get <team-id>` | Show a team |
+| `mako-cloud teams invitations accept <invitation-id> <token>` | Join a team with an invitation id and its token |
+| `mako-cloud teams invitations create <team-id> --email <email> --role <role>` | Invite a developer to a team; the invitation token is shown once *(prints a secret once)* |
+| `mako-cloud teams list` | List the teams you belong to, including your personal space |
+| `mako-cloud teams members list <team-id>` | List a team's members and their roles |
+| `mako-cloud teams members remove <team-id> <developer-id>` | Remove a member from a team *(confirmed)* |
+| `mako-cloud teams members update <team-id> <developer-id> --role <role>` | Change a member's role |
+| `mako-cloud teams rename <team-id> <name>` | Rename a team |
+| `mako-cloud teams restore <team-id>` | Restore a team from its deletion grace period |
+
+#### `mako-cloud usage`
+
+| command | does |
+| ------- | ---- |
+| `mako-cloud usage` | Retained usage samples per resource (flows sum their records; levels average their samples) |
+
+#### `mako-cloud users`
+
+| command | does |
+| ------- | ---- |
+| `mako-cloud users create --email <email>` | Create an application user directly, without an invitation |
+| `mako-cloud users delete <user-id>` | Delete a user *(confirmed)* |
+| `mako-cloud users disable <user-id>` | Disable a user; their sessions stop working until restored *(confirmed)* |
+| `mako-cloud users get <user-id>` | Show an application user, their metadata, and their sessions |
+| `mako-cloud users invite --email <email>` | Invite an application user; they finish signing up themselves |
+| `mako-cloud users restore <user-id>` | Restore a disabled user |
+| `mako-cloud users revoke-session <user-id> <session-id>` | Revoke one session of a user *(confirmed)* |
+| `mako-cloud users revoke-sessions <user-id>` | Revoke every session of a user *(confirmed)* |
+| `mako-cloud users search` | Search application users by id or email (bounded; no credential material) |
+| `mako-cloud users update-metadata <user-id> --input <@file\|-\|json>` | Replace a user's trusted and profile metadata |
+
+#### `mako-cloud webhooks`
+
+| command | does |
+| ------- | ---- |
+| `mako-cloud webhooks create` | Register a webhook endpoint for collection events; the signing secret is shown once *(prints a secret once)* |
+| `mako-cloud webhooks delete <webhook-id>` | Remove a webhook endpoint with its subscriptions and delivery log *(confirmed)* |
+| `mako-cloud webhooks deliveries <webhook-id>` | List a webhook endpoint's recent deliveries, newest first; --all follows the cursor to the end |
+| `mako-cloud webhooks get <webhook-id>` | Show a webhook endpoint, its subscriptions, and why it is paused if it is |
+| `mako-cloud webhooks list` | List the environment's webhook endpoints with their state and failure counts |
+| `mako-cloud webhooks redeliver <webhook-id> <delivery-id>` | Queue a new signed delivery of one event, logged as a redelivery of the original |
+| `mako-cloud webhooks resume <webhook-id>` | Resume a webhook endpoint the platform paused after sustained failure |
+| `mako-cloud webhooks rotate-secret <webhook-id>` | Replace a webhook endpoint's signing secret; the new one is shown once and the old one stops signing at once *(confirmed, prints a secret once)* |
+| `mako-cloud webhooks update <webhook-id>` | Change a webhook endpoint's URL, subscriptions, description, or enabled flag; only given options are sent |
+
+#### `mako-cloud workspace`
+
+| command | does |
+| ------- | ---- |
+| `mako-cloud workspace check` | Probe DNS, TLS, routes, key, schema, and replication without reading documents |
+| `mako-cloud workspace connect` | Public RxDB connection metadata: endpoint, active public key id, compatibility |
+| `mako-cloud workspace nav` | Workspace destinations and whether your memberships permit each |
+| `mako-cloud workspace summary` | Overview sections for an environment, each with its own freshness |
 
 ### Where this is tested
 
@@ -710,23 +715,23 @@ Generated from the command registry; every command also answers `--help` with it
 ### Teams and membership
 
 ```bash
-mako teams create "Acme"
-mako teams invitations create org_… --email colleague@example.com --role developer   # token shown once
-mako teams invitations accept inv_… <token>                                       # run by the invitee
-mako teams members list org_…
-mako teams members update org_… dev_… --role administrator
-mako teams members remove org_… dev_… --yes
+mako-cloud teams create "Acme"
+mako-cloud teams invitations create org_… --email colleague@example.com --role developer   # token shown once
+mako-cloud teams invitations accept inv_… <token>                                       # run by the invitee
+mako-cloud teams members list org_…
+mako-cloud teams members update org_… dev_… --role administrator
+mako-cloud teams members remove org_… dev_… --yes
 ```
 
-Roles: `owner`, `administrator`, `developer`, `viewer`. Deleting a team starts a grace period (`mako teams delete`, restorable with `mako teams restore`); its projects lose access immediately. Your personal space (`kind: personal`) appears in `mako teams list` and refuses invitations, membership changes, and deletion.
+Roles: `owner`, `administrator`, `developer`, `viewer`. Deleting a team starts a grace period (`mako-cloud teams delete`, restorable with `mako-cloud teams restore`); its projects lose access immediately. Your personal space (`kind: personal`) appears in `mako-cloud teams list` and refuses invitations, membership changes, and deletion.
 
 ### Automation tokens
 
 ```bash
-mako auth token create --team org_… --name ci-deploy --permission function_deploy --permission project_read --expires-in 30d
-mako auth token list --team org_…
-mako auth token rotate atm_… --team org_… --replacement-id atm_next --expires-in 30d --yes
-mako auth token revoke atm_… --team org_… --yes
+mako-cloud auth token create --team org_… --name ci-deploy --permission function_deploy --permission project_read --expires-in 30d
+mako-cloud auth token list --team org_…
+mako-cloud auth token rotate atm_… --team org_… --replacement-id atm_next --expires-in 30d --yes
+mako-cloud auth token revoke atm_… --team org_… --yes
 ```
 
 A token may be narrowed to one project or environment at creation (`AutomationScope.projectId` / `environmentId` over the API). Its secret is shown once.
@@ -734,13 +739,13 @@ A token may be narrowed to one project or environment at creation (`AutomationSc
 ### Projects
 
 ```bash
-mako projects create "Todos" --region <region> [--team org_…] --wait
-mako projects list [--team org_…]
-mako projects rename prj_… "Todos v2"
-mako projects transfer prj_… --team org_…      # or to your personal space
-mako projects suspend prj_… --yes             # its environments stop serving
-mako projects restore prj_…
-mako projects delete prj_… --yes              # starts the grace period; restore undoes it before the deadline
+mako-cloud projects create "Todos" --region <region> [--team org_…] --wait
+mako-cloud projects list [--team org_…]
+mako-cloud projects rename prj_… "Todos v2"
+mako-cloud projects transfer prj_… --team org_…      # or to your personal space
+mako-cloud projects suspend prj_… --yes             # its environments stop serving
+mako-cloud projects restore prj_…
+mako-cloud projects delete prj_… --yes              # starts the grace period; restore undoes it before the deadline
 ```
 
 Provisioning is asynchronous and idempotent: a project shows `provisioning` until every step completes, then `active`; a step that keeps failing leaves `failed` with a `failureDiagnostic`. The platform's own worker sweeps records stranded in provisioning and completes or compensates them. Plan limits are installed on every environment at activation and reinstalled on transfer to the new owner's plan.
@@ -748,18 +753,18 @@ Provisioning is asynchronous and idempotent: a project shows `provisioning` unti
 ### Environments
 
 ```bash
-mako envs create development -p prj_… --wait
-mako envs list -p prj_…
-mako envs suspend env_… -p prj_… --yes
-mako envs restore env_… -p prj_…
-mako envs delete env_… -p prj_… --yes
+mako-cloud envs create development -p prj_… --wait
+mako-cloud envs list -p prj_…
+mako-cloud envs suspend env_… -p prj_… --yes
+mako-cloud envs restore env_… -p prj_…
+mako-cloud envs delete env_… -p prj_… --yes
 ```
 
 Each environment has its own collections, policies, users, credentials, signing keys, functions, buckets, webhooks, schedules, sign-in settings, email templates, and allowed origins. Nothing is shared between environments of one project except the project's custom domains, each of which serves exactly one environment.
 
 ### Audit
 
-Every management mutation is recorded in the control audit log with actor, target, reason where one was given, result, request id, and correlation — never a password hash, a token, or a document body. Read it with `mako activity` / `mako observability audit` or in the console's **Activity**.
+Every management mutation is recorded in the control audit log with actor, target, reason where one was given, result, request id, and correlation — never a password hash, a token, or a document body. Read it with `mako-cloud activity` / `mako-cloud observability audit` or in the console's **Activity**.
 
 ---
 
@@ -787,29 +792,29 @@ A collection's ids are one namespace for the whole environment. An application t
 ### Publishing a new schema version
 
 ```bash
-mako collections schema publish todos --schema @todos.v2.json --schema-version 2 --primary-key id
+mako-cloud collections schema publish todos --schema @todos.v2.json --schema-version 2 --primary-key id
 ```
 
 Publication is **compatibility-first**. The platform checks existing documents against the new schema and answers with a `CollectionCompatibilityReport` (`compatible`, `documentsChecked`, up to 100 `issues`). A compatible publication activates at once; an incompatible one stays inactive and returns `migration_required`, leaving the last compatible schema active. Nothing is ever downgraded destructively: fields are not discarded and stored documents are not rewritten merely to lower a version.
 
-For an incompatible change, plan a **schema migration** (`mako collections migrations create <collection> --input @plan.json`, then `get` and `update --state …` to move it through its states). Replicating clients learn about a new required version through `schema_mismatch` on pull or push and, with `@mako-cloud/rxdb`, through `MakoReplicationRecoveryCoordinator.onSchemaMigrationRequired` ([details](#schema-migration-and-full-resync)). Additive changes — a new optional field — are compatible and need no migration; the Rational sample publishes its schema version 3 additively over a live version 2.
+For an incompatible change, plan a **schema migration** (`mako-cloud collections migrations create <collection> --input @plan.json`, then `get` and `update --state …` to move it through its states). Replicating clients learn about a new required version through `schema_mismatch` on pull or push and, with `@mako-cloud/rxdb`, through `MakoReplicationRecoveryCoordinator.onSchemaMigrationRequired` ([details](#schema-migration-and-full-resync)). Additive changes — a new optional field — are compatible and need no migration; the Rational sample publishes its schema version 3 additively over a live version 2.
 
 ### Indexes
 
 There is deliberately **no collection scan**. Every query — from the document API, an edge function, the data explorer, or an import's conflict check — must be served by an active index whose leading fields match the query's equality predicates and sort order; otherwise the server answers with the minimal index shape the query needs rather than scanning.
 
 ```bash
-mako indexes create transactions --name by_household_date --version 1 \
+mako-cloud indexes create transactions --name by_household_date --version 1 \
   --field household_id --field date:descending
-mako indexes list transactions
-mako indexes get transactions by_household_date 1
-mako indexes delete transactions by_household_date 1 --yes
+mako-cloud indexes list transactions
+mako-cloud indexes get transactions by_household_date 1
+mako-cloud indexes delete transactions by_household_date 1 --yes
 ```
 
 - An index has a `name`, a `version`, a `kind` (`non_unique` or `unique`), and ordered `fields`, each `path` with `ascending` or `descending` direction. Repeat `--field` in key order.
 - Indexes build **in the background**: `state` moves `building` → `active`, with `progress` reporting the captured commit position, the last backfilled document, whether backfill is complete, and the caught-up position. Activation is fenced so a build never serves before it has caught up with concurrent writes.
 - A `unique` build that finds duplicate values `failed` with `duplicate_values` and the count of affected values; a backfill error is `backfill_failed`. Delete the failed version and create another once the data is corrected.
-- Index state events (`mako observability index-state`) show each transition.
+- Index state events (`mako-cloud observability index-state`) show each transition.
 
 A range over an index's leading field is how a job enumerates a collection: a query with no predicate is refused by design, so a scheduled function that must walk every document of a household queries `household_id == X` sorted by the index's second field and follows the cursor.
 
@@ -914,12 +919,12 @@ An application that keeps each member's role per household in the trusted claims
 ### Policy lifecycle
 
 ```bash
-mako policies draft todos --input @policy.json      # immutable draft, {version, rules}
-mako policies validate todos 3                       # compile against the active schema; diagnostics
-mako policies test todos 3 --examples @examples.json # evaluate representative requests
-mako policies activate todos 3 --yes                 # atomic; advances the environment authorization epoch once
-mako policies get todos [--version 2]
-mako policies rollback todos 2 --yes                 # an activation of an earlier validated version
+mako-cloud policies draft todos --input @policy.json      # immutable draft, {version, rules}
+mako-cloud policies validate todos 3                       # compile against the active schema; diagnostics
+mako-cloud policies test todos 3 --examples @examples.json # evaluate representative requests
+mako-cloud policies activate todos 3 --yes                 # atomic; advances the environment authorization epoch once
+mako-cloud policies get todos [--version 2]
+mako-cloud policies rollback todos 2 --yes                 # an activation of an earlier validated version
 ```
 
 Create an immutable draft, validate syntax, types, and cost against the active schema, run representative examples, and atomically activate the complete version. Failed validation or activation leaves the current policy unchanged. Rollback selects a previously validated immutable version through the normal audited action; it is an activation, so it also advances the authorization epoch and requires client resets where visibility may have changed. Never edit an active policy version in place — there is no route that can.
@@ -1035,11 +1040,11 @@ All take `X-Mako-Key`. An `AuthSession` is `{ accessToken, refreshToken, expires
 3. **Refresh** rotates the stored credential hash. The credential is single-use; a second spend outside a five-second concurrency grace window is a **replay** and revokes the whole refresh family. A refresh family lives at most thirty days.
 4. **Sign-out**, administrator disable or delete, password recovery, or explicit session revocation publishes an ordered invalidation. Gateways fail closed if revocation freshness cannot be proven.
 
-Use `GET …/auth/jwks` with the public project key to retrieve verification keys. A key rotation (`mako keys signing rotate --overlap <seconds>`) publishes the new active key while retaining the prior public key through the overlap so existing tokens remain verifiable; do not retire the old key until the maximum token lifetime and clock-skew window have elapsed.
+Use `GET …/auth/jwks` with the public project key to retrieve verification keys. A key rotation (`mako-cloud keys signing rotate --overlap <seconds>`) publishes the new active key while retaining the prior public key through the overlap so existing tokens remain verifiable; do not retire the old key until the maximum token lifetime and clock-skew window have elapsed.
 
 ### Credentials and metadata
 
-Public project credentials may be embedded in browser applications but never authorize protected data. Secret service credentials are one-time-display, hashed, scoped, rotatable (`mako keys rotate … --overlap`), and restricted to explicit privileged routes.
+Public project credentials may be embedded in browser applications but never authorize protected data. Secret service credentials are one-time-display, hashed, scoped, rotatable (`mako-cloud keys rotate … --overlap`), and restricted to explicit privileged routes.
 
 Every application user carries two metadata documents (each at most 64 KiB, nesting depth 16):
 
@@ -1061,7 +1066,7 @@ Content-Type: application/json
 { "reason": "invitation accepted", "appMetadata": { "households": { "hh_1": "editor" } } }
 ```
 
-- **Credential.** Only a service credential scoped to the reserved `users` target with the `update` operation is accepted (`mako keys service create --collection memberships --collection users --operation read --operation update`). Document scopes name collections; `users` names the identity surface and is checked by the same gateway. A credential without it is refused with `permission_denied`. A request that carries a bearer token or public key beside the service key is refused with `unauthenticated` — there is no fallback and no route through which an application user can reach app metadata.
+- **Credential.** Only a service credential scoped to the reserved `users` target with the `update` operation is accepted (`mako-cloud keys service create --collection memberships --collection users --operation read --operation update`). Document scopes name collections; `users` names the identity surface and is checked by the same gateway. A credential without it is refused with `permission_denied`. A request that carries a bearer token or public key beside the service key is refused with `unauthenticated` — there is no fallback and no route through which an application user can reach app metadata.
 - **Body.** `reason` (1–512 printable characters) is the audited bypass reason and is required. `appMetadata` is a one-level JSON merge patch: a key set to `null` is removed; any other key replaces the stored value whole. The patch and the merged result are bounded like trusted metadata; a patch that would exceed them is refused before anything is written. `expectedAuthorizationEpoch` is optional and names the epoch the patch was composed against; the write is refused with `conflict` if the user's epoch has moved since.
 - **Reading it back.** `GET` on the same path, with the reason in `X-Mako-Bypass-Reason` and a credential scoped to `users` with `read`, returns the user's app metadata and current authorization epoch. Because a patch replaces a key whole, a function that manages one member of a claim map composes the next value out of this one, and naming the epoch it read on the write keeps two concurrent changes from silently keeping whichever wrote last. The read is audited as `service_user_app_metadata_read`.
 - **Audit.** Before the metadata is written a `service_bypass` record is appended (`service_user_app_metadata_update` on `application_user/{userId}`, reason code `service_bypass_verified`, the `bypass_reason` in the details). If that record cannot be written the request fails closed. It is written once the credential is verified, so an unknown user (`not_found`) is audited too.
@@ -1081,7 +1086,7 @@ Use `MakoAuthClient` from `@mako-cloud/rxdb` and persist refresh state only in t
 
 ## Sign-in providers and magic links
 
-Applications can let their users sign in the ways users expect: with Google, GitHub, or any OpenID Connect provider, and with a single-use link sent by email. Both paths end in the same application-user session that password sign-in issues, and both are configured per environment through the management API, the console's **Auth providers** screen, or `mako auth-settings`. The settings live in the data plane that mints application sessions; the control plane keeps no copy and forwards each authorized read or replacement to it.
+Applications can let their users sign in the ways users expect: with Google, GitHub, or any OpenID Connect provider, and with a single-use link sent by email. Both paths end in the same application-user session that password sign-in issues, and both are configured per environment through the management API, the console's **Auth providers** screen, or `mako-cloud auth-settings`. The settings live in the data plane that mints application sessions; the control plane keeps no copy and forwards each authorized read or replacement to it.
 
 ### Configuring an environment
 
@@ -1111,8 +1116,8 @@ Register the provider's side with the callback URL `https://<your api origin>/v1
 `PUT …/auth-settings` (`updateAuthSettings`, with an `Idempotency-Key`) installs the document and answers with the installed view; `GET …/auth-settings` reads it. Owners and administrators may replace the settings; the read needs the same credential-reading permission as the environment's keys. Every replacement advances `version` by one; the management API numbers the new version after the one it read, so a client never has to track it.
 
 ```bash
-mako auth-settings get -p prj_… -e env_…
-mako auth-settings set -p prj_… -e env_… --input @auth-settings.json
+mako-cloud auth-settings get -p prj_… -e env_…
+mako-cloud auth-settings set -p prj_… -e env_… --input @auth-settings.json
 ```
 
 #### Secrets are sealed and never returned
@@ -1130,7 +1135,7 @@ The application never sees a provider token, and no token ever travels in a URL:
 3. **Redirect with a one-time code.** The browser is sent (`302`) to the registered redirect with a short-lived, single-use code in the URL fragment: `https://app.example.com/auth/callback#code=…`. A refusal — the provider declined, the exchange failed, the email is not verified, the user is disabled — arrives the same way as `#error=…`. Fragments are not sent to servers and do not land in logs.
 4. **Exchange.** The application calls `POST …/auth/providers/exchange` (`exchangeProviderSignIn`) with `{ "code": … }` and its public project key and receives the same `AuthSession` password sign-in returns. The code is spent on first use and expires after two minutes.
 
-Every outcome — verified, refused by the provider, exchange failed, user disabled, code redeemed — is recorded as an authentication event visible in the environment's observability screens and `mako observability auth-events`.
+Every outcome — verified, refused by the provider, exchange failed, user disabled, code redeemed — is recorded as an authentication event visible in the environment's observability screens and `mako-cloud observability auth-events`.
 
 ### Magic links
 
@@ -1570,16 +1575,16 @@ A bucket declares:
 - `rules`: the document-policy language over the **object document** — `path`, `bucket`, `owner_id`, `content_type`, `size_bytes`, `created_at`, `updated_at`, `attributes` — with `new.*` on `create`/`update`, `old.*` on `read`, `update`, `delete`, and `identity.*`, `claims.*`, `request.*` as for collections. A bucket with no rules refuses every policy-governed request; rules that do not compile are refused at configuration time.
 
 ```bash
-mako storage buckets create receipts --access policy --max-object-bytes 8388608 \
+mako-cloud storage buckets create receipts --access policy --max-object-bytes 8388608 \
   --content-type 'image/*' --content-type application/pdf --rules @receipts-rules.json
-mako storage buckets list
-mako storage buckets update receipts --rules @receipts-rules.v2.json
-mako storage objects list receipts --all
-mako storage objects delete receipts households/hh_1/receipt.png --yes
-mako storage buckets delete receipts --delete-objects --yes
+mako-cloud storage buckets list
+mako-cloud storage buckets update receipts --rules @receipts-rules.v2.json
+mako-cloud storage objects list receipts --all
+mako-cloud storage objects delete receipts households/hh_1/receipt.png --yes
+mako-cloud storage buckets delete receipts --delete-objects --yes
 ```
 
-Developers manage buckets through the management API (`…/storage-buckets`), the console's **Storage** screen, and `mako storage buckets …`. The control plane holds no bucket state: it authorizes the developer and forwards to the data plane, which is the single source of truth for buckets, objects, and totals. Deleting a bucket that still holds objects is refused unless the developer confirms their loss (`deleteObjects=true`).
+Developers manage buckets through the management API (`…/storage-buckets`), the console's **Storage** screen, and `mako-cloud storage buckets …`. The control plane holds no bucket state: it authorizes the developer and forwards to the data plane, which is the single source of truth for buckets, objects, and totals. Deleting a bucket that still holds objects is refused unless the developer confirms their loss (`deleteObjects=true`).
 
 ### An object that belongs to more than its uploader
 
@@ -1645,12 +1650,12 @@ Mako runs short-lived TypeScript and JavaScript HTTP functions behind a stable p
 5. **Invoke** through `/{projectId}--{environmentId}/functions/v1/{functionName}[/{path}]` with any method, or `/functions/v1/{functionName}` on a custom domain.
 
 ```bash
-mako functions create households --region <region> --secret HOUSEHOLDS_SERVICE_KEY
-mako functions deploy ./functions/households --name households --yes          # bundle, upload, version, health, promote
-mako functions test households --method POST --path /create --body '{"name":"Home"}'
-mako functions logs households
-mako functions deployments list households
-mako functions deployments rollback households 3 --yes
+mako-cloud functions create households --region <region> --secret HOUSEHOLDS_SERVICE_KEY
+mako-cloud functions deploy ./functions/households --name households --yes          # bundle, upload, version, health, promote
+mako-cloud functions test households --method POST --path /create --body '{"name":"Home"}'
+mako-cloud functions logs households
+mako-cloud functions deployments list households
+mako-cloud functions deployments rollback households 3 --yes
 ```
 
 A function's **configuration** is `{ verifyJwt, regions (1–16), secretNames (≤64), limits, allowedHosts? (≤8) }`. `limits` are `cpuMilliseconds`, `wallMilliseconds`, `memoryBytes`, `requestBytes`, `responseBytes`, and `concurrency`; the CLI's defaults are 1 000 ms CPU, 10 000 ms wall, 128 MiB, 1 MiB request and response, concurrency 4. JWT verification is on by default; `--no-verify-jwt` makes a function public (routing, payload limits, quotas, and audit context still apply). Rollback selects a previously healthy immutable version and does not modify its bundle; a failed deployment never replaces the active version, and a version that later fails its health check becomes ineligible for promotion.
@@ -1665,7 +1670,7 @@ The caller a function sees is the one the gateway verified. Your function is han
 
 A function imports `@mako-cloud/edge-sdk` and nothing else has to happen: the runtime ships the built SDK beside its main worker, materializes it into the worker's own directory, and maps that one specifier onto it. Nothing is vendored into the bundle, no npm install runs, and the version a function gets is the platform's.
 
-It is the **only** bare specifier a bundle may import. Every other one must be declared as a dependency mapping onto an uploaded module (`--dependency <specifier>=<path>` on `mako functions deploy`); an import the platform cannot resolve is refused at upload with an `unresolved_import` diagnostic rather than failing when the worker boots. A bundle may not carry a module path beginning with `__mako` or remap `@mako-cloud/edge-sdk` (`reserved_module_path`, `reserved_dependency_specifier`), because those are what the runtime injects.
+It is the **only** bare specifier a bundle may import. Every other one must be declared as a dependency mapping onto an uploaded module (`--dependency <specifier>=<path>` on `mako-cloud functions deploy`); an import the platform cannot resolve is refused at upload with an `unresolved_import` diagnostic rather than failing when the worker boots. A bundle may not carry a module path beginning with `__mako` or remap `@mako-cloud/edge-sdk` (`reserved_module_path`, `reserved_dependency_specifier`), because those are what the runtime injects.
 
 Three environment values the runtime always injects locate the API and the tenant: `MAKO_API_URL`, `MAKO_PROJECT_ID`, and `MAKO_ENVIRONMENT_ID`.
 
@@ -1739,15 +1744,15 @@ const write = createServiceClient({ ...options, requestId: `${requestId}w` });
 `HOUSEHOLDS_SERVICE_KEY` above is a scoped service credential stored as a function secret. Create the credential, then store its value as a secret under the name the function reads:
 
 ```bash
-mako keys service create --id key_households \
+mako-cloud keys service create --id key_households \
   --collection memberships --collection users --operation read --operation update \
   --secret-file ./.local/households.key --project "$PROJECT" --env "$ENV"
 
-mako functions secrets create HOUSEHOLDS_SERVICE_KEY \
+mako-cloud functions secrets create HOUSEHOLDS_SERVICE_KEY \
   --value-file ./.local/households.key --project "$PROJECT" --env "$ENV"
 
 rm ./.local/households.key
-mako functions create households --secret HOUSEHOLDS_SERVICE_KEY --region <region> ...
+mako-cloud functions create households --secret HOUSEHOLDS_SERVICE_KEY --region <region> ...
 ```
 
 `--value <v>` takes the value inline; `--value-file <path>` reads it from a file and ignores one trailing newline, so it round-trips a `--secret-file` the credential command wrote and keeps the value out of shell history. Over the API this is `PUT …/function-secrets/{secretName}` with `{"value": "…"}`. A supplied value is handled exactly like a generated one and is **never returned** — not by this call and not by any later read — so the response carries metadata only. Creating a secret that already exists is a conflict.
@@ -1760,13 +1765,13 @@ A worker is started with the capabilities a function needs and nothing else. Eve
 
 - **Network.** A function may open connections to the platform API origin the runtime injects as `MAKO_API_URL`, plus any external HTTPS hosts its deployment declares — and to nothing else. By default nothing is declared and `outboundNetwork: {mode: "deny_all"}` denies the function's own destinations — another host, another port on the same host, a raw socket, a WebSocket, a DNS lookup — while the injected SDK keeps working, because the origin it talks to is the platform's.
 
-  A deployment that needs a third-party API declares it: `mako functions deploy --allow-host api.example.com` (repeatable, at most 8 hosts; locally, the same flag on `mako functions serve`). Each declared host is granted on port 443 only. The declaration is validated fail-closed before any version exists: lowercase DNS names only — never an IP literal, a port, a wildcard, or a name that resolves inside the platform (`localhost`, `metadata`, and everything under `.internal`, `.local`, `.localhost`, or `.arpa`) — and the refusal names the entry that failed. One caveat is documented rather than hidden: Deno's permission model authorizes by *name*, so a declared host whose DNS answer later changes is still connectable (DNS rebinding). The worker's own network namespace, the loopback-only internal RPC, and the refused internal-name families bound what such a rebind can reach; a resolver-pinning proxy is the complete fix and a deliberate non-goal for now. Declared hosts are part of the reviewed deployment and visible in `mako functions get`.
+  A deployment that needs a third-party API declares it: `mako-cloud functions deploy --allow-host api.example.com` (repeatable, at most 8 hosts; locally, the same flag on `mako-cloud functions serve`). Each declared host is granted on port 443 only. The declaration is validated fail-closed before any version exists: lowercase DNS names only — never an IP literal, a port, a wildcard, or a name that resolves inside the platform (`localhost`, `metadata`, and everything under `.internal`, `.local`, `.localhost`, or `.arpa`) — and the refusal names the entry that failed. One caveat is documented rather than hidden: Deno's permission model authorizes by *name*, so a declared host whose DNS answer later changes is still connectable (DNS rebinding). The worker's own network namespace, the loopback-only internal RPC, and the refused internal-name families bound what such a rebind can reach; a resolver-pinning proxy is the complete fix and a deliberate non-goal for now. Declared hosts are part of the reviewed deployment and visible in `mako-cloud functions get`.
 - **Files.** A function may read its own worker directory. It may not read anywhere else and may not write anywhere at all, including `/tmp`. Persist state in a document, an object, or a function secret.
 - **Environment.** A function may read the secret names attached to its deployment and the `MAKO_*` values the platform injects. Any other name is refused rather than returned empty.
 - **Modules.** Imports resolve inside the bundle, through a dependency mapping to another uploaded module, or to `@mako-cloud/edge-sdk`, which the runtime supplies. A module fetched over the network is never loaded.
 - **Processes, native code, host identity.** A function may not spawn a process, open a native library, or read the machine it is running on.
 
-`mako functions serve` applies the same grants locally, so a function that runs locally is not one the hosted sandbox will refuse. The mechanics are in the Dev Book's [edge runtime protocol](dev-book.md#worker-permissions).
+`mako-cloud functions serve` applies the same grants locally, so a function that runs locally is not one the hosted sandbox will refuse. The mechanics are in the Dev Book's [edge runtime protocol](dev-book.md#worker-permissions).
 
 ### Isolation and regions
 
@@ -1776,10 +1781,10 @@ Logs and metrics include sanitized status, latency, resource use, immutable vers
 
 ### Serving a function locally
 
-`mako functions serve` runs a function in the same pinned Supabase Edge Runtime release used by the hosted runtime. Docker or Podman must be available; the CLI starts the image by immutable digest and mounts both the function and Mako's main worker read-only.
+`mako-cloud functions serve` runs a function in the same pinned Supabase Edge Runtime release used by the hosted runtime. Docker or Podman must be available; the CLI starts the image by immutable digest and mounts both the function and Mako's main worker read-only.
 
 ```bash
-mako functions serve ./functions/hello-world \
+mako-cloud functions serve ./functions/hello-world \
   --project-id prj_abcdefgh \
   --environment-id env_abcdefgh \
   --api-url http://host.docker.internal:8787 \
@@ -1803,20 +1808,20 @@ Invoke it at `http://127.0.0.1:9000/prj_abcdefgh/functions/v1/hello-world`.
 
 ### Deploying a function locally needs an object store
 
-Serving is self-contained, but **deploying** is not. `mako functions deploy` and the management API upload the bundle to the control plane, which stores the artifact in the S3 object store that `MAKO_OBJECT_STORE_ENDPOINT`, `MAKO_OBJECT_STORE_ACCESS_KEY_REF`, and `MAKO_OBJECT_STORE_SECRET_KEY_REF` name. Without a reachable, credentialed one, bundle upload and `mako functions deployments create` answer `503 function administration is unavailable`.
+Serving is self-contained, but **deploying** is not. `mako-cloud functions deploy` and the management API upload the bundle to the control plane, which stores the artifact in the S3 object store that `MAKO_OBJECT_STORE_ENDPOINT`, `MAKO_OBJECT_STORE_ACCESS_KEY_REF`, and `MAKO_OBJECT_STORE_SECRET_KEY_REF` name. Without a reachable, credentialed one, bundle upload and `mako-cloud functions deployments create` answer `503 function administration is unavailable`.
 
 Two things surprise people here:
 
 - `mako-local-bootstrap` does **not** need it. It constructs the function administration service in its own process with an in-memory object store, so the sample functions it deploys never touch S3. A bootstrapped tenant with a working function therefore proves nothing about whether your object store is usable.
 - The compose object store in `infra/local/compose.yaml` starts with no S3 identity of its own, so the platform's signed requests are refused (`InvalidAccessKeyId ... Available keys: 0`) until one is configured that matches the access and secret key the services resolve.
 
-Deploying a function also needs a runtime supervisor the control plane can authenticate to; `mako functions serve` cannot act as one.
+Deploying a function also needs a runtime supervisor the control plane can authenticate to; `mako-cloud functions serve` cannot act as one.
 
 ### Running a hosted function locally
 
 Local serving and hosted invocation are different paths. Serving runs the pinned runtime for one function and answers directly. Hosted invocation goes through the gateway, which resolves the function against the control plane and forwards to a supervisor holding a **registered deployment**.
 
-`mako functions serve` cannot act as the hosted supervisor: it generates a random `MAKO_RUNTIME_AUTHORIZATION` for its container, so the control plane cannot authenticate to it and no deployment can be registered. To exercise the hosted path locally, run the runtime on the same contract a deployment uses — `infra/ansible/roles/dependencies/files/quadlet/mako-edge-runtime.container` is the authoritative form:
+`mako-cloud functions serve` cannot act as the hosted supervisor: it generates a random `MAKO_RUNTIME_AUTHORIZATION` for its container, so the control plane cannot authenticate to it and no deployment can be registered. To exercise the hosted path locally, run the runtime on the same contract a deployment uses — `infra/ansible/roles/dependencies/files/quadlet/mako-edge-runtime.container` is the authoritative form:
 
 - `MAKO_RUNTIME_AUTHORIZATION` must equal the internal auth secret the services use.
 - `MAKO_RUNTIME_REGION` must equal `MAKO_REGION`, or the control plane reports the function unavailable in that region.
@@ -1855,12 +1860,12 @@ A schedule targets the function's **active deployment** only: attaching one to a
 `cron` is required; everything else has a default (`name` empty, `request` a body-less `POST /`, `enabled` true). The response is `201` with the schedule, including `nextRunAt`, `state` (`active` or `paused`), `timezone: "UTC"`, and `lastRun`.
 
 ```bash
-mako schedules create --function nightly-report --cron "0 3 * * *" --name "Nightly report" --path "/reports?kind=daily" --header x-report=nightly
-mako schedules list --function nightly-report
-mako schedules update sch_… --function nightly-report --disable      # pause
-mako schedules run-now sch_… --function nightly-report
-mako schedules runs sch_… --function nightly-report --outcome failed
-mako schedules delete sch_… --function nightly-report --yes
+mako-cloud schedules create --function nightly-report --cron "0 3 * * *" --name "Nightly report" --path "/reports?kind=daily" --header x-report=nightly
+mako-cloud schedules list --function nightly-report
+mako-cloud schedules update sch_… --function nightly-report --disable      # pause
+mako-cloud schedules run-now sch_… --function nightly-report
+mako-cloud schedules runs sch_… --function nightly-report --outcome failed
+mako-cloud schedules delete sch_… --function nightly-report --yes
 ```
 
 `GET …/schedules` lists a function's schedules; `GET`, `PATCH`, and `DELETE …/schedules/{scheduleId}` read, change, and remove one. A function carries at most 100 schedules. Any member of the team may read; a role that can change projects may write. Every mutation is audited as `function_schedule_create`, `function_schedule_update`, `function_schedule_delete`, or `function_schedule_run_now`; a refused read or write is audited as denied.
@@ -1963,12 +1968,12 @@ The response is `201` with the endpoint (`id`, `url`, `description`, `subscripti
 Registration records a **cursor per subscribed collection at the environment's current committed position**, so only changes committed after registration are delivered. Changing `subscriptions` starts cursors for new collections the same way and drops the cursors of removed ones.
 
 ```bash
-mako webhooks create --url https://hooks.example.com/mako --subscribe orders --subscribe customers:update --secret-file ./whsec.txt
-mako webhooks list
-mako webhooks deliveries whk_… --state failed
-mako webhooks redeliver whk_… whd_…
-mako webhooks resume whk_…
-mako webhooks rotate-secret whk_… --yes
+mako-cloud webhooks create --url https://hooks.example.com/mako --subscribe orders --subscribe customers:update --secret-file ./whsec.txt
+mako-cloud webhooks list
+mako-cloud webhooks deliveries whk_… --state failed
+mako-cloud webhooks redeliver whk_… whd_…
+mako-cloud webhooks resume whk_…
+mako-cloud webhooks rotate-secret whk_… --yes
 ```
 
 Any member of the team may read; a role that can change projects may write. Mutations are audited as `webhook_endpoint_create`, `_update`, `_delete`, `_rotate_secret`, `_resume`, or `_redeliver`.
@@ -2117,10 +2122,10 @@ Templates are environment-scoped management resources. Any member of the owning 
 A preview renders with placeholder values (`https://app.example.com/...`, `person@example.com`, `2030-01-01T12:00:00Z`, `A teammate`) and the real project and environment names. Without a body it renders the template in effect; with one it renders the unsaved text. Invalid text is refused with a 400 whose message is the same one a save would give.
 
 ```bash
-mako email-templates list
-mako email-templates set magic_link --subject "Sign in to {{project_name}}" --body @magic-link.txt
-mako email-templates preview magic_link
-mako email-templates reset magic_link
+mako-cloud email-templates list
+mako-cloud email-templates set magic_link --subject "Sign in to {{project_name}}" --body @magic-link.txt
+mako-cloud email-templates preview magic_link
+mako-cloud email-templates reset magic_link
 ```
 
 ### Where this is tested
@@ -2198,10 +2203,10 @@ The response is the domain in state `pending` with the record to publish:
 A hostname is a lowercase DNS name of at least two labels (each 1–63 letters, digits, or hyphens, not starting or ending with a hyphen), at most 253 characters, normalized without a trailing dot. IP addresses, `localhost`, and the platform's own public hostname or anything under it are refused with `400 invalid_request`. A hostname belongs to **at most one project** on the deployment: adding one that any project already claims, verified or not, is `409 conflict`. A project may hold at most 20 domains.
 
 ```bash
-mako domains add --hostname api.example.com --env env_… -p prj_…     # prints the TXT record
-mako domains verify dom_… -p prj_…
-mako domains list -p prj_…
-mako domains remove dom_… -p prj_… --yes
+mako-cloud domains add --hostname api.example.com --env env_… -p prj_…     # prints the TXT record
+mako-cloud domains verify dom_… -p prj_…
+mako-cloud domains list -p prj_…
+mako-cloud domains remove dom_… -p prj_… --yes
 ```
 
 ### The verification record
@@ -2250,16 +2255,16 @@ Certificates are obtained by the reverse proxy **on demand**, at the first TLS h
 Authorized project members may search, invite, create, disable, restore, update the metadata of, revoke the sessions of, and delete application users. These actions are audited without password hashes or tokens.
 
 ```bash
-mako users search --query alice@example.com        # bounded; no credential material
-mako users invite --email alice@example.com        # the user finishes signing up themselves
-mako users create --email bot@example.com          # created directly, no invitation
-mako users get usr_…                               # status, trusted and profile metadata, sessions
-mako users update-metadata usr_… --input '{"trustedMetadata":{"role":"editor","households":{"hh_1":"owner"}},"profileMetadata":{"displayName":"Alice"}}'
-mako users revoke-session usr_… ses_… --yes
-mako users revoke-sessions usr_… --yes
-mako users disable usr_… --yes                     # sessions stop working until restored
-mako users restore usr_…
-mako users delete usr_… --yes
+mako-cloud users search --query alice@example.com        # bounded; no credential material
+mako-cloud users invite --email alice@example.com        # the user finishes signing up themselves
+mako-cloud users create --email bot@example.com          # created directly, no invitation
+mako-cloud users get usr_…                               # status, trusted and profile metadata, sessions
+mako-cloud users update-metadata usr_… --input '{"trustedMetadata":{"role":"editor","households":{"hh_1":"owner"}},"profileMetadata":{"displayName":"Alice"}}'
+mako-cloud users revoke-session usr_… ses_… --yes
+mako-cloud users revoke-sessions usr_… --yes
+mako-cloud users disable usr_… --yes                     # sessions stop working until restored
+mako-cloud users restore usr_…
+mako-cloud users delete usr_… --yes
 ```
 
 - A user's `status` is `pending_verification`, `active`, `disabled`, or `deleted`. Sign-up produces `pending_verification` when the environment requires email verification; an invitation mail (the `invitation` template) lets the invitee finish signing up.
@@ -2267,7 +2272,7 @@ mako users delete usr_… --yes
 - Revoking sessions, disabling, deleting, or a password recovery publishes an ordered invalidation to every gateway; a client holding a revoked session sees `unauthenticated` on its next request and must sign in again.
 - A user view lists at most 100 sessions (`sessionsTruncated` says whether there were more); a search returns at most 100 results.
 
-Authentication outcomes for the environment — sign-ins, refusals, provider and magic-link results, revocations — are readable as sanitized events with `mako observability auth-events`.
+Authentication outcomes for the environment — sign-ins, refusals, provider and magic-link results, revocations — are readable as sanitized events with `mako-cloud observability auth-events`.
 
 ---
 
@@ -2277,15 +2282,19 @@ The environment workspace groups overview, the data explorer, sync diagnostics, 
 
 ### The explorer
 
+Use the collection rail to search and switch collections. The **Documents** tab offers browsing and primary-key lookup; **Query editor** holds predicates, sorting, and index planning; **Import / export** holds bulk jobs when enabled. Results show up to six document fields alongside the primary key, revision, and state. Missing fields, JSON null, and false remain distinct. **View JSON** opens the complete document and its conditional editor. **New document** opens a blank editor. Mutation controls retain the selected grant mode, so policy preview can simulate but cannot commit.
+
+Switching collections or environments clears results, drafts, and grants. A late response from the previous scope cannot repopulate the screen.
+
 The explorer reads and writes documents under a short-lived **explorer grant** (at most five minutes, one collection, explicit operations) in one of two modes:
 
 - **Policy preview** evaluates reads, indexed queries, and mutation simulations as one selected active application user. It does not create an application session and cannot commit.
 - **Administrative** access requires the project's data-admin permission, an explicit reason and confirmation, and a fresh password (step-up); it is a document-policy bypass and every use is audited.
 
-Grants are kept only in memory: never put an `x-mako-explorer-capability` value in a URL, browser storage, logs, telemetry, error reports, or support tickets. From the CLI, `mako explorer …` issues a grant for the one call, performs it, and revokes the grant afterwards.
+Grants are kept only in memory: never put an `x-mako-explorer-capability` value in a URL, browser storage, logs, telemetry, error reports, or support tickets. From the CLI, `mako-cloud explorer …` issues a grant for the one call, performs it, and revokes the grant afterwards.
 
 - **Browse** is canonical primary-key order over a stable snapshot. It omits deleted documents unless retained tombstones are explicitly requested with history permission. Policy-hidden documents do not affect returned counts or cursor behavior.
-- **Query** planning accepts at most 16 predicates, four sort fields, and 200 rows; only a matching active index may execute, and the server returns the required-index shape rather than falling back to a scan (`mako explorer plan` shows it).
+- **Query** planning accepts at most 16 predicates, four sort fields, and 200 rows; only a matching active index may execute, and the server returns the required-index shape rather than falling back to a scan (`mako-cloud explorer plan` shows it).
 - **History** lists a document's retained revisions and tombstones.
 - **Simulate** parses and validates the proposed JSON, active schema, expected revision, and current policy without writing. **Mutate** (administrative) uses the same conditional mutation path as application traffic; a revision conflict is presented as original/proposed/current and is never merged or retried automatically.
 
@@ -2294,48 +2303,48 @@ Grants are kept only in memory: never put an `x-mako-explorer-capability` value 
 The only bulk format is UTF-8 **JSON Lines**, one JSON object per non-empty line. Imports require an immutable digest-verified upload and a dry run before confirmation; conflict strategies are `create_only`, `update_existing`, and `upsert`. Each row is conditionally idempotent; cancellation stops future work and does not roll back committed rows. Exports read one consistent snapshot and become downloadable only after their manifest and digest are finalized; partial artifacts are never served.
 
 ```bash
-mako data export --collection transactions --output ./transactions.jsonl
-mako data import --collection transactions --input ./transactions.jsonl --strategy upsert   # upload, dry run, confirm
-mako data jobs list
-mako data jobs get job_… --wait
-mako data jobs cancel job_… --yes
+mako-cloud data export --collection transactions --output ./transactions.jsonl
+mako-cloud data import --collection transactions --input ./transactions.jsonl --strategy upsert   # upload, dry run, confirm
+mako-cloud data jobs list
+mako-cloud data jobs get job_… --wait
+mako-cloud data jobs cancel job_… --yes
 ```
 
 Limits are 1 MiB per document, 512 MiB per upload or output, four active jobs per tenant, one hour of execution, 24 hours of artifact retention, and five minutes per upload/download grant. Job progress reports exact processed, committed, failed, skipped, exported, and byte counts. Object-store outages defer cleanup or job execution rather than silently publishing incomplete output.
 
 ### API & Connect and sync diagnostics
 
-The Connect page (`mako workspace connect`) shows the public endpoint, active public credential id, active collection/schema versions, the supported RxDB range (`>=17.0.0 <18.0.0`), and template version 1. Public credential values are one-time material and cannot be recovered later. The connection check (`mako workspace check`) accepts public metadata only and returns separate DNS, TLS, route, readiness, key-recognition, schema, client-version, and replication-route steps; it never signs in an application user or invokes pull/push.
+The Connect page (`mako-cloud workspace connect`) shows the public endpoint, active public credential id, active collection/schema versions, the supported RxDB range (`>=17.0.0 <18.0.0`), and template version 1. Public credential values are one-time material and cannot be recovered later. The connection check (`mako-cloud workspace check`) accepts public metadata only and returns separate DNS, TLS, route, readiness, key-recognition, schema, client-version, and replication-route steps; it never signs in an application user or invokes pull/push.
 
-Sync diagnostics (`mako sync summary`) contain bounded aggregates for pull/push, live streams, lag, conflicts, policy denials, throttling, checkpoint expiry, stream gaps, resync, schema mismatch, and coarse client-compatibility classes. They never return raw user, device, session, IP, token, or document ids.
+Sync diagnostics (`mako-cloud sync summary`) contain bounded aggregates for pull/push, live streams, lag, conflicts, policy denials, throttling, checkpoint expiry, stream gaps, resync, schema mismatch, and coarse client-compatibility classes. They never return raw user, device, session, IP, token, or document ids.
 
 ### Backups and isolated recovery
 
-Developer backup inventory (`mako backups list`) includes only tenant-verified manifests and safe recovery-point, verification, retention, drill, and objective fields; physical paths, hosts, credentials, signing material, and other tenants are excluded.
+Developer backup inventory (`mako-cloud backups list`) includes only tenant-verified manifests and safe recovery-point, verification, retention, drill, and objective fields; physical paths, hosts, credentials, signing material, and other tenants are excluded.
 
-A **restore request** (`mako backups restore-requests create`) requires current backup-read and restore permissions plus a password verification from the current developer session within five minutes. It creates a **new isolated environment** from the chosen backup and is quota bounded. Overwrite and promotion are always prohibited: a restore never replaces the live environment. Access to the restored environment remains disabled until tenant isolation, storage verification, service readiness, and recovery validation succeed; `restore-requests list` shows the verification state.
+A **restore request** (`mako-cloud backups restore-requests create`) requires current backup-read and restore permissions plus a password verification from the current developer session within five minutes. It creates a **new isolated environment** from the chosen backup and is quota bounded. Overwrite and promotion are always prohibited: a restore never replaces the live environment. Access to the restored environment remains disabled until tenant isolation, storage verification, service readiness, and recovery validation succeed; `restore-requests list` shows the verification state.
 
 ### Where this is tested
 
-`crates/mako-control-plane` explorer, data-job, and workspace tests; `services/mako-data-plane/src/explorer_http.rs`; `packages/cli/test/data.test.mjs`; `apps/console/test-e2e/developer-data-workspace.spec.ts`. The operator-side incident procedure is the Dev Book's [developer data workspace runbook](dev-book.md#runbook-developer-data-workspace-incident).
+`crates/mako-control-plane` explorer, data-job, and workspace tests; `services/mako-data-plane/src/explorer_http.rs`; `packages/cli/test/data.test.mjs`; `apps/console/test-e2e/developer-data-workspace.spec.ts`; `apps/console/test-e2e/database-console.spec.ts`; `services/mako-control-plane/src/workspace_http.rs`; and the workspace-summary assertions in `crates/mako-smoke/tests/file_storage.rs`. The operator-side incident procedure is the Dev Book's [developer data workspace runbook](dev-book.md#runbook-developer-data-workspace-incident).
 
 ---
 
 ## Observability for your project
 
-Every environment exposes bounded, tenant-scoped signals through the management API (`…/observability/*`), the console's **Observability**, **Logs**, **Usage**, and **Activity** screens, and `mako observability …`. Each query takes `from`, `until`, `limit`, and a `cursor`, and answers a page of records.
+Every environment exposes bounded, tenant-scoped signals through the management API (`…/observability/*`), the console's **Observability**, **Logs**, **Usage**, and **Activity** screens, and `mako-cloud observability …`. Each query takes `from`, `until`, `limit`, and a `cursor`, and answers a page of records.
 
 | Signal | Command | What it holds |
 | --- | --- | --- |
-| Usage | `mako usage` / `mako observability usage` | Retained usage samples per resource. **Flows** (requests, bytes per month, invocations) sum their records; **levels** (stored bytes, users) average their samples |
-| Quotas | `mako observability quotas` | Consumption against each enforced limit, with `retryAfter` when work was throttled |
-| Health | `mako observability health` | Regional data-plane service status and sanitized diagnostics |
-| Replication errors | `mako observability replication-errors` | RxDB replication failures with retry guidance and correlation identifiers |
-| Auth events | `mako observability auth-events` | Sanitized application authentication outcomes — sign-in, refusal, provider and magic-link results, revocations — without credentials |
-| Function metrics | `mako observability function-metrics` | Invocation, error, latency, and compute counts per function version and region |
-| Logs | `mako logs` / `mako observability logs` | Retained, scrubbed log lines from functions, the data plane, and sync, newest first |
-| Index state | `mako observability index-state` | Index build transitions per collection index |
-| Audit | `mako activity` / `mako observability audit` | Append-only administration history for the environment |
+| Usage | `mako-cloud usage` / `mako-cloud observability usage` | Retained usage samples per resource. **Flows** (requests, bytes per month, invocations) sum their records; **levels** (stored bytes, users) average their samples |
+| Quotas | `mako-cloud observability quotas` | Consumption against each enforced limit, with `retryAfter` when work was throttled |
+| Health | `mako-cloud observability health` | Regional data-plane service status and sanitized diagnostics |
+| Replication errors | `mako-cloud observability replication-errors` | RxDB replication failures with retry guidance and correlation identifiers |
+| Auth events | `mako-cloud observability auth-events` | Sanitized application authentication outcomes — sign-in, refusal, provider and magic-link results, revocations — without credentials |
+| Function metrics | `mako-cloud observability function-metrics` | Invocation, error, latency, and compute counts per function version and region |
+| Logs | `mako-cloud logs` / `mako-cloud observability logs` | Retained, scrubbed log lines from functions, the data plane, and sync, newest first |
+| Index state | `mako-cloud observability index-state` | Index build transitions per collection index |
+| Audit | `mako-cloud activity` / `mako-cloud observability audit` | Append-only administration history for the environment |
 
 ### Function logs
 
@@ -2403,7 +2412,7 @@ Function invocations, public invocations, request bytes, and egress requests and
 
 ### The bill
 
-`GET /v1/teams/{teamId}/bill` (`mako teams bill org_… [--period YYYY-MM]`) rates the current calendar month so far against the team's effective plan and the rate card, whose prices were verified against supabase.com/pricing on 2026-08-25. Money is integer micro-dollars end to end; only the display divides. Credits are operator-granted, exactly-once per credit id, and the balance is credits minus all charges — every closed period plus the live month — unclamped. The console renders the bill on the team page with the non-payable notice ahead of any number.
+`GET /v1/teams/{teamId}/bill` (`mako-cloud teams bill org_… [--period YYYY-MM]`) rates the current calendar month so far against the team's effective plan and the rate card, whose prices were verified against supabase.com/pricing on 2026-08-25. Money is integer micro-dollars end to end; only the display divides. Credits are operator-granted, exactly-once per credit id, and the balance is credits minus all charges — every closed period plus the live month — unclamped. The console renders the bill on the team page with the non-payable notice ahead of any number.
 
 A period that spanned a plan change is rated stretch by stretch under the plan that held during it: the base fee and a flow's included allowance take the stretch's share of the period, while a level compares its stretch average against the full included level and prorates the charge by time held. Use under a free stretch stays uncharged. Time before the team existed is covered by the free plan's zero-priced terms, which prorates a mid-month signup's base fee by construction.
 
@@ -2446,7 +2455,7 @@ Public failures use the versioned `ApiErrorEnvelope` ([shape and codes](#errors-
 | `@mako-cloud/edge-sdk` | Edge functions | Supplied by the runtime; never installed. Caller-aware client plus the explicit service client |
 | `@mako-cloud/management-sdk` | Scripts, CI, tools | `createManagementClient({ endpoint, credential: { kind, accessToken } })` → `MakoManagementClient` with one typed method per management operation (`accessToken` may be a string or a provider function); `createDeveloperAuthClient` for registration and sessions; `createOperatorClient` for operator inventory. Errors are `ManagementApiError` carrying the envelope |
 | `@mako-cloud/api-types` | Anyone generating a client | The generated OpenAPI types and a minimal fetch client (`createMakoApiClient`) |
-| `@mako-cloud/cli` | Terminals and CI | The `mako` command, built on the management SDK |
+| `@mako-cloud/cli` | Terminals and CI | The `mako-cloud` command, built on the management SDK |
 
 ```ts
 import { createManagementClient } from "@mako-cloud/management-sdk";
@@ -2526,7 +2535,7 @@ Against a real stack, `examples/rational/scripts/bootstrap.mjs` creates the proj
 | `409 conflict` naming a reused request id | Two data-plane requests carried the same `X-Mako-Request-Id` | Derive a distinct id per call (`${requestId}r`, `${requestId}w`); do not retry |
 | `409 checkpoint_expired` on pull | The checkpoint's history has been compacted away | Treat as a full resync: clear the collection, new replication identifier, pull from the beginning |
 | `409 schema_mismatch` | The client's `schemaVersion` is not the collection's active one | Run the application's migration and create replication bound to the required version |
-| The browser blocks the request with a CORS error | The page's origin is not in the environment's allowed origins, or the route is a management route | List the exact origin (`mako allowed-origins set --origin …`); management and operator routes are never answered cross-origin |
+| The browser blocks the request with a CORS error | The page's origin is not in the environment's allowed origins, or the route is a management route | List the exact origin (`mako-cloud allowed-origins set --origin …`); management and operator routes are never answered cross-origin |
 | RxDB looks connected but never syncs | A refused credential is being retried, or a dozen live streams are queued behind the browser's connection limit | Stop replication on `authentication_required` and sign in again; use `MakoLiveStreamGroup` for many collections |
 | The client signs the user out during a network outage | A custom persistence or client treats a transient failure as a refusal | Use `MakoAuthClient`: only a definitive refusal clears the session; transient failures set `refreshUnavailable` |
 | A user's new role does not take effect | Claims live on the token | The write advances the authorization epoch; refresh the session and expect a security reset |
@@ -2537,13 +2546,13 @@ Against a real stack, `examples/rational/scripts/bootstrap.mjs` creates the proj
 | `unresolved_import` at upload | A bare specifier other than `@mako-cloud/edge-sdk` | Map it with `--dependency <specifier>=<path>` onto an uploaded module |
 | A schedule cannot be created (`409 conflict`) | The function has no active deployment | Deploy and promote first |
 | A schedule shows `skipped_overlap` runs | The function outlives its interval | Lengthen the interval or shorten the function; overlap is never run concurrently |
-| Webhook endpoint is `paused` | 20 consecutive failed attempts | Fix the receiver, then `mako webhooks resume`; redeliver `failed` deliveries individually |
+| Webhook endpoint is `paused` | 20 consecutive failed attempts | Fix the receiver, then `mako-cloud webhooks resume`; redeliver `failed` deliveries individually |
 | Webhook signatures fail to verify | The body was re-serialized before signing, or the wrong `secretVersion` | Sign the raw bytes; keep the old secret until no pending deliveries carry the previous version |
 | A custom domain flips to `failed` | Two consecutive checks found no TXT record | Restore `_mako-verify.<hostname>`; it is served again on the next successful check |
 | `429 quota_exceeded` with `retry: never` | A free-plan cap | Reduce use or move to a plan that bills overage |
 | `429 rate_limited` | A platform rate window | Wait `retry.afterMs` |
-| `mako` exits with code 7 | The credential file is readable by others | Fix permissions (`0600`) or set `MAKO_CONFIG_DIR` to a private directory |
-| `mako` exits with code 3 in CI | No credential, or a step-up action without a terminal | Set `MAKO_TOKEN`/`MAKO_ENDPOINT`; for step-up, `MAKO_STEP_UP_PASSWORD_FILE` |
+| `mako-cloud` exits with code 7 | The credential file is readable by others | Fix permissions (`0600`) or set `MAKO_CONFIG_DIR` to a private directory |
+| `mako-cloud` exits with code 3 in CI | No credential, or a step-up action without a terminal | Set `MAKO_TOKEN`/`MAKO_ENDPOINT`; for step-up, `MAKO_STEP_UP_PASSWORD_FILE` |
 
 When you contact support, quote the `requestId` from the error envelope (or `request <id>` in the CLI's output) — never a token, a document, or a secret.
 

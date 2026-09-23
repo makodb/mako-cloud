@@ -1,4 +1,4 @@
-import { expect, test, type Page, type Route } from "@playwright/test";
+import { expect, type Page, type Route, test } from "@playwright/test";
 
 // Capabilities the management API already serves, reached from the console:
 // retained logs, index build state, data-job detail, JWT signing-key
@@ -149,6 +149,7 @@ test("a data job opens in detail from the jobs list", async ({ page }) => {
 
   await page.goto(`${ENVIRONMENT_PATH}/data`);
   await page.getByRole("button", { name: "Create access grant" }).click();
+  await page.getByRole("tab", { name: "Import / export" }).click();
   await expect(page.getByRole("heading", { name: "Import and export jobs" })).toBeVisible();
   await expect(page.getByText("djob_export01", { exact: true })).toBeVisible();
 

@@ -126,13 +126,13 @@ test("a sandbox institution links, syncs through the schedule, and does not doub
   expect(connectionId).toMatch(/^con_plaid-/u);
 
   // The sync runs the way it always runs: through the schedule.
-  const schedules = mako(["schedules", "list", "--function", "institution-sync"]) as {
+  const schedules = makoCloud(["schedules", "list", "--function", "institution-sync"]) as {
     id: string;
     name: string;
   }[];
   const schedule = schedules.find((entry) => entry.name === "every-fifteen-minutes");
   expect(schedule, "the bootstrap created the sync schedule").toBeDefined();
-  mako(["schedules", "run-now", schedule?.id ?? "", "--function", "institution-sync"]);
+  makoCloud(["schedules", "run-now", schedule?.id ?? "", "--function", "institution-sync"]);
   await expect
     .poll(() => finished(schedule?.id ?? "").length, { timeout: 120_000 })
     .toBeGreaterThanOrEqual(1);
@@ -155,7 +155,7 @@ test("a sandbox institution links, syncs through the schedule, and does not doub
   // -- the cursor's promise is not "nothing new", it is "never the same
   // entry twice". Idempotence is by (account, external_id), so the invariant
   // with teeth is uniqueness, however many runs the history took to arrive.
-  mako(["schedules", "run-now", schedule?.id ?? "", "--function", "institution-sync"]);
+  makoCloud(["schedules", "run-now", schedule?.id ?? "", "--function", "institution-sync"]);
   await expect.poll(() => finished(schedule?.id ?? "").length, { timeout: 120_000 }).toBe(2);
   const [, second] = finished(schedule?.id ?? "");
   expect(second?.outcome).toBe("succeeded");
@@ -203,8 +203,8 @@ async function plaidSandbox(path: string, payload: Record<string, unknown>): Pro
 }
 
 /** The management API, driven as the developer's own tooling drives it. */
-function mako(args: readonly string[]): unknown {
-  const cli = join(process.cwd(), "..", "..", "node_modules", ".bin", "mako");
+function makoCloud(args: readonly string[]): unknown {
+  const cli = join(process.cwd(), "..", "..", "node_modules", ".bin", "mako-cloud");
   const run = spawnSync(cli, [...args, "--json"], {
     encoding: "utf8",
     env: {
@@ -218,7 +218,7 @@ function mako(args: readonly string[]): unknown {
     },
   });
   if (run.status !== 0) {
-    throw new Error(`mako ${args.join(" ")} failed (${run.status}): ${run.stderr}`);
+    throw new Error(`mako-cloud ${args.join(" ")} failed (${run.status}): ${run.stderr}`);
   }
   return JSON.parse(run.stdout) as unknown;
 }
@@ -230,7 +230,7 @@ interface ScheduleRun {
 
 function finished(scheduleId: string): readonly ScheduleRun[] {
   if (scheduleId === "") return [];
-  const listed = mako(["schedules", "runs", scheduleId, "--function", "institution-sync"]) as {
+  const listed = makoCloud(["schedules", "runs", scheduleId, "--function", "institution-sync"]) as {
     items?: ScheduleRun[];
   };
   return (listed.items ?? []).filter((run) => run.outcome !== null);

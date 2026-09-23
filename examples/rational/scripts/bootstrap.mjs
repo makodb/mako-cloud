@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Bootstrap a Rational tenant on a Mako Cloud environment through the `mako`
+ * Bootstrap a Rational tenant on a Mako Cloud environment through the `mako-cloud`
  * CLI: create or reuse a project and an environment, publish every
  * collection of `mako/collections.json` with its indexes, activate the
  * policies of `mako/policies`, create the `receipts` bucket, initialize the
@@ -41,16 +41,16 @@ const exampleRoot = resolve(here, "..");
 const repositoryRoot = resolve(exampleRoot, "../..");
 
 /**
- * The `mako` CLI to drive. A checkout that installs it as a dependency has it
+ * The `mako-cloud` CLI to drive. A checkout that installs it as a dependency has it
  * in a local `node_modules/.bin`; in this repository that is the workspace
- * root. Otherwise it is whatever `mako` is on the PATH — an installed CLI.
+ * root. Otherwise it is whatever `mako-cloud` is on the PATH — an installed CLI.
  */
 function localCli() {
   for (const root of [exampleRoot, repositoryRoot]) {
-    const candidate = join(root, "node_modules", ".bin", "mako");
+    const candidate = join(root, "node_modules", ".bin", "mako-cloud");
     if (existsSync(candidate)) return candidate;
   }
-  return "mako";
+  return "mako-cloud";
 }
 
 const DEFAULTS = {
@@ -136,8 +136,8 @@ const cliEnvironment = {
   MAKO_WAIT_INTERVAL_MS: process.env.MAKO_WAIT_INTERVAL_MS ?? "500",
 };
 
-/** Run `mako …` and return {status, stdout, stderr}; never throws. */
-function mako(args, input) {
+/** Run `mako-cloud …` and return {status, stdout, stderr}; never throws. */
+function makoCloud(args, input) {
   const executable = options.cli;
   const command = executable.endsWith(".js") ? "node" : executable;
   const commandArgs = executable.endsWith(".js") ? [executable, ...args] : args;
@@ -162,22 +162,22 @@ function mako(args, input) {
     if (run.status === 0 || !run.stderr.includes("error unavailable") || attempt >= 8) {
       return run;
     }
-    log(`retrying after an unavailable window (attempt ${attempt}): mako ${args[0]} ${args[1] ?? ""}`);
+    log(`retrying after an unavailable window (attempt ${attempt}): mako-cloud ${args[0]} ${args[1] ?? ""}`);
     spawnSync("sleep", ["3"]);
   }
 }
 
 /** Run a command with --json and parse its output; exit codes in `allow` return null. */
-function makoJson(args, allow = [], input) {
-  const run = mako([...args, "--json"], input);
+function makoCloudJson(args, allow = [], input) {
+  const run = makoCloud([...args, "--json"], input);
   if (run.status !== 0) {
     if (allow.includes(run.status)) return null;
-    fail(`mako ${args.join(" ")} failed (exit ${run.status}): ${run.stderr.trim()}`);
+    fail(`mako-cloud ${args.join(" ")} failed (exit ${run.status}): ${run.stderr.trim()}`);
   }
   try {
     return JSON.parse(run.stdout);
   } catch {
-    fail(`mako ${args.join(" ")} did not print JSON: ${run.stdout.slice(0, 400)}`);
+    fail(`mako-cloud ${args.join(" ")} did not print JSON: ${run.stdout.slice(0, 400)}`);
   }
   return null;
 }
@@ -212,13 +212,13 @@ function sortKeys(value) {
 
 // --- 1. Developer session ------------------------------------------------
 
-const status = makoJson(["auth", "status"]);
+const status = makoCloudJson(["auth", "status"]);
 log(`signed in via ${status?.credential ?? "unknown credential"} at ${options.endpoint}`);
 
 // --- 2. Project and environment -----------------------------------------
 
 function findProject() {
-  const listed = items(makoJson(["projects", "list", ...(options.team ? ["--team", options.team] : [])]));
+  const listed = items(makoCloudJson(["projects", "list", ...(options.team ? ["--team", options.team] : [])]));
   return listed.find(
     (project) =>
       project.name === options["project-name"] && (project.state === "active" || project.state === "creating"),
@@ -228,7 +228,7 @@ function findProject() {
 let project = findProject();
 if (project === undefined) {
   log(`creating project "${options["project-name"]}" in region ${options.region}`);
-  project = makoJson([
+  project = makoCloudJson([
     "projects",
     "create",
     options["project-name"],
@@ -243,12 +243,12 @@ if (project === undefined) {
 if (project.state !== "active") fail(`project ${project.id} is ${project.state}, not active`);
 const projectId = project.id;
 
-let environment = items(makoJson(["envs", "list", "--project", projectId])).find(
+let environment = items(makoCloudJson(["envs", "list", "--project", projectId])).find(
   (candidate) => candidate.name === options["env-name"] && candidate.state !== "deleting",
 );
 if (environment === undefined) {
   log(`creating environment "${options["env-name"]}"`);
-  environment = makoJson(["envs", "create", options["env-name"], "--project", projectId, "--wait"]);
+  environment = makoCloudJson(["envs", "create", options["env-name"], "--project", projectId, "--wait"]);
 } else {
   log(`reusing environment ${environment.id}`);
 }
@@ -260,14 +260,14 @@ const tenant = ["--project", projectId, "--env", environmentId];
 
 const model = JSON.parse(readFileSync(join(exampleRoot, "mako", "collections.json"), "utf8"));
 const existingCollections = new Map(
-  items(makoJson(["collections", "list", ...tenant])).map((collection) => [collection.id, collection]),
+  items(makoCloudJson(["collections", "list", ...tenant])).map((collection) => [collection.id, collection]),
 );
 
 for (const collection of model.collections) {
   const existing = existingCollections.get(collection.id);
   if (existing === undefined) {
     log(`creating collection ${collection.id}`);
-    makoJson([
+    makoCloudJson([
       "collections",
       "create",
       collection.id,
@@ -290,7 +290,7 @@ for (const collection of model.collections) {
       `publishing schema version ${model.schemaVersion} of ${collection.id} ` +
         `(deployment has ${existing.schemaVersion})`,
     );
-    const published = makoJson([
+    const published = makoCloudJson([
       "collections",
       "schema",
       "publish",
@@ -318,7 +318,7 @@ for (const collection of model.collections) {
     log(`collection ${collection.id} is up to date`);
   }
 
-  const indexes = items(makoJson(["indexes", "list", collection.id, ...tenant]));
+  const indexes = items(makoCloudJson(["indexes", "list", collection.id, ...tenant]));
   for (const index of collection.indexes) {
     const present = indexes.find(
       (candidate) =>
@@ -328,7 +328,7 @@ for (const collection of model.collections) {
     );
     if (present !== undefined) continue;
     log(`creating index ${collection.id}/${index.name} on (${index.fields.join(", ")})`);
-    makoJson([
+    makoCloudJson([
       "indexes",
       "create",
       collection.id,
@@ -344,7 +344,7 @@ for (const collection of model.collections) {
   const desired = JSON.parse(
     readFileSync(join(exampleRoot, "mako", "policies", `${collection.id}.json`), "utf8"),
   );
-  const active = makoJson(["policies", "get", collection.id, ...tenant], [4]);
+  const active = makoCloudJson(["policies", "get", collection.id, ...tenant], [4]);
   const activeRules = active?.policy?.state === "active" ? active.policy.rules : null;
   // Allow-rules are an OR: their order carries no meaning, and the platform
   // serves them in its own order. Comparing them positionally made every
@@ -357,7 +357,7 @@ for (const collection of model.collections) {
   let version = (active?.policy?.version ?? 0) + 1;
   let drafted = null;
   for (let attempt = 0; attempt < 10 && drafted === null; attempt += 1) {
-    const draft = mako([
+    const draft = makoCloud([
       "policies",
       "draft",
       collection.id,
@@ -375,7 +375,7 @@ for (const collection of model.collections) {
     }
   }
   if (drafted === null) fail(`could not find a free policy version for ${collection.id}`);
-  const validation = makoJson(["policies", "validate", collection.id, String(drafted), ...tenant]);
+  const validation = makoCloudJson(["policies", "validate", collection.id, String(drafted), ...tenant]);
   if (validation?.valid !== true) {
     const diagnostics = validation?.policy?.diagnostics ?? [];
     fail(
@@ -385,7 +385,7 @@ for (const collection of model.collections) {
     );
   }
   log(`activating policy version ${drafted} of ${collection.id}`);
-  makoJson(["policies", "activate", collection.id, String(drafted), "--yes", ...tenant]);
+  makoCloudJson(["policies", "activate", collection.id, String(drafted), "--yes", ...tenant]);
 }
 
 // --- 4. Bucket ----------------------------------------------------------
@@ -401,19 +401,19 @@ const bucketArgs = [
   tempJson("receipts.rules.json", bucket.rules),
   ...tenant,
 ];
-if (makoJson(["storage", "buckets", "get", bucket.id, ...tenant], [4]) === null) {
+if (makoCloudJson(["storage", "buckets", "get", bucket.id, ...tenant], [4]) === null) {
   log(`creating bucket ${bucket.id}`);
-  makoJson(["storage", "buckets", "create", bucket.id, ...bucketArgs]);
+  makoCloudJson(["storage", "buckets", "create", bucket.id, ...bucketArgs]);
 } else {
   log(`updating bucket ${bucket.id}`);
-  makoJson(["storage", "buckets", "update", bucket.id, ...bucketArgs]);
+  makoCloudJson(["storage", "buckets", "update", bucket.id, ...bucketArgs]);
 }
 
 // --- 5. Keys ------------------------------------------------------------
 
-if (items(makoJson(["keys", "signing", "list", ...tenant])).length === 0) {
+if (items(makoCloudJson(["keys", "signing", "list", ...tenant])).length === 0) {
   log("initializing the JWT signing key");
-  makoJson(["keys", "signing", "init", ...tenant]);
+  makoCloudJson(["keys", "signing", "init", ...tenant]);
 }
 
 const previous = existsSync(options.output)
@@ -429,7 +429,7 @@ let publicProjectKey =
 if (publicProjectKey === null) {
   const keyId = `key_rational_${Date.now().toString(36)}`;
   log(`issuing public key ${keyId}`);
-  const issued = makoJson(["keys", "public", "create", "--id", keyId, ...tenant]);
+  const issued = makoCloudJson(["keys", "public", "create", "--id", keyId, ...tenant]);
   publicProjectKey = issued.secret;
 } else {
   log("reusing the public key from the previous mako.env.json");
@@ -443,7 +443,7 @@ if (publicProjectKey === null) {
  * a credential without the scope) leaves the app with password only.
  */
 function readSignInSettings() {
-  const settings = makoJson(["auth-settings", "get", ...tenant], [3, 4, 5, 7]);
+  const settings = makoCloudJson(["auth-settings", "get", ...tenant], [3, 4, 5, 7]);
   if (settings === null) {
     log("sign-in settings are unavailable; the app offers password sign-in only");
     return { providers: [], magicLinks: false };
@@ -471,7 +471,7 @@ function deployHouseholdsFunction() {
   const functionName = options["function-name"];
   const credentialId = `sk_rational_hh_${Date.now().toString(36)}`;
   log(`issuing the ${functionName} service credential ${credentialId}`);
-  const issued = makoJson([
+  const issued = makoCloudJson([
     "keys",
     "service",
     "create",
@@ -496,13 +496,13 @@ function deployHouseholdsFunction() {
   // value: create it the first time, rotate it to the new value after that. A
   // name is written once and cannot be freed, so rotation is the only way to
   // correct what a name holds.
-  const existing = makoJson(["functions", "secrets", "get", secretName, ...tenant], [4]);
+  const existing = makoCloudJson(["functions", "secrets", "get", secretName, ...tenant], [4]);
   if (existing === null) {
     log(`installing ${secretName} with the credential's value`);
-    makoJson(["functions", "secrets", "create", secretName, "--value", issued.secret, ...tenant]);
+    makoCloudJson(["functions", "secrets", "create", secretName, "--value", issued.secret, ...tenant]);
   } else {
     log(`rotating ${secretName} to the new credential`);
-    makoJson([
+    makoCloudJson([
       "functions",
       "secrets",
       "rotate",
@@ -516,7 +516,7 @@ function deployHouseholdsFunction() {
   // The uploaded copy is the directory as it is committed: no credential.
   const source = join(scratch, "households-function");
   cpSync(join(exampleRoot, "functions", "households"), source, { recursive: true });
-  const deployed = mako([
+  const deployed = makoCloud([
     "functions",
     "deploy",
     source,
@@ -573,7 +573,7 @@ function deploySyncFunction() {
   const functionName = options["sync-function-name"];
   const credentialId = `sk_rational_sync_${Date.now().toString(36)}`;
   log(`issuing the ${functionName} service credential ${credentialId}`);
-  const issued = makoJson([
+  const issued = makoCloudJson([
     "keys",
     "service",
     "create",
@@ -598,13 +598,13 @@ function deploySyncFunction() {
     ...tenant,
   ]);
   const secretName = "SYNC_SERVICE_KEY";
-  const existing = makoJson(["functions", "secrets", "get", secretName, ...tenant], [4]);
+  const existing = makoCloudJson(["functions", "secrets", "get", secretName, ...tenant], [4]);
   if (existing === null) {
     log(`installing ${secretName} with the credential's value`);
-    makoJson(["functions", "secrets", "create", secretName, "--value", issued.secret, ...tenant]);
+    makoCloudJson(["functions", "secrets", "create", secretName, "--value", issued.secret, ...tenant]);
   } else {
     log(`rotating ${secretName} to the new credential`);
-    makoJson([
+    makoCloudJson([
       "functions",
       "secrets",
       "rotate",
@@ -631,7 +631,7 @@ function deploySyncFunction() {
   // Plaid secrets and the `sandbox.plaid.com` egress declaration exactly when
   // Plaid is configured, and must not lose what it already declares.
   const desiredHosts = plaidConfigured ? ["sandbox.plaid.com"] : [];
-  const existingFunction = makoJson(["functions", "get", functionName, ...tenant], [4]);
+  const existingFunction = makoCloudJson(["functions", "get", functionName, ...tenant], [4]);
   if (existingFunction !== null) {
     const configuration = existingFunction.configuration;
     const secretNames = plaidConfigured
@@ -650,7 +650,7 @@ function deploySyncFunction() {
     };
     if (JSON.stringify(reconciled) !== JSON.stringify(configuration)) {
       log(`updating ${functionName} configuration (egress: ${desiredHosts.join(", ") || "none"})`);
-      makoJson([
+      makoCloudJson([
         "functions",
         "update",
         functionName,
@@ -661,7 +661,7 @@ function deploySyncFunction() {
     }
   }
   const source = stageFunctionBundle("institution-sync", "sync-function");
-  const deployed = mako([
+  const deployed = makoCloud([
     "functions",
     "deploy",
     source,
@@ -680,7 +680,7 @@ function deploySyncFunction() {
     String(SCHEDULED_LIMITS.wallMilliseconds),
     // The declaration is the platform's egress capability used the ordinary
     // way: one HTTPS host, granted at the worker permission boundary and
-    // reviewable in `mako functions get`.
+    // reviewable in `mako-cloud functions get`.
     ...(plaidConfigured
       ? ["--secret", "PLAID_CLIENT_ID", "--secret", "PLAID_SECRET", "--allow-host", "sandbox.plaid.com"]
       : []),
@@ -698,13 +698,13 @@ function deploySyncFunction() {
   // The schedule is what makes it a sync rather than a button. It is created
   // once and left alone afterwards: a re-run that recreated it would lose the
   // run history the developer is looking at.
-  const schedules = makoJson(["schedules", "list", "--function", functionName, ...tenant], [4]);
+  const schedules = makoCloudJson(["schedules", "list", "--function", functionName, ...tenant], [4]);
   const existingSchedule = items(schedules).find(
     (schedule) => schedule.name === "every-fifteen-minutes",
   );
   if (existingSchedule === undefined) {
     log(`scheduling ${functionName} at ${options["sync-cron"]}`);
-    makoJson([
+    makoCloudJson([
       "schedules",
       "create",
       "--function",
@@ -723,7 +723,7 @@ function deploySyncFunction() {
     ]);
   } else {
     log(`${functionName} is already scheduled (${existingSchedule.cron}); refreshing its run key`);
-    makoJson([
+    makoCloudJson([
       "schedules",
       "update",
       existingSchedule.id,
@@ -749,7 +749,7 @@ function deployNightlyFunction() {
   const functionName = options["nightly-function-name"];
   const credentialId = `sk_rational_nightly_${Date.now().toString(36)}`;
   log(`issuing the ${functionName} service credential ${credentialId}`);
-  const issued = makoJson([
+  const issued = makoCloudJson([
     "keys",
     "service",
     "create",
@@ -782,13 +782,13 @@ function deployNightlyFunction() {
     ...tenant,
   ]);
   const secretName = "NIGHTLY_SERVICE_KEY";
-  const existing = makoJson(["functions", "secrets", "get", secretName, ...tenant], [4]);
+  const existing = makoCloudJson(["functions", "secrets", "get", secretName, ...tenant], [4]);
   if (existing === null) {
     log(`installing ${secretName} with the credential's value`);
-    makoJson(["functions", "secrets", "create", secretName, "--value", issued.secret, ...tenant]);
+    makoCloudJson(["functions", "secrets", "create", secretName, "--value", issued.secret, ...tenant]);
   } else {
     log(`rotating ${secretName} to the new credential`);
-    makoJson([
+    makoCloudJson([
       "functions",
       "secrets",
       "rotate",
@@ -799,7 +799,7 @@ function deployNightlyFunction() {
       ...tenant,
     ]);
   }
-  const existingNightly = makoJson(["functions", "get", functionName, ...tenant], [4]);
+  const existingNightly = makoCloudJson(["functions", "get", functionName, ...tenant], [4]);
   if (existingNightly !== null) {
     const configuration = existingNightly.configuration;
     const reconciled = {
@@ -808,11 +808,11 @@ function deployNightlyFunction() {
     };
     if (JSON.stringify(reconciled) !== JSON.stringify(configuration)) {
       log(`updating ${functionName} limits for batch work`);
-      makoJson(["functions", "update", functionName, "--config", JSON.stringify(reconciled), ...tenant]);
+      makoCloudJson(["functions", "update", functionName, "--config", JSON.stringify(reconciled), ...tenant]);
     }
   }
   const source = stageFunctionBundle("nightly", "nightly-function");
-  const deployed = mako([
+  const deployed = makoCloud([
     "functions",
     "deploy",
     source,
@@ -840,11 +840,11 @@ function deployNightlyFunction() {
     );
     return;
   }
-  const schedules = makoJson(["schedules", "list", "--function", functionName, ...tenant], [4]);
+  const schedules = makoCloudJson(["schedules", "list", "--function", functionName, ...tenant], [4]);
   const existingSchedule = items(schedules).find((schedule) => schedule.name === "nightly");
   if (existingSchedule === undefined) {
     log(`scheduling ${functionName} at ${options["nightly-cron"]}`);
-    makoJson([
+    makoCloudJson([
       "schedules",
       "create",
       "--function",
@@ -863,7 +863,7 @@ function deployNightlyFunction() {
     ]);
   } else {
     log(`${functionName} is already scheduled (${existingSchedule.cron}); refreshing its run key`);
-    makoJson([
+    makoCloudJson([
       "schedules",
       "update",
       existingSchedule.id,
@@ -894,7 +894,7 @@ const RUN_KEY_HEADER = "x-rational-run-key";
 function establishRunKey() {
   if (options["run-key"] !== undefined && options["run-key"] !== "") return options["run-key"];
   for (const functionName of [options["sync-function-name"], options["nightly-function-name"]]) {
-    const schedules = makoJson(["schedules", "list", "--function", functionName, ...tenant], [4]);
+    const schedules = makoCloudJson(["schedules", "list", "--function", functionName, ...tenant], [4]);
     for (const schedule of items(schedules)) {
       const carried = schedule.request?.headers?.[RUN_KEY_HEADER];
       if (typeof carried === "string" && carried !== "") return carried;
@@ -905,12 +905,12 @@ function establishRunKey() {
 
 /** Install (or correct) a function secret with a value we choose. */
 function putFunctionSecret(name, value) {
-  const existing = makoJson(["functions", "secrets", "get", name, ...tenant], [4]);
+  const existing = makoCloudJson(["functions", "secrets", "get", name, ...tenant], [4]);
   if (existing === null) {
-    makoJson(["functions", "secrets", "create", name, "--value", value, ...tenant]);
+    makoCloudJson(["functions", "secrets", "create", name, "--value", value, ...tenant]);
     return;
   }
-  makoJson(["functions", "secrets", "rotate", name, "--value", value, "--yes", ...tenant]);
+  makoCloudJson(["functions", "secrets", "rotate", name, "--value", value, "--yes", ...tenant]);
 }
 
 /**
@@ -931,12 +931,12 @@ function registerAlertsWebhook() {
   if (url === undefined || url === "") return;
   const secretFile =
     options["webhook-secret-file"] ?? join(dirname(resolve(options.output)), "webhook-secret");
-  const existing = items(makoJson(["webhooks", "list", ...tenant], [4])).find(
+  const existing = items(makoCloudJson(["webhooks", "list", ...tenant], [4])).find(
     (endpoint) => endpoint.url === url,
   );
   if (existing !== undefined) {
     log(`rotating the signing secret of ${existing.id} for ${url}`);
-    makoJson([
+    makoCloudJson([
       "webhooks",
       "rotate-secret",
       existing.id,
@@ -948,7 +948,7 @@ function registerAlertsWebhook() {
     return;
   }
   log(`registering ${url} for alerts`);
-  makoJson([
+  makoCloudJson([
     "webhooks",
     "create",
     "--url",
@@ -1061,16 +1061,16 @@ async function ensureUser(email, password, role) {
   if (signup.status >= 400 && signup.status !== 409) {
     fail(`sign-up of ${email} failed with ${signup.status}: ${JSON.stringify(signup.body)}`);
   }
-  const found = items((makoJson(["users", "search", "--query", email, ...tenant]) ?? {}).users);
+  const found = items((makoCloudJson(["users", "search", "--query", email, ...tenant]) ?? {}).users);
   const user = found.find((candidate) => candidate.email === email) ?? found[0];
   if (user === undefined) fail(`application user ${email} was not found after sign-up`);
-  const view = makoJson(["users", "get", user.id, ...tenant]);
+  const view = makoCloudJson(["users", "get", user.id, ...tenant]);
   const trusted = { ...(view.trustedMetadata ?? {}) };
   const households = { ...(trusted.households ?? {}) };
   if (households[options["household-id"]] !== role) {
     households[options["household-id"]] = role;
     log(`granting ${email} the ${role} role on ${options["household-id"]}`);
-    makoJson([
+    makoCloudJson([
       "users",
       "update-metadata",
       user.id,
@@ -1092,7 +1092,7 @@ const editor = await ensureUser(options["editor-email"], options["editor-passwor
 // scoped to exactly these two collections and retired right after, which is
 // what the households function does for real under its own credential.
 const serviceKeyId = `sk_rational_boot_${Date.now().toString(36)}`;
-const serviceKey = makoJson([
+const serviceKey = makoCloudJson([
   "keys",
   "service",
   "create",
@@ -1217,7 +1217,7 @@ try {
   }
   }
 } finally {
-  const retired = mako(["keys", "retire", serviceKeyId, "--yes", ...tenant]);
+  const retired = makoCloud(["keys", "retire", serviceKeyId, "--yes", ...tenant]);
   if (retired.status !== 0) log(`warning: service key ${serviceKeyId} could not be retired: ${retired.stderr.trim()}`);
 }
 

@@ -59,6 +59,9 @@ const operatorAuth = matcher("operator_auth");
 const openapiPaths = [...openapi.matchAll(/^ {2}(\/[^:]+):$/gm)].map((match) => match[1]);
 assert(openapiPaths.length > 70, "unexpectedly small OpenAPI route inventory");
 const consoleRoute = matcher("console_route");
+const userBook = matcher("user_book");
+assert(userBook.test("/docs/user-book"), "the public User Book route is not served");
+assert(!userBook.test("/docs/user-book/private"), "the User Book route matches subpaths");
 for (const path of [
   "/projects/prj_example0001/domains",
   "/projects/prj_example0001/environments/env_example0001/api-docs",
@@ -289,6 +292,7 @@ for (const forbidden of [
   "@console_route",
   "@console_workspace_route",
   "@console_asset",
+  "@user_book",
   "file_server",
   "/opt/mako/current/console",
   "@edge_function",

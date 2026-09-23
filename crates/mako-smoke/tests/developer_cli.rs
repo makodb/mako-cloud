@@ -3,7 +3,7 @@
 //! The unit tests in `packages/cli/test` drive every command against a mock
 //! of the management API; this test boots the local data and control planes,
 //! mints a developer session the way deployment tooling does, and runs the
-//! built `mako` binary through the flow a developer follows in the console:
+//! built `mako-cloud` binary through the flow a developer follows in the console:
 //! see what they own, create a project and wait for it, shape a collection,
 //! activate a policy, issue a key, and read what the platform recorded.
 //!
@@ -68,14 +68,14 @@ impl Cli {
         assert_eq!(
             run.status,
             0,
-            "mako {} failed: {}{}",
+            "mako-cloud {} failed: {}{}",
             args.join(" "),
             run.stdout,
             run.stderr
         );
         serde_json::from_str(&run.stdout).unwrap_or_else(|error| {
             panic!(
-                "mako {} did not print one JSON document ({error}): {}",
+                "mako-cloud {} did not print one JSON document ({error}): {}",
                 args.join(" "),
                 run.stdout
             )

@@ -14,7 +14,7 @@
 //! `mako-local-bootstrap` deploys both sample functions **in process**: it
 //! constructs `FunctionAdminService` itself with an in-memory object store, so
 //! this suite needs no S3 service at all. That is not how a developer deploys.
-//! `mako functions deploy` and the management API upload the bundle through
+//! `mako-cloud functions deploy` and the management API upload the bundle through
 //! the running control plane, which stores artifacts in the S3 object store
 //! `MAKO_OBJECT_STORE_*` names -- without a reachable one, bundle upload and
 //! `functions deployments create` answer `503 function administration is
@@ -148,7 +148,7 @@ fn deployed_function_is_served_through_the_edge_gateway() {
     let root = workspace.path();
 
     // A supervisor the control plane can authenticate to, on the contract a
-    // deployment uses. `mako functions serve` cannot stand in for this: it
+    // deployment uses. `mako-cloud functions serve` cannot stand in for this: it
     // generates a random supervisor credential.
     let container = start_runtime(&engine, root);
     await_supervisor(&container);
@@ -402,7 +402,7 @@ fn deployed_function_is_served_through_the_edge_gateway() {
     //
     // The gateway carried the verified token and no adapter ever sent it, so
     // in the hosted shape every function saw an anonymous caller. Locally
-    // `mako serve` sets the header itself, which is why only a real gateway
+    // `mako-cloud functions serve` sets the header itself, which is why only a real gateway
     // and a real runtime, as here, can tell the two apart.
     let public_key = bootstrap["publicProjectKey"]
         .as_str()

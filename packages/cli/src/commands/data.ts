@@ -16,6 +16,7 @@ import {
 
 import type { CommandContext } from "../cli/context.js";
 import { CliError, EXIT, usageError } from "../cli/errors.js";
+import { CLI_NAME } from "../cli/name.js";
 import type { TableColumn } from "../cli/output.js";
 import type { Command, CommandArgs, OptionSpec } from "../cli/registry.js";
 import { TENANT_OPTIONS, type Tenant, tenantFrom } from "./shared.js";
@@ -342,7 +343,7 @@ async function exportData(context: CommandContext, args: CommandArgs): Promise<v
     );
     context.info(`job ${job.jobId}`);
     context.info(
-      `resume with: mako data export --job ${job.jobId} --output ${output} ${tenantFlags(tenant)}`,
+      `resume with: ${CLI_NAME} data export --job ${job.jobId} --output ${output} ${tenantFlags(tenant)}`,
     );
   }
   job = await settle(context, client, tenant, job);
@@ -422,7 +423,7 @@ async function importData(context: CommandContext, args: CommandArgs): Promise<v
     );
     context.info(`job ${job.jobId}`);
     context.info(
-      `resume with: mako data import --job ${job.jobId} --input <path> --schema-version <n> ${tenantFlags(tenant)}`,
+      `resume with: ${CLI_NAME} data import --job ${job.jobId} --input <path> --schema-version <n> ${tenantFlags(tenant)}`,
     );
   }
 
@@ -449,7 +450,7 @@ async function importData(context: CommandContext, args: CommandArgs): Promise<v
     printDryRun(context, job);
     if (args.boolean("dry-run-only")) {
       context.info(
-        `confirm later with: mako data import --job ${job.jobId} --yes ${tenantFlags(tenant)}`,
+        `confirm later with: ${CLI_NAME} data import --job ${job.jobId} --yes ${tenantFlags(tenant)}`,
       );
       context.out(job);
       return;

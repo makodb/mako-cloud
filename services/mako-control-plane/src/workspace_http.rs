@@ -8,7 +8,7 @@ use std::{
 use mako_api::{
     CollectionId, ConnectCollection, ConnectMetadata, ConnectionCheckRequest,
     ConnectionCheckResult, ConnectionCheckState, ConnectionCheckStep, DeveloperRestoreRequest,
-    EXPLORER_MAX_SYNC_WINDOW_SECONDS, ProviderStatus, SyncSummary, TenantScope,
+    EXPLORER_MAX_SYNC_WINDOW_SECONDS, ObservabilityPage, ProviderStatus, SyncSummary, TenantScope,
     WorkspaceDestination, WorkspaceSummary, WorkspaceSummarySection,
 };
 use mako_control_plane::{
@@ -135,6 +135,7 @@ fn workspace_summary(
                         now,
                         json_value!({
                             "count": collections.len(),
+                            "limited": collections.len() == 1_000,
                             "active": collections.iter().filter(|item| item.lifecycle() == mako_documents::CollectionLifecycle::Active).count(),
                         }),
                     ),
@@ -163,6 +164,7 @@ fn workspace_summary(
                         now,
                         json_value!({
                             "count": jobs.len(),
+                            "limited": jobs.len() == 100,
                             "active": jobs.iter().filter(|job| !matches!(
                                 job.state,
                                 mako_api::DataJobState::Succeeded
@@ -221,7 +223,7 @@ fn workspace_summary(
                         retained_since_unix_seconds: Some(
                             page.retention.retained_from_unix_milliseconds / 1_000,
                         ),
-                        payload: Some(json_value!({"recordCount": page.items.len()})),
+                        payload: Some(observability_summary(id, &page, now)),
                         remediation_code: None,
                     },
                     Err(_) => unavailable_section(now, &format!("{id}_summary_unavailable")),
@@ -241,7 +243,10 @@ fn workspace_summary(
             Ok(functions) => {
                 sections.insert(
                     "functions".to_owned(),
-                    current_section(now, json_value!({"count": functions.len()})),
+                    current_section(
+                        now,
+                        json_value!({"count": functions.len(), "limited": functions.len() == 100}),
+                    ),
                 );
             }
             Err(_) => {
@@ -266,6 +271,74 @@ fn workspace_summary(
         );
         json(request, 200, &WorkspaceSummary { tenant, sections })
     })
+}
+
+// This is a bounded overview of already-authorized, scrubbed telemetry. Keep
+// bodies, free-form audit details, error messages, and cursor tokens out of it.
+fn observability_summary(id: &str, page: &ObservabilityPage, now: u64) -> Value {
+    let mut payload = json_value!({
+        "recordCount": page.items.len(),
+        "limited": page.next_cursor.is_some(),
+        "windowStartUnixSeconds": now.saturating_sub(3_600),
+        "windowEndUnixSeconds": now,
+    });
+    if id == "activity" {
+        let mut records = page.items.iter().collect::<Vec<_>>();
+        records.sort_by_key(|item| std::cmp::Reverse(item.timestamp_unix_milliseconds));
+        let events = records
+            .into_iter()
+            .filter_map(|item| {
+                if let ObservabilityPayload::Audit {
+                    actor_id,
+                    action,
+                    target,
+                    outcome,
+                    ..
+                } = &item.payload
+                {
+                    Some(json_value!({
+                        "timestampUnixMilliseconds": item.timestamp_unix_milliseconds,
+                        "actorId": actor_id.chars().take(128).collect::<String>(),
+                        "action": action.chars().take(128).collect::<String>(),
+                        "target": target.chars().take(256).collect::<String>(),
+                        "outcome": outcome,
+                    }))
+                } else {
+                    None
+                }
+            })
+            .take(8)
+            .collect::<Vec<_>>();
+        if events.len() < page.items.len() {
+            payload["limited"] = Value::Bool(true);
+        }
+        payload["events"] = json_value!(events);
+    } else if id == "usage" {
+        let mut samples = BTreeMap::new();
+        for item in &page.items {
+            if let ObservabilityPayload::Usage {
+                resource,
+                quantity,
+                unit,
+            } = &item.payload
+            {
+                let sample = samples.entry(resource).or_insert((0, 0, ""));
+                if item.timestamp_unix_milliseconds >= sample.0 {
+                    *sample = (item.timestamp_unix_milliseconds, *quantity, unit.as_str());
+                }
+            }
+        }
+        payload["samples"] = json_value!(
+            samples
+                .into_iter()
+                .map(|(resource, (timestamp, quantity, unit))| json_value!({
+                    "resource": resource, "quantity": quantity, "unit": unit,
+                    "timestampUnixMilliseconds": timestamp,
+                }))
+                .collect::<Vec<_>>()
+        );
+    }
+    payload
 }
 
 fn workspace_navigation(
@@ -342,6 +415,12 @@ fn workspace_navigation(
                 "API & Connect",
                 "connect",
                 ProjectDataPermission::DataRead,
+            ),
+            (
+                "credentials",
+                "API keys",
+                "credentials",
+                ProjectDataPermission::DataAdmin,
             ),
             (
                 "settings",
@@ -846,7 +925,96 @@ fn workspace_error(request: &HttpRequest, error: DeveloperWorkspaceError) -> Htt
 
 #[cfg(test)]
 mod tests {
-    use super::supported_rxdb_version;
+    use super::{observability_summary, supported_rxdb_version};
+    use mako_api::{
+        EnvironmentId, EventOutcome, ObservabilityPage, ObservabilityPayload, ObservabilityRecord,
+        ProjectId, QuotaResource, RetentionWindow, TenantScope,
+    };
+    use serde_json::json;
+
+    fn page(payloads: Vec<(u64, ObservabilityPayload)>) -> ObservabilityPage {
+        let tenant = TenantScope::new(
+            ProjectId::parse("prj_abcdefgh").unwrap(),
+            EnvironmentId::parse("env_abcdefgh").unwrap(),
+        );
+        ObservabilityPage {
+            items: payloads
+                .into_iter()
+                .map(|(timestamp, payload)| ObservabilityRecord {
+                    tenant: tenant.clone(),
+                    timestamp_unix_milliseconds: timestamp,
+                    payload,
+                })
+                .collect(),
+            next_cursor: None,
+            retention: RetentionWindow {
+                observed_at_unix_milliseconds: 10_000_000,
+                retained_from_unix_milliseconds: 0,
+                retention_seconds: 7_776_000,
+            },
+        }
+    }
+
+    #[test]
+    fn overview_activity_is_newest_first_bounded_and_omits_details() {
+        let page = page(
+            (0..12)
+                .map(|i| {
+                    (
+                        i * 1_000,
+                        ObservabilityPayload::Audit {
+                            organization_id: "org_abcdefgh".into(),
+                            actor_id: "dev_abcdefgh".into(),
+                            action: "collection.create".into(),
+                            target: "x".repeat(500),
+                            outcome: EventOutcome::Allowed,
+                            request_id: "internal-request".into(),
+                            details: Some("private-audit-details".into()),
+                        },
+                    )
+                })
+                .collect(),
+        );
+        let result = observability_summary("activity", &page, 10_000);
+        assert_eq!(result["events"].as_array().unwrap().len(), 8);
+        assert_eq!(result["events"][0]["timestampUnixMilliseconds"], 11_000);
+        assert_eq!(result["events"][0]["target"].as_str().unwrap().len(), 256);
+        assert_eq!(result["limited"], true);
+        assert!(!result.to_string().contains("private-audit-details"));
+        assert!(!result.to_string().contains("internal-request"));
+        assert_eq!(result["windowStartUnixSeconds"], 6_400);
+    }
+
+    #[test]
+    fn overview_usage_reports_latest_sample_not_sum_and_preserves_partial_results() {
+        let mut page = page(vec![
+            (
+                3_000,
+                ObservabilityPayload::Usage {
+                    resource: QuotaResource::StorageBytes,
+                    quantity: 40,
+                    unit: "bytes".into(),
+                },
+            ),
+            (
+                1_000,
+                ObservabilityPayload::Usage {
+                    resource: QuotaResource::StorageBytes,
+                    quantity: 100,
+                    unit: "bytes".into(),
+                },
+            ),
+        ]);
+        page.next_cursor = Some("opaque-private-cursor".into());
+        let result = observability_summary("usage", &page, 10_000);
+        assert_eq!(result["samples"][0]["quantity"], 40);
+        assert_eq!(result["samples"][0]["timestampUnixMilliseconds"], 3_000);
+        assert_eq!(result["limited"], true);
+        assert!(!result.to_string().contains("opaque-private-cursor"));
+        let empty = observability_summary("usage", &super::tests::page(vec![]), 1);
+        assert_eq!(empty["samples"], json!([]));
+        assert_eq!(empty["windowStartUnixSeconds"], 0);
+    }
 
     #[test]
     fn connection_check_accepts_only_the_supported_rxdb_major() {
