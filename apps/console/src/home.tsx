@@ -2,8 +2,8 @@
 //
 // The dashboard is a read-only aggregation of existing management calls:
 // `listTeams` → `listProjects` per owner, then — lazily, per card, with a
-// bounded number of requests in flight — the owner's plan, the project's
-// headline usage, and the developer's recent activity. One project's failing
+// bounded number of requests in flight — the owner's plan and the project's
+// headline usage. One project's failing
 // summary marks only its own card. The guided first run creates the first
 // project and hands off to that project's "Connect" screen for keys and the
 // connection check; whether it was dismissed is kept in browser storage keyed
@@ -51,12 +51,6 @@ import { FirstProjectPanel, LifecycleBadge } from "./projects.js";
 const MAX_IN_FLIGHT = 4;
 /** Usage samples read per project; the newest level and the period's flows come out of them. */
 const USAGE_SAMPLE_LIMIT = 50;
-/** Audit events read per project for the activity feed. */
-const ACTIVITY_LIMIT = 10;
-/** Projects whose activity feeds are merged on the home page. */
-const ACTIVITY_PROJECTS = 3;
-/** Activity rows shown after merging. */
-const ACTIVITY_ROWS = 15;
 /** A small label over a fact. `dt` keeps the definition list intact, so this is
  * the kit's Eyebrow styling on the term rather than the component. */
 const FACT_LABEL = "text-xs font-semibold uppercase tracking-wider text-muted-foreground";
@@ -130,7 +124,6 @@ export function HomeDashboard({
   const guideInFlight = progress.step !== "done" && progress.projectId !== undefined;
   const guideActive = !progress.dismissed && (noProjects || guideInFlight);
   const showGuideAgain = progress.dismissed && (noProjects || guideInFlight);
-  const activityProjects = readyProjects.slice(0, ACTIVITY_PROJECTS);
   const ownerName = (project: Project): string =>
     teams?.find((team) => team.id === project.teamId)?.kind === "personal"
       ? "Personal space"
@@ -345,7 +338,6 @@ export function HomeDashboard({
                   />
                 ))}
               </div>
-              <RecentActivity projects={activityProjects} loader={loader} />
             </div>
             <section className="grid gap-4" aria-labelledby="teams-title">
               <div className="grid gap-1">
@@ -638,118 +630,6 @@ function UsageLine({ usage }: { readonly usage: UsageSummary }) {
   );
 }
 
-// --- Recent activity ---------------------------------------------------------
-
-interface ActivityEntry {
-  readonly timestamp: string;
-  readonly actorId: string;
-  readonly action: string;
-  readonly target: string;
-  readonly outcome: string;
-}
-
-type ActivitySource =
-  | { readonly status: "loading" }
-  | { readonly status: "ready"; readonly entries: readonly ActivityEntry[] }
-  | { readonly status: "unavailable" };
-
-function RecentActivity({
-  projects,
-  loader,
-}: {
-  readonly projects: readonly Project[];
-  readonly loader: SummaryLoader;
-}) {
-  const [sources, setSources] = useState<Record<string, ActivitySource>>({});
-  const projectIds = projects.map((project) => project.id).join(",");
-  useEffect(() => {
-    let active = true;
-    const ids = projectIds === "" ? [] : projectIds.split(",");
-    setSources(Object.fromEntries(ids.map((id) => [id, { status: "loading" as const }])));
-    for (const id of ids) {
-      void loader.activity(id).then(
-        (entries) =>
-          active && setSources((current) => ({ ...current, [id]: { status: "ready", entries } })),
-        () => active && setSources((current) => ({ ...current, [id]: { status: "unavailable" } })),
-      );
-    }
-    return () => {
-      active = false;
-    };
-  }, [loader, projectIds]);
-
-  const pending = projects.some(
-    (project) => (sources[project.id]?.status ?? "loading") === "loading",
-  );
-  const rows = projects
-    .flatMap((project) => {
-      const source = sources[project.id];
-      return source?.status === "ready"
-        ? source.entries.map((entry) => ({ ...entry, project }))
-        : [];
-    })
-    .sort((left, right) => Date.parse(right.timestamp) - Date.parse(left.timestamp))
-    .slice(0, ACTIVITY_ROWS);
-  const unavailable = projects.filter((project) => sources[project.id]?.status === "unavailable");
-
-  // Keep the activity feed collapsible within the main dashboard.
-  return (
-    <details
-      className="group rounded-xl border bg-card"
-      aria-busy={pending}
-      aria-label="Recent activity"
-      role="region"
-    >
-      <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-medium select-none hover:text-foreground [&::-webkit-details-marker]:hidden">
-        <ChevronRight
-          aria-hidden="true"
-          className="size-4 shrink-0 transition-transform group-open:rotate-90"
-        />
-        Recent activity
-      </summary>
-      <div className="grid gap-3 border-t px-4 py-4 text-sm">
-        {projects.length === 0 ? <p className={MUTED}>No projects to report on yet.</p> : null}
-        {unavailable.map((project) => (
-          <p key={project.id} className="m-0 text-sm text-destructive" role="status">
-            Activity unavailable for {project.name}
-          </p>
-        ))}
-        {pending ? (
-          <p className={MUTED} aria-live="polite">
-            Loading activity…
-          </p>
-        ) : null}
-        {!pending && rows.length === 0 && unavailable.length < projects.length ? (
-          <p className={MUTED}>No recent audited actions.</p>
-        ) : null}
-        {rows.length === 0 ? null : (
-          <ol className="m-0 grid list-none gap-3 p-0">
-            {rows.map((row) => (
-              <li
-                key={`${row.project.id}-${row.timestamp}-${row.action}-${row.target}`}
-                className="grid gap-0.5 border-b pb-3 last:border-b-0 last:pb-0"
-              >
-                <span className="break-words">
-                  <strong className="font-mono text-xs font-medium">{row.actorId}</strong>{" "}
-                  {row.action.replaceAll("_", " ")}{" "}
-                  <code className="font-mono text-xs">{row.target}</code>
-                  {row.outcome === "allowed" ? null : (
-                    <span className="font-medium text-destructive"> ({row.outcome})</span>
-                  )}
-                </span>
-                <small className="text-xs text-muted-foreground">
-                  {row.project.name} ·{" "}
-                  <time dateTime={row.timestamp}>{new Date(row.timestamp).toLocaleString()}</time>
-                </small>
-              </li>
-            ))}
-          </ol>
-        )}
-      </div>
-    </details>
-  );
-}
-
 // --- Empty state --------------------------------------------------------------
 
 function NoProjectsPanel({
@@ -1008,7 +888,6 @@ interface SummaryLoader {
   environment(projectId: string): Promise<Environment | null>;
   plan(teamId: string): Promise<string>;
   usage(projectId: string): Promise<UsageSummary>;
-  activity(projectId: string): Promise<readonly ActivityEntry[]>;
 }
 
 /**
@@ -1021,7 +900,6 @@ function createSummaryLoader(client: MakoManagementClient, limit = MAX_IN_FLIGHT
   const plans = new Map<string, Promise<string>>();
   const environments = new Map<string, Promise<Environment | null>>();
   const usage = new Map<string, Promise<UsageSummary>>();
-  const activity = new Map<string, Promise<readonly ActivityEntry[]>>();
   // Not queued itself: it runs inside whichever queued task needs it first, so
   // a full queue can never wait on a task that is itself waiting for the queue.
   const activeEnvironment = (projectId: string) =>
@@ -1046,31 +924,6 @@ function createSummaryLoader(client: MakoManagementClient, limit = MAX_IN_FLIGHT
             limit: USAGE_SAMPLE_LIMIT,
           });
           return summarizeUsage(environment, page.items);
-        }),
-      ),
-    activity: (projectId) =>
-      memoize(activity, projectId, () =>
-        queue.run(async () => {
-          const environment = await activeEnvironment(projectId);
-          if (environment === null) {
-            return [];
-          }
-          const page = await client.queryAuditEvents(projectId, environment.id, {
-            limit: ACTIVITY_LIMIT,
-          });
-          return page.items.flatMap((record) =>
-            record.payload.kind === "audit"
-              ? [
-                  {
-                    timestamp: record.timestamp,
-                    actorId: record.payload.actorId,
-                    action: record.payload.action,
-                    target: record.payload.target,
-                    outcome: record.payload.outcome,
-                  },
-                ]
-              : [],
-          );
         }),
       ),
   };
