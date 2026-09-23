@@ -265,9 +265,9 @@ The console is what a developer sees from sign-in onward. It is organised in thr
 
 ### Home
 
-Signing in lands on the home dashboard: every project you can reach, across your personal space ("Your projects") and every team you belong to, as cards carrying lifecycle state, region, plan, and headline usage for the current period, with recent activity beside them. Each card loads its summaries on its own, so one project whose usage cannot be read marks only its own card.
+Signing in opens the home dashboard. Projects appear in a list grouped by your personal space ("Your projects") and each team you belong to. Each row shows lifecycle state, region, plan, and usage for the current period. Select a project name to open its workspace, or use **Browse data**, **Schema**, and **Connect** to open its active database environment. Each row loads its summaries independently, so a usage failure affects only that project. Project audit events are available from its **Activity** screen.
 
-Search projects by name, identifier, region, or owner. Each project with an active environment offers **Browse data**, **Schema**, and **Connect** shortcuts, with the selected environment named. **New project** opens the creation form. The workspace sidebar links to your teams, billing, and the User Book. An unmatched search offers **Clear search** and keeps your projects intact.
+Search projects by name, identifier, region, or owner. **New project** opens the creation form. The workspace sidebar links to your projects, teams, and billing. The header's **Docs** link opens the User Book. An unmatched search offers **Clear search** and keeps your projects intact.
 
 A developer with no projects is offered a guided first run that creates the project and opens its workspace. The project page provides keys, the API URL, quickstart, and a connection check. Dismissing the guide is remembered for the browser tab; you can reopen it from the empty state.
 

@@ -54,7 +54,7 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
-test("projects across the personal space and a team appear as a list with recent activity", async ({
+test("projects across the personal space and a team appear as a list with project summaries", async ({
   page,
 }) => {
   const api = new HomeApiHarness();
@@ -84,22 +84,6 @@ test("projects across the personal space and a team appear as a list with recent
   await expect(teamRow.getByText("pro", { exact: true })).toBeVisible();
   await expect(teamRow.getByText("Storage 120.0 MiB · Replication 2.0 MiB")).toBeVisible();
   await expect(page.getByRole("article").and(page.locator("[aria-busy='true']"))).toHaveCount(0);
-
-  // Activity merges the projects' audit feeds newest first, naming actor,
-  // action, target, and time.
-  await page.getByText("Recent activity", { exact: true }).click();
-  const activity = page.getByRole("region", { name: "Recent activity" });
-  await expect(activity).toBeVisible();
-  const rows = activity.getByRole("listitem");
-  await expect(rows).toHaveCount(2);
-  await expect(rows.nth(0)).toContainText("dev_abcdefgh");
-  await expect(rows.nth(0)).toContainText("policy.activate");
-  await expect(rows.nth(0)).toContainText("todos/policy/1");
-  await expect(rows.nth(0)).toContainText("Mako Test Project");
-  await expect(rows.nth(0).locator("time")).toHaveAttribute("datetime", NOW);
-  await expect(rows.nth(1)).toContainText("project.create");
-  await expect(rows.nth(1)).toContainText("Side project");
-  await expect(rows.nth(1).locator("time")).toHaveAttribute("datetime", EARLIER);
 
   // The plan was read once per owner, not per row, and every call the page
   // made is part of the management contract.
@@ -176,9 +160,6 @@ test("a usage source that fails marks only its own row", async ({ page }) => {
   await expect(teamRow.getByText("Storage 120.0 MiB · Replication 2.0 MiB")).toBeVisible();
   await expect(teamRow.getByText("Usage unavailable")).toHaveCount(0);
   await expect(page.getByRole("alert")).toHaveCount(0);
-  await expect(page.getByRole("region", { name: "Recent activity" })).toContainText(
-    "policy.activate",
-  );
 });
 
 test("a developer creates the first project and continues in its workspace", async ({ page }) => {
