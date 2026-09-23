@@ -2,10 +2,10 @@ use std::{error::Error, fmt, num::NonZeroU64};
 
 use mako_api::{ApiError, ApiErrorEnvelope, ErrorCode, RetryAdvice};
 use mako_documents::{
-    CommitPosition, DocumentMutationAuthorizer, DocumentReadAuthorizer, DocumentValidator,
-    EnvironmentSequencer, ExpectedRevision, MutationCommitOutcome, MutationError, MutationId,
-    MutationRequest, ReadAuthorizationContext, ReadAuthorizationPath, RevisionToken,
-    ScopedCollectionEngine, SequencerError,
+    CanonicalDocument, CommitPosition, DocumentMutationAuthorizer, DocumentReadAuthorizer,
+    DocumentValidator, EnvironmentSequencer, ExpectedRevision, MutationCommitOutcome,
+    MutationError, MutationId, MutationRequest, ReadAuthorizationContext, ReadAuthorizationPath,
+    RevisionToken, ScopedCollectionEngine, SequencerError,
 };
 use mako_storage::Durability;
 use serde_json::Value;
@@ -130,7 +130,28 @@ impl<'a> PushService<'a> {
             None => ExpectedRevision::Missing,
             Some(assumed) => match assumed_revision(assumed) {
                 Some(revision) => ExpectedRevision::Exact(revision),
-                None => return Ok(RowResult::NotCommitted(denied_invalid(context, row))),
+                // RxDB names no revision for a document it has already pushed:
+                // the master state it assumes is the state it pushed, and the
+                // service's revision token was never part of that. Hold the
+                // assumed state against the document itself instead -- the
+                // comparison RxDB's own conflict handling makes -- so the
+                // second edit of a document is not refused as malformed.
+                None => match assumed_state_matches(assumed, current.as_ref()) {
+                    None => return Ok(RowResult::NotCommitted(denied_invalid(context, row))),
+                    Some(false) => {
+                        return Ok(RowResult::NotCommitted(self.conflict_outcome(
+                            context,
+                            row,
+                            current.as_ref(),
+                            read_authorizer,
+                        )));
+                    }
+                    Some(true) => current
+                        .as_ref()
+                        .map_or(ExpectedRevision::Missing, |current| {
+                            ExpectedRevision::Exact(current.revision().clone())
+                        }),
+                },
             },
         };
         let mutation_id = MutationId::parse(row.mutation_id.clone())?;
@@ -161,21 +182,12 @@ impl<'a> PushService<'a> {
                     .get_document(&document_id)
                     .await
                     .map_err(PushError::Read)?;
-                Ok(RowResult::NotCommitted(match current {
-                    Some(current)
-                        if read_authorizer
-                            .authorize_read(ReadAuthorizationContext::new(
-                                self.collection,
-                                ReadAuthorizationPath::ConflictResponse,
-                                &current,
-                            ))
-                            .is_allowed() =>
-                    {
-                        conflict(&row.mutation_id, Some(replication_document(&current)))
-                    }
-                    Some(_) => denied_policy(context, row),
-                    None => conflict(&row.mutation_id, None),
-                }))
+                Ok(RowResult::NotCommitted(self.conflict_outcome(
+                    context,
+                    row,
+                    current.as_ref(),
+                    read_authorizer,
+                )))
             }
             Err(MutationError::AuthorizationDenied { .. }) => {
                 Ok(RowResult::NotCommitted(denied_policy(context, row)))
@@ -186,6 +198,46 @@ impl<'a> PushService<'a> {
             Err(error) => Err(PushError::Mutation(error)),
         }
     }
+
+    /// The master state a conflicting push is told about: the document as this
+    /// caller may read it, nothing when reading it is denied, and an explicit
+    /// absence when there is no document.
+    fn conflict_outcome(
+        &self,
+        context: &AuthenticatedReplicationContext,
+        row: &PushRow,
+        current: Option<&CanonicalDocument>,
+        read_authorizer: &dyn DocumentReadAuthorizer,
+    ) -> PushOutcome {
+        match current {
+            Some(current)
+                if read_authorizer
+                    .authorize_read(ReadAuthorizationContext::new(
+                        self.collection,
+                        ReadAuthorizationPath::ConflictResponse,
+                        current,
+                    ))
+                    .is_allowed() =>
+            {
+                conflict(&row.mutation_id, Some(replication_document(current)))
+            }
+            Some(_) => denied_policy(context, row),
+            None => conflict(&row.mutation_id, None),
+        }
+    }
+}
+
+/// Whether an assumed master state that names no revision describes the
+/// document as it is. `None` when the state is not a document at all.
+fn assumed_state_matches(assumed: &Value, current: Option<&CanonicalDocument>) -> Option<bool> {
+    let (mut body, deleted) = replication_body(assumed).ok()?;
+    // RxDB's own bookkeeping never reaches the service's documents.
+    body.remove("_meta");
+    body.remove("_attachments");
+    Some(match current {
+        None => deleted,
+        Some(current) => current.is_deleted() == deleted && current.body() == &body,
+    })
 }
 
 enum RowResult {
@@ -530,6 +582,105 @@ mod tests {
             assert_eq!(denied.outcomes[0].status, PushOutcomeStatus::Denied);
             assert!(denied.outcomes[0].master_state.is_none());
             assert_eq!(hidden.outcomes[0].error, denied.outcomes[0].error);
+        });
+    }
+
+    #[test]
+    fn a_push_naming_no_revision_is_held_against_the_document_itself() {
+        futures::executor::block_on(async {
+            let tenant = tenant();
+            let engine = DocumentEngine::new(Arc::new(MemoryAdapter::new()));
+            let collection = engine
+                .scope_collection(
+                    &tenant,
+                    CollectionScope::new(
+                        tenant.clone(),
+                        CollectionId::parse("todos").expect("collection"),
+                    ),
+                )
+                .expect("collection");
+            let sequencer = engine
+                .scope_sequencer(&tenant, &tenant, Durability::Memory)
+                .expect("sequencer");
+            let validator = validator();
+            let service = PushService::new(&collection, &sequencer, &validator, Durability::Memory);
+            let context = context();
+            let push = |mutation: &str, assumed: Option<Value>, next: Value| PushRequest {
+                schema_version: 1,
+                rows: vec![PushRow {
+                    mutation_id: mutation.to_owned(),
+                    assumed_master_state: assumed,
+                    new_document_state: next,
+                }],
+            };
+
+            let created = service
+                .push(
+                    &context,
+                    &push(
+                        "mutation-create-a-1",
+                        None,
+                        json!({"id": "todo-a", "value": 1}),
+                    ),
+                    &AllowAll,
+                    &AllowAll,
+                )
+                .await
+                .expect("create");
+            assert_eq!(created.outcomes[0].status, PushOutcomeStatus::Accepted);
+
+            // RxDB assumes the master is what it pushed -- no `_rev` in sight.
+            let second = service
+                .push(
+                    &context,
+                    &push(
+                        "mutation-second-edit-a",
+                        Some(json!({"id": "todo-a", "value": 1, "_deleted": false})),
+                        json!({"id": "todo-a", "value": 2}),
+                    ),
+                    &AllowAll,
+                    &AllowAll,
+                )
+                .await
+                .expect("second push");
+            assert_eq!(second.outcomes[0].status, PushOutcomeStatus::Accepted);
+
+            // An assumed state that no longer describes the document is a
+            // conflict, answered with the document as it is.
+            let stale = service
+                .push(
+                    &context,
+                    &push(
+                        "mutation-stale-edit-a",
+                        Some(json!({"id": "todo-a", "value": 1, "_deleted": false})),
+                        json!({"id": "todo-a", "value": 3}),
+                    ),
+                    &AllowAll,
+                    &AllowAll,
+                )
+                .await
+                .expect("stale push");
+            assert_eq!(stale.outcomes[0].status, PushOutcomeStatus::Conflict);
+            assert_eq!(
+                stale.outcomes[0].master_state.as_ref().expect("master")["value"],
+                2
+            );
+
+            // A state that is not a document at all is still refused.
+            let malformed = service
+                .push(
+                    &context,
+                    &push(
+                        "mutation-malformed-a",
+                        Some(json!({"id": "todo-a", "_deleted": "no"})),
+                        json!({"id": "todo-a", "value": 4}),
+                    ),
+                    &AllowAll,
+                    &AllowAll,
+                )
+                .await
+                .expect("malformed push");
+            assert_eq!(malformed.outcomes[0].status, PushOutcomeStatus::Denied);
         });
     }
 

@@ -5,7 +5,7 @@ const PROJECT = "prj_abcdefgh";
 const ENV = "env_abcdefgh";
 const NEXT = "env_ijklmnop";
 const base = `/projects/${PROJECT}/environments/${ENV}`;
-const capability = "mx1_console_test_only_capability";
+const capability = "mx1.xcap-v1.console_test_only_capability";
 const current = () => Math.floor(Date.now() / 1000);
 const section = (payload: unknown, status = "current") => ({
   status,

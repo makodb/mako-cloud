@@ -530,9 +530,12 @@ fn run_multi_live_stream(
             match sender.try_send(frame.bytes) {
                 Ok(()) => {
                     pending.pop_front();
-                    // A resync ends the whole connection: the collection that
-                    // asked for it cannot continue, and a client that has to
-                    // resync one collection reopens the stream anyway.
+                    // A resync for a gap, an expired checkpoint, a changed
+                    // epoch or a failover ends the whole connection: the
+                    // collection that asked for it cannot continue, and a
+                    // client that has to resync one collection reopens the
+                    // stream anyway. A reconnect's resync only asks for a
+                    // pull, and the connection stays up.
                     if frame.terminal {
                         return;
                     }
@@ -595,7 +598,7 @@ fn collection_frames(
     events
         .into_iter()
         .filter_map(|event| {
-            let terminal = matches!(event, LiveStreamEvent::Resync { .. });
+            let terminal = ends_stream(&event);
             SseFrame::from_collection_event(collection_id, &event)
                 .ok()
                 .map(|frame| PendingFrame {
@@ -702,11 +705,25 @@ struct PendingFrame {
     terminal: bool,
 }
 
+/// Whether an event is the last one its connection carries.
+///
+/// A resync tells the client to pull. After a gap, an expired checkpoint, a
+/// changed authorization epoch or a failover the session behind the
+/// connection cannot continue, so the connection ends with the frame and the
+/// client opens a new one. A reconnect is different: the session opens at the
+/// cursor the client resumed with and says "resync" only so the client pulls
+/// whatever it may have missed while away -- then it carries on streaming.
+/// Ending the connection there sent a client that resumed with its cursor, as
+/// the protocol asks it to, straight into another reconnect, indefinitely.
+fn ends_stream(event: &LiveStreamEvent) -> bool {
+    matches!(event, LiveStreamEvent::Resync { reason } if *reason != ResyncReason::Reconnected)
+}
+
 fn frames(events: impl IntoIterator<Item = LiveStreamEvent>) -> VecDeque<PendingFrame> {
     events
         .into_iter()
         .filter_map(|event| {
-            let terminal = matches!(event, LiveStreamEvent::Resync { .. });
+            let terminal = ends_stream(&event);
             SseFrame::from_event(&event).ok().map(|frame| PendingFrame {
                 bytes: frame.as_str().as_bytes().to_vec(),
                 terminal,

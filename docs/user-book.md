@@ -269,7 +269,7 @@ Signing in lands on the home dashboard: every project you can reach, across your
 
 Search projects by name, identifier, region, or owner. Each project with an active environment offers **Browse data**, **Schema**, and **Connect** shortcuts, with the selected environment named. **New project** opens the creation form. The workspace sidebar links to your teams, billing, and the User Book. An unmatched search offers **Clear search** and keeps your projects intact.
 
-A developer with no projects is offered a **guided first run** — create a project, wait for it to become active, copy its keys, check a connection — that can be dismissed and reopened and resumes where it was left. Its progress is kept in the browser tab's session storage, never on the server and never in durable local storage, so a closed tab simply shows the guide again when there is still nothing to show.
+A developer with no projects is offered a guided first run that creates the project and opens its workspace. The project page provides keys, the API URL, quickstart, and a connection check. Dismissing the guide is remembered for the browser tab; you can reopen it from the empty state.
 
 ### Project
 

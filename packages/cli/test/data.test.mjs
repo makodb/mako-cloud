@@ -22,7 +22,7 @@ import {
 const COLLECTION_ID = "col_abcdefgh";
 const JOB_ID = "job_abcdefgh";
 const GRANT_ID = `xgr_${"a".repeat(32)}`;
-const CAPABILITY = "mx1_capability-secret-never-printed-0123456789abcdef";
+const CAPABILITY = "mx1.xcap-v1.capability-secret-never-printed-0123456789abcdef";
 const ARTIFACT_GRANT = "g".repeat(96);
 const BASE = `/v1/projects/${PROJECT_ID}/environments/${ENVIRONMENT_ID}`;
 const GRANTS = `${BASE}/explorer/grants`;

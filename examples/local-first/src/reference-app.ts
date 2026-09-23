@@ -48,6 +48,7 @@ export interface ReferenceApplication {
   readonly collection: RxCollection<ReferenceTodo>;
   addTodo(document: ReferenceTodo): Promise<void>;
   close(): Promise<void>;
+  deleteTodo(id: string): Promise<void>;
   diagnostics(): ReferenceApplicationDiagnostics;
   forceReconnect(): Promise<void>;
   forceTokenRefresh(): Promise<void>;
@@ -60,6 +61,39 @@ export interface ReferenceApplication {
   updateTodo(id: string, title: string, updatedAt: number): Promise<void>;
   waitForSync(): Promise<void>;
 }
+
+/** How eagerly the live stream reconnects and RxDB retries a failed handler. */
+export interface ReplicationTiming {
+  readonly reconnectMinimumDelayMs: number;
+  readonly reconnectMaximumDelayMs: number;
+  /** RxDB repeats a failed pull or push handler on this fixed interval. */
+  readonly retryTime: number;
+}
+
+/**
+ * Against a real deployment. The server rate-limits, and RxDB repeats a failed
+ * handler on `retryTime` whatever the failure was, so retrying every few
+ * milliseconds turns one refused request into a storm of 429s that feeds
+ * itself: the page flickers between offline and online and never settles.
+ * These are the client's own reconnect defaults plus the one-second delay a
+ * 429 asks for.
+ */
+export const LIVE_REPLICATION_TIMING: ReplicationTiming = {
+  reconnectMinimumDelayMs: 500,
+  reconnectMaximumDelayMs: 30_000,
+  retryTime: 1_000,
+};
+
+/**
+ * Against the in-memory fake backend nothing is rate-limited, and the browser
+ * tests wait on reconnects and retries, so these run as fast as the event loop
+ * allows.
+ */
+export const FAKE_BACKEND_TIMING: ReplicationTiming = {
+  reconnectMinimumDelayMs: 10,
+  reconnectMaximumDelayMs: 40,
+  retryTime: 25,
+};
 
 const todoSchema: RxJsonSchema<ReferenceTodo> = {
   version: 0,
@@ -82,6 +116,9 @@ const todoSchema: RxJsonSchema<ReferenceTodo> = {
 
 export async function createReferenceApplication(
   backend: ReferenceBackend = new FakeMakoBackend(),
+  timing: ReplicationTiming = backend instanceof FakeMakoBackend
+    ? FAKE_BACKEND_TIMING
+    : LIVE_REPLICATION_TIMING,
 ): Promise<ReferenceApplication> {
   const config = normalizeMakoRxdbConfig({
     endpoint: backend.config.endpoint,
@@ -119,8 +156,8 @@ export async function createReferenceApplication(
   const collection = collections.todos;
   const live = new MakoLivePullStream<ReferenceTodo>(config, auth, {
     fetch: backend.fetch,
-    reconnectMinimumDelayMs: 10,
-    reconnectMaximumDelayMs: 40,
+    reconnectMinimumDelayMs: timing.reconnectMinimumDelayMs,
+    reconnectMaximumDelayMs: timing.reconnectMaximumDelayMs,
   });
   const replication = replicateRxCollection<ReferenceTodo, MakoCheckpoint>({
     replicationIdentifier: "mako-reference-todos-v1",
@@ -131,7 +168,7 @@ export async function createReferenceApplication(
     }),
     push: createMakoPushOptions(config, auth, { fetch: backend.fetch }),
     live: true,
-    retryTime: 25,
+    retryTime: timing.retryTime,
     waitForLeadership: false,
     toggleOnDocumentVisible: false,
   });
@@ -235,6 +272,19 @@ class ReferenceApplicationImpl implements ReferenceApplication {
       throw new Error(`todo ${id} does not exist`);
     }
     await document.incrementalPatch({ title, updatedAt });
+  }
+
+  async deleteTodo(id: string): Promise<void> {
+    this.#assertAvailable();
+    const document = await this.collection.findOne(id).exec();
+    if (document === null) {
+      throw new Error(`todo ${id} does not exist`);
+    }
+    // One write, one push. Two writes in quick succession race the live
+    // stream: after an accepted push RxDB assumes the master state is what it
+    // pushed, which carries no server revision, and the second push is refused
+    // as invalid until the stream has delivered the new revision.
+    await document.incrementalRemove();
   }
 
   async listTodos(): Promise<ReferenceTodo[]> {

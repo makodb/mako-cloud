@@ -3,7 +3,7 @@ import { expect, type Route, test } from "@playwright/test";
 const PROJECT_ID = "prj_abcdefgh";
 const ENVIRONMENT_ID = "env_abcdefgh";
 const OTHER_ENVIRONMENT_ID = "env_ijklmnop";
-const CAPABILITY = "mx1_sensitive_explorer_capability_never_persisted";
+const CAPABILITY = "mx1.xcap-v1.sensitive_explorer_capability_never_persisted";
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
@@ -154,7 +154,7 @@ test("policy preview stays in memory, hides rows, simulates, and revokes on envi
     session: Object.entries(sessionStorage),
   }));
   expect(JSON.stringify(browserState)).not.toContain(CAPABILITY);
-  expect(browserState.url).not.toContain("mx1_");
+  expect(browserState.url).not.toContain("mx1.");
   expect(requests.filter((request) => request.path.endsWith("/browse"))).toEqual([
     expect.objectContaining({ capability: CAPABILITY }),
   ]);

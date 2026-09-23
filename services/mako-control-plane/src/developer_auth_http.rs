@@ -24,7 +24,7 @@ use crate::{
     operator_auth_http::authenticate_operator,
 };
 
-const REFRESH_COOKIE_NAME: &str = "__Host-mako_developer_refresh";
+const REFRESH_COOKIE_NAME: &str = "__Secure-mako_developer_refresh";
 
 pub(crate) fn add_developer_auth_routes(
     router: &mut HttpRouter,
@@ -276,7 +276,7 @@ fn handle_sign_out(
     HttpResponse::empty(204)
         .with_header(
             "Set-Cookie",
-            "__Host-mako_developer_refresh=; Path=/v1/developer-auth/sessions; Secure; HttpOnly; SameSite=Strict; Max-Age=0",
+            "__Secure-mako_developer_refresh=; Path=/v1/developer-auth/sessions; Secure; HttpOnly; SameSite=Strict; Max-Age=0",
         )
         .map_err(|_| internal(request, "session response could not be created"))
 }
@@ -824,7 +824,7 @@ mod tests {
     fn cookie_parser_rejects_duplicates_and_bounds_values() {
         // Route-level construction is covered by the runtime router integration tests. Keep the
         // parser's security rules independently visible here.
-        assert_eq!(REFRESH_COOKIE_NAME, "__Host-mako_developer_refresh");
+        assert_eq!(REFRESH_COOKIE_NAME, "__Secure-mako_developer_refresh");
         assert!("x".repeat(4_097).len() > 4_096);
     }
 

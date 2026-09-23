@@ -1191,7 +1191,7 @@ impl DeveloperRegistrationService {
         now_unix_seconds: u64,
     ) -> DeveloperSessionGrant {
         let cookie = format!(
-            "__Host-mako_developer_refresh={}; Path=/v1/developer-auth/sessions; Secure; HttpOnly; SameSite=Strict; Max-Age={}",
+            "__Secure-mako_developer_refresh={}; Path=/v1/developer-auth/sessions; Secure; HttpOnly; SameSite=Strict; Max-Age={}",
             credential.encoded(),
             self.config.refresh_lifetime_seconds
         );

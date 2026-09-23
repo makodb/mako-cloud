@@ -2,8 +2,9 @@ use std::{
     collections::BTreeMap,
     fs::{self, File, OpenOptions},
     num::NonZeroUsize,
+    ops::Deref,
     path::{Path, PathBuf},
-    sync::atomic::{AtomicU64, Ordering},
+    sync::atomic::{AtomicBool, AtomicU64, Ordering},
     sync::{Arc, Condvar, Mutex},
     time::{Duration, Instant},
 };
@@ -23,6 +24,9 @@ pub const CONTROL_SQLITE_FORMAT_VERSION: u32 = 1;
 const SQLITE_APPLICATION_ID: i32 = 0x4d41_4b4f;
 const DEFAULT_MAXIMUM_BATCH_OPERATIONS: usize = 10_000;
 const DEFAULT_MAXIMUM_SCAN_ITEMS: usize = 10_000;
+/// Idle connections kept open between operations. Enough for a burst of
+/// concurrent request handlers; anything beyond it is closed on release.
+const MAXIMUM_IDLE_CONNECTIONS: usize = 8;
 
 /// Limits and identity required to open the local control-plane SQLite database.
 #[derive(Clone, Debug)]
@@ -167,6 +171,59 @@ struct SqliteInner {
     next_transaction_id: AtomicU64,
     busy_failures: AtomicU64,
     checkpoint_failures: AtomicU64,
+    // Connections are reused rather than opened per operation. Opening one
+    // costs a handful of file locks and a PRAGMA round; closing the last one
+    // makes SQLite checkpoint, truncate and unlink the WAL, which takes an
+    // exclusive lock every reader has to wait out. Keeping connections alive
+    // holds the WAL open, so readers never block writers and a request costs
+    // a few locks instead of hundreds — the difference between microseconds
+    // and seconds when the database lives on a network filesystem.
+    idle_connections: Mutex<Vec<Connection>>,
+    pooling: AtomicBool,
+}
+
+impl SqliteInner {
+    /// Returns a connection to the idle pool, or closes it once shutdown has
+    /// begun or the pool is full. A connection that comes back mid-transaction
+    /// is rolled back first so the next borrower starts clean.
+    fn release(&self, connection: Connection) {
+        if !connection.is_autocommit() {
+            rollback_quietly(&connection);
+        }
+        if !self.pooling.load(Ordering::Acquire) {
+            return;
+        }
+        if let Ok(mut idle) = self.idle_connections.lock()
+            && idle.len() < MAXIMUM_IDLE_CONNECTIONS
+        {
+            idle.push(connection);
+        }
+    }
+}
+
+/// A connection borrowed from the adapter's pool for one operation, snapshot
+/// or transaction. Dropping it hands the connection back.
+struct PooledConnection {
+    connection: Option<Connection>,
+    inner: Arc<SqliteInner>,
+}
+
+impl Deref for PooledConnection {
+    type Target = Connection;
+
+    fn deref(&self) -> &Connection {
+        self.connection
+            .as_ref()
+            .expect("pooled connection is present until dropped")
+    }
+}
+
+impl Drop for PooledConnection {
+    fn drop(&mut self) {
+        if let Some(connection) = self.connection.take() {
+            self.inner.release(connection);
+        }
+    }
 }
 
 /// Local durable adapter used exclusively for control-plane state.
@@ -239,6 +296,8 @@ impl SqliteAdapter {
                 next_transaction_id: AtomicU64::new(1),
                 busy_failures: AtomicU64::new(0),
                 checkpoint_failures: AtomicU64::new(0),
+                idle_connections: Mutex::new(Vec::with_capacity(MAXIMUM_IDLE_CONNECTIONS)),
+                pooling: AtomicBool::new(true),
             }),
         };
 
@@ -248,7 +307,27 @@ impl SqliteAdapter {
             adapter.checkpoint(&connection, "sqlite_checkpoint")?;
             sync_file_and_parent(&adapter.inner.config.database_path)?;
         }
+        // Seed the pool so the WAL stays open from the first operation on.
+        adapter.inner.release(connection);
         Ok(adapter)
+    }
+
+    /// Borrows an idle connection, opening a new one only when none is idle.
+    fn pooled_connection(&self) -> StorageResult<PooledConnection> {
+        let idle = self
+            .inner
+            .idle_connections
+            .lock()
+            .map_err(|_| lifecycle_error("sqlite_connection"))?
+            .pop();
+        let connection = match idle {
+            Some(connection) => connection,
+            None => self.open_connection(false)?,
+        };
+        Ok(PooledConnection {
+            connection: Some(connection),
+            inner: Arc::clone(&self.inner),
+        })
     }
 
     #[must_use]
@@ -258,7 +337,7 @@ impl SqliteAdapter {
 
     pub fn health_signals(&self) -> StorageResult<SqliteHealthSignals> {
         let _operation = self.begin_operation("sqlite_health")?;
-        let connection = self.open_connection(false)?;
+        let connection = self.pooled_connection()?;
         let integrity_verified = integrity_ok(&connection)?;
         let schema_version = read_schema_version(&connection)?;
         let parent = parent_of(&self.inner.config.database_path)?;
@@ -331,6 +410,13 @@ impl SqliteAdapter {
             }
         }
         drop(lifecycle);
+
+        // Close the idle pool before the final checkpoint so nothing else holds
+        // the WAL open and the truncate below is the last word on the file.
+        self.inner.pooling.store(false, Ordering::Release);
+        if let Ok(mut idle) = self.inner.idle_connections.lock() {
+            idle.clear();
+        }
 
         let connection = self.open_connection_for_shutdown()?;
         self.checkpoint(&connection, "sqlite_shutdown")?;
@@ -541,7 +627,7 @@ impl SqliteAdapter {
         }
         let wal = wal_path(&self.inner.config.database_path);
         if file_size(&wal)? > self.inner.config.maximum_wal_bytes {
-            let connection = self.open_connection(false)?;
+            let connection = self.pooled_connection()?;
             self.checkpoint(&connection, "sqlite_checkpoint")?;
             if file_size(&wal)? > self.inner.config.maximum_wal_bytes {
                 return Err(StorageError::new(
@@ -589,20 +675,20 @@ impl KvAdapter for SqliteAdapter {
     async fn get(&self, key: &[u8]) -> StorageResult<Option<Vec<u8>>> {
         validate_key(key, "get")?;
         let _operation = self.begin_operation("get")?;
-        let connection = self.open_connection(false)?;
+        let connection = self.pooled_connection()?;
         read_value(&connection, key, "get")
     }
 
     async fn scan(&self, request: ScanRequest) -> StorageResult<Vec<KeyValue>> {
         self.validate_scan(&request)?;
         let _operation = self.begin_operation("scan")?;
-        let connection = self.open_connection(false)?;
+        let connection = self.pooled_connection()?;
         scan_connection(&connection, &request, "scan")
     }
 
     async fn snapshot(&self) -> StorageResult<Box<dyn KvSnapshot>> {
         let operation = self.begin_operation("snapshot")?;
-        let connection = self.open_connection(false)?;
+        let connection = self.pooled_connection()?;
         connection
             .execute_batch("BEGIN DEFERRED;")
             .map_err(|error| map_sqlite_error("snapshot", &error))?;
@@ -625,7 +711,7 @@ impl KvAdapter for SqliteAdapter {
         self.validate_batch(&batch)?;
         let _operation = self.begin_operation("write")?;
         self.ensure_write_capacity()?;
-        let connection = self.open_connection(false)?;
+        let connection = self.pooled_connection()?;
         configure_durability(
             &connection,
             durability.max(self.inner.config.minimum_durability),
@@ -641,7 +727,7 @@ impl KvAdapter for SqliteAdapter {
         self.validate_batch(&request.batch)?;
         let _operation = self.begin_operation("compare_and_write")?;
         self.ensure_write_capacity()?;
-        let connection = self.open_connection(false)?;
+        let connection = self.pooled_connection()?;
         configure_durability(
             &connection,
             request.durability.max(self.inner.config.minimum_durability),
@@ -686,7 +772,7 @@ impl KvAdapter for SqliteAdapter {
     ) -> StorageResult<Box<dyn KvTransaction>> {
         let operation = self.begin_operation("begin_transaction")?;
         self.ensure_write_capacity()?;
-        let connection = self.open_connection(false)?;
+        let connection = self.pooled_connection()?;
         configure_durability(&connection, Durability::Sync)?;
         connection
             .execute_batch("BEGIN IMMEDIATE;")
@@ -709,7 +795,7 @@ impl KvAdapter for SqliteAdapter {
         // lengths. Bounded by the range the caller asks for, which is one
         // tenant rather than the whole database.
         let _operation = self.begin_operation("stored_bytes")?;
-        let connection = self.open_connection(false)?;
+        let connection = self.pooled_connection()?;
         let mut statement = connection
             .prepare(
                 "SELECT COALESCE(SUM(LENGTH(key) + LENGTH(value)), 0) FROM mako_kv \
@@ -726,7 +812,7 @@ impl KvAdapter for SqliteAdapter {
 
     async fn count_keys(&self, range: KeyRange) -> StorageResult<u64> {
         let _operation = self.begin_operation("count_keys")?;
-        let connection = self.open_connection(false)?;
+        let connection = self.pooled_connection()?;
         let mut statement = connection
             .prepare("SELECT COUNT(*) FROM mako_kv WHERE key >= ?1 AND key < ?2")
             .map_err(|_| sqlite_io_error("count_keys", "stored count could not be read"))?;
@@ -778,7 +864,7 @@ impl KvAdapter for SqliteAdapter {
 
 struct SqliteSnapshot {
     id: SnapshotId,
-    connection: Mutex<Option<Connection>>,
+    connection: Mutex<Option<PooledConnection>>,
     maximum_scan_items: NonZeroUsize,
     _operation: OperationGuard,
 }
@@ -835,7 +921,7 @@ impl Drop for SqliteSnapshot {
 }
 
 struct SqliteTransaction {
-    connection: Option<Connection>,
+    connection: Option<PooledConnection>,
     started: Instant,
     expiration: Duration,
     maximum_batch_operations: NonZeroUsize,
@@ -855,7 +941,7 @@ impl SqliteTransaction {
                 "control storage transaction expired",
             ));
         }
-        self.connection.as_ref().ok_or_else(|| {
+        self.connection.as_deref().ok_or_else(|| {
             StorageError::new(
                 StorageErrorKind::Unavailable,
                 operation,

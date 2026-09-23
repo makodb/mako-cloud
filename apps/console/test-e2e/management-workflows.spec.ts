@@ -1,4 +1,4 @@
-import { expect, test, type Page, type Route } from "@playwright/test";
+import { expect, type Page, type Route, test } from "@playwright/test";
 
 const NOW = "2026-08-06T12:00:00.000Z";
 const LATER = "2026-08-07T12:00:00.000Z";
@@ -126,7 +126,7 @@ test("a personal space leads the home screen and creates projects without naming
   await expect(page.getByRole("button", { name: /Mako Test Team/u })).toBeVisible();
 
   await page.getByLabel("Project name").fill("Side project");
-  await page.getByLabel("Data region").fill("local");
+  await page.getByLabel("Data region").selectOption("local");
   await page.getByRole("button", { name: "Create and provision" }).click();
 
   // The space now exists and its projects replace the empty state; it is
@@ -140,7 +140,7 @@ test("a personal space leads the home screen and creates projects without naming
   // Creating from the personal projects panel posts without a team as well.
   await page.getByText("Create project", { exact: true }).click();
   await page.getByLabel("Project name").fill("Second project");
-  await page.getByLabel("Data region").fill("local");
+  await page.getByLabel("Data region").selectOption("local");
   await page.getByRole("button", { name: "Create and provision" }).click();
   await expect(page).toHaveURL(/\/projects\/prj_persona2$/u);
   await expect(page.getByRole("heading", { name: "Second project" })).toBeVisible();

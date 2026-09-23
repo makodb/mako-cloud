@@ -317,6 +317,15 @@ fn run() -> Result<String, String> {
         .map_err(|_| "system clock is before the unix epoch".to_owned())?
         .as_secs();
 
+    // Optional: seed only a fresh, verified, active developer with no team,
+    // project, or environment, so the console shows the new-user first run.
+    // Only the control-plane store is touched, so the data plane may stay up.
+    if let Ok(email) = std::env::var("MAKO_BOOTSTRAP_DEV_ONLY_EMAIL") {
+        let id = std::env::var("MAKO_BOOTSTRAP_DEV_ONLY_ID")
+            .unwrap_or_else(|_| "dev_freshuser".to_owned());
+        return seed_developer_only(&control_config, &email, &id, now);
+    }
+
     let tenant = TenantScope::new(
         ProjectId::parse(PROJECT_ID).map_err(|_| "project id is invalid".to_owned())?,
         EnvironmentId::parse(ENVIRONMENT_ID).map_err(|_| "environment id is invalid".to_owned())?,
@@ -359,6 +368,96 @@ fn run() -> Result<String, String> {
     {
         object.insert("serviceCredential".to_owned(), json!(credential));
     }
+    serde_json::to_string_pretty(&summary).map_err(|_| "summary could not be encoded".to_owned())
+}
+
+/// Seed only a fresh, verified, active developer identity -- no team, project,
+/// or environment. Signing in with it lands on the console's new-user first run.
+fn seed_developer_only(
+    config: &ServiceConfig,
+    email: &str,
+    id: &str,
+    now: u64,
+) -> Result<String, String> {
+    const DEV_ONLY_PASSWORD: &str = "FreshUser1!";
+
+    let settings = config
+        .control_sqlite
+        .as_ref()
+        .ok_or_else(|| "control-plane SQLite configuration is required".to_owned())?;
+    let mut sqlite = SqliteConfig::new(&settings.database_path, settings.database_identity.clone());
+    sqlite.lock_path = settings.lock_path.clone();
+    sqlite.create_if_missing = true;
+    sqlite.minimum_durability = Durability::Sync;
+    sqlite.maximum_batch_operations = settings.maximum_batch_operations;
+    sqlite.maximum_scan_items = settings.maximum_scan_items;
+    sqlite.busy_timeout = settings.busy_timeout;
+    sqlite.transaction_expiration = settings.transaction_expiration;
+    sqlite.shutdown_timeout = settings.shutdown_timeout;
+    let adapter = SqliteAdapter::open(sqlite).map_err(|error| {
+        format!("control storage could not be opened (is the control plane running?): {error}")
+    })?;
+    let adapter: Arc<dyn KvAdapter> = Arc::new(adapter);
+
+    let secret = config
+        .internal_auth_secret
+        .as_ref()
+        .ok_or_else(|| "internal auth secret reference is required".to_owned())?;
+
+    block_on(async {
+        let developer_id =
+            DeveloperIdentityId::parse(id).map_err(|_| "developer id is invalid".to_owned())?;
+        let registrations = DeveloperRegistrationStore::new(
+            Arc::clone(&adapter),
+            Durability::Sync,
+            DeveloperLookupKey::derive(secret.expose_secret().as_bytes()),
+        )
+        .map_err(|_| "developer registration store is unavailable".to_owned())?;
+
+        if registrations
+            .get_authentication_identity(&developer_id)
+            .await
+            .map_err(|_| "developer identity could not be read".to_owned())?
+            .is_none()
+        {
+            let password = PasswordService::new(
+                PasswordPolicy::new(8, 4096, true, true, true, true)
+                    .map_err(|_| "password policy is invalid".to_owned())?,
+                Argon2idParameters::new(19 * 1024, 2, 1, 32)
+                    .map_err(|_| "password parameters are invalid".to_owned())?,
+            )
+            .hash(DEV_ONLY_PASSWORD)
+            .map_err(|_| "developer password could not be hashed".to_owned())?;
+            let identity = AuthenticationIdentityRecord::new_verified(
+                developer_id.clone(),
+                NormalizedEmail::parse(email)
+                    .map_err(|_| "developer email is invalid".to_owned())?,
+                "Fresh User",
+                password.encoded(),
+                now,
+            )
+            .map_err(|_| "developer identity is invalid".to_owned())?;
+            registrations
+                .create_authentication_identity(&identity)
+                .await
+                .map_err(|_| "developer identity could not be created".to_owned())?;
+            let role =
+                DeveloperRoleRecord::new_active_for_local_bootstrap(developer_id.clone(), now)
+                    .map_err(|_| "developer role is invalid".to_owned())?;
+            registrations
+                .create_developer_role(&identity, &role)
+                .await
+                .map_err(|_| "developer role could not be created".to_owned())?;
+        }
+        Ok::<(), String>(())
+    })?;
+
+    let summary = json!({
+        "developerId": id,
+        "developerEmail": email,
+        "developerPassword": DEV_ONLY_PASSWORD,
+        "note": "fresh developer with no team/project/environment",
+    });
     serde_json::to_string_pretty(&summary).map_err(|_| "summary could not be encoded".to_owned())
 }
 

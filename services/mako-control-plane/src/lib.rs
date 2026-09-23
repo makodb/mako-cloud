@@ -35,9 +35,24 @@ mod storage_bucket_http;
 mod webhook_http;
 mod workspace_http;
 
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
+use std::thread::Thread;
 
 use mako_service_runtime::{HttpRouter, RouteRegistrationError};
+
+/// Handle to the provisioning worker thread, registered by the binary after it
+/// spawns the worker. Creating a project or environment unparks it so the new
+/// resource provisions within milliseconds instead of waiting for the next idle
+/// poll -- without shortening the idle interval, which would contend for the
+/// single-writer control database.
+pub static PROVISIONING_WAKE: OnceLock<Thread> = OnceLock::new();
+
+/// Wake the provisioning worker immediately, if the binary has registered it.
+pub(crate) fn wake_provisioning_worker() {
+    if let Some(thread) = PROVISIONING_WAKE.get() {
+        thread.unpark();
+    }
+}
 
 pub use function_resolution::{
     FunctionResolutionError, FunctionResolutionService, ResolvedFunctionConfiguration,

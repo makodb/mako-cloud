@@ -644,16 +644,17 @@ fn active_public_key_id(
     tenant: &TenantScope,
     actor_id: &str,
 ) -> Result<String, HttpApiError> {
+    // Listing credentials is a read: it must reflect the current set, so it uses
+    // the unique per-request id as its idempotency key rather than a fixed one.
+    // A fixed key makes the data plane journal and replay the first response, so
+    // a list taken before any key was issued would keep reporting "none" even
+    // after one exists (finding: fresh-project public-key recognition).
     let metadata: Vec<ProjectCredentialMetadata> = graph
         .data_plane_identity_admin()
         .administer(
             tenant,
             request.request_id(),
-            &format!(
-                "connect-public-keys-{}-{}",
-                tenant.project_id(),
-                tenant.environment_id()
-            ),
+            request.request_id(),
             &IdentityAdminCommand {
                 operation: IdentityAdminOperation::ListProjectCredentials,
                 actor_id: actor_id.to_owned(),

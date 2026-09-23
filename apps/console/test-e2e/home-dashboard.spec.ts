@@ -87,7 +87,8 @@ test("projects across the personal space and a team appear as cards with recent 
 
   // Activity merges the projects' audit feeds newest first, naming actor,
   // action, target, and time.
-  const activity = page.getByRole("complementary", { name: "Recent activity" });
+  await page.getByText("Recent activity", { exact: true }).click();
+  const activity = page.getByRole("region", { name: "Recent activity" });
   await expect(activity).toBeVisible();
   const rows = activity.getByRole("listitem");
   await expect(rows).toHaveCount(2);
@@ -175,76 +176,24 @@ test("a usage source that fails marks only its own card", async ({ page }) => {
   await expect(teamCard.getByText("Storage 120.0 MiB · Replication 2.0 MiB")).toBeVisible();
   await expect(teamCard.getByText("Usage unavailable")).toHaveCount(0);
   await expect(page.getByRole("alert")).toHaveCount(0);
-  await expect(page.getByRole("complementary", { name: "Recent activity" })).toContainText(
+  await expect(page.getByRole("region", { name: "Recent activity" })).toContainText(
     "policy.activate",
   );
 });
 
-test("a developer with no projects is guided from creation to a passing connection check", async ({
-  page,
-}) => {
+test("a developer creates the first project and continues in its workspace", async ({ page }) => {
   const api = new HomeApiHarness();
   await api.install(page);
-
   await page.goto("/");
   const guide = page.getByRole("region", { name: "Connect your first project" });
   await expect(guide).toBeVisible();
-  await expect(guide.locator("[aria-current='step']")).toHaveText(/Create a project/u);
-  await expect(page.getByRole("heading", { name: "Your projects" })).toHaveCount(0);
-
-  // Step 1: the owner defaults to the personal space; a team can be chosen.
   await expect(guide.getByLabel("Owner")).toHaveValue("");
-  await expect(guide.getByLabel("Owner").locator("option")).toHaveText([
-    "Personal space",
-    "Mako Test Team",
-  ]);
   await guide.getByLabel("Project name").fill("First app");
-  await guide.getByLabel("Data region").fill("local");
+  await guide.getByLabel("Data region").selectOption("local");
   await guide.getByRole("button", { name: "Create and provision" }).click();
-
-  // Step 2 polls until the project is active, then step 3 waits for its
-  // environment and shows the API URL; the key is issued only on request.
-  await expect(guide.getByRole("heading", { name: "Your API URL and public key" })).toBeVisible({
-    timeout: 15_000,
-  });
-  expect(api.createProjectBodies).toEqual([{ name: "First app", region: "local" }]);
-  expect(api.getProjectCalls).toBeGreaterThanOrEqual(2);
-  await expect(guide.getByText(PUBLIC_ENDPOINT, { exact: true })).toBeVisible();
-  await expect(guide.getByText("Not issued yet")).toBeVisible();
-  expect(api.issuedKeys).toEqual([]);
-
-  // Progress survives a reload: the guide resumes at the same step, above the
-  // project that now exists.
-  await page.reload();
-  await expect(guide.getByRole("heading", { name: "Your API URL and public key" })).toBeVisible();
-  await expect(guide.locator("[aria-current='step']")).toHaveText(/Copy your keys/u);
-  await expect(page.getByRole("article", { name: "First app" })).toBeVisible();
-
-  await guide.getByRole("button", { name: "Issue public key" }).click();
-  await expect(guide.getByText("••••••••••••••••")).toBeVisible();
-  await guide.getByRole("button", { name: "Reveal value" }).click();
-  await expect(guide.getByText(PUBLIC_KEY_VALUE)).toBeVisible();
-  expect(api.issuedKeys).toHaveLength(1);
-  await expect(guide.locator("pre")).toContainText(`endpoint: "${PUBLIC_ENDPOINT}"`);
-  await expect(guide.locator("pre")).toContainText(
-    'publicProjectKey: "mako_pk.PASTE_ONE_TIME_PUBLIC_KEY"',
-  );
-  // The credential value is shown once and never written to browser storage.
-  expect(await page.evaluate(() => JSON.stringify([localStorage, sessionStorage]))).not.toContain(
-    PUBLIC_KEY_VALUE,
-  );
-
-  // Step 4: the connection check passes and the flow ends on the project.
-  await guide.getByRole("button", { name: "Continue to connection check" }).click();
-  await guide.getByRole("button", { name: "Run connection check" }).click();
-  await expect(guide.getByText("Dns tls")).toBeVisible();
-  await expect(guide.getByText("Connected.")).toBeVisible();
-  expect(api.checkInputs).toEqual([{ publicKeyId: "key_public01", rxdbVersion: "17.0.0" }]);
-  expect(api.unhandled).toEqual([]);
-  await guide.getByRole("button", { name: "Open project" }).click();
   await expect(page).toHaveURL(/\/projects\/prj_newfirst$/u);
-
-  // Back home, the guide is finished and the project is an ordinary card.
+  expect(api.createProjectBodies).toEqual([{ name: "First app", region: "local" }]);
+  expect(api.issuedKeys).toEqual([]);
   await page.goto("/");
   await expect(page.getByRole("article", { name: "First app" })).toBeVisible();
   await expect(page.getByRole("region", { name: "Connect your first project" })).toHaveCount(0);
