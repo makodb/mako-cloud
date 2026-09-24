@@ -1627,7 +1627,7 @@ function rxdbQuickstart(context: DocsContext, collection: Collection | null): st
     publicProjectKey: publicKeyMaterial(context.keyMaterial),
   });
   const primaryKey = collection === null ? "id" : primaryKeyFieldOf(collection);
-  return `// npm install @mako-cloud/rxdb rxdb@17 rxjs@7
+  return `// npm install https://codeload.github.com/makodb/mako-rxdb/tar.gz/refs/tags/v0.2.0 rxdb@17 rxjs@7
 ${template}
 
 import {
