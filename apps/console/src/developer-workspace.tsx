@@ -105,6 +105,7 @@ export function EnvironmentWorkspaceScreen({
   if (section === "data") {
     content = (
       <DataExplorer
+        key={`${projectId}:${environmentId}`}
         projectId={projectId}
         environmentId={environmentId}
         adminEnabled={explorerAdminEnabled}

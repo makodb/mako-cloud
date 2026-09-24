@@ -30,7 +30,7 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
-test("policy preview stays in memory, hides rows, simulates, and revokes on environment switch", async ({
+test("direct browsing stays in memory, supports queries, and revokes on environment switch", async ({
   page,
 }) => {
   const requests: { method: string; path: string; capability: string | undefined }[] = [];
@@ -79,9 +79,9 @@ test("policy preview stays in memory, hides rows, simulates, and revokes on envi
         {
           grantId: "xgr_0123456789abcdef0123456789abcdef",
           capability: CAPABILITY,
-          mode: "policy_preview",
+          mode: "administrative",
           operations: ["get", "browse", "query", "plan", "simulate"],
-          applicationUserId: "usr_abcdefgh",
+          applicationUserId: null,
           issuedAtUnixSeconds: 1_786_579_200,
           expiresAtUnixSeconds: 4_102_444_800,
           authorizationEpoch: 1,
@@ -133,15 +133,15 @@ test("policy preview stays in memory, hides rows, simulates, and revokes on envi
     "href",
     "#main-content",
   );
-  await page.getByRole("button", { name: "Create access grant" }).click();
-  await expect(page.getByText("Policy preview active")).toBeVisible();
-  await page.getByRole("button", { name: "Browse documents" }).click();
+  await expect(page.getByRole("heading", { name: "Create scoped access" })).toHaveCount(0);
+  await expect(page.getByLabel("Application user", { exact: true })).toHaveCount(0);
+  await expect(page.getByLabel("Access reason")).toHaveCount(0);
   await expect(page.getByText("doc_visible01")).toBeVisible();
   await expect(page.getByText("doc_hidden01")).toHaveCount(0);
   await page.getByRole("button", { name: "View JSON" }).click();
   await page.getByRole("button", { name: "Parse, validate, and simulate" }).click();
   await expect(page.getByText("Simulation allowed")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Commit conditionally" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Commit conditionally" })).toBeVisible();
   await page.getByRole("tab", { name: "Query editor" }).click();
   await page.getByLabel("Field", { exact: true }).fill("ownerId");
   await page.getByLabel("JSON value").fill('"usr_abcdefgh"');
@@ -155,6 +155,7 @@ test("policy preview stays in memory, hides rows, simulates, and revokes on envi
   }));
   expect(JSON.stringify(browserState)).not.toContain(CAPABILITY);
   expect(browserState.url).not.toContain("mx1.");
+  expect(requests.some((request) => request.path.endsWith("/users"))).toBe(false);
   expect(requests.filter((request) => request.path.endsWith("/browse"))).toEqual([
     expect.objectContaining({ capability: CAPABILITY }),
   ]);
@@ -177,113 +178,216 @@ test("policy preview stays in memory, hides rows, simulates, and revokes on envi
   ).toBe(true);
 });
 
-test("an expired capability is discarded before any explorer data request", async ({ page }) => {
-  let browseRequests = 0;
+for (const kind of ["personal", "team"] as const) {
+  test(`${kind} projects load documents directly without application users`, async ({ page }) => {
+    const bodies: Array<Record<string, unknown>> = [];
+    const unexpected: string[] = [];
+    await page.route("**/v1/**", async (route) => {
+      const request = route.request();
+      const path = new URL(request.url()).pathname;
+      if (path === `/v1/projects/${PROJECT_ID}`)
+        return json(route, {
+          ...project(),
+          teamId: kind === "personal" ? "org_personal" : "org_abcdefgh",
+        });
+      if (await serveWorkspaceShell(route, path)) return;
+      if (path.endsWith("/collections")) return json(route, { items: [collection()] });
+      if (path.endsWith("/explorer/grants")) {
+        bodies.push(request.postDataJSON() as Record<string, unknown>);
+        return json(route, automaticGrant(), 201);
+      }
+      if (path.endsWith("/browse")) return json(route, documentPage());
+      if (path.includes("/explorer/grants/")) return json(route, {});
+      unexpected.push(path);
+      return json(route, {}, 500);
+    });
+    await page.goto(`/projects/${PROJECT_ID}/environments/${ENVIRONMENT_ID}/data`);
+    await expect(page.getByText("doc_visible01")).toBeVisible();
+    expect(bodies).toEqual([
+      {
+        tenant: { projectId: PROJECT_ID, environmentId: ENVIRONMENT_ID },
+        collectionId: "todos",
+        mode: "administrative",
+        applicationUserId: null,
+        operations: ["get", "browse", "query", "plan", "history", "simulate", "mutate"],
+        durationSeconds: 300,
+        reason: "Browse and manage documents in the cloud console",
+      },
+    ]);
+    expect(unexpected).toEqual([]);
+    await expect(page.getByRole("button", { name: "Create access grant" })).toHaveCount(0);
+  });
+}
+
+test("expired access renews automatically before the next document request", async ({ page }) => {
+  let grants = 0;
+  const capabilities: Array<string | undefined> = [];
+  await page.clock.install();
   await page.route("**/v1/**", async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
     if (await serveWorkspaceShell(route, path)) return;
-    if (path.endsWith("/collections") && request.method() === "GET")
-      return json(route, { items: [collection()] });
-    if (path.endsWith("/users") && request.method() === "GET")
-      return json(route, {
-        users: [
-          {
-            id: "usr_abcdefgh",
-            email: "app-user@example.test",
-            status: "active",
-            createdAt: "2026-08-13T00:00:00Z",
-            updatedAt: "2026-08-13T00:00:00Z",
-          },
-        ],
-        truncated: false,
-      });
-    if (path.endsWith("/explorer/grants") && request.method() === "POST")
+    if (path.endsWith("/collections")) return json(route, { items: [collection()] });
+    if (path.endsWith("/explorer/grants")) {
+      grants += 1;
       return json(
         route,
         {
-          grantId: "xgr_expired0123456789abcdef0123456789",
-          capability: CAPABILITY,
-          mode: "policy_preview",
-          operations: ["get", "browse", "query", "plan", "simulate"],
-          applicationUserId: "usr_abcdefgh",
-          issuedAtUnixSeconds: 1,
-          expiresAtUnixSeconds: 2,
-          authorizationEpoch: 1,
+          ...automaticGrant(),
+          grantId: `grant-${grants}`,
+          capability: `${CAPABILITY}-${grants}`,
+          expiresAtUnixSeconds: grants === 1 ? Math.floor(Date.now() / 1000) + 300 : 4_102_444_800,
         },
         201,
       );
-    if (path.includes("/explorer/grants/") && request.method() === "DELETE")
-      return json(route, {
-        grantId: "xgr_expired0123456789abcdef0123456789",
-        revokedAtUnixSeconds: 3,
-      });
+    }
+    if (path.includes("/explorer/grants/")) return json(route, {});
     if (path.endsWith("/browse")) {
-      browseRequests += 1;
-      return json(route, { items: [], nextCursor: null, snapshot: "none", exhausted: true });
+      capabilities.push(request.headers()["x-mako-explorer-capability"]);
+      return json(route, documentPage());
     }
-    if (path.endsWith("/data-jobs") && request.method() === "GET")
-      return json(route, { items: [], nextCursor: null });
-    return json(route, { error: "unhandled" }, 500);
+    return json(route, {}, 500);
   });
-
   await page.goto(`/projects/${PROJECT_ID}/environments/${ENVIRONMENT_ID}/data`);
-  await page.getByRole("button", { name: "Create access grant" }).click();
-  await page.getByRole("button", { name: "Browse documents" }).click();
-  await expect(page.getByText("Explorer access expired. Create a new scoped grant.")).toBeVisible();
-  expect(browseRequests).toBe(0);
-  expect(await page.evaluate(() => JSON.stringify([localStorage, sessionStorage]))).not.toContain(
-    CAPABILITY,
-  );
+  await expect(page.getByText("doc_visible01")).toBeVisible();
+  await page.clock.fastForward(301_000);
+  await page.getByRole("button", { name: "Refresh documents" }).click();
+  await expect.poll(() => capabilities.length).toBe(2);
+  expect(capabilities).toEqual([`${CAPABILITY}-1`, `${CAPABILITY}-2`]);
+  expect(grants).toBe(2);
+  await expect(page.getByRole("alert")).toHaveCount(0);
 });
 
-test("an access reason the service would refuse is reported in the form", async ({ page }) => {
-  const grantBodies: Array<Record<string, unknown>> = [];
+for (const status of [401, 403, 503]) {
+  test(`access failure ${status} does not request data and can be retried`, async ({ page }) => {
+    let allowed = false;
+    let grants = 0;
+    let reads = 0;
+    await page.route("**/v1/**", async (route) => {
+      const path = new URL(route.request().url()).pathname;
+      if (await serveWorkspaceShell(route, path)) return;
+      if (path.endsWith("/collections")) return json(route, { items: [collection()] });
+      if (path.endsWith("/explorer/grants")) {
+        grants += 1;
+        return allowed
+          ? json(route, automaticGrant(), 201)
+          : json(
+              route,
+              {
+                apiVersion: "v1",
+                error: {
+                  code:
+                    status === 403
+                      ? "permission_denied"
+                      : status === 401
+                        ? "unauthenticated"
+                        : "unavailable",
+                  message: "Document access is unavailable.",
+                  requestId: "req_access_denied",
+                  retry: { kind: "never" },
+                },
+              },
+              status,
+            );
+      }
+      if (path.endsWith("/browse")) {
+        reads += 1;
+        return json(route, documentPage());
+      }
+      if (path.includes("/explorer/grants/")) return json(route, {});
+      return json(route, {}, 500);
+    });
+    await page.goto(`/projects/${PROJECT_ID}/environments/${ENVIRONMENT_ID}/data`);
+    await expect(page.getByRole("alert")).toContainText("Document access is unavailable.");
+    expect(reads).toBe(0);
+    expect(grants).toBe(1);
+    allowed = true;
+    await page.getByRole("button", { name: "Retry loading documents" }).click();
+    await expect(page.getByText("doc_visible01")).toBeVisible();
+    expect(grants).toBe(2);
+    expect(reads).toBe(1);
+  });
+}
+
+for (const state of ["empty", "disabled"] as const) {
+  test(`${state} explorer does not issue access or read documents`, async ({ page }) => {
+    if (state === "disabled")
+      await page.addInitScript(() => {
+        if (window.__MAKO_CONSOLE__) window.__MAKO_CONSOLE__.developerExplorerAdminEnabled = false;
+      });
+    const unexpected: string[] = [];
+    await page.route("**/v1/**", async (route) => {
+      const path = new URL(route.request().url()).pathname;
+      if (await serveWorkspaceShell(route, path)) return;
+      if (path.endsWith("/collections"))
+        return json(route, { items: state === "empty" ? [] : [collection()] });
+      unexpected.push(path);
+      return json(route, {}, 500);
+    });
+    await page.goto(`/projects/${PROJECT_ID}/environments/${ENVIRONMENT_ID}/data`);
+    await expect(
+      page.getByText(
+        state === "empty"
+          ? "Create and activate a collection schema before opening the explorer."
+          : "Document browsing is unavailable in this deployment.",
+      ),
+    ).toBeVisible();
+    expect(unexpected).toEqual([]);
+  });
+}
+
+test("revoked access is discarded and reauthorized on the next explicit action", async ({
+  page,
+}) => {
+  let grants = 0;
+  const capabilities: Array<string | undefined> = [];
   await page.route("**/v1/**", async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
     if (await serveWorkspaceShell(route, path)) return;
-    if (path.endsWith("/collections") && request.method() === "GET")
-      return json(route, { items: [collection()] });
-    if (path.endsWith("/users") && request.method() === "GET")
-      return json(route, { users: [], truncated: false });
-    if (path.endsWith("/explorer/grants") && request.method() === "POST") {
-      grantBodies.push(request.postDataJSON() as Record<string, unknown>);
+    if (path.endsWith("/collections")) return json(route, { items: [collection()] });
+    if (path.endsWith("/explorer/grants")) {
+      grants += 1;
       return json(
         route,
-        {
-          grantId: "xgr_reason0123456789abcdef0123456789a",
-          capability: CAPABILITY,
-          mode: "administrative",
-          operations: ["get", "browse", "query", "plan", "history", "simulate", "mutate"],
-          applicationUserId: null,
-          issuedAtUnixSeconds: Math.floor(Date.now() / 1000),
-          expiresAtUnixSeconds: Math.floor(Date.now() / 1000) + 300,
-          authorizationEpoch: 1,
-        },
+        { ...automaticGrant(), grantId: `grant-${grants}`, capability: `${CAPABILITY}-${grants}` },
         201,
       );
     }
-    if (path.endsWith("/data-jobs") && request.method() === "GET")
-      return json(route, { items: [], nextCursor: null });
-    return json(route, { error: "unhandled" }, 500);
+    if (path.includes("/explorer/grants/")) return json(route, {});
+    if (path.endsWith("/browse")) {
+      capabilities.push(request.headers()["x-mako-explorer-capability"]);
+      if (capabilities.length === 2)
+        return json(
+          route,
+          {
+            apiVersion: "v1",
+            error: {
+              code: "unauthenticated",
+              message: "explorer capability is invalid",
+              requestId: "req_revoked",
+              retry: { kind: "never" },
+            },
+          },
+          401,
+        );
+      return json(route, documentPage());
+    }
+    return json(route, {}, 500);
   });
-
   await page.goto(`/projects/${PROJECT_ID}/environments/${ENVIRONMENT_ID}/data`);
-  await page.getByLabel("Mode").selectOption("administrative");
-  await page.getByLabel("I understand this access bypasses application document policies.").check();
-  await page.getByLabel("Access reason").fill("ok");
-  await page.getByRole("button", { name: "Create access grant" }).click();
-  await expect(page.getByText("Give an access reason of at least 3 characters.")).toBeVisible();
-  expect(grantBodies).toEqual([]);
-
-  await page.getByLabel("Access reason").fill("  checking\n   dev data  ");
-  await page.getByRole("button", { name: "Create access grant" }).click();
-  await expect(page.getByText("Administrative policy bypass active")).toBeVisible();
-  expect(grantBodies.map((body) => body.reason)).toEqual(["checking dev data"]);
+  await expect(page.getByText("doc_visible01")).toBeVisible();
+  await page.getByRole("button", { name: "Refresh documents" }).click();
+  await expect(page.getByRole("alert")).toContainText("explorer capability is invalid");
+  expect(capabilities).toHaveLength(2);
+  expect(grants).toBe(1);
+  await page.getByRole("button", { name: "Refresh documents" }).click();
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  expect(capabilities).toEqual([`${CAPABILITY}-1`, `${CAPABILITY}-1`, `${CAPABILITY}-2`]);
+  expect(grants).toBe(2);
 });
 
-test("administrative mode exposes audited conflicts, history, tombstones, and data jobs", async ({
+test("direct access preserves audited conflicts, history, tombstones, and data jobs", async ({
   page,
 }) => {
   let confirmedImport = false;
@@ -385,11 +489,7 @@ test("administrative mode exposes audited conflicts, history, tombstones, and da
   });
 
   await page.goto(`/projects/${PROJECT_ID}/environments/${ENVIRONMENT_ID}/data`);
-  await page.getByLabel("Mode").selectOption("administrative");
-  await page.getByLabel("Access reason").fill("Investigate a reported revision conflict");
-  await page.getByLabel("I understand this access bypasses application document policies.").check();
-  await page.getByRole("button", { name: "Create access grant" }).click();
-  await expect(page.getByText("Administrative policy bypass active")).toBeVisible();
+  await expect(page.getByText("doc_visible01")).toBeVisible();
   await page.getByRole("button", { name: "Include retained tombstones" }).click();
   await expect(page.getByRole("cell", { name: "retained tombstone" })).toBeVisible();
   await page.getByRole("button", { name: "History" }).first().click();
@@ -782,4 +882,20 @@ async function serveWorkspaceShell(route: Route, path: string): Promise<boolean>
 }
 async function json(route: Route, body: unknown, status = 200) {
   await route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
+}
+
+function automaticGrant() {
+  return {
+    grantId: "xgr_0123456789abcdef0123456789abcdef",
+    capability: CAPABILITY,
+    mode: "administrative",
+    operations: ["get", "browse", "query", "plan", "history", "simulate", "mutate"],
+    applicationUserId: null,
+    issuedAtUnixSeconds: Math.floor(Date.now() / 1000),
+    expiresAtUnixSeconds: Math.floor(Date.now() / 1000) + 300,
+    authorizationEpoch: 1,
+  };
+}
+function documentPage() {
+  return { items: [document()], nextCursor: null, snapshot: "snapshot-safe", exhausted: true };
 }

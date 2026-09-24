@@ -2279,20 +2279,19 @@ Authentication outcomes for the environment — sign-ins, refusals, provider and
 
 ## The data workspace
 
-The environment workspace groups overview, the data explorer, sync diagnostics, policies, backups, API & Connect, and settings under `/projects/{projectId}/environments/{environmentId}/…`. Navigation is permission-filtered, and switching environment destroys the current explorer capability, snapshot cursor, preview user, draft, and selected document before loading the next scope.
+The environment workspace groups overview, the data explorer, sync diagnostics, policies, backups, API & Connect, and settings under `/projects/{projectId}/environments/{environmentId}/…`. Navigation is permission-filtered, and switching environment destroys the current explorer capability, snapshot cursor, draft, and selected document before loading the next scope.
 
 ### The explorer
 
-Use the collection rail to search and switch collections. The **Documents** tab offers browsing and primary-key lookup; **Query editor** holds predicates, sorting, and index planning; **Import / export** holds bulk jobs when enabled. Results show up to six document fields alongside the primary key, revision, and state. Missing fields, JSON null, and false remain distinct. **View JSON** opens the complete document and its conditional editor. **New document** opens a blank editor. Mutation controls retain the selected grant mode, so policy preview can simulate but cannot commit.
+Open **Data** to load the first collection automatically, or use the collection rail to search and switch collections. Personal and team projects use the same direct browsing flow. There is no access form, application-user selection, or reason prompt. The **Documents** tab offers browsing and primary-key lookup; **Query editor** holds predicates, sorting, and index planning; **Import / export** holds bulk jobs when enabled. Results show up to six document fields alongside the primary key, revision, and state. Missing fields, JSON null, and false remain distinct. **View JSON** opens the complete document and its conditional editor. **New document** opens a blank editor. Changes still require an explicit submission, schema validation, and the expected revision for updates and deletes.
 
 Switching collections or environments clears results, drafts, and grants. A late response from the previous scope cannot repopulate the screen.
 
-The explorer reads and writes documents under a short-lived **explorer grant** (at most five minutes, one collection, explicit operations) in one of two modes:
+The console obtains a collection-scoped access grant in memory and renews it automatically when needed. Project data-administration permission is required, which currently belongs to personal-project owners and team owners or administrators. Browsing in the console shows project documents independently of application users' document policies. Those policies still apply to application traffic. Every document operation remains audited, with the standard console access reason recorded as a hash.
 
-- **Policy preview** evaluates reads, indexed queries, and mutation simulations as one selected active application user. It does not create an application session and cannot commit.
-- **Administrative** access requires the project's data-admin permission, an explicit reason and confirmation, and a fresh password (step-up); it is a document-policy bypass and every use is audited.
+The API and CLI also support **policy preview**, which evaluates reads, queries, and simulations as a selected active application user and cannot commit writes. This is an explicit testing option through those tools, not a prerequisite for console browsing. CLI administrative access still accepts an explicit reason.
 
-Grants are kept only in memory: never put an `x-mako-explorer-capability` value in a URL, browser storage, logs, telemetry, error reports, or support tickets. From the CLI, `mako-cloud explorer …` issues a grant for the one call, performs it, and revokes the grant afterwards.
+Grants last at most five minutes and stay in memory. Never put an `x-mako-explorer-capability` value in a URL, browser storage, logs, telemetry, error reports, or support tickets. From the CLI, `mako-cloud explorer …` issues a grant for the one call, performs it, and revokes the grant afterwards.
 
 - **Browse** is canonical primary-key order over a stable snapshot. It omits deleted documents unless retained tombstones are explicitly requested with history permission. Policy-hidden documents do not affect returned counts or cursor behavior.
 - **Query** planning accepts at most 16 predicates, four sort fields, and 200 rows; only a matching active index may execute, and the server returns the required-index shape rather than falling back to a scan (`mako-cloud explorer plan` shows it).

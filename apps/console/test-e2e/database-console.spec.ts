@@ -196,14 +196,17 @@ test("a grant issued after a collection switch is revoked without becoming activ
         truncated: false,
       });
     if (path.endsWith("/explorer/grants")) {
-      requested = true;
-      await pending;
+      const isOld = route.request().postDataJSON().collectionId === "tasks";
+      if (isOld) {
+        requested = true;
+        await pending;
+      }
       return json(
         route,
         {
-          grantId: "xgr_abcdefgh",
+          grantId: isOld ? "xgr_abcdefgh" : "xgr_members",
           capability,
-          mode: "policy_preview",
+          mode: "administrative",
           operations: ["get", "browse"],
           issuedAtUnixSeconds: current(),
           expiresAtUnixSeconds: current() + 300,
@@ -216,10 +219,18 @@ test("a grant issued after a collection switch is revoked without becoming activ
       revoked = true;
       return json(route, {});
     }
+    if (path.endsWith("/browse")) {
+      expect(path).toContain("/collections/members/");
+      return json(route, {
+        items: [doc("member-current")],
+        nextCursor: null,
+        snapshot: "member-snapshot",
+        exhausted: true,
+      });
+    }
     return json(route, {}, 500);
   });
   await page.goto(`${base}/data`);
-  await page.getByRole("button", { name: "Create access grant" }).click();
   await expect.poll(() => requested).toBe(true);
   await page
     .getByRole("navigation", { name: "Browse collections" })
@@ -227,8 +238,10 @@ test("a grant issued after a collection switch is revoked without becoming activ
     .click();
   release();
   await expect.poll(() => revoked).toBe(true);
-  await expect(page.getByRole("button", { name: "Create access grant" })).toBeEnabled();
-  await expect(page.getByRole("button", { name: "Browse documents", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Document results" })).toContainText(
+    "member-current",
+  );
+  await expect(page.getByRole("button", { name: "Create access grant" })).toHaveCount(0);
 });
 
 for (const state of ["failed", "denied"] as const) {
@@ -438,9 +451,9 @@ test("the workbench displays escaped document fields and discards a delayed read
         {
           grantId: "xgr_abcdefgh",
           capability,
-          mode: "policy_preview",
+          mode: "administrative",
           operations: ["browse", "get", "plan", "query", "simulate"],
-          applicationUserId: "usr_abcdefgh",
+          applicationUserId: null,
           issuedAtUnixSeconds: current(),
           expiresAtUnixSeconds: current() + 300,
           authorizationEpoch: 1,
@@ -452,6 +465,8 @@ test("the workbench displays escaped document fields and discards a delayed read
       return json(route, {});
     }
     if (path.endsWith("/browse")) {
+      if (path.includes("/collections/members/"))
+        return json(route, { items: [], nextCursor: null, snapshot: "members", exhausted: true });
       if (delayed) {
         requested = true;
         await pending;
@@ -468,8 +483,6 @@ test("the workbench displays escaped document fields and discards a delayed read
   });
   await page.setViewportSize({ width: 1600, height: 1000 });
   await page.goto(`${base}/data`);
-  await page.getByRole("button", { name: "Create access grant" }).click();
-  await page.getByRole("button", { name: "Browse documents", exact: true }).click();
   const results = page.getByRole("region", { name: "Document results" });
   await expect(results.getByRole("columnheader", { name: "title", exact: true })).toBeVisible();
   await expect(
@@ -485,14 +498,14 @@ test("the workbench displays escaped document fields and discards a delayed read
     fullPage: true,
   });
   delayed = true;
-  await page.getByRole("button", { name: "Browse documents", exact: true }).click();
+  await page.getByRole("button", { name: "Refresh documents", exact: true }).click();
   await expect.poll(() => requested).toBe(true);
   await page
     .getByRole("navigation", { name: "Browse collections" })
     .getByRole("button", { name: "members", exact: true })
     .click();
   release();
-  await expect(page.getByRole("button", { name: "Create access grant" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Refresh documents" })).toBeEnabled();
   await expect(page.getByText("late-private-document")).toHaveCount(0);
   await expect(page.getByText("Ship the database console")).toHaveCount(0);
   await expect.poll(() => revoked.length).toBe(1);

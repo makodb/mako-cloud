@@ -17,20 +17,31 @@ The system SHALL authorize every Data Explorer request against the current devel
 - **WHEN** an authenticated developer substitutes a project or environment outside their authorized membership
 - **THEN** the system denies the request without reading or revealing the other tenant's data and records the denied attempt
 
-### Requirement: Explicit explorer access modes
-The Data Explorer SHALL provide separate policy-preview and administrative access modes with persistent, visually distinct mode indicators. Policy preview MUST evaluate the active document policies as a selected application user and MUST be read-only except for non-committing mutation simulation. Administrative mode MUST require an explicit data-administration permission, reason, short-lived access grant, and audited privileged bypass.
+### Requirement: Direct console data access
+The console SHALL load documents automatically when an authorized developer opens a collection in a personal or team project. It SHALL obtain and renew short-lived, collection-scoped administrative grants in memory using a standard console reason without an access form, application-user selection, or manual confirmation to begin browsing. The service MUST continue to require data-administration permission and audit each use. Application document policies MUST remain enforced for application traffic.
 
-#### Scenario: Developer previews an application user
-- **WHEN** an authorized developer selects an application user for policy preview
-- **THEN** explorer reads are filtered by that user's current verified claims and active policy version, mutation previews do not commit, and the selected preview identity remains visible
+#### Scenario: Owner or administrator opens a collection
+- **WHEN** a member with data-administration permission opens a collection
+- **THEN** the console obtains scoped access and displays its first page without requiring another user action
 
-#### Scenario: Developer enters administrative mode
-- **WHEN** a developer with data-administration permission supplies a valid reason and confirms administrative access
-- **THEN** the system creates a short-lived project/environment-scoped grant, displays a persistent administrative-mode warning, and audits use of the grant
+#### Scenario: Member lacks data-administration permission
+- **WHEN** a member without data-administration permission opens the console data explorer
+- **THEN** the service denies administrative access and the console shows the failure without requesting document data or falling back to another identity
 
 #### Scenario: Administrative grant expires
-- **WHEN** an administrative explorer request uses an expired or revoked grant
-- **THEN** the system denies the request and requires the developer to re-enter administrative mode without silently falling back to another access mode
+- **WHEN** the console needs to perform a document operation after its grant expires
+- **THEN** it obtains a fresh grant through current developer and membership checks before sending the operation, and reports any denial without sending the expired capability
+
+#### Scenario: Collection or environment changes during a request
+- **WHEN** the developer switches scope while access issuance or a document request is pending
+- **THEN** the console clears previous data and drafts, revokes previous or late-issued grants, ignores previous responses, and loads the selected scope
+
+### Requirement: Explicit policy preview through API and CLI
+The API and CLI SHALL support a policy-preview mode that evaluates active document policies as a selected application user and remains read-only except for non-committing mutation simulation. Administrative API and CLI access MUST require data-administration permission, a reason, a short-lived grant, and audited privileged bypass.
+
+#### Scenario: Developer previews an application user
+- **WHEN** an authorized developer explicitly selects an application user for policy preview through the API or CLI
+- **THEN** reads are filtered by that user's current verified claims and active policy version, and mutation previews do not commit
 
 ### Requirement: Service credentials remain server-side
 Explorer access SHALL use a management-authorized, short-lived capability validated by the data service. The browser MUST NOT receive, derive, store, or transmit a project service credential, internal workload credential, signing key, or unrestricted bearer token.
@@ -69,7 +80,7 @@ The explorer SHALL present the active JSON schema, primary-key definition, schem
 - **THEN** the explorer identifies the schema error and the server rejects any submitted invalid mutation without changing document, index, or change-log state
 
 ### Requirement: Conditional document mutations
-Administrative mode SHALL support create, update, and delete using a unique idempotency key and the expected current revision for update or delete. The explorer MUST display the proposed change and access mode before confirmation. A stale revision MUST not overwrite the current document and MUST return a conflict suitable for explicit reload, comparison, and retry.
+Administrative mode SHALL support create, update, and delete using a unique idempotency key and the expected current revision for update or delete. The console MUST display the proposed change before explicit submission. A stale revision MUST not overwrite the current document and MUST return a conflict suitable for explicit reload, comparison, and retry.
 
 #### Scenario: Developer updates the current revision
 - **WHEN** an authorized administrator confirms a schema-valid update against the current revision
@@ -134,7 +145,7 @@ The system SHALL enforce document-size, page, predicate, sort, upload, artifact,
 - **THEN** the system rejects or safely truncates according to the documented contract, identifies the applicable limit, and returns no out-of-scope data
 
 ### Requirement: Accessible explorer interaction
-The explorer SHALL support keyboard and assistive-technology use for access-mode selection, query construction, tables, document viewing, validation, comparisons, confirmations, and job progress. Loading, empty, denied, conflict, stale, deleted, failed, and completed states MUST be visually and programmatically distinct.
+The explorer SHALL support keyboard and assistive-technology use for collection selection, query construction, tables, document viewing, validation, comparisons, confirmations, and job progress. Loading, empty, denied, conflict, stale, deleted, failed, and completed states MUST be visually and programmatically distinct.
 
 #### Scenario: Developer resolves a conflict with keyboard controls
 - **WHEN** a developer uses only a keyboard after a conditional update conflict

@@ -1,5 +1,5 @@
+import { ManagementApiError } from "@mako-cloud/management-sdk";
 import type {
-  ApplicationUserSummary,
   ArtifactGrant,
   Collection,
   DataJob,
@@ -42,31 +42,13 @@ import {
   TabsTrigger,
   Textarea,
 } from "@mako-cloud/ui";
-import {
-  AlertTriangle,
-  CheckCircle2,
-  Info,
-  RefreshCw,
-  Search,
-  ShieldAlert,
-  Table2,
-} from "lucide-react";
+import { AlertTriangle, CheckCircle2, Info, RefreshCw, Search, Table2 } from "lucide-react";
 import { type FormEvent, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 
 import { ApiFailureNotice, type ConsoleApiFailure, toConsoleApiFailure } from "./api-error.js";
 import { useDeveloperAuth } from "./auth.js";
 import { useManagementClient } from "./management.js";
-
-const POLICY_OPERATIONS = ["get", "browse", "query", "plan", "simulate"] as const;
-const ADMIN_OPERATIONS = [
-  "get",
-  "browse",
-  "query",
-  "plan",
-  "history",
-  "simulate",
-  "mutate",
-] as const;
+import { createExplorerAccess, type ExplorerAccess } from "./explorer-access.js";
 
 /** JSON that is read: a bordered, scrolling block in the code face. */
 const JSON_BLOCK =
@@ -100,15 +82,14 @@ export function DataExplorer({
 }) {
   const client = useManagementClient();
   const [collections, setCollections] = useState<Collection[] | null>(null);
-  const [users, setUsers] = useState<ApplicationUserSummary[]>([]);
   const [tool, setTool] = useState("documents");
   const [editing, setEditing] = useState(false);
   const [collectionSearch, setCollectionSearch] = useState("");
   const scopeVersion = useRef(0);
-  const [issuing, setIssuing] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [collectionId, setCollectionId] = useState("");
   const [grant, setGrant] = useState<ExplorerGrant | null>(null);
-  const grantRef = useRef<ExplorerGrant | null>(null);
+  const accessRef = useRef<ExplorerAccess | null>(null);
   const [failure, setFailure] = useState<ConsoleApiFailure | null>(null);
   const [page, setPage] = useState<ExplorerDocumentPage | null>(null);
   const [pageSource, setPageSource] = useState<PageSource | null>(null);
@@ -133,136 +114,89 @@ export function DataExplorer({
     setFailure(null);
   }, []);
 
-  const revoke = useCallback(async () => {
-    scopeVersion.current += 1;
-    const current = grantRef.current;
-    grantRef.current = null;
-    setGrant(null);
-    clearExplorerState();
-    if (current !== null) {
-      try {
-        await client.revokeExplorerGrant(projectId, environmentId, current.grantId);
-      } catch {
-        // The local credential is already gone. Expiry and server-side revocation remain authoritative.
-      }
-    }
-  }, [clearExplorerState, client, environmentId, projectId]);
-
   useEffect(() => {
     let active = true;
-    void Promise.all([
-      client.listCollections(projectId, environmentId),
-      client.searchApplicationUsers(projectId, environmentId, { limit: 100 }),
-    ]).then(
-      ([nextCollections, userResult]) => {
+    void client.listCollections(projectId, environmentId).then(
+      (nextCollections) => {
         if (!active) return;
         setCollections(nextCollections);
-        setUsers(userResult.users.filter((user) => user.status === "active"));
-        setCollectionId((current) =>
-          nextCollections.some((collection) => collection.id === current)
-            ? current
-            : (nextCollections[0]?.id ?? ""),
-        );
+        setCollectionId(nextCollections[0]?.id ?? "");
       },
       (error: unknown) => active && setFailure(toConsoleApiFailure(error)),
     );
     return () => {
       active = false;
-      scopeVersion.current += 1;
-      const current = grantRef.current;
-      grantRef.current = null;
-      if (current !== null) {
-        void client.revokeExplorerGrant(projectId, environmentId, current.grantId).catch(() => {});
-      }
     };
   }, [client, environmentId, projectId]);
 
   const switchCollection = (nextCollectionId: string) => {
     if (nextCollectionId === collectionId) return;
-    void revoke();
+    scopeVersion.current += 1;
+    accessRef.current?.close();
+    accessRef.current = null;
+    setGrant(null);
+    clearExplorerState();
     setCollectionId(nextCollectionId);
   };
 
-  const issueGrant = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const form = event.currentTarget;
-    const data = new FormData(form);
-    const mode = requiredText(data, "mode");
-    if (issuing) return;
-    setIssuing(true);
-    let scope = scopeVersion.current;
-    try {
-      if (collectionId === "") throw new Error("Select a collection first.");
-      if (mode === "administrative" && !adminEnabled) {
-        throw new Error("Administrative data access is disabled during staged rollout.");
-      }
-      if (
-        mode === "administrative" &&
-        !form.querySelector<HTMLInputElement>("[name=confirm]")?.checked
-      ) {
-        throw new Error("Confirm that administrative access bypasses document policies.");
-      }
-      const reason = mode === "administrative" ? accessReason(data) : null;
-      scope += 1;
-      await revoke();
-      if (scope !== scopeVersion.current) return;
-      const next = await client.issueExplorerGrant(projectId, environmentId, {
-        tenant: { projectId, environmentId },
-        collectionId,
-        mode: mode === "administrative" ? "administrative" : "policy_preview",
-        operations: mode === "administrative" ? [...ADMIN_OPERATIONS] : [...POLICY_OPERATIONS],
-        applicationUserId:
-          mode === "administrative" ? null : requiredText(data, "applicationUserId"),
-        reason,
-        durationSeconds: 300,
-      });
-      if (scope !== scopeVersion.current) {
-        void client.revokeExplorerGrant(projectId, environmentId, next.grantId).catch(() => {});
-        return;
-      }
-      grantRef.current = next;
-      setGrant(next);
-      setFailure(null);
-      form.reset();
-    } catch (error) {
-      if (scope === scopeVersion.current) setFailure(consoleFailure(error));
-    } finally {
-      setIssuing(false);
-    }
-  };
+  const requireCapability = useCallback(async () => {
+    const access = accessRef.current;
+    if (access === null) throw new Error("Document browsing is unavailable.");
+    const next = await access.getGrant();
+    if (accessRef.current !== access) throw new Error("The selected collection changed.");
+    setGrant(next);
+    return next.capability;
+  }, []);
 
-  const requireCapability = () => {
-    const current = grantRef.current;
-    if (current === null || current.expiresAtUnixSeconds <= Math.floor(Date.now() / 1000)) {
+  const reportFailure = useCallback((error: unknown) => {
+    // A revoked or stale capability must be replaced on the next action. Never replay a write.
+    if (error instanceof ManagementApiError && error.status === 401) {
+      accessRef.current?.invalidate();
+    }
+    setFailure(consoleFailure(error));
+  }, []);
+
+  const browse = useCallback(
+    async (cursor: string | null = null, includeRetainedTombstones = false) => {
+      const scope = scopeVersion.current;
+      setLoading(true);
+      try {
+        const capability = await requireCapability();
+        const result = await client.explorerBrowseDocuments(
+          projectId,
+          environmentId,
+          collectionId,
+          { limit: 25, cursor, includeRetainedTombstones },
+          capability,
+        );
+        if (scope !== scopeVersion.current) return;
+        setPage(result);
+        setPageSource({ kind: "browse", includeRetainedTombstones });
+        setFailure(null);
+      } catch (error) {
+        if (scope === scopeVersion.current) reportFailure(error);
+      } finally {
+        if (scope === scopeVersion.current) setLoading(false);
+      }
+    },
+    [client, collectionId, environmentId, projectId, reportFailure, requireCapability],
+  );
+
+  useEffect(() => {
+    scopeVersion.current += 1;
+    clearExplorerState();
+    setGrant(null);
+    setLoading(false);
+    if (collectionId === "" || !adminEnabled) return;
+    const access = createExplorerAccess(client, projectId, environmentId, collectionId);
+    accessRef.current = access;
+    void browse();
+    return () => {
       scopeVersion.current += 1;
-      grantRef.current = null;
-      setGrant(null);
-      clearExplorerState();
-      const error = new Error("Explorer access expired. Create a new scoped grant.");
-      setFailure(consoleFailure(error));
-      throw error;
-    }
-    return current.capability;
-  };
-
-  const browse = async (cursor: string | null = null, includeRetainedTombstones = false) => {
-    const scope = scopeVersion.current;
-    try {
-      const result = await client.explorerBrowseDocuments(
-        projectId,
-        environmentId,
-        collectionId,
-        { limit: 25, cursor, includeRetainedTombstones },
-        requireCapability(),
-      );
-      if (scope !== scopeVersion.current) return;
-      setPage(result);
-      setPageSource({ kind: "browse", includeRetainedTombstones });
-      setFailure(null);
-    } catch (error) {
-      if (scope === scopeVersion.current) setFailure(consoleFailure(error));
-    }
-  };
+      accessRef.current = null;
+      access.close();
+    };
+  }, [adminEnabled, browse, clearExplorerState, client, collectionId, environmentId, projectId]);
 
   const lookup = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -273,14 +207,14 @@ export function DataExplorer({
         environmentId,
         collectionId,
         requiredText(new FormData(event.currentTarget), "documentId"),
-        requireCapability(),
+        await requireCapability(),
       );
       if (scope !== scopeVersion.current) return;
       setSelected(document);
       setHistory(null);
       setFailure(null);
     } catch (error) {
-      if (scope === scopeVersion.current) setFailure(consoleFailure(error));
+      if (scope === scopeVersion.current) reportFailure(error);
     }
   };
 
@@ -288,7 +222,7 @@ export function DataExplorer({
     const scope = scopeVersion.current;
     try {
       const request = queryFromForm(new FormData(form), cursor);
-      const capability = requireCapability();
+      const capability = await requireCapability();
       const nextPlan = await client.explorerPlanQuery(
         projectId,
         environmentId,
@@ -315,7 +249,7 @@ export function DataExplorer({
       setPageSource({ kind: "query", request: { ...request, cursor: null } });
       setFailure(null);
     } catch (error) {
-      if (scope === scopeVersion.current) setFailure(consoleFailure(error));
+      if (scope === scopeVersion.current) reportFailure(error);
     }
   };
 
@@ -332,13 +266,13 @@ export function DataExplorer({
         environmentId,
         collectionId,
         { ...pageSource.request, cursor: page.nextCursor },
-        requireCapability(),
+        await requireCapability(),
       );
       if (scope !== scopeVersion.current) return;
       setPage(result);
       setFailure(null);
     } catch (error) {
-      if (scope === scopeVersion.current) setFailure(consoleFailure(error));
+      if (scope === scopeVersion.current) reportFailure(error);
     }
   };
 
@@ -350,14 +284,14 @@ export function DataExplorer({
         environmentId,
         collectionId,
         document.documentId,
-        requireCapability(),
+        await requireCapability(),
       );
       if (scope !== scopeVersion.current) return;
       setHistory(revisions);
       setSelected(document);
       setFailure(null);
     } catch (error) {
-      if (scope === scopeVersion.current) setFailure(consoleFailure(error));
+      if (scope === scopeVersion.current) reportFailure(error);
     }
   };
 
@@ -381,22 +315,19 @@ export function DataExplorer({
           environmentId,
           collectionId,
           proposed,
-          requireCapability(),
+          await requireCapability(),
         );
         if (scope !== scopeVersion.current) return;
         setSimulation(nextSimulation);
         setConflict(null);
         return;
       }
-      if (grantRef.current?.mode !== "administrative") {
-        throw new Error("Policy preview can simulate writes but cannot commit them.");
-      }
       const result = await client.explorerMutateDocument(
         projectId,
         environmentId,
         collectionId,
         proposed,
-        requireCapability(),
+        await requireCapability(),
       );
       if (scope !== scopeVersion.current) return;
       setAuditReference(result.auditReference);
@@ -409,7 +340,7 @@ export function DataExplorer({
       }
       setFailure(null);
     } catch (error) {
-      if (scope === scopeVersion.current) setFailure(consoleFailure(error));
+      if (scope === scopeVersion.current) reportFailure(error);
     }
   };
 
@@ -516,16 +447,20 @@ export function DataExplorer({
             </AlertDescription>
           </Alert>
         ) : null}
-        {grant === null && collectionId !== "" ? (
-          <GrantForm
-            key={collectionId}
-            users={users}
-            adminEnabled={adminEnabled}
-            pending={issuing}
-            onSubmit={issueGrant}
-          />
-        ) : grant !== null ? (
-          <GrantBanner grant={grant} users={users} onRevoke={() => void revoke()} />
+        {!adminEnabled && collectionId !== "" ? (
+          <p className="m-0 text-sm text-muted-foreground">
+            Document browsing is unavailable in this deployment.
+          </p>
+        ) : loading ? (
+          <p role="status" className="m-0 text-sm text-muted-foreground">
+            Loading documents…
+          </p>
+        ) : grant === null && failure !== null && collectionId !== "" ? (
+          <div>
+            <Button variant="outline" onClick={() => void browse()}>
+              Retry loading documents
+            </Button>
+          </div>
         ) : null}
         {grant !== null ? (
           <Tabs value={tool} onValueChange={setTool} className="min-w-0 gap-5">
@@ -552,9 +487,9 @@ export function DataExplorer({
             </div>
             <TabsContent value="documents" className="grid gap-4">
               <div className="flex flex-wrap items-end gap-3 rounded-lg border bg-card p-3">
-                <Button onClick={() => void browse(null, false)}>
+                <Button disabled={loading} onClick={() => void browse(null, false)}>
                   <RefreshCw aria-hidden="true" />
-                  Browse documents
+                  Refresh documents
                 </Button>
                 {grant.mode === "administrative" ? (
                   <Button variant="outline" onClick={() => void browse(null, true)}>
@@ -665,128 +600,6 @@ export function DataExplorer({
         ) : null}
       </div>
     </div>
-  );
-}
-
-function GrantForm({
-  users,
-  onSubmit,
-  adminEnabled,
-  pending,
-}: {
-  readonly pending: boolean;
-  readonly users: ApplicationUserSummary[];
-  readonly onSubmit: (event: FormEvent<HTMLFormElement>) => void;
-  readonly adminEnabled: boolean;
-}) {
-  const [mode, setMode] = useState("policy_preview");
-  return (
-    <Card aria-labelledby="grant-title">
-      <CardHeader>
-        <CardTitle as="h3" id="grant-title">
-          Create scoped access
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <form className="grid max-w-xl gap-4" onSubmit={onSubmit}>
-          <Field label="Mode" htmlFor="grant-mode">
-            <NativeSelect
-              id="grant-mode"
-              name="mode"
-              value={mode}
-              onChange={(event) => setMode(event.currentTarget.value)}
-            >
-              <option value="policy_preview">Policy preview (read and simulate)</option>
-              {adminEnabled ? (
-                <option value="administrative">Administrative data access</option>
-              ) : null}
-            </NativeSelect>
-          </Field>
-          {mode === "policy_preview" ? (
-            users.length === 0 ? (
-              <Alert variant="warning">
-                <AlertTriangle aria-hidden="true" />
-                <AlertDescription>
-                  No active application user is available for policy preview.
-                </AlertDescription>
-              </Alert>
-            ) : (
-              <Field label="Application user" htmlFor="grant-application-user">
-                <NativeSelect id="grant-application-user" name="applicationUserId" required>
-                  {users.map((user) => (
-                    <option key={user.id} value={user.id}>
-                      {user.email ?? user.id}
-                    </option>
-                  ))}
-                </NativeSelect>
-              </Field>
-            )
-          ) : (
-            <>
-              <Alert variant="warning">
-                <ShieldAlert aria-hidden="true" />
-                <AlertDescription>
-                  Administrative mode bypasses document policies. Every use is audited.
-                </AlertDescription>
-              </Alert>
-              <Field label="Access reason" htmlFor="grant-reason">
-                <Textarea id="grant-reason" name="reason" required maxLength={500} />
-              </Field>
-              {/* The submit handler checks the box itself so a missing confirmation
-                  is reported as a visible failure rather than blocked silently. */}
-              <div className="flex items-start gap-2">
-                <Checkbox id="grant-confirm" name="confirm" className="mt-0.5" />
-                <Label htmlFor="grant-confirm" className="leading-snug font-normal">
-                  I understand this access bypasses application document policies.
-                </Label>
-              </div>
-            </>
-          )}
-          <div>
-            <Button
-              type="submit"
-              disabled={pending || (mode === "policy_preview" && users.length === 0)}
-            >
-              Create access grant
-            </Button>
-          </div>
-        </form>
-      </CardContent>
-    </Card>
-  );
-}
-
-function GrantBanner({
-  grant,
-  users,
-  onRevoke,
-}: {
-  readonly grant: ExplorerGrant;
-  readonly users: ApplicationUserSummary[];
-  readonly onRevoke: () => void;
-}) {
-  const preview = users.find((user) => user.id === grant.applicationUserId);
-  const administrative = grant.mode === "administrative";
-  return (
-    <aside aria-live="polite">
-      <Alert variant={administrative ? "warning" : "positive"}>
-        {administrative ? <ShieldAlert aria-hidden="true" /> : <CheckCircle2 aria-hidden="true" />}
-        <AlertTitle>
-          {administrative ? "Administrative policy bypass active" : "Policy preview active"}
-        </AlertTitle>
-        <AlertDescription>
-          <p className="m-0">
-            {administrative
-              ? "Document operations are privileged and audited."
-              : `Evaluating policies as ${preview?.email ?? grant.applicationUserId ?? "selected user"}. This is not a user session.`}{" "}
-            Expires {new Date(grant.expiresAtUnixSeconds * 1000).toLocaleTimeString()}.
-          </p>
-          <Button variant="outline" size="sm" className="mt-1" onClick={onRevoke}>
-            End access
-          </Button>
-        </AlertDescription>
-      </Alert>
-    </aside>
   );
 }
 
@@ -1138,8 +951,8 @@ function MutationEditor({
         <CardTitle as="h3">Document mutation</CardTitle>
         <CardDescription>
           {canCommit
-            ? "Administrative commits use conditional revision and idempotency checks."
-            : "Policy preview only evaluates this draft; it cannot write."}
+            ? "Updates and deletes check the current revision before saving."
+            : "You can validate this draft, but your access does not allow saving it."}
         </CardDescription>
       </CardHeader>
       <CardContent className="grid gap-4">
@@ -1871,23 +1684,6 @@ function requiredText(data: FormData, name: string): string {
   const value = data.get(name);
   if (typeof value !== "string" || value.trim() === "") throw new Error(`${name} is required.`);
   return value.trim();
-}
-/**
- * The access reason as the service accepts it: one line of 3 to 500
- * characters. Line breaks and runs of spaces collapse to single spaces, and a
- * reason out of range is reported here in words instead of as the service's
- * generic "explorer request is invalid".
- */
-function accessReason(data: FormData): string {
-  const value = data.get("reason");
-  const reason = typeof value === "string" ? value.replace(/\s+/gu, " ").trim() : "";
-  if (reason.length < 3) {
-    throw new Error("Give an access reason of at least 3 characters.");
-  }
-  if (reason.length > 500) {
-    throw new Error("Keep the access reason to 500 characters or fewer.");
-  }
-  return reason;
 }
 function optionalText(data: FormData, name: string): string | null {
   const value = data.get(name);

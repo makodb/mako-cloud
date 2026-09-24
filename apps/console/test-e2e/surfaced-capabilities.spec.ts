@@ -148,7 +148,6 @@ test("a data job opens in detail from the jobs list", async ({ page }) => {
   await api.install(page);
 
   await page.goto(`${ENVIRONMENT_PATH}/data`);
-  await page.getByRole("button", { name: "Create access grant" }).click();
   await page.getByRole("tab", { name: "Import / export" }).click();
   await expect(page.getByRole("heading", { name: "Import and export jobs" })).toBeVisible();
   await expect(page.getByText("djob_export01", { exact: true })).toBeVisible();
@@ -317,6 +316,8 @@ class SurfacedApiHarness {
       await json(route, grantFixture(), 201);
     } else if (path.startsWith(`${ENVIRONMENT_API}/explorer/grants/`) && method === "DELETE") {
       await json(route, { grantId: grantFixture().grantId, revokedAtUnixSeconds: 1_786_579_201 });
+    } else if (path === `${ENVIRONMENT_API}/explorer/collections/todos/browse`) {
+      await json(route, { items: [], nextCursor: null, snapshot: "empty", exhausted: true });
     } else if (path === `${ENVIRONMENT_API}/data-jobs` && method === "GET") {
       await json(route, { items: [exportJob(), failedImportJob()], nextCursor: null });
     } else if (path.startsWith(`${ENVIRONMENT_API}/data-jobs/`) && method === "GET") {
@@ -539,9 +540,9 @@ function grantFixture() {
   return {
     grantId: "xgr_0123456789abcdef0123456789abcdef",
     capability: "mx1.xcap-v1.sensitive_explorer_capability_never_persisted",
-    mode: "policy_preview",
+    mode: "administrative",
     operations: ["get", "browse", "query", "plan", "simulate"],
-    applicationUserId: "usr_abcdefgh",
+    applicationUserId: null,
     issuedAtUnixSeconds: 1_786_579_200,
     expiresAtUnixSeconds: 4_102_444_800,
     authorizationEpoch: 1,
