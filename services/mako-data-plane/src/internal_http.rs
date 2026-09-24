@@ -489,7 +489,8 @@ async fn execute_operation(
         }
         IdentityAdminOperation::IssueExplorerGrant
         | IdentityAdminOperation::RevokeExplorerGrant
-        | IdentityAdminOperation::AdvanceExplorerEpoch => {
+        | IdentityAdminOperation::AdvanceExplorerEpoch
+        | IdentityAdminOperation::ReadExplorerEpoch => {
             execute_explorer_authorization_operation(graph, request, tenant, command, now).await
         }
         IdentityAdminOperation::ImportDataJobBatch | IdentityAdminOperation::ExportDataJobPage => {
@@ -1727,6 +1728,23 @@ async fn execute_explorer_authorization_operation(
             };
             serde_json::to_vec(&ExplorerEpochWire { epoch, advanced })
         }
+        IdentityAdminOperation::ReadExplorerEpoch => {
+            let input: ExplorerEpochReadWire = parse_input(request, &command.input)?;
+            if input.developer_identity_id != command.actor_id {
+                return Err(auth_http::invalid(
+                    request,
+                    "explorer epoch actor is invalid",
+                ));
+            }
+            let epoch = store
+                .current_epoch(&input.developer_identity_id)
+                .await
+                .map_err(|_| auth_http::unavailable(request, "explorer epoch could not be read"))?;
+            serde_json::to_vec(&ExplorerEpochWire {
+                epoch: Some(epoch),
+                advanced: 0,
+            })
+        }
         _ => unreachable!("explorer dispatcher restricts operations"),
     }
     .map_err(|_| {
@@ -2436,6 +2454,7 @@ const fn operation_name(operation: IdentityAdminOperation) -> &'static str {
         IdentityAdminOperation::IssueExplorerGrant => "issue_explorer_grant",
         IdentityAdminOperation::RevokeExplorerGrant => "revoke_explorer_grant",
         IdentityAdminOperation::AdvanceExplorerEpoch => "advance_explorer_epoch",
+        IdentityAdminOperation::ReadExplorerEpoch => "read_explorer_epoch",
         IdentityAdminOperation::ImportDataJobBatch => "import_data_job_batch",
         IdentityAdminOperation::ExportDataJobPage => "export_data_job_page",
         IdentityAdminOperation::ReadChangeFeed => "read_change_feed",
@@ -2584,6 +2603,12 @@ struct ExplorerEpochAdvanceWire {
     developer_identity_id: Option<String>,
     #[serde(default)]
     all_developers: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct ExplorerEpochReadWire {
+    developer_identity_id: String,
 }
 
 #[derive(Serialize)]

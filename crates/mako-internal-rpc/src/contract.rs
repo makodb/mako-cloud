@@ -239,6 +239,10 @@ pub enum IdentityAdminOperation {
     IssueExplorerGrant,
     RevokeExplorerGrant,
     AdvanceExplorerEpoch,
+    /// The developer's current explorer epoch. The data plane is the authority:
+    /// it checks every capability against it and advances it itself, so the
+    /// control plane signs grants with this value rather than a local copy.
+    ReadExplorerEpoch,
     ImportDataJobBatch,
     ExportDataJobPage,
     /// Install the quota policy a tenant is held to.

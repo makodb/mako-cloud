@@ -83,7 +83,8 @@ pub use dns::{
     TxtResolver, UdpTxtResolver, decode_txt_response, encode_txt_query,
 };
 pub use explorer::{
-    DataPlaneApplicationUsers, ExplorerApplicationUsers, ExplorerGrantError, ExplorerGrantService,
+    DataPlaneApplicationUsers, DataPlaneExplorerEpochs, ExplorerApplicationUsers, ExplorerEpochs,
+    ExplorerGrantError, ExplorerGrantService,
 };
 pub use function_schedule::{
     FunctionScheduleError, FunctionScheduleId, FunctionScheduleInvokeError,
