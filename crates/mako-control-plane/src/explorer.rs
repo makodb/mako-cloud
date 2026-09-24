@@ -39,6 +39,7 @@ pub struct ExplorerGrantService {
     key_ring: ExplorerCapabilityKeyRing,
     audit: Arc<dyn ControlAuditSink>,
     application_users: Arc<dyn ExplorerApplicationUsers>,
+    epochs: Arc<dyn ExplorerEpochs>,
 }
 
 impl fmt::Debug for ExplorerGrantService {
@@ -67,6 +68,10 @@ impl ExplorerGrantService {
             adapter: Arc::clone(&adapter),
             durability,
         });
+        let epochs = Arc::new(ControlStorageExplorerEpochs {
+            adapter: Arc::clone(&adapter),
+            durability,
+        });
         Self {
             adapter,
             durability,
@@ -77,6 +82,7 @@ impl ExplorerGrantService {
             key_ring,
             audit,
             application_users,
+            epochs,
         }
     }
 
@@ -86,6 +92,15 @@ impl ExplorerGrantService {
     #[must_use]
     pub fn with_application_users(mut self, users: Arc<dyn ExplorerApplicationUsers>) -> Self {
         self.application_users = users;
+        self
+    }
+
+    /// Takes each developer's explorer epoch from somewhere other than control
+    /// storage. A deployment passes the data plane, which checks every
+    /// capability against its epoch and advances it itself.
+    #[must_use]
+    pub fn with_epochs(mut self, epochs: Arc<dyn ExplorerEpochs>) -> Self {
+        self.epochs = epochs;
         self
     }
 
@@ -241,9 +256,17 @@ impl ExplorerGrantService {
             &request.tenant,
             self.durability,
         )?;
-        let authorization_epoch = authority
-            .current_epoch(actor.identity_id().as_str())
-            .await?;
+        // The capability is checked against the data plane's epoch, which every
+        // policy, schema and membership change advances there. Signing with the
+        // local copy instead stranded the explorer at the first such change:
+        // the data plane refused every grant as stale from then on.
+        let authorization_epoch = self.epochs.current(actor, &request.tenant).await?;
+        catch_up_epoch(
+            &authority,
+            actor.identity_id().as_str(),
+            authorization_epoch,
+        )
+        .await?;
         let nonce = random_id("xnonce_");
         let expires_at_unix_seconds = now_unix_seconds
             .checked_add(request.duration_seconds.min(EXPLORER_MAX_GRANT_SECONDS))
@@ -507,6 +530,117 @@ impl ExplorerApplicationUsers for DataPlaneApplicationUsers {
     }
 }
 
+/// Where a grant learns the developer's current explorer epoch.
+#[async_trait]
+pub trait ExplorerEpochs: Send + Sync {
+    async fn current(
+        &self,
+        actor: &DeveloperPrincipal,
+        tenant: &TenantScope,
+    ) -> Result<u64, ExplorerGrantError>;
+}
+
+struct ControlStorageExplorerEpochs {
+    adapter: Arc<dyn KvAdapter>,
+    durability: Durability,
+}
+
+#[async_trait]
+impl ExplorerEpochs for ControlStorageExplorerEpochs {
+    async fn current(
+        &self,
+        actor: &DeveloperPrincipal,
+        tenant: &TenantScope,
+    ) -> Result<u64, ExplorerGrantError> {
+        let authority = ExplorerAuthorizationStore::new(
+            Arc::clone(&self.adapter),
+            tenant,
+            tenant,
+            self.durability,
+        )?;
+        Ok(authority
+            .current_epoch(actor.identity_id().as_str())
+            .await?)
+    }
+}
+
+/// Explorer epochs as the data plane holds them, over the internal
+/// identity-admin RPC.
+pub struct DataPlaneExplorerEpochs {
+    client: Arc<ControlToDataClient>,
+}
+
+impl DataPlaneExplorerEpochs {
+    #[must_use]
+    pub fn new(client: Arc<ControlToDataClient>) -> Self {
+        Self { client }
+    }
+}
+
+impl fmt::Debug for DataPlaneExplorerEpochs {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("DataPlaneExplorerEpochs")
+            .finish_non_exhaustive()
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct EpochWire {
+    epoch: u64,
+}
+
+#[async_trait]
+impl ExplorerEpochs for DataPlaneExplorerEpochs {
+    async fn current(
+        &self,
+        actor: &DeveloperPrincipal,
+        tenant: &TenantScope,
+    ) -> Result<u64, ExplorerGrantError> {
+        let command = IdentityAdminCommand {
+            operation: IdentityAdminOperation::ReadExplorerEpoch,
+            actor_id: actor.identity_id().as_str().to_owned(),
+            permissions: BTreeSet::from([IdentityAdminPermission::ManageExplorerGrants]),
+            input: serde_json::json!({ "developerIdentityId": actor.identity_id().as_str() }),
+        };
+        // A read, under fresh ids: the response journal must never answer with
+        // an epoch that has since been advanced.
+        let mut nonce = [0_u8; 32];
+        OsRng.fill_bytes(&mut nonce);
+        let nonce = blake3::hash(&nonce).to_hex();
+        self.client
+            .administer::<EpochWire>(
+                tenant,
+                &format!("req_{}", &nonce[..32]),
+                &format!("idem_{}", &nonce[32..]),
+                &command,
+            )
+            .map(|wire| wire.epoch)
+            .map_err(ExplorerGrantError::EpochSource)
+    }
+}
+
+/// Brings control storage's copy of a developer's epoch up to `target`, so the
+/// grant it records there carries the same epoch as the capability. A copy
+/// that is already ahead cannot be wound back and fails the grant.
+async fn catch_up_epoch(
+    authority: &ExplorerAuthorizationStore,
+    developer_identity_id: &str,
+    target: u64,
+) -> Result<(), ExplorerGrantError> {
+    const MAX_ADVANCES: u64 = 4_096;
+    let mut local = authority.current_epoch(developer_identity_id).await?;
+    if local > target || target - local > MAX_ADVANCES {
+        return Err(ExplorerGrantError::Authority(
+            ExplorerAuthorizationError::StaleEpoch,
+        ));
+    }
+    while local < target {
+        local = authority.advance_epoch(developer_identity_id).await?;
+    }
+    Ok(())
+}
+
 #[derive(Debug)]
 pub enum ExplorerGrantError {
     InvalidRequest,
@@ -521,6 +655,7 @@ pub enum ExplorerGrantError {
     Authority(ExplorerAuthorizationError),
     Capability(ExplorerCapabilityError),
     ApplicationUsers(InternalClientError),
+    EpochSource(InternalClientError),
 }
 
 impl fmt::Display for ExplorerGrantError {
@@ -553,3 +688,54 @@ grant_error_from!(CollectionAdminError, Collection);
 grant_error_from!(IdentityStoreError, Identity);
 grant_error_from!(ExplorerAuthorizationError, Authority);
 grant_error_from!(ExplorerCapabilityError, Capability);
+
+#[cfg(test)]
+mod tests {
+    use mako_api::{EnvironmentId, ProjectId};
+    use mako_storage::MemoryAdapter;
+
+    use super::*;
+
+    fn store() -> ExplorerAuthorizationStore {
+        let tenant = TenantScope::new(
+            ProjectId::parse("prj_abcdefgh").expect("project"),
+            EnvironmentId::parse("env_abcdefgh").expect("environment"),
+        );
+        ExplorerAuthorizationStore::new(
+            Arc::new(MemoryAdapter::new()),
+            &tenant,
+            &tenant,
+            Durability::Memory,
+        )
+        .expect("store")
+    }
+
+    #[test]
+    fn control_storage_catches_up_with_the_authoritative_epoch() {
+        futures::executor::block_on(async {
+            let authority = store();
+            assert_eq!(
+                authority.current_epoch("dev_abcdefgh").await.expect("read"),
+                1
+            );
+            catch_up_epoch(&authority, "dev_abcdefgh", 3)
+                .await
+                .expect("catch up");
+            assert_eq!(
+                authority.current_epoch("dev_abcdefgh").await.expect("read"),
+                3
+            );
+            // Already current: nothing to do.
+            catch_up_epoch(&authority, "dev_abcdefgh", 3)
+                .await
+                .expect("current");
+            // A copy ahead of the authority cannot be wound back.
+            assert!(matches!(
+                catch_up_epoch(&authority, "dev_abcdefgh", 2).await,
+                Err(ExplorerGrantError::Authority(
+                    ExplorerAuthorizationError::StaleEpoch
+                ))
+            ));
+        });
+    }
+}
