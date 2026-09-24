@@ -460,7 +460,7 @@ Both validators report exactly the build command if the directory is missing.
 - `MAKO_RUNTIME_REGION` must equal `MAKO_REGION`, or the control plane reports the function unavailable in that region;
 - mount `packages/cli/runtime/main` at `/home/deno/functions/main` and publish container port 9000.
 
-The edge gateway resolves its dependencies from compiled-in constants (data plane 8080, control plane 8081, itself 8082, runtime 9000), so it cannot be pointed at other ports and cannot run beside a development stack on those ports.
+The edge gateway reaches the data plane at `MAKO_DATA_PLANE_ENDPOINT`, the control plane at `MAKO_CONTROL_PLANE_ENDPOINT`, and the runtime's main worker at `MAKO_RUNTIME_ENDPOINT` (defaults 8080, 8081, 9000; all loopback), and listens on `MAKO_BIND_ADDR` (default 8082), so it can run beside a stack on other ports.
 
 The automated version is `crates/mako-smoke/tests/edge_function.rs`:
 
@@ -529,9 +529,11 @@ A production control plane rejects legacy `storage.rocksdb_path`; the other serv
 
 | Variable | JSON (`dependencies.*`) | Used by |
 | --- | --- | --- |
-| `MAKO_DATA_PLANE_ENDPOINT` | `data_plane_address` | Control plane → data plane internal RPC; must be loopback |
+| `MAKO_DATA_PLANE_ENDPOINT` | `data_plane_address` (default `127.0.0.1:8080`) | Control plane and edge gateway → data plane internal RPC; must be loopback |
+| `MAKO_CONTROL_PLANE_ENDPOINT` | `control_plane_address` (default `127.0.0.1:8081`) | Edge gateway → control plane (function resolution, custom domains); must be loopback; other services ignore it |
 | `MAKO_EDGE_GATEWAY_ENDPOINT` | `edge_gateway_address` (default `127.0.0.1:8082`) | Control plane's function scheduler → gateway; must be loopback; other services ignore it |
-| `MAKO_RUNTIME_SUPERVISOR_ENDPOINT` | `runtime_supervisor_address` | Control plane and edge gateway → the edge runtime supervisor |
+| `MAKO_RUNTIME_SUPERVISOR_ENDPOINT` | `runtime_supervisor_address` (default `127.0.0.1:9001`) | Control plane → the edge runtime supervisor (deploy, health check, test) |
+| `MAKO_RUNTIME_ENDPOINT` | `runtime_address` (default `127.0.0.1:9000`) | Edge gateway → the edge runtime's main worker (invocations); must be loopback; other services ignore it |
 | `MAKO_TELEMETRY_QUERY_ENDPOINT` | `telemetry_query_address` | Control plane queries, data plane and gateway emit |
 | `MAKO_OTLP_ENDPOINT` | `otlp_address` | Metrics export |
 | `MAKO_SMTP_ENDPOINT` | `smtp_address` | Legacy relay address; developer/application mail uses `MAKO_DEVELOPER_SMTP_*` |

@@ -2,7 +2,7 @@ use std::{
     collections::HashMap,
     error::Error,
     fmt,
-    net::{IpAddr, Ipv4Addr, SocketAddr},
+    net::SocketAddr,
     num::{NonZeroU64, NonZeroUsize},
     sync::{
         Arc, Mutex,
@@ -49,9 +49,6 @@ use rand_core::{OsRng, RngCore};
 
 use crate::runtime::LoopbackRuntimeInvoker;
 
-const DATA_PLANE_ENDPOINT: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 8080);
-const CONTROL_PLANE_ENDPOINT: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 8081);
-const RUNTIME_ENDPOINT: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 9000);
 const AUDIT_RETENTION_MILLISECONDS: u64 = 90 * 24 * 60 * 60 * 1_000;
 
 enum StorageOwner {
@@ -224,7 +221,12 @@ impl FunctionRouteResolver for PrivateRouteResolver {
         project_ref: &str,
         function_name: &str,
     ) -> Result<Option<ResolvedFunctionRoute>, FunctionRouteError> {
-        let tenant = tenant_from_project_ref(project_ref).ok_or(FunctionRouteError::Unavailable)?;
+        // A reference that names no environment, a bare project id say, is an
+        // address nothing can own: not found, like an unknown function. It used
+        // to be reported as unavailable, a 503 that tells the client to retry.
+        let Some(tenant) = tenant_from_project_ref(project_ref) else {
+            return Ok(None);
+        };
         let key = (project_ref.to_owned(), function_name.to_owned());
         if let Some(cached) = self.cached(&key) {
             return Ok(Some(self.route_from(tenant, cached)));
@@ -657,12 +659,12 @@ impl EdgeGatewayGraph {
             return Err(EdgeGatewayGraphError::StorageNotReady);
         }
         let data_client = EdgeToDataClient::new(InternalHttpClient::new(
-            InternalHttpClientConfig::loopback(DATA_PLANE_ENDPOINT),
+            InternalHttpClientConfig::loopback(config.data_plane_address),
             deployment_key.clone(),
             InternalCaller::EdgeGateway,
         )?)?;
         let control_client = EdgeToControlClient::new(InternalHttpClient::new(
-            InternalHttpClientConfig::loopback(CONTROL_PLANE_ENDPOINT),
+            InternalHttpClientConfig::loopback(config.control_plane_address),
             deployment_key.clone(),
             InternalCaller::EdgeGateway,
         )?)?;
@@ -721,13 +723,13 @@ impl EdgeGatewayGraph {
             },
             telemetry,
             routes: PrivateRouteResolver::new(control_client.clone(), config.region.clone()),
-            custom_domains: CustomDomainLookup::new(CONTROL_PLANE_ENDPOINT),
+            custom_domains: CustomDomainLookup::new(config.control_plane_address),
             tokens: PrivateTokenVerifier {
                 client: data_client.clone(),
             },
             admission: GatewayFunctionInvocationAdmission::new(engine, policy),
             audit,
-            runtime: LoopbackRuntimeInvoker::new(RUNTIME_ENDPOINT),
+            runtime: LoopbackRuntimeInvoker::new(config.runtime_address),
             data_client,
             control_client,
             region: config.region.clone(),
@@ -933,6 +935,25 @@ mod tests {
             resolver.cached(&key).is_none(),
             "an entry older than the cache interval was still reused"
         );
+    }
+
+    #[test]
+    fn a_reference_without_an_environment_resolves_to_no_function() {
+        let directory = local_tempdir("edge-gateway-bare-reference");
+        let config = config_for(directory.path(), DeploymentEnvironment::Local);
+        let graph = EdgeGatewayGraph::open(&config).expect("edge graph");
+        for reference in [
+            "prj_example00",
+            "prj_example00--",
+            "prj_example00--env_",
+            "prj_example00--environment",
+        ] {
+            let route = block_on(graph.routes.resolve(reference, "hello"));
+            assert!(
+                matches!(route, Ok(None)),
+                "{reference} must be not found, not unavailable"
+            );
+        }
     }
 
     #[test]
