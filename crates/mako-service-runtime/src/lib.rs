@@ -226,6 +226,23 @@ impl HttpRequest {
             remote_address,
         }
     }
+
+    /// The same request with a parsed query string, as the transport would
+    /// have split it off the target.
+    #[cfg(feature = "test-support")]
+    #[doc(hidden)]
+    #[must_use]
+    pub fn with_query_for_test(
+        mut self,
+        query: impl IntoIterator<Item = (&'static str, &'static str)>,
+    ) -> Self {
+        self.query = query
+            .into_iter()
+            .map(|(name, value)| (name.to_owned(), value.to_owned()))
+            .collect();
+        self
+    }
+
     #[must_use]
     pub const fn method(&self) -> HttpMethod {
         self.method

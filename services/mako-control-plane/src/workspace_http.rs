@@ -25,7 +25,7 @@ use serde_json::{Value, json as json_value};
 
 use crate::{
     ControlPlaneGraph,
-    http_support::{project_id, query_value, reject_unknown_query, tenant},
+    http_support::{no_body, project_id, query_value, reject_unknown_query, tenant},
     management_http::{
         conflict, forbidden, invalid, json, no_payload, no_query, not_found, parse_json,
         require_idempotency, require_json, unavailable, with_developer,
@@ -681,7 +681,7 @@ fn sync_summary(
     graph: &Arc<ControlPlaneGraph>,
     request: &HttpRequest,
 ) -> Result<HttpResponse, HttpApiError> {
-    no_payload(request)?;
+    no_body(request)?;
     reject_unknown_query(request, &["collectionId", "from", "until"])?;
     let tenant = tenant(request)?;
     let collection_id = query_value(request, "collectionId")?
