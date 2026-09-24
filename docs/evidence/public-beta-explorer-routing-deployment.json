@@ -1,0 +1,223 @@
+{
+  "schemaVersion": 1,
+  "checkedAt": "2026-09-24T20:14:09.577083+00:00",
+  "releaseDigest": "302e7f89b308bf187f31c90c4df66e094088c56055a92e05e8aeb1b0732cef87",
+  "sourceCommit": "e7297d54b73f48eb60f0dd08531e685a15396350",
+  "publicOrigin": "https://cloud-test.makodb.com",
+  "hosted": {
+    "inspection": {
+      "release": {
+        "releaseRoot": "/opt/mako",
+        "current": "302e7f89b308bf187f31c90c4df66e094088c56055a92e05e8aeb1b0732cef87",
+        "lastKnownGood": "5fe95b1ed343bda9ee2daacf7a7aedbfd35553be6bbd47cf031546541a6c057c"
+      },
+      "publicAdmission": {
+        "caddyActive": "active",
+        "caddyEnabled": "enabled"
+      },
+      "services": [
+        {
+          "name": "mako-data-plane",
+          "state": "active"
+        },
+        {
+          "name": "mako-control-plane",
+          "state": "active"
+        },
+        {
+          "name": "mako-edge-gateway",
+          "state": "active"
+        },
+        {
+          "name": "mako-telemetry-query",
+          "state": "active"
+        }
+      ],
+      "storage": [
+        {
+          "service": "mako-data-plane",
+          "path": "/srv/mako-data/rocksdb/data-plane",
+          "state": "active",
+          "nonempty": true
+        },
+        {
+          "service": "mako-edge-gateway",
+          "path": "/srv/mako-data/rocksdb/edge-gateway",
+          "state": "active",
+          "nonempty": true
+        },
+        {
+          "service": "mako-telemetry-query",
+          "path": "/srv/mako-data/rocksdb/telemetry-query",
+          "state": "active",
+          "nonempty": true
+        },
+        {
+          "service": "mako-control-plane",
+          "path": "/srv/mako-data/sqlite/control-plane/live/control.sqlite3",
+          "engine": "sqlite",
+          "state": "active",
+          "nonempty": true
+        }
+      ]
+    },
+    "privateReadiness": {
+      "8080": 200,
+      "8081": 200,
+      "8082": 200,
+      "9465": 200
+    },
+    "authentication": {
+      "developerRegistrationEnabled": true,
+      "operatorPasswordAuthenticationEnabled": true,
+      "operatorBreakGlassBearerEnabled": false
+    },
+    "timers": {
+      "mako-checkpoint-backup@data-plane.timer": "active",
+      "mako-checkpoint-backup@control-plane.timer": "active",
+      "mako-public-preview-admission.timer": "active"
+    },
+    "previewGuard": {
+      "valid": true,
+      "kind": "risk-accepted-public-preview",
+      "persistence": "until-manually-paused",
+      "expiresAt": null,
+      "planHash": "d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073",
+      "releaseDigest": "3d25eacc5dec6654f146ba26d3911f5fba62275c4ef007d57ad17ac4c1dfef30",
+      "mode": "risk_accepted_preview",
+      "invalidated": false,
+      "acceptedAt": "2026-09-24T15:44:09.050Z",
+      "releaseDigestMeaning": "Historical qualification provenance under the existing user-approved preview acceptance. Current readiness, backups, TLS, and release assets were checked for this deployment."
+    },
+    "operation": {
+      "schemaVersion": 1,
+      "kind": "upgrade",
+      "from": "5fe95b1ed343bda9ee2daacf7a7aedbfd35553be6bbd47cf031546541a6c057c",
+      "to": "302e7f89b308bf187f31c90c4df66e094088c56055a92e05e8aeb1b0732cef87",
+      "operator": "mako-admin",
+      "startedAtUnixSeconds": 1790280735,
+      "completedAtUnixSeconds": 1790280796,
+      "durationSeconds": 61,
+      "checkpointVerified": true,
+      "storageFormatCompatible": true,
+      "configurationSnapshotBound": true,
+      "storageFencedBeforeSelection": true,
+      "allServicesReady": true,
+      "publicAdmissionEnabled": false
+    }
+  },
+  "publicChecks": {
+    "homepage": 200,
+    "releaseAssetsVerified": 5,
+    "userBook": 200,
+    "userBookMatchesReleaseArtifact": true,
+    "workingRxdbInstallCommandPublished": true,
+    "directBrowsingInstructionsPublished": true,
+    "obsoleteNpmPublicationClaimRemoved": true,
+    "/usage-and-plan": 200,
+    "/projects/prj_verify0001/billing": 200,
+    "/v1/projects/prj_verify0001/bill": 401,
+    "/v1/projects/prj_verify0001/bill/private": 404,
+    "/v1/projects/prj_verify0001/environments/env_verify0001/workspace/summary": 401,
+    "/internal/deployment-probe": 404,
+    "/unknown-deployment-probe": 404,
+    "explorerRouteOwnership": {
+      "GET /v1/projects/prj_routeprobe/environments/env_routeprobe/explorer/grants": 405,
+      "POST /v1/projects/prj_routeprobe/environments/env_routeprobe/explorer/grants/xgr_routeprobe": 405,
+      "GET /v1/projects/prj_routeprobe/environments/env_routeprobe/explorer/collections/routeprobe/browse": 405,
+      "GET /v1/projects/prj_routeprobe/environments/env_routeprobe/explorer/collections/routeprobe/query": 405,
+      "GET /v1/projects/prj_routeprobe/environments/env_routeprobe/explorer/collections/routeprobe/query/plan": 405,
+      "GET /v1/projects/prj_routeprobe/environments/env_routeprobe/explorer/collections/routeprobe/simulate": 405,
+      "GET /v1/projects/prj_routeprobe/environments/env_routeprobe/explorer/collections/routeprobe/mutate": 405,
+      "POST /v1/projects/prj_routeprobe/environments/env_routeprobe/explorer/collections/routeprobe/documents/doc_routeprobe": 405,
+      "POST /v1/projects/prj_routeprobe/environments/env_routeprobe/explorer/collections/routeprobe/documents/doc_routeprobe/history": 405
+    },
+    "httpRedirect": 308,
+    "trustedHttps": true,
+    "hstsEnabled": true
+  },
+  "passed": true,
+  "scope": "Read-only private readiness, storage-state, preserved authentication configuration, preview guard, real HTTPS and release assets; no tenant documents or live accounts changed.",
+  "artifactComparison": {
+    "previousRelease": "5fe95b1ed343bda9ee2daacf7a7aedbfd35553be6bbd47cf031546541a6c057c",
+    "releaseDigest": "302e7f89b308bf187f31c90c4df66e094088c56055a92e05e8aeb1b0732cef87",
+    "identicalBackendArtifacts": false,
+    "changedBackendArtifacts": ["bin/mako-control-plane"],
+    "backendArtifactCount": 14,
+    "identicalBuildRuntime": true,
+    "proxyConfigurationChanged": true,
+    "identicalDependencies": true
+  },
+  "originalRouteProbe": {
+    "8080": {
+      "status": 405,
+      "body": "{\"apiVersion\":\"v1\",\"error\":{\"code\":\"invalid_request\",\"message\":\"method not allowed\",\"requestId\":\"req_80d22db1da34c857437a543d\",\"retry\":{\"kind\":\"never\"}}}"
+    },
+    "8081": {
+      "status": 404,
+      "body": "{\"apiVersion\":\"v1\",\"error\":{\"code\":\"not_found\",\"message\":\"route not found\",\"requestId\":\"req_2fd8e39448c707ed929113fe\",\"retry\":{\"kind\":\"never\"}}}"
+    },
+    "public": {
+      "status": 404,
+      "body": "{\"apiVersion\":\"v1\",\"error\":{\"code\":\"not_found\",\"message\":\"route not found\",\"requestId\":\"req_ac9c8162d0eb8a62e54e6211\",\"retry\":{\"kind\":\"never\"}}}"
+    }
+  },
+  "localValidation": {
+    "publicBetaPreflight": "passed",
+    "caddyRouteValidation": "190 paths passed with explorer upstream ownership checks",
+    "clippy": "passed",
+    "rustTestsPassed": 353,
+    "rustPackages": 8,
+    "consoleBrowserTestsPassed": 30,
+    "docsValidation": "196 links passed",
+    "productionReleaseBuild": "passed",
+    "candidateBinarySmokeTests": 2,
+    "candidateBinarySmokeSuites": ["explorer_proxy", "telemetry_pipeline"],
+    "realProxyRegression": {
+      "reproducedBeforeFix": true,
+      "passedAfterFix": true,
+      "caddyVersion": "2.6.2",
+      "services": "real release binaries with isolated temporary storage",
+      "projectTypes": ["personal", "team"],
+      "covered": [
+        "grant issue and revoke",
+        "browse empty and populated collection",
+        "get and history",
+        "query and query plan",
+        "simulate and mutate",
+        "missing capability and developer token denial",
+        "cross-project and cross-collection denial",
+        "revoked capability denial",
+        "custom-domain management denial",
+        "forged custom-domain header stripped",
+        "unsupported method and unknown path handling"
+      ]
+    }
+  },
+  "browser": {
+    "passed": true,
+    "testsPassed": 22,
+    "startedAt": "2026-09-24T20:14:10.086Z",
+    "directBrowsingPersonalAndTeamProjects": true,
+    "automaticAccessRenewal": true,
+    "accessDeniedAndRetry": true,
+    "revokedAccessReauthorized": true,
+    "emptyAndDisabledExplorer": true,
+    "environmentSwitchRevocation": true,
+    "queriesAndConditionalConflicts": true,
+    "publicHomeAndDocs": true,
+    "desktopAndMobileDocs": true,
+    "scope": "Real deployed HTML, JavaScript, CSS and docs over HTTPS. All signed-in management requests intercepted with synthetic fixtures. No live account login or tenant document reads or writes."
+  },
+  "changes": [
+    "Routes all seven document explorer paths to the data plane while keeping grants on the control plane.",
+    "Adds an upstream-ownership validator and a real Caddy/service integration test for personal and team projects; CI installs its dependencies.",
+    "Includes current main-branch function deletion, console loading layout, and webhook retry fixes."
+  ],
+  "limits": [
+    "The deployed signed-in browser checks use synthetic management responses. Real grant and document workflows were tested against the candidate binaries and production proxy template locally. Live routing probes use fictional paths and unsupported methods; no customer account or document was accessed.",
+    "Full hosted qualification, rollback drills, mail delivery, and account lifecycle suites were not rerun.",
+    "The existing user-approved latency and 30-day capacity/cost exceptions and historical qualification provenance are unchanged.",
+    "The earlier audit-health failure has not recurred in these checks; its underlying trigger remains undiagnosed."
+  ]
+}
