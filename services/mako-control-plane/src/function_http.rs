@@ -16,7 +16,7 @@ use crate::{
     ControlPlaneGraph,
     http_support::{public_json, public_value, query_value, reject_unknown_query, tenant},
     management_http::{
-        conflict, forbidden, invalid, limit, no_payload, no_query, not_found, parse_json,
+        conflict, forbidden, internal, invalid, limit, no_payload, no_query, not_found, parse_json,
         require_idempotency, require_json, unavailable, with_developer,
     },
 };
@@ -146,6 +146,28 @@ fn handle_upload_bundle(
     })
 }
 
+/// The stored function record, or a page of them, as the API's `Function`
+/// schema describes it. The record also carries whether the runtime was ever
+/// handed a deployment: the control plane's bookkeeping, not the API's.
+fn public_function(
+    request: &HttpRequest,
+    status: u16,
+    value: &impl serde::Serialize,
+) -> Result<HttpResponse, HttpApiError> {
+    let mut value = serde_json::to_value(value)
+        .map_err(|_| internal(request, "response serialization failed"))?;
+    let strip = |value: &mut Value| {
+        if let Value::Object(object) = value {
+            object.remove("runtimeUntouched");
+        }
+    };
+    if let Some(Value::Array(items)) = value.get_mut("items") {
+        items.iter_mut().for_each(strip);
+    }
+    strip(&mut value);
+    public_value(request, status, value)
+}
+
 fn handle_list_functions(
     graph: &Arc<ControlPlaneGraph>,
     request: &HttpRequest,
@@ -158,7 +180,7 @@ fn handle_list_functions(
             .list_functions(&actor, &tenant, limit(), now)
             .await
             .map_err(|error| function_error(request, error))?;
-        public_value(request, 200, json!({"items": items}))
+        public_function(request, 200, &json!({"items": items}))
     })
 }
 
@@ -187,7 +209,7 @@ fn handle_create_function(
             )
             .await
             .map_err(|error| function_error(request, error))?;
-        public_json(request, 201, &record)
+        public_function(request, 201, &record)
     })
 }
 
@@ -205,7 +227,7 @@ fn handle_get_function(
                 .get_function(&actor, &tenant, &name, now)
                 .await
                 .map_err(|error| function_error(request, error))?;
-            public_json(request, 200, &record)
+            public_function(request, 200, &record)
         },
     )
 }
@@ -226,7 +248,7 @@ fn handle_configure_function(
                 .configure(&actor, &tenant, &name, configuration, now)
                 .await
                 .map_err(|error| function_error(request, error))?;
-            public_json(request, 200, &record)
+            public_function(request, 200, &record)
         },
     )
 }
@@ -245,7 +267,7 @@ fn handle_delete_function(
                 .delete_function(&actor, &tenant, &name, now)
                 .await
                 .map_err(|error| function_error(request, error))?;
-            public_json(request, 200, &record)
+            public_function(request, 200, &record)
         },
     )
 }
@@ -387,7 +409,7 @@ fn version_operation(
                             .await
                     }
                     .map_err(|error| function_error(request, error))?;
-                    public_json(request, 200, &value)
+                    public_function(request, 200, &value)
                 }
                 VersionOperation::Health => {
                     let value = graph
