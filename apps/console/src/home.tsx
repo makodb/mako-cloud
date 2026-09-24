@@ -122,7 +122,7 @@ export function HomeDashboard({
   const showGuideAgain = progress.dismissed && (noProjects || guideInFlight);
   const ownerName = (project: Project): string =>
     teams?.find((team) => team.id === project.teamId)?.kind === "personal"
-      ? "Personal space"
+      ? "Personal"
       : (teams?.find((team) => team.id === project.teamId)?.name ?? project.teamId);
 
   const matches = (project: Project) =>
@@ -162,12 +162,12 @@ export function HomeDashboard({
             className="flex items-center gap-3 rounded-md bg-sidebar-accent px-3 py-2 text-sm font-medium text-foreground no-underline"
           >
             <FolderOpen className="size-4" aria-hidden="true" />
-            Projects
+            Personal projects
           </a>
         </nav>
-        <div className="grid gap-2">
-          <Eyebrow className="px-3">Teams & billing</Eyebrow>
-          {(teams ?? []).map((team) => (
+        <nav aria-label="Teams" className="grid gap-2">
+          <Eyebrow className="px-3">Teams</Eyebrow>
+          {joinedTeams.map((team) => (
             <a
               key={team.id}
               href={`/teams/${team.id}`}
@@ -186,10 +186,13 @@ export function HomeDashboard({
               }}
             >
               <Users className="size-4 shrink-0" aria-hidden="true" />
-              {team.kind === "personal" ? "Personal space" : team.name}
+              {team.name}
             </a>
           ))}
-        </div>
+          {teams !== null && failure === null && joinedTeams.length === 0 ? (
+            <p className="m-0 px-3 text-xs text-muted-foreground">No teams yet.</p>
+          ) : null}
+        </nav>
         <p className="mt-auto hidden border-t px-3 pt-4 text-xs leading-5 text-muted-foreground md:block">
           Each project has isolated environments, collections, and application credentials.
         </p>
@@ -296,9 +299,9 @@ export function HomeDashboard({
                 {personalSpace === undefined ? (
                   <section className="grid gap-4" aria-labelledby="owner-personal-title">
                     <div className="grid gap-1">
-                      <Eyebrow>Personal space</Eyebrow>
+                      <Eyebrow>Projects</Eyebrow>
                       <h2 id="owner-personal-title" className="text-lg">
-                        Your projects
+                        Personal projects
                       </h2>
                     </div>
                     <FirstProjectPanel onCreated={reload} />
@@ -314,18 +317,6 @@ export function HomeDashboard({
                     navigate={navigate}
                   />
                 )}
-                {joinedTeams.map((team) => (
-                  <OwnerGroup
-                    key={team.id}
-                    team={team}
-                    load={visibleGroups[team.id] ?? { status: "loading" }}
-                    loader={loader}
-                    ownerName={ownerName}
-                    onOpenProject={onOpenProject}
-                    onOpenTeam={onOpenTeam}
-                    navigate={navigate}
-                  />
-                ))}
               </div>
             </div>
             <section className="grid gap-4" aria-labelledby="teams-title">
@@ -338,19 +329,18 @@ export function HomeDashboard({
               {joinedTeams.length === 0 ? (
                 <p className={MUTED}>No teams are available for this account.</p>
               ) : (
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                <div className="grid min-w-0 gap-6">
                   {joinedTeams.map((team) => (
-                    <Button
+                    <OwnerGroup
                       key={team.id}
-                      variant="outline"
-                      className="resource-card h-auto flex-col items-start gap-1 px-4 py-3 text-left whitespace-normal"
-                      onClick={() => onOpenTeam(team.id)}
-                    >
-                      <strong className="text-sm font-semibold">{team.name}</strong>
-                      <span className="text-xs font-normal text-muted-foreground">
-                        {team.state.replaceAll("_", " ")}
-                      </span>
-                    </Button>
+                      team={team}
+                      load={visibleGroups[team.id] ?? { status: "loading" }}
+                      loader={loader}
+                      ownerName={ownerName}
+                      onOpenProject={onOpenProject}
+                      onOpenTeam={onOpenTeam}
+                      navigate={navigate}
+                    />
                   ))}
                 </div>
               )}
@@ -407,10 +397,24 @@ function OwnerGroup({
       aria-busy={load.status === "loading"}
     >
       <div className="grid gap-1">
-        <Eyebrow>{personal ? "Personal space" : "Team"}</Eyebrow>
-        <h2 id={headingId} className="text-lg">
-          {personal ? "Your projects" : team.name}
-        </h2>
+        {personal ? (
+          <>
+            <Eyebrow>Projects</Eyebrow>
+            <h2 id={headingId} className="text-lg">
+              Personal projects
+            </h2>
+          </>
+        ) : (
+          <h3 id={headingId} className="m-0 text-base font-semibold">
+            <Button
+              variant="link"
+              className="h-auto max-w-full p-0 text-left text-base text-foreground whitespace-normal break-words"
+              onClick={() => onOpenTeam(team.id)}
+            >
+              {team.name}
+            </Button>
+          </h3>
+        )}
       </div>
       {load.status === "loading" ? (
         <p className={MUTED} aria-live="polite">
@@ -705,7 +709,7 @@ function ProjectCreateForm({
       {teams.length === 0 ? null : (
         <Field label="Owner" htmlFor={`${id}-owner`}>
           <NativeSelect id={`${id}-owner`} name="owner" defaultValue="">
-            <option value="">Personal space</option>
+            <option value="">Personal</option>
             {teams.map((team) => (
               <option key={team.id} value={team.id}>
                 {team.name}

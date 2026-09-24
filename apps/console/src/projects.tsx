@@ -1,3 +1,4 @@
+import type { Environment, ObservabilityPage, Project } from "@mako-cloud/management-sdk";
 import {
   Badge,
   Button,
@@ -19,8 +20,6 @@ import {
 } from "@mako-cloud/ui";
 import { ChevronRight } from "lucide-react";
 import { type FormEvent, useCallback, useEffect, useId, useState } from "react";
-
-import type { Environment, ObservabilityPage, Project } from "@mako-cloud/management-sdk";
 
 import { ApiFailureNotice, type ConsoleApiFailure, toConsoleApiFailure } from "./api-error.js";
 import { useManagementClient } from "./management.js";
@@ -164,8 +163,7 @@ export function FirstProjectPanel({ onCreated }: { readonly onCreated: () => Pro
       <CardHeader>
         <CardTitle id="first-project-title">Create your first project</CardTitle>
         <CardDescription>
-          Individual projects live in your personal space, which is created together with your first
-          project.
+          Create a project owned by your account. You can transfer it to a team later.
         </CardDescription>
       </CardHeader>
       <CardContent className="grid gap-4">
@@ -189,7 +187,13 @@ function ProjectFormFields() {
         <Input id={`${id}-name`} name="name" required maxLength={200} />
       </Field>
       <Field label="Data region" htmlFor={`${id}-region`}>
-        <NativeSelect id={`${id}-region`} name="region" required defaultValue="local" className="font-mono">
+        <NativeSelect
+          id={`${id}-region`}
+          name="region"
+          required
+          defaultValue="local"
+          className="font-mono"
+        >
           <option value="local">local</option>
           <option value="us-east">us-east</option>
           <option value="us-west">us-west</option>

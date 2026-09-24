@@ -265,9 +265,9 @@ The console is what a developer sees from sign-in onward. It is organised in thr
 
 ### Home
 
-Signing in opens the home dashboard. Projects appear in a list grouped by your personal space ("Your projects") and each team you belong to. Each row shows lifecycle state, region, plan, and usage for the current period. Select a project name to open its workspace, or use **Browse data**, **Schema**, and **Connect** to open its active database environment. Each row loads its summaries independently, so a usage failure affects only that project. Project audit events are available from its **Activity** screen.
+Signing in opens the home dashboard. The root separates **Personal projects** from **Teams**. Personal projects belong to your account. Shared projects are grouped by team under **Teams**. Each row shows lifecycle state, region, plan, and usage for the current period. Select a project name to open its workspace, or use **Browse data**, **Schema**, and **Connect** to open its active database environment. Each row loads its summaries independently, so a usage failure affects only that project. Project audit events are available from its **Activity** screen.
 
-Search projects by name, identifier, region, or owner. **New project** opens the creation form. The workspace sidebar links to your projects, teams, and billing. The header's **Docs** link opens the User Book. An unmatched search offers **Clear search** and keeps your projects intact.
+Search projects by name, identifier, region, or owner. **New project** opens the creation form. The workspace sidebar has a **Personal projects** entry and a **Teams** section containing only shared teams. **Billing and plan** below your personal project list opens your personal billing. The team switcher lists only shared teams. The header's **Docs** link opens the User Book. An unmatched search offers **Clear search** and keeps your projects intact.
 
 A developer with no projects is offered a guided first run that creates the project and opens its workspace. The project page provides keys, the API URL, quickstart, and a connection check. Dismissing the guide is remembered for the browser tab; you can reopen it from the empty state.
 
@@ -2600,7 +2600,7 @@ When you contact support, quote the `requestId` from the error envelope (or `req
 - **Environment** — an isolated unit inside a project holding collections, users, keys, functions, and settings.
 - **Explorer grant** — a short-lived capability for reading or writing documents from the console or CLI.
 - **Operator** — Mako Cloud platform staff with a separate identity.
-- **Personal space** — your implicit one-member team.
+- **Personal projects**: projects owned by your account.
 - **Policy** — allow/deny rules deciding every document operation; default deny.
 - **Project reference** — `{projectId}--{environmentId}`, the prefix functions are invoked under.
 - **Public project key** — `mako_pk.…`, a client identifier safe to ship.

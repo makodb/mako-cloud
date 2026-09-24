@@ -54,7 +54,7 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
-test("projects across the personal space and a team appear as a list with project summaries", async ({
+test("personal projects and team projects appear in separate lists with project summaries", async ({
   page,
 }) => {
   const api = new HomeApiHarness();
@@ -63,16 +63,22 @@ test("projects across the personal space and a team appear as a list with projec
 
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Home" })).toBeVisible();
-  // Owners group the project lists: the personal space leads, then each team, with
-  // no team to pick first.
-  await expect(page.getByRole("heading", { name: "Your projects" })).toBeVisible();
+  // Personal projects lead the page; shared projects are grouped under Teams.
+  await expect(page.getByRole("heading", { name: "Personal projects" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Mako Test Team" })).toBeVisible();
+  const teamNavigation = page.getByRole("navigation", { name: "Teams", exact: true });
+  await expect(teamNavigation.getByRole("link")).toHaveText(["Mako Test Team"]);
+  await expect(
+    page
+      .getByRole("navigation", { name: "Workspace destinations" })
+      .getByRole("link", { name: "Personal projects", exact: true }),
+  ).toHaveAttribute("href", "/");
 
   const personalRow = page.getByRole("article", { name: "Side project" });
   await expect(personalRow).toBeVisible();
   await expect(personalRow.getByText("Status: active")).toBeVisible();
   await expect(personalRow.getByText("eu-west")).toBeVisible();
-  await expect(personalRow.getByText("Personal space")).toBeVisible();
+  await expect(personalRow.getByText("Personal", { exact: true })).toBeVisible();
   await expect(personalRow.getByText("free", { exact: true })).toBeVisible();
   await expect(personalRow.getByText("Storage 1.0 MiB")).toBeVisible();
 

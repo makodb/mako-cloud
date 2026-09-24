@@ -1,3 +1,4 @@
+import type { InvitationIssue, Team, TeamMembership, TeamRole } from "@mako-cloud/management-sdk";
 import {
   Alert,
   AlertDescription,
@@ -21,12 +22,10 @@ import {
 } from "@mako-cloud/ui";
 import { type FormEvent, useCallback, useEffect, useId, useState } from "react";
 
-import type { InvitationIssue, Team, TeamMembership, TeamRole } from "@mako-cloud/management-sdk";
-
 import { ApiFailureNotice, type ConsoleApiFailure, toConsoleApiFailure } from "./api-error.js";
 import { useDeveloperAuth } from "./auth.js";
-import { useManagementClient } from "./management.js";
 import { BillingPanel } from "./billing.js";
+import { useManagementClient } from "./management.js";
 import { FirstProjectPanel, ProjectsPanel } from "./projects.js";
 import { confirmDestructiveAction, OneTimeSecretValue } from "./safety.js";
 
@@ -63,9 +62,9 @@ export function TeamsScreen({
     <div className="grid gap-8">
       <section className="grid gap-4" aria-labelledby="personal-space-title">
         <div className="grid gap-1">
-          <Eyebrow>Personal space</Eyebrow>
+          <Eyebrow>Projects</Eyebrow>
           <h1 id="personal-space-title" className="text-2xl">
-            Your projects
+            Personal projects
           </h1>
         </div>
         <ApiFailureNotice failure={failure} />
@@ -166,29 +165,33 @@ export function TeamScreen({
     <section aria-labelledby="team-title" className="grid gap-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div className="grid gap-1">
-          <Eyebrow>{personal ? "Personal space" : "Team"}</Eyebrow>
+          <Eyebrow>{personal ? "Your account" : "Team"}</Eyebrow>
           <h1 id="team-title" className="text-2xl">
-            {team?.name ?? "Loading…"}
+            {personal ? "Personal projects" : (team?.name ?? "Loading…")}
           </h1>
         </div>
-        <div className="grid gap-1.5">
-          <Label htmlFor={switcherId} className="text-xs text-muted-foreground">
-            Switch team
-          </Label>
-          <NativeSelect
-            id={switcherId}
-            size="sm"
-            wrapperClassName="w-auto min-w-56"
-            value={teamId}
-            onChange={(event) => onOpen(event.currentTarget.value)}
-          >
-            {teams.map((item) => (
-              <option key={item.id} value={item.id}>
-                {teamLabel(item)}
-              </option>
-            ))}
-          </NativeSelect>
-        </div>
+        {team?.kind === "team" ? (
+          <div className="grid gap-1.5">
+            <Label htmlFor={switcherId} className="text-xs text-muted-foreground">
+              Switch team
+            </Label>
+            <NativeSelect
+              id={switcherId}
+              size="sm"
+              wrapperClassName="w-auto min-w-56"
+              value={teamId}
+              onChange={(event) => onOpen(event.currentTarget.value)}
+            >
+              {teams
+                .filter((item) => item.kind === "team")
+                .map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+            </NativeSelect>
+          </div>
+        ) : null}
       </div>
       <ApiFailureNotice failure={failure} />
       <div className="grid gap-4 lg:grid-cols-2">
@@ -224,11 +227,6 @@ export function TeamScreen({
       </div>
     </section>
   );
-}
-
-/** How a team reads wherever teams are listed for navigation. */
-function teamLabel(team: Team): string {
-  return team.kind === "personal" ? "Your projects" : team.name;
 }
 
 export function InvitationAcceptScreen({

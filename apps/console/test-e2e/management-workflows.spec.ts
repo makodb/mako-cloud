@@ -110,7 +110,7 @@ test("role management, provisioning health, and deletion grace run through the A
   expect(api.unhandled).toEqual([]);
 });
 
-test("a personal space leads the home screen and creates projects without naming a team", async ({
+test("personal projects stay separate from teams and are created without naming a team", async ({
   page,
 }) => {
   const api = new ManagementApiHarness();
@@ -120,7 +120,7 @@ test("a personal space leads the home screen and creates projects without naming
   // the home screen leads with the first-project form, and the teams the
   // developer has joined follow it.
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "Your projects" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Personal projects" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Create your first project" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Teams" })).toBeVisible();
   await expect(page.getByRole("button", { name: /Mako Test Team/u })).toBeVisible();
@@ -134,7 +134,9 @@ test("a personal space leads the home screen and creates projects without naming
   await expect(page.getByRole("button", { name: /Side project/u })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Create your first project" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: /Mako Test Team/u })).toHaveCount(1);
-  await expect(page.locator(".resource-card")).toHaveCount(1);
+  await expect(
+    page.getByRole("navigation", { name: "Teams", exact: true }).getByRole("link"),
+  ).toHaveText(["Mako Test Team"]);
   expect(api.personalSpace?.kind).toBe("personal");
 
   // Creating from the personal projects panel posts without a team as well.
@@ -156,18 +158,22 @@ test("a personal space leads the home screen and creates projects without naming
   // The space's own screen is labelled as such and hides membership
   // management: a personal space has exactly one member and refuses changes.
   await page.goto(`/teams/${PERSONAL_TEAM_ID}`);
-  await expect(page.getByText("Personal space", { exact: true })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Owner", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Personal projects", exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Billing" })).toBeVisible();
   await expect(page.getByRole("button", { name: /Side project/u })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Members" })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Invite a member" })).toHaveCount(0);
-  const switcher = page.getByLabel("Switch team");
-  await expect(switcher).toHaveValue(PERSONAL_TEAM_ID);
-  await expect(switcher.locator("option")).toHaveText(["Mako Test Team", "Your projects"]);
+  await expect(page.getByLabel("Switch team")).toHaveCount(0);
 
-  // A joined team still manages its members.
-  await switcher.selectOption(TEAM_ID);
+  // Shared teams remain accessible from the root navigation.
+  await page.getByRole("link", { name: "Developer Console home" }).click();
+  await page
+    .getByRole("navigation", { name: "Teams", exact: true })
+    .getByRole("link", { name: "Mako Test Team" })
+    .click();
+  const switcher = page.getByLabel("Switch team");
+  await expect(switcher).toHaveValue(TEAM_ID);
+  await expect(switcher.locator("option")).toHaveText(["Mako Test Team"]);
   await expect(page.getByRole("heading", { name: "Mako Test Team" })).toBeVisible();
   await expect(page.getByText("Team", { exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Members" })).toBeVisible();
