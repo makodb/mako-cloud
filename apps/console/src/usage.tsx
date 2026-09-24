@@ -5,6 +5,12 @@
 // aggregates them -- flows sum their records, levels average their samples.
 // The allowance comes from the team's live bill, whose non-payable notice is
 // rendered verbatim ahead of any number it produced.
+
+import type {
+  Environment,
+  MakoManagementClient,
+  ObservabilityRecord,
+} from "@mako-cloud/management-sdk";
 import {
   Alert,
   AlertDescription,
@@ -14,6 +20,7 @@ import {
   CardContent,
   CardHeader,
   CardTitle,
+  cn,
   Eyebrow,
   Table,
   TableBody,
@@ -21,26 +28,15 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-  cn,
 } from "@mako-cloud/ui";
 import { Info } from "lucide-react";
-import { type ReactNode, useEffect, useState } from "react";
-
-import type {
-  Environment,
-  MakoManagementClient,
-  ObservabilityRecord,
-} from "@mako-cloud/management-sdk";
+import { useEffect, useState } from "react";
 
 import { ApiFailureNotice, type ConsoleApiFailure, toConsoleApiFailure } from "./api-error.js";
 import { useManagementClient } from "./management.js";
 
 type TeamBill = Awaited<ReturnType<MakoManagementClient["getTeamBill"]>>;
 type BillLineItem = TeamBill["lineItems"][number];
-
-/** A small label over a figure. `dt` keeps the definition list intact, so this
- * is the kit's Eyebrow styling on the term rather than the component. */
-const FIGURE_LABEL = "text-xs font-semibold uppercase tracking-wider text-muted-foreground";
 
 /** Resources whose records are summed over the period. */
 const FLOW_RESOURCES = [
@@ -145,16 +141,6 @@ export function formatQuantity(resource: string, value: number): string {
     return `${Math.round(value).toLocaleString("en-US")} B`;
   }
   return value.toLocaleString("en-US", { maximumFractionDigits: 1 });
-}
-
-/** Micro-dollars as a dollar string. Integer arithmetic end to end; only the
- * display divides. */
-function dollars(microDollars: number): string {
-  const sign = microDollars < 0 ? "-" : "";
-  const absolute = Math.abs(microDollars);
-  const whole = Math.floor(absolute / 1_000_000);
-  const cents = Math.floor((absolute % 1_000_000) / 10_000);
-  return `${sign}$${whole}.${String(cents).padStart(2, "0")}`;
 }
 
 function humanize(value: string): string {
@@ -303,7 +289,13 @@ export function UsageScreen({
       </div>
       {environmentId === undefined ? (
         <>
-          <TeamBillSection bill={bill} />
+          <a
+            href={`/projects/${projectId}/billing`}
+            className="text-sm text-primary underline underline-offset-4"
+          >
+            View project billing
+          </a>
+          <PlanAllowanceSection bill={bill} />
           <ProjectEnvironmentsUsage projectId={projectId} bill={bill} monthStart={monthStart} />
         </>
       ) : (
@@ -534,7 +526,7 @@ function PlanAllowanceSection({ bill }: { readonly bill: SectionState<TeamBill> 
       <CardContent className="grid gap-4">
         {bill.status === "loading" ? (
           <p className="m-0 text-sm text-muted-foreground" aria-live="polite">
-            Loading the team's bill…
+            Loading plan allowances…
           </p>
         ) : null}
         {bill.status === "unavailable" ? <ApiFailureNotice failure={bill.failure} /> : null}
@@ -543,71 +535,13 @@ function PlanAllowanceSection({ bill }: { readonly bill: SectionState<TeamBill> 
             <BillNotice bill={bill.value} />
             <BillPeriod bill={bill.value} />
             <p className="m-0 text-sm">
-              Allowances are the team plan's for the whole period; the bill counts every project of
-              the team together, so one environment's share is a guide rather than the limit.
+              Allowances are shared across the owner's projects. Each environment's share helps
+              explain usage; it is not a separate allowance.
             </p>
           </>
         ) : null}
       </CardContent>
     </Card>
-  );
-}
-
-/** The team's live bill: plan, period, and the balance as it stands. */
-function TeamBillSection({ bill }: { readonly bill: SectionState<TeamBill> }) {
-  return (
-    <Card data-state={bill.status} aria-labelledby="usage-bill-title">
-      <SectionHeading id="usage-bill-title" title="Team bill" state={bill.status} />
-      <CardContent className="grid gap-4">
-        {bill.status === "loading" ? (
-          <p className="m-0 text-sm text-muted-foreground" aria-live="polite">
-            Loading the team's bill…
-          </p>
-        ) : null}
-        {bill.status === "unavailable" ? <ApiFailureNotice failure={bill.failure} /> : null}
-        {bill.status === "ready" ? (
-          <>
-            <BillNotice bill={bill.value} />
-            <BillPeriod bill={bill.value} />
-            {/* `bill-summary` is the hook the browser suite selects on. */}
-            <dl className="bill-summary m-0 grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <Figure label="Plan">{bill.value.planId}</Figure>
-              <Figure label="Total">{dollars(bill.value.totalMicroDollars)}</Figure>
-              <Figure label="Credits">{dollars(bill.value.creditsMicroDollars)}</Figure>
-              <Figure label="Balance" negative={bill.value.balanceMicroDollars < 0}>
-                {dollars(bill.value.balanceMicroDollars)}
-                {bill.value.balanceMicroDollars < 0 ? (
-                  <span className="sr-only"> (negative)</span>
-                ) : null}
-              </Figure>
-            </dl>
-          </>
-        ) : null}
-      </CardContent>
-    </Card>
-  );
-}
-
-/** One figure of the bill: its name and a value, marked when it has gone negative. */
-function Figure({
-  label,
-  negative,
-  children,
-}: {
-  readonly label: string;
-  readonly negative?: boolean;
-  readonly children: ReactNode;
-}) {
-  return (
-    <div className="grid content-start gap-0.5 rounded-lg border bg-muted/30 px-3 py-2">
-      <dt className={FIGURE_LABEL}>{label}</dt>
-      <dd
-        className={cn("m-0 text-lg font-semibold tabular-nums", negative && "text-destructive")}
-        {...(negative === undefined ? {} : { "data-negative": negative })}
-      >
-        {children}
-      </dd>
-    </div>
   );
 }
 

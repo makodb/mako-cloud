@@ -872,3 +872,19 @@ test("custom domains are project-level: created with an idempotency key and the 
   assert.equal(requests[4].url, `${base}/${domain.id}`);
   assert.equal(requests[4].headers.get("idempotency-key"), "idempotency-key-domain-delete");
 });
+
+
+test("project billing reads the selected project without reading an owner's bill", async () => {
+  const requests = [];
+  const statement = { projectId: "prj_abcdefgh", totalMicroDollars: 250000, collectable: false };
+  const client = createManagementClient({
+    endpoint: "https://api.example.test",
+    credential: { kind: "developer_session", accessToken: "test-session-credential" },
+    fetch: async (request) => { requests.push(request); return Response.json(statement); },
+  });
+  assert.deepEqual(await client.getProjectBill("prj_abcdefgh"), statement);
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].method, "GET");
+  assert.equal(requests[0].url, "https://api.example.test/v1/projects/prj_abcdefgh/bill");
+  assert.equal(requests[0].headers.get("authorization"), "Bearer test-session-credential");
+});

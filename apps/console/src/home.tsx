@@ -27,7 +27,7 @@ import {
   Input,
   NativeSelect,
 } from "@mako-cloud/ui";
-import { Database, FolderOpen, Plus, Search, Users } from "lucide-react";
+import { Database, FolderOpen, Gauge, Plus, Users } from "lucide-react";
 import {
   type FormEvent,
   type ReactNode,
@@ -40,8 +40,9 @@ import {
 
 import { ApiFailureNotice, type ConsoleApiFailure, toConsoleApiFailure } from "./api-error.js";
 import { useDeveloperAuth } from "./auth.js";
+import { BillingPanel } from "./billing.js";
 import { useManagementClient } from "./management.js";
-import { FirstProjectPanel, LifecycleBadge } from "./projects.js";
+import { LifecycleBadge } from "./projects.js";
 
 /** Summary requests in flight at once across every project on the page. */
 const MAX_IN_FLIGHT = 4;
@@ -58,7 +59,9 @@ export function HomeDashboard({
   onOpenTeam,
   onOpenProject,
   navigate,
+  view = "projects",
 }: {
+  readonly view?: "projects" | "usage";
   readonly navigate: (path: string) => void;
   readonly onOpenTeam: (teamId: string) => void;
   readonly onOpenProject: (projectId: string) => void;
@@ -66,7 +69,6 @@ export function HomeDashboard({
   const client = useManagementClient();
   const { state } = useDeveloperAuth();
   const developerId = state.status === "authenticated" ? state.session.profile.id : "";
-  const [search, setSearch] = useState("");
   const [creating, setCreating] = useState(false);
   const [teams, setTeams] = useState<Team[] | null>(null);
   const [groups, setGroups] = useState<Record<string, ProjectsLoad>>({});
@@ -125,16 +127,6 @@ export function HomeDashboard({
       ? "Personal"
       : (teams?.find((team) => team.id === project.teamId)?.name ?? project.teamId);
 
-  const matches = (project: Project) =>
-    `${project.name} ${project.id} ${project.region} ${ownerName(project)}`
-      .toLowerCase()
-      .includes(search.trim().toLowerCase());
-  const visibleGroups = Object.fromEntries(
-    Object.entries(groups).map(([id, group]) => [
-      id,
-      group.status === "ready" ? { ...group, projects: group.projects.filter(matches) } : group,
-    ]),
-  );
   const completeGuide = () => {
     setProgress({ ...progress, step: "done", dismissed: false });
     void reload();
@@ -158,11 +150,25 @@ export function HomeDashboard({
         <nav aria-label="Workspace destinations" className="grid gap-1">
           <a
             href="/"
-            aria-current="page"
-            className="flex items-center gap-3 rounded-md bg-sidebar-accent px-3 py-2 text-sm font-medium text-foreground no-underline"
+            aria-current={view === "projects" ? "page" : undefined}
+            className={cn(
+              "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-foreground no-underline hover:bg-sidebar-accent",
+              view === "projects" && "bg-sidebar-accent",
+            )}
           >
             <FolderOpen className="size-4" aria-hidden="true" />
             Personal projects
+          </a>
+          <a
+            href="/usage-and-plan"
+            aria-current={view === "usage" ? "page" : undefined}
+            className={cn(
+              "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-foreground no-underline hover:bg-sidebar-accent",
+              view === "usage" && "bg-sidebar-accent",
+            )}
+          >
+            <Gauge className="size-4" aria-hidden="true" />
+            Usage and plan
           </a>
         </nav>
         <nav aria-label="Teams" className="grid gap-2">
@@ -197,168 +203,190 @@ export function HomeDashboard({
           Each project has isolated environments, collections, and application credentials.
         </p>
       </aside>
-      <section
-        className="grid min-w-0 content-start gap-6 p-5 lg:p-8"
-        aria-labelledby="home-title"
-        aria-busy={loading}
-      >
-        <div className="flex flex-wrap items-center justify-between gap-4">
+      {view === "usage" ? (
+        <section
+          className="grid min-w-0 content-start gap-6 p-5 lg:p-8"
+          aria-labelledby="overall-usage-title"
+        >
           <div className="grid gap-1">
-            <Eyebrow>Cloud databases</Eyebrow>
-            <h1 id="home-title" className="text-2xl">
-              Home
+            <Eyebrow>Your workspace</Eyebrow>
+            <h1 id="overall-usage-title" className="text-2xl">
+              Usage and plan
             </h1>
-            <p className="m-0 text-sm text-muted-foreground">
-              Manage your databases, connect applications, and inspect your data.
+            <p className={MUTED}>
+              Combined usage, shared allowances, and plan costs for your personal projects and each
+              team.
             </p>
           </div>
-          <Button onClick={() => setCreating((value) => !value)} aria-expanded={creating}>
-            <Plus aria-hidden="true" />
-            New project
-          </Button>
-        </div>
-        {creating ? (
-          <Card aria-label="New project">
-            <CardHeader>
-              <CardTitle>Create a database project</CardTitle>
-              <CardDescription>
-                Choose an owner and region. Your first environment is provisioned with the project.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <ProjectCreateForm
-                teams={joinedTeams}
-                submitLabel="Create and provision"
-                onCreated={(project) => onOpenProject(project.id)}
-              />
-              <Button variant="ghost" className="mt-3" onClick={() => setCreating(false)}>
-                Cancel
-              </Button>
-            </CardContent>
-          </Card>
-        ) : null}
-        {!noProjects && teams !== null && failure === null ? (
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card p-3">
-            <div className="relative w-full max-w-md">
-              <Search
-                aria-hidden="true"
-                className="absolute top-2.5 left-3 size-4 text-muted-foreground"
-              />
-              <Input
-                aria-label="Search projects"
-                placeholder="Search projects, owners, or regions…"
-                className="pl-9"
-                value={search}
-                onChange={(event) => setSearch(event.currentTarget.value)}
-              />
-            </div>
-            <span className="text-xs text-muted-foreground">
-              {readyProjects.filter(matches).length} of {readyProjects.length} projects
-            </span>
-          </div>
-        ) : null}
-        {!loading &&
-        failure === null &&
-        search.trim() !== "" &&
-        readyProjects.filter(matches).length === 0 ? (
-          <Card>
-            <CardContent className="grid justify-items-start gap-3 pt-1">
-              <strong>No projects match your search</strong>
-              <Button variant="outline" onClick={() => setSearch("")}>
-                Clear search
-              </Button>
-            </CardContent>
-          </Card>
-        ) : null}
-        <ApiFailureNotice failure={failure} />
-        {teams === null ? (
-          <p className={MUTED} aria-live="polite">
-            Loading your projects…
-          </p>
-        ) : null}
-        {guideActive ? (
-          <FirstRunGuide
-            teams={joinedTeams}
-            progress={progress}
-            onProgress={setProgress}
-            onOpenProject={onOpenProject}
-            onCompleted={completeGuide}
-          />
-        ) : null}
-        {noProjects && !guideActive ? (
-          <NoProjectsPanel
-            teams={joinedTeams}
-            onOpenProject={onOpenProject}
-            onShowGuide={() => setProgress({ ...progress, dismissed: false })}
-          />
-        ) : null}
-        {teams !== null && !noProjects && failure === null ? (
-          <>
-            <div className="grid items-start gap-6">
-              <div className="grid min-w-0 gap-8">
-                {personalSpace === undefined ? (
-                  <section className="grid gap-4" aria-labelledby="owner-personal-title">
-                    <div className="grid gap-1">
-                      <Eyebrow>Projects</Eyebrow>
-                      <h2 id="owner-personal-title" className="text-lg">
-                        Personal projects
-                      </h2>
-                    </div>
-                    <FirstProjectPanel onCreated={reload} />
-                  </section>
-                ) : (
-                  <OwnerGroup
-                    team={personalSpace}
-                    load={visibleGroups[personalSpace.id] ?? { status: "loading" }}
-                    loader={loader}
-                    ownerName={ownerName}
-                    onOpenProject={onOpenProject}
-                    onOpenTeam={onOpenTeam}
-                    navigate={navigate}
-                  />
-                )}
-              </div>
-            </div>
-            <section className="grid gap-4" aria-labelledby="teams-title">
-              <div className="grid gap-1">
-                <Eyebrow>Workspace</Eyebrow>
-                <h2 id="teams-title" className="text-lg">
-                  Teams
+          <ApiFailureNotice failure={failure} />
+          {teams === null ? <p className={MUTED}>Loading plans…</p> : null}
+          {teams?.length === 0 && failure === null ? (
+            <p className={MUTED}>Create your first project to start tracking usage.</p>
+          ) : null}
+          {teams?.map((team) => {
+            const load = groups[team.id];
+            return (
+              <section
+                key={team.id}
+                className="grid min-w-0 gap-4"
+                aria-labelledby={`plan-${team.id}`}
+              >
+                <h2 id={`plan-${team.id}`} className="text-lg">
+                  {team.kind === "personal" ? "Personal projects" : team.name}
                 </h2>
-              </div>
-              {joinedTeams.length === 0 ? (
-                <p className={MUTED}>No teams are available for this account.</p>
-              ) : (
-                <div className="grid min-w-0 gap-6">
-                  {joinedTeams.map((team) => (
+                <BillingPanel teamId={team.id} />
+                {load?.status === "failed" ? <ApiFailureNotice failure={load.failure} /> : null}
+                <div className="flex flex-wrap gap-3">
+                  {readyProjects
+                    .filter((project) => project.teamId === team.id)
+                    .map((project) => (
+                      <a
+                        key={project.id}
+                        href={`/projects/${project.id}/billing`}
+                        className="text-sm text-primary underline underline-offset-4"
+                      >
+                        {project.name} billing
+                      </a>
+                    ))}
+                </div>
+              </section>
+            );
+          })}
+        </section>
+      ) : (
+        <section
+          className="grid min-w-0 content-start gap-6 p-5 lg:p-8"
+          aria-labelledby="home-title"
+          aria-busy={loading}
+        >
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="grid gap-1">
+              <Eyebrow>Cloud databases</Eyebrow>
+              <h1 id="home-title" className="text-2xl">
+                Home
+              </h1>
+              <p className="m-0 text-sm text-muted-foreground">
+                Manage your databases, connect applications, and inspect your data.
+              </p>
+            </div>
+            {!loading && !noProjects && !guideActive && failure === null ? (
+              <Button onClick={() => setCreating((value) => !value)} aria-expanded={creating}>
+                <Plus aria-hidden="true" />
+                Create project
+              </Button>
+            ) : null}
+          </div>
+          {creating ? (
+            <Card aria-label="New project">
+              <CardHeader>
+                <CardTitle>Create a database project</CardTitle>
+                <CardDescription>
+                  Choose an owner and region. Your first environment is provisioned with the
+                  project.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ProjectCreateForm
+                  teams={joinedTeams}
+                  submitLabel="Create and provision"
+                  onCreated={(project) => onOpenProject(project.id)}
+                />
+                <Button variant="ghost" className="mt-3" onClick={() => setCreating(false)}>
+                  Cancel
+                </Button>
+              </CardContent>
+            </Card>
+          ) : null}
+          <ApiFailureNotice failure={failure} />
+          {teams === null ? (
+            <p className={MUTED} aria-live="polite">
+              Loading your projects…
+            </p>
+          ) : null}
+          {guideActive ? (
+            <FirstRunGuide
+              teams={joinedTeams}
+              progress={progress}
+              onProgress={setProgress}
+              onOpenProject={onOpenProject}
+              onCompleted={completeGuide}
+            />
+          ) : null}
+          {noProjects && !guideActive ? (
+            <NoProjectsPanel
+              teams={joinedTeams}
+              onOpenProject={onOpenProject}
+              onShowGuide={() => setProgress({ ...progress, dismissed: false })}
+            />
+          ) : null}
+          {teams !== null && !noProjects && failure === null ? (
+            <>
+              <div className="grid items-start gap-6">
+                <div className="grid min-w-0 gap-8">
+                  {personalSpace === undefined ? (
+                    <section className="grid gap-4" aria-labelledby="owner-personal-title">
+                      <div className="grid gap-1">
+                        <Eyebrow>Projects</Eyebrow>
+                        <h2 id="owner-personal-title" className="text-lg">
+                          Personal projects
+                        </h2>
+                      </div>
+                      <p className={MUTED}>No personal projects yet.</p>
+                    </section>
+                  ) : (
                     <OwnerGroup
-                      key={team.id}
-                      team={team}
-                      load={visibleGroups[team.id] ?? { status: "loading" }}
+                      team={personalSpace}
+                      load={groups[personalSpace.id] ?? { status: "loading" }}
                       loader={loader}
                       ownerName={ownerName}
                       onOpenProject={onOpenProject}
                       onOpenTeam={onOpenTeam}
                       navigate={navigate}
                     />
-                  ))}
+                  )}
                 </div>
-              )}
-            </section>
-          </>
-        ) : null}
-        {showGuideAgain && !noProjects ? (
-          <p className="m-0">
-            <Button
-              variant="link"
-              className="h-auto p-0"
-              onClick={() => setProgress({ ...progress, dismissed: false })}
-            >
-              Show the guide again
-            </Button>
-          </p>
-        ) : null}
-      </section>
+              </div>
+              <section className="grid gap-4" aria-labelledby="teams-title">
+                <div className="grid gap-1">
+                  <Eyebrow>Workspace</Eyebrow>
+                  <h2 id="teams-title" className="text-lg">
+                    Teams
+                  </h2>
+                </div>
+                {joinedTeams.length === 0 ? (
+                  <p className={MUTED}>No teams are available for this account.</p>
+                ) : (
+                  <div className="grid min-w-0 gap-6">
+                    {joinedTeams.map((team) => (
+                      <OwnerGroup
+                        key={team.id}
+                        team={team}
+                        load={groups[team.id] ?? { status: "loading" }}
+                        loader={loader}
+                        ownerName={ownerName}
+                        onOpenProject={onOpenProject}
+                        onOpenTeam={onOpenTeam}
+                        navigate={navigate}
+                      />
+                    ))}
+                  </div>
+                )}
+              </section>
+            </>
+          ) : null}
+          {showGuideAgain && !noProjects ? (
+            <p className="m-0">
+              <Button
+                variant="link"
+                className="h-auto p-0"
+                onClick={() => setProgress({ ...progress, dismissed: false })}
+              >
+                Show the guide again
+              </Button>
+            </p>
+          ) : null}
+        </section>
+      )}
     </div>
   );
 }
@@ -389,7 +417,6 @@ function OwnerGroup({
 }) {
   const personal = team.kind === "personal";
   const headingId = `owner-${team.id}-title`;
-  const [creating, setCreating] = useState(false);
   return (
     <section
       className="grid gap-4"
@@ -424,7 +451,7 @@ function OwnerGroup({
         <ApiFailureNotice failure={load.failure} />
       ) : load.projects.length === 0 ? (
         <p className={MUTED}>
-          {personal ? "No individual projects yet." : "This team has no projects yet."}
+          {personal ? "No personal projects yet." : "This team has no projects yet."}
         </p>
       ) : (
         <ul
@@ -444,27 +471,6 @@ function OwnerGroup({
           ))}
         </ul>
       )}
-      {personal ? (
-        <>
-          <div className="flex flex-wrap gap-2">
-            <Button size="sm" onClick={() => setCreating((value) => !value)}>
-              {creating ? "Cancel" : "Create project"}
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => onOpenTeam(team.id)}>
-              Billing and plan
-            </Button>
-          </div>
-          {creating ? (
-            <div className="rounded-lg border bg-card px-4 py-4">
-              <ProjectCreateForm
-                teams={[]}
-                submitLabel="Create and provision"
-                onCreated={(project) => onOpenProject(project.id)}
-              />
-            </div>
-          ) : null}
-        </>
-      ) : null}
     </section>
   );
 }
@@ -563,32 +569,40 @@ function ProjectRow({
           </Fact>
         </dl>
       </div>
-      {environment === null ? null : (
-        <div className="grid min-w-0 gap-2 lg:justify-items-end">
-          <span className="break-words text-xs text-muted-foreground">
-            Database · {environment.name}
-          </span>
-          <div className="flex flex-wrap gap-2">
-            {[
-              ["data", "Browse data"],
-              ["collections", "Schema"],
-              ["connect", "Connect"],
-            ].map(([section, label]) => (
-              <Button
-                key={section}
-                size="sm"
-                variant={section === "data" ? "default" : "outline"}
-                onClick={() =>
-                  navigate(`/projects/${project.id}/environments/${environment.id}/${section}`)
-                }
-              >
-                {section === "data" ? <Database aria-hidden="true" /> : null}
-                {label}
-              </Button>
-            ))}
+      <div className="grid min-w-0 gap-2 lg:justify-items-end">
+        <a
+          href={`/projects/${project.id}/billing`}
+          className="text-sm text-primary underline underline-offset-4"
+        >
+          Billing
+        </a>
+        {environment === null ? null : (
+          <div className="grid min-w-0 gap-2 lg:justify-items-end">
+            <span className="break-words text-xs text-muted-foreground">
+              Database · {environment.name}
+            </span>
+            <div className="flex flex-wrap gap-2">
+              {[
+                ["data", "Browse data"],
+                ["collections", "Schema"],
+                ["connect", "Connect"],
+              ].map(([section, label]) => (
+                <Button
+                  key={section}
+                  size="sm"
+                  variant={section === "data" ? "default" : "outline"}
+                  onClick={() =>
+                    navigate(`/projects/${project.id}/environments/${environment.id}/${section}`)
+                  }
+                >
+                  {section === "data" ? <Database aria-hidden="true" /> : null}
+                  {label}
+                </Button>
+              ))}
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </article>
   );
 }

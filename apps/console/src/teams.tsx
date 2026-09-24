@@ -24,7 +24,6 @@ import { type FormEvent, useCallback, useEffect, useId, useState } from "react";
 
 import { ApiFailureNotice, type ConsoleApiFailure, toConsoleApiFailure } from "./api-error.js";
 import { useDeveloperAuth } from "./auth.js";
-import { BillingPanel } from "./billing.js";
 import { useManagementClient } from "./management.js";
 import { FirstProjectPanel, ProjectsPanel } from "./projects.js";
 import { confirmDestructiveAction, OneTimeSecretValue } from "./safety.js";
@@ -223,7 +222,9 @@ export function TeamScreen({
           scope={personal ? "personal" : "team"}
           onOpen={onOpenProject}
         />
-        <BillingPanel teamId={teamId} />
+        <a href="/usage-and-plan" className="text-sm text-primary underline underline-offset-4">
+          Usage and plan
+        </a>
       </div>
     </section>
   );

@@ -42,6 +42,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/projects/{projectId}/bill": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Current usage costs for one project
+         * @description The project's current calendar-month usage and proportional share of each resource's usage charge under its owner's shared plan. Base fees, credits, and balances remain with the owner and are not allocated. Quantities sum flows and average levels per environment before summing environments, with time weighting across plan changes. Resource charges are attributed by these project quantities, with integer rounding in project-id order. This read does not close invoices. Retention gaps are reported and incomplete bounded reads fail instead of returning partial costs. Informational only; nothing is payable during the beta.
+         */
+        get: operations["getProjectBill"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/teams/{teamId}": {
         parameters: {
             query?: never;
@@ -5860,6 +5880,55 @@ export interface operations {
                         /** Format: int64 */
                         balanceMicroDollars: number;
                         collectable: boolean;
+                        notice: string;
+                    };
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    getProjectBill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Project usage and allocated costs for the current month */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        projectId: components["schemas"]["ProjectId"];
+                        teamId: components["schemas"]["TeamId"];
+                        planId: string;
+                        /** Format: date-time */
+                        periodStart: string;
+                        /** Format: date-time */
+                        periodEnd: string;
+                        /** Format: date-time */
+                        retainedFrom: string;
+                        /** Format: date-time */
+                        observedAt: string;
+                        lineItems: {
+                            resource: components["schemas"]["QuotaResource"];
+                            /** Format: int64 */
+                            quantity: number;
+                            /** Format: int64 */
+                            amountMicroDollars: number;
+                        }[];
+                        /** Format: int64 */
+                        totalMicroDollars: number;
+                        /** @constant */
+                        allocation: "proportional_resource_usage";
+                        /** @constant */
+                        collectable: false;
                         notice: string;
                     };
                 };

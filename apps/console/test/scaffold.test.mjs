@@ -83,7 +83,10 @@ test("route matching fails closed for unknown and malformed locations", () => {
     projectId: "prj_abcdefgh",
     section: "domains",
   });
-  assert.equal(matchConsoleRoute("/projects/prj_abcdefgh/billing").name, "not_found");
+  assert.deepEqual(matchConsoleRoute("/projects/prj_abcdefgh/billing"), {
+    name: "project", projectId: "prj_abcdefgh", section: "billing",
+  });
+  assert.deepEqual(matchConsoleRoute("/usage-and-plan"), { name: "usage_and_plan" });
   assert.equal(
     matchConsoleRoute("/projects/prj_abcdefgh/domains/dom_abcdef123456").name,
     "not_found",

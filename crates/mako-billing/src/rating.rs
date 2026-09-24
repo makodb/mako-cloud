@@ -200,6 +200,61 @@ pub struct RatedPeriod {
     pub total_micro_dollars: MicroDollars,
 }
 
+/// A project's measured quantity and share of the owner's usage charge.
+/// The owner's base subscription and credits are deliberately not allocated.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct ProjectCostLine {
+    pub resource: QuotaResource,
+    pub quantity: u64,
+    pub amount_micro_dollars: MicroDollars,
+}
+
+/// Attribute each resource's rated charge in proportion to project quantities.
+/// Remaining-weight integer shares conserve every micro-dollar, with ties resolved
+/// by project id. Zero-use projects receive no share, including rounding.
+#[must_use]
+pub fn allocate_project_costs(
+    rated: &RatedPeriod,
+    quantities: &BTreeMap<String, BTreeMap<QuotaResource, u64>>,
+) -> BTreeMap<String, Vec<ProjectCostLine>> {
+    let mut costs: BTreeMap<String, Vec<ProjectCostLine>> = quantities
+        .keys()
+        .map(|id| (id.clone(), Vec::new()))
+        .collect();
+    for line in &rated.line_items {
+        let total: u128 = quantities
+            .values()
+            .map(|usage| u128::from(usage.get(&line.resource).copied().unwrap_or(0)))
+            .sum();
+        let mut remaining_quantity = total;
+        let mut remaining_amount = line.amount_micro_dollars.max(0);
+        for (id, usage) in quantities {
+            let quantity = usage.get(&line.resource).copied().unwrap_or(0);
+            // i64 money times u64 quantity fits u128, even when summed
+            // project quantities exceed u64::MAX. No usage means no share.
+            let remaining = u128::try_from(remaining_amount).expect("nonnegative charge");
+            let amount = i64::try_from(
+                (remaining * u128::from(quantity))
+                    .checked_div(remaining_quantity)
+                    .unwrap_or(0),
+            )
+            .expect("share is bounded by the remaining charge");
+            costs
+                .get_mut(id)
+                .expect("project cost entry")
+                .push(ProjectCostLine {
+                    resource: line.resource,
+                    quantity,
+                    amount_micro_dollars: amount,
+                });
+            remaining_amount -= amount;
+            remaining_quantity -= u128::from(quantity);
+        }
+    }
+    costs
+}
+
 /// Rate one period's aggregated use.
 ///
 /// Pure: the same plan, card, and use always produce the same bill, which is
@@ -402,6 +457,95 @@ mod tests {
 
     fn pro() -> Plan {
         plan("pro").expect("pro plan")
+    }
+
+    #[test]
+    fn project_costs_split_usage_without_repeating_the_base_fee() {
+        let rated = rate_period(
+            &pro(),
+            &default_rate_card(),
+            &BTreeMap::from([(QuotaResource::StorageBytes, 16 * GIB)]),
+        );
+        let quantities = BTreeMap::from([
+            (
+                "a".to_owned(),
+                BTreeMap::from([(QuotaResource::StorageBytes, 4 * GIB)]),
+            ),
+            (
+                "b".to_owned(),
+                BTreeMap::from([(QuotaResource::StorageBytes, 12 * GIB)]),
+            ),
+            ("empty".to_owned(), BTreeMap::new()),
+        ]);
+        let costs = allocate_project_costs(&rated, &quantities);
+        let sum = |id: &str| {
+            costs[id]
+                .iter()
+                .map(|line| line.amount_micro_dollars)
+                .sum::<i64>()
+        };
+        assert_eq!(sum("a"), 250_000);
+        assert_eq!(sum("b"), 750_000);
+        assert_eq!(sum("empty"), 0);
+        assert_eq!(
+            sum("a") + sum("b") + rated.base_micro_dollars,
+            rated.total_micro_dollars
+        );
+    }
+
+    #[test]
+    fn project_allocation_preserves_rounding_and_handles_large_quantities() {
+        for amount in [1, 2, 19, i64::MAX] {
+            let rated = RatedPeriod {
+                plan_id: "pro".to_owned(),
+                plan_version: 1,
+                rate_card_version: 1,
+                base_micro_dollars: 0,
+                total_micro_dollars: amount,
+                line_items: vec![LineItem {
+                    resource: QuotaResource::StorageBytes,
+                    quantity: u64::MAX,
+                    included: 0,
+                    overage: u64::MAX,
+                    amount_micro_dollars: amount,
+                }],
+            };
+            let quantities = BTreeMap::from([
+                (
+                    "a".to_owned(),
+                    BTreeMap::from([(QuotaResource::StorageBytes, u64::MAX)]),
+                ),
+                (
+                    "b".to_owned(),
+                    BTreeMap::from([(QuotaResource::StorageBytes, u64::MAX)]),
+                ),
+                ("zero".to_owned(), BTreeMap::new()),
+            ]);
+            let costs = allocate_project_costs(&rated, &quantities);
+            assert_eq!(costs["a"][0].amount_micro_dollars, amount / 2);
+            assert_eq!(costs["b"][0].amount_micro_dollars, amount - amount / 2);
+            assert_eq!(costs["zero"][0].amount_micro_dollars, 0);
+        }
+    }
+
+    #[test]
+    fn free_and_unused_projects_have_no_allocated_costs() {
+        for plan_id in ["free", "pro"] {
+            let rated = rate_period(
+                &plan(plan_id).expect("plan"),
+                &default_rate_card(),
+                &BTreeMap::new(),
+            );
+            let costs = allocate_project_costs(
+                &rated,
+                &BTreeMap::from([("empty".to_owned(), BTreeMap::new())]),
+            );
+            assert!(
+                costs["empty"]
+                    .iter()
+                    .all(|line| line.quantity == 0 && line.amount_micro_dollars == 0)
+            );
+        }
     }
 
     #[test]

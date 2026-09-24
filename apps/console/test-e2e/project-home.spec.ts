@@ -1,4 +1,4 @@
-import { expect, test, type Page, type Route } from "@playwright/test";
+import { expect, type Page, type Route, test } from "@playwright/test";
 
 const NOW = "2026-08-06T12:00:00.000Z";
 const EARLIER = "2026-08-06T11:00:00.000Z";
@@ -157,6 +157,7 @@ test("sidebar destinations navigate to usage and activity and mark the current o
   await expect(nav.getByRole("link")).toHaveText([
     "Overview",
     "Usage",
+    "Billing",
     "Activity",
     "Domains",
     "Settings",
@@ -242,10 +243,7 @@ test("a personal space is named as the developer's own projects", async ({ page 
 
   await page.goto(`/projects/${PROJECT_ID}/settings`);
   const sidebar = page.getByRole("complementary", { name: "Project navigation" });
-  await expect(sidebar.getByRole("link", { name: "Your projects" })).toHaveAttribute(
-    "href",
-    `/teams/${TEAM_ID}`,
-  );
+  await expect(sidebar.getByRole("link", { name: "Your projects" })).toHaveAttribute("href", "/");
   const identifiers = page.getByRole("region", { name: "Identifiers and ownership" });
   await expect(identifiers.getByText("Your personal space", { exact: true })).toBeVisible();
   await expect(identifiers.getByText("Personal space", { exact: true })).toBeVisible();
@@ -366,10 +364,7 @@ test("transferring a team project to the personal space names no team", async ({
   await expect(identifiers.getByText("Your personal space", { exact: true })).toBeVisible();
   await expect(identifiers.getByText(PERSONAL_TEAM_ID, { exact: true })).toBeVisible();
   const sidebar = page.getByRole("complementary", { name: "Project navigation" });
-  await expect(sidebar.getByRole("link", { name: "Your projects" })).toHaveAttribute(
-    "href",
-    `/teams/${PERSONAL_TEAM_ID}`,
-  );
+  await expect(sidebar.getByRole("link", { name: "Your projects" })).toHaveAttribute("href", "/");
   expect(api.unhandled).toEqual([]);
 });
 

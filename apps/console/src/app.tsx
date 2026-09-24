@@ -111,10 +111,15 @@ export function ConsoleApp({
         <RequireDeveloperSession>
           <AuthenticatedShell
             key={`${state.status === "authenticated" ? state.session.profile.id : ""}:${workspaceIdentity(route)}`}
-            fullBleed={route.name === "home" || bringsOwnShell(route, developerWorkspaceEnabled)}
+            fullBleed={
+              route.name === "home" ||
+              route.name === "usage_and_plan" ||
+              bringsOwnShell(route, developerWorkspaceEnabled)
+            }
           >
-            {route.name === "home" ? (
+            {route.name === "home" || route.name === "usage_and_plan" ? (
               <HomeDashboard
+                view={route.name === "usage_and_plan" ? "usage" : "projects"}
                 navigate={navigate}
                 onOpenTeam={(teamId) => navigate(`/teams/${teamId}`)}
                 onOpenProject={(projectId) => navigate(`/projects/${projectId}`)}

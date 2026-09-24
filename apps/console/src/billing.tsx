@@ -5,19 +5,22 @@ import {
   CardContent,
   CardHeader,
   CardTitle,
+  cn,
+  Eyebrow,
   Table,
   TableBody,
   TableCell,
   TableHead,
   TableHeader,
   TableRow,
-  cn,
 } from "@mako-cloud/ui";
 import { Info } from "lucide-react";
-import { type ReactNode, useCallback, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 
 import { ApiFailureNotice, type ConsoleApiFailure, toConsoleApiFailure } from "./api-error.js";
 import { useManagementClient } from "./management.js";
+
+type ProjectBill = Awaited<ReturnType<ReturnType<typeof useManagementClient>["getProjectBill"]>>;
 
 type TeamBill = Awaited<ReturnType<ReturnType<typeof useManagementClient>["getTeamBill"]>>;
 
@@ -52,28 +55,30 @@ export function BillingPanel({ teamId }: { readonly teamId: string }) {
   const client = useManagementClient();
   const [bill, setBill] = useState<TeamBill | null>(null);
   const [failure, setFailure] = useState<ConsoleApiFailure | null>(null);
-  const reload = useCallback(async () => {
-    setFailure(null);
-    try {
-      setBill(await client.getTeamBill(teamId));
-    } catch (error) {
-      setFailure(toConsoleApiFailure(error));
-    }
-  }, [client, teamId]);
   useEffect(() => {
-    void reload();
-  }, [reload]);
+    let active = true;
+    setBill(null);
+    setFailure(null);
+    void client.getTeamBill(teamId).then(
+      (value) => active && setBill(value),
+      (error: unknown) => active && setFailure(toConsoleApiFailure(error)),
+    );
+    return () => {
+      active = false;
+    };
+  }, [client, teamId]);
+  const headingId = `billing-${teamId}-title`;
 
   return (
-    <Card className="lg:col-span-2" aria-labelledby="billing-title">
+    <Card className="lg:col-span-2" aria-labelledby={headingId}>
       <CardHeader>
-        <CardTitle id="billing-title">Billing</CardTitle>
+        <CardTitle id={headingId}>Shared usage and plan</CardTitle>
       </CardHeader>
       <CardContent className="grid gap-4">
         <ApiFailureNotice failure={failure} />
-        {bill === null ? (
+        {bill === null && failure === null ? (
           <p className="m-0 text-sm text-muted-foreground">Loading bill…</p>
-        ) : (
+        ) : bill !== null ? (
           <>
             {/* The notice is the contract of the beta bill: it must be shown,
                 not implied, so it renders before any number does. */}
@@ -132,7 +137,7 @@ export function BillingPanel({ teamId }: { readonly teamId: string }) {
               </Figure>
             </dl>
           </>
-        )}
+        ) : null}
       </CardContent>
     </Card>
   );
@@ -158,5 +163,111 @@ function Figure({
         {children}
       </dd>
     </div>
+  );
+}
+
+export function ProjectBillingScreen({ projectId }: { readonly projectId: string }) {
+  const client = useManagementClient();
+  const [bill, setBill] = useState<ProjectBill | null>(null);
+  const [failure, setFailure] = useState<ConsoleApiFailure | null>(null);
+  useEffect(() => {
+    let active = true;
+    setBill(null);
+    setFailure(null);
+    void client.getProjectBill(projectId).then(
+      (value) => active && setBill(value),
+      (error: unknown) => active && setFailure(toConsoleApiFailure(error)),
+    );
+    return () => {
+      active = false;
+    };
+  }, [client, projectId]);
+  return (
+    <section className="grid min-w-0 gap-5" aria-labelledby="project-billing-title">
+      <div className="grid gap-1">
+        <Eyebrow>This project</Eyebrow>
+        <h1 id="project-billing-title" className="text-2xl">
+          Billing
+        </h1>
+        <p className="m-0 text-sm text-muted-foreground">
+          Usage costs for this project across all its environments.
+        </p>
+      </div>
+      <ApiFailureNotice failure={failure} />
+      {bill === null && failure === null ? (
+        <p aria-live="polite" className="m-0 text-sm text-muted-foreground">
+          Loading project billing…
+        </p>
+      ) : null}
+      {bill === null ? null : (
+        <>
+          <Alert role="note">
+            <Info aria-hidden="true" />
+            <AlertDescription className="block text-foreground">{bill.notice}</AlertDescription>
+          </Alert>
+          <Card aria-labelledby="project-cost-title">
+            <CardHeader>
+              <CardTitle id="project-cost-title">Project usage costs</CardTitle>
+            </CardHeader>
+            <CardContent className="grid min-w-0 gap-4">
+              <p className="m-0 text-sm text-muted-foreground">
+                Shared plan <strong className="text-foreground">{bill.planId}</strong> ·{" "}
+                <time dateTime={bill.periodStart}>{bill.periodStart.slice(0, 10)}</time> to{" "}
+                <time dateTime={bill.periodEnd}>{bill.periodEnd.slice(0, 10)}</time>
+              </p>
+              {new Date(bill.retainedFrom).getTime() > new Date(bill.periodStart).getTime() ? (
+                <Alert variant="warning" role="status">
+                  <AlertDescription>
+                    Usage records begin on {bill.retainedFrom.slice(0, 10)}. Costs cover the
+                    retained records only.
+                  </AlertDescription>
+                </Alert>
+              ) : null}
+              <dl className="m-0">
+                <Figure label="Project usage total">{dollars(bill.totalMicroDollars)}</Figure>
+              </dl>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead scope="col">Resource</TableHead>
+                    <TableHead scope="col" className="text-right">
+                      Project usage
+                    </TableHead>
+                    <TableHead scope="col" className="text-right">
+                      Allocated cost
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {bill.lineItems.map((item) => (
+                    <TableRow key={item.resource}>
+                      <TableCell className="font-medium">
+                        {item.resource.replaceAll("_", " ")}
+                      </TableCell>
+                      <TableCell className="money">
+                        {quantity(item.resource, item.quantity)}
+                      </TableCell>
+                      <TableCell className="money">{dollars(item.amountMicroDollars)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+              <p className="m-0 text-sm text-muted-foreground">
+                Each resource's usage charge is shared between projects in proportion to their
+                measured usage. The plan's base fee, credits, and balance appear on the overall
+                Usage and plan page.
+              </p>
+              <p className="m-0 text-xs text-muted-foreground">
+                Updated{" "}
+                <time dateTime={bill.observedAt}>{new Date(bill.observedAt).toLocaleString()}</time>
+              </p>
+            </CardContent>
+          </Card>
+        </>
+      )}
+      <a href="/usage-and-plan" className="text-sm text-primary underline underline-offset-4">
+        Overall usage and plan
+      </a>
+    </section>
   );
 }

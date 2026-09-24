@@ -20,6 +20,7 @@ const CENTERED_PAGE = "grid min-h-screen place-items-center bg-background p-6 te
 
 export type ConsoleRoute =
   | { readonly name: "home" }
+  | { readonly name: "usage_and_plan" }
   | { readonly name: "login" }
   | { readonly name: "create_account" }
   | { readonly name: "check_email" }
@@ -50,7 +51,7 @@ export type ConsoleRoute =
   | {
       readonly name: "project";
       readonly projectId: string;
-      readonly section: "overview" | "usage" | "activity" | "settings" | "domains";
+      readonly section: "overview" | "usage" | "billing" | "activity" | "settings" | "domains";
     }
   | {
       readonly name: "logs";
@@ -163,6 +164,7 @@ export function matchConsoleRoute(pathname: string): ConsoleRoute {
   if (normalized === "/") {
     return { name: "home" };
   }
+  if (normalized === "/usage-and-plan") return { name: "usage_and_plan" };
   if (normalized === "/login" || normalized === "/sign-in") {
     return { name: "login" };
   }
@@ -201,7 +203,7 @@ export function matchConsoleRoute(pathname: string): ConsoleRoute {
     return { name: "invitation", invitationId: invitation[1] };
   }
   const project = normalized.match(
-    /^\/projects\/(prj_[A-Za-z0-9_-]{8,64})(?:\/(overview|usage|activity|settings|domains))?$/u,
+    /^\/projects\/(prj_[A-Za-z0-9_-]{8,64})(?:\/(overview|usage|billing|activity|settings|domains))?$/u,
   );
   if (project?.[1] !== undefined) {
     return {

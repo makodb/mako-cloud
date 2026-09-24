@@ -63,6 +63,8 @@ const userBook = matcher("user_book");
 assert(userBook.test("/docs/user-book"), "the public User Book route is not served");
 assert(!userBook.test("/docs/user-book/private"), "the User Book route matches subpaths");
 for (const path of [
+  "/usage-and-plan",
+  "/projects/prj_example0001/billing",
   "/projects/prj_example0001/domains",
   "/projects/prj_example0001/environments/env_example0001/api-docs",
   "/projects/prj_example0001/settings",
@@ -136,6 +138,7 @@ for (const path of [
   "/healthz",
   "/v1/projects/prj_example0001/environments/env_example0001/service/collections/documents/doc_example0001",
   "/v1/projects/prj_example0001/not-documented",
+  "/v1/projects/prj_example0001/bill/private",
 ]) {
   assert(
     serviceCredential.test(path) ||

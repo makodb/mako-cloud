@@ -267,19 +267,19 @@ The console is what a developer sees from sign-in onward. It is organised in thr
 
 Signing in opens the home dashboard. The root separates **Personal projects** from **Teams**. Personal projects belong to your account. Shared projects are grouped by team under **Teams**. Each row shows lifecycle state, region, plan, and usage for the current period. Select a project name to open its workspace, or use **Browse data**, **Schema**, and **Connect** to open its active database environment. Each row loads its summaries independently, so a usage failure affects only that project. Project audit events are available from its **Activity** screen.
 
-Search projects by name, identifier, region, or owner. **New project** opens the creation form. The workspace sidebar has a **Personal projects** entry and a **Teams** section containing only shared teams. **Billing and plan** below your personal project list opens your personal billing. The team switcher lists only shared teams. The header's **Docs** link opens the User Book. An unmatched search offers **Clear search** and keeps your projects intact.
+**Create project** opens the creation form. Personal projects have no search field, and there is one creation action on the page. Empty accounts use the first-project form instead. The workspace sidebar has **Personal projects**, **Usage and plan**, and a **Teams** section containing only shared teams. Each project row links to its **Billing** page. **Usage and plan** shows combined usage, shared allowances, base fees, credits, and balances for your personal projects and each team. The team switcher lists only shared teams. The header's **Docs** link opens the User Book.
 
 A developer with no projects is offered a guided first run that creates the project and opens its workspace. The project page provides keys, the API URL, quickstart, and a connection check. Dismissing the guide is remembered for the browser tab; you can reopen it from the empty state.
 
 ### Project
 
-A project's home summarises its environments and their readiness, the selected environment's API URL, public key, and quickstart, its usage against quota, data-plane health, and recent activity, and offers **Overview**, **Usage**, **Activity**, **Domains**, and **Settings** alongside the environment list.
+A project's home summarises its environments and their readiness, the selected environment's API URL, public key, and quickstart, its usage against quota, data-plane health, and recent activity, and offers **Overview**, **Usage**, **Billing**, **Activity**, **Domains**, and **Settings** alongside the environment list.
 
 **Settings** show the owner, region, identifiers, and lifecycle, and offer the three changes an owner may make: renaming the project, transferring it between the personal space and the teams the developer administers, and requesting deletion with its grace period. Each asks for confirmation and is audited. A transfer keeps the identifier, environments, data, policies, users, keys, and functions, holds every environment to the new owner's plan before the owner changes, and is recorded under both the previous and the new owner.
 
 **Domains** are project-level: the section lists every custom domain with the environment whose API and functions it serves, its state — pending, verified, or failed — and when it was verified and last checked. Adding one takes a hostname and an environment and answers with the DNS TXT record that proves control of the name (name, type, value, each copyable), which stays available per row under "Show DNS record". "Verify now" checks the record immediately instead of at the next periodic check. A domain whose record later disappears is marked failed with why serving stopped, and a confirmed "Remove" stops serving the name and its certificate renewal. See [Custom domains](#custom-domains).
 
-Routes: `/projects/{projectId}` and `/projects/{projectId}/{overview|usage|activity|domains|settings}`.
+Routes: `/projects/{projectId}` and `/projects/{projectId}/{overview|usage|billing|activity|domains|settings}`.
 
 ### Environment
 
@@ -647,6 +647,7 @@ Generated from the command registry; every command also answers `--help` with it
 
 | command | does |
 | ------- | ---- |
+| `mako-cloud projects bill <project-id>` | Show one project's current usage and allocated costs |
 | `mako-cloud teams bill <team-id>` | Show a team's bill for the current month or a closed period |
 | `mako-cloud teams create <name>` | Create a team |
 | `mako-cloud teams delete <team-id>` | Start a team's deletion grace period; its projects lose access immediately *(confirmed)* |
@@ -2412,9 +2413,11 @@ Function invocations, public invocations, request bytes, and egress requests and
 
 ### The bill
 
-`GET /v1/teams/{teamId}/bill` (`mako-cloud teams bill org_… [--period YYYY-MM]`) rates the current calendar month so far against the team's effective plan and the rate card, whose prices were verified against supabase.com/pricing on 2026-08-25. Money is integer micro-dollars end to end; only the display divides. Credits are operator-granted, exactly-once per credit id, and the balance is credits minus all charges — every closed period plus the live month — unclamped. The console renders the bill on the team page with the non-payable notice ahead of any number.
+`GET /v1/teams/{teamId}/bill` (`mako-cloud teams bill org_… [--period YYYY-MM]`) rates the current calendar month so far against the team's effective plan and the rate card, whose prices were verified against supabase.com/pricing on 2026-08-25. Money is integer micro-dollars end to end; only the display divides. Credits are operator-granted, exactly-once per credit id, and the balance is credits minus all charges — every closed period plus the live month — unclamped. The console renders shared totals on **Usage and plan** at `/usage-and-plan`, with the non-payable notice ahead of any number.
 
 A period that spanned a plan change is rated stretch by stretch under the plan that held during it: the base fee and a flow's included allowance take the stretch's share of the period, while a level compares its stretch average against the full included level and prorates the charge by time held. Use under a free stretch stays uncharged. Time before the team existed is covered by the free plan's zero-priced terms, which prorates a mid-month signup's base fee by construction.
+
+Each project's **Billing** page at `/projects/{projectId}/billing` reads `GET /v1/projects/{projectId}/bill`, also available as `mako-cloud projects bill <project-id>`. It shows that project's current-month usage across all environments and its allocated usage costs. Each resource's shared usage charge is divided in proportion to project quantities, with integer rounding in project-id order. Flows sum their records; levels average samples per environment, then sum environments. Plan changes weight level quantities by time. The base subscription fee, credits, and balance remain on the overall page. This allocation explains the shared bill; it does not create separate subscriptions or invoices. The response reports retention gaps and refuses incomplete bounded reads. Project billing is a read-only view and does not close invoices.
 
 Ended months are **closed** on any bill read while their evidence is still inside the ninety-day telemetry retention: the period is derived, stored as an invoice exactly once, and never rewritten. `?period=YYYY-MM` serves a closed month's invoice, marked `finalized` with the instant it closed; a month whose usage evidence had partly aged out says so instead of pretending.
 

@@ -50,6 +50,7 @@ import {
   LayoutDashboard,
   type LucideIcon,
   Plus,
+  Receipt,
   RefreshCw,
   Settings,
 } from "lucide-react";
@@ -65,13 +66,14 @@ import {
 
 import { ActivityScreen } from "./activity.js";
 import { ApiFailureNotice, type ConsoleApiFailure, toConsoleApiFailure } from "./api-error.js";
+import { ProjectBillingScreen } from "./billing.js";
 import { CustomDomainsScreen } from "./custom-domains.js";
 import { useManagementClient } from "./management.js";
 import { LifecycleBadge } from "./projects.js";
 import { confirmDestructiveAction } from "./safety.js";
 import { UsageScreen } from "./usage.js";
 
-export type ProjectSection = "overview" | "usage" | "activity" | "settings" | "domains";
+export type ProjectSection = "overview" | "usage" | "billing" | "activity" | "settings" | "domains";
 
 type ProjectAction = "suspend" | "restore" | "delete";
 type Navigate = (path: string, replace?: boolean) => void;
@@ -83,6 +85,7 @@ const PROJECT_DESTINATIONS: readonly {
 }[] = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
   { id: "usage", label: "Usage", icon: Gauge },
+  { id: "billing", label: "Billing", icon: Receipt },
   { id: "activity", label: "Activity", icon: Activity },
   { id: "domains", label: "Domains", icon: Globe },
   { id: "settings", label: "Settings", icon: Settings },
@@ -95,6 +98,7 @@ const PERSONAL_TARGET = "personal";
 const SECTION_EYEBROW: Record<ProjectSection, string> = {
   overview: "Project overview",
   usage: "Project usage",
+  billing: "Project billing",
   activity: "Project activity",
   domains: "Custom domains",
   settings: "Project settings",
@@ -206,13 +210,16 @@ export function ProjectHome({
       : team.kind === "personal"
         ? "Your projects"
         : team.name;
-  const ownerPath = project === null ? "/" : `/teams/${project.teamId}`;
+  const ownerPath =
+    project === null || team?.kind === "personal" ? "/" : `/teams/${project.teamId}`;
 
   let content: ReactNode;
   if (project === null || environments === null) {
     content = <p className="m-0 text-sm text-muted-foreground">Loading project…</p>;
   } else if (section === "usage") {
     content = <UsageScreen projectId={projectId} />;
+  } else if (section === "billing") {
+    content = <ProjectBillingScreen projectId={projectId} />;
   } else if (section === "activity") {
     content = <ActivityScreen projectId={projectId} />;
   } else if (section === "domains") {

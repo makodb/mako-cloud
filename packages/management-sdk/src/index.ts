@@ -1,10 +1,10 @@
 /** Typed Mako Cloud management API client. */
 import {
+  type ApiError,
+  type components,
   createMakoApiClient,
   isApiErrorEnvelope,
-  type ApiError,
   type MakoApiClient,
-  type components,
   type operations,
 } from "@mako-cloud/api-types";
 
@@ -43,6 +43,7 @@ export const MANAGEMENT_OPERATIONS = [
   "listProjects",
   "createProject",
   "getProject",
+  "getProjectBill",
   "requestProjectDeletion",
   "updateProject",
   "transferProject",
@@ -508,6 +509,16 @@ export class MakoManagementClient {
           path: { teamId },
           query: period === undefined ? {} : { period },
         },
+      }),
+    );
+  }
+
+  async getProjectBill(
+    projectId: string,
+  ): Promise<operations["getProjectBill"]["responses"]["200"]["content"]["application/json"]> {
+    return unwrap(
+      await this.#client.GET("/v1/projects/{projectId}/bill", {
+        params: { path: { projectId } },
       }),
     );
   }

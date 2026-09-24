@@ -373,6 +373,105 @@ fn observed_events_and_usage_reach_the_management_api() {
         "the bill shows no stored bytes although a sample was reported: {body}"
     );
     assert_eq!(bill["totalMicroDollars"], 0, "free stayed free: {body}");
+
+    // Project billing reads the project's measured usage, without presenting
+    // the owner's subscription, credit, or balance as project charges.
+    let project_bill_path = format!("/v1/projects/{PROJECT_ID}/bill");
+    let (status, body) = request(control_port, "GET", &project_bill_path, &reading, None);
+    assert_eq!(status, 200, "project bill: {body}");
+    let project_bill: Value = serde_json::from_str(&body).expect("project bill json");
+    assert_eq!(project_bill["projectId"], PROJECT_ID);
+    assert_eq!(project_bill["teamId"], "org_localboot");
+    assert_eq!(project_bill["allocation"], "proportional_resource_usage");
+    assert_eq!(project_bill["totalMicroDollars"], 0);
+    assert_eq!(project_bill["collectable"], false);
+    for owner_field in [
+        "baseMicroDollars",
+        "creditsMicroDollars",
+        "balanceMicroDollars",
+    ] {
+        assert!(
+            project_bill.get(owner_field).is_none(),
+            "owner field leaked into project bill"
+        );
+    }
+    assert!(
+        project_bill["lineItems"]
+            .as_array()
+            .expect("lines")
+            .iter()
+            .any(|line| line["resource"] == "storage_bytes"
+                && line["quantity"].as_u64().unwrap_or(0) > 0)
+    );
+    let (status, _) = request(
+        control_port,
+        "GET",
+        &project_bill_path,
+        &BTreeMap::new(),
+        None,
+    );
+    assert_eq!(status, 401, "anonymous callers cannot read project billing");
+    let (status, _) = request(control_port, "GET", &project_bill_path, &replicating, None);
+    assert_eq!(
+        status, 401,
+        "application credentials cannot read developer billing"
+    );
+    let (status, _) = request(
+        control_port,
+        "GET",
+        &format!("{project_bill_path}?period=2026-01"),
+        &reading,
+        None,
+    );
+    assert_eq!(
+        status, 400,
+        "project bills do not pretend to provide historical invoices"
+    );
+    let (status, _) = request(
+        control_port,
+        "GET",
+        "/v1/projects/prj_notfound1/bill",
+        &reading,
+        None,
+    );
+    assert_eq!(status, 404);
+
+    let mut creating = reading.clone();
+    creating.insert(
+        "idempotency-key".to_owned(),
+        "empty-billing-sibling".to_owned(),
+    );
+    let (status, body) = request(
+        control_port,
+        "POST",
+        "/v1/projects",
+        &creating,
+        Some(
+            &json!({ "teamId": "org_localboot", "name": "Empty billing sibling", "region": "local" }),
+        ),
+    );
+    assert_eq!(status, 202, "create sibling: {body}");
+    let sibling: Value = serde_json::from_str(&body).expect("sibling project");
+    let sibling_id = sibling["id"].as_str().expect("sibling id");
+    let (status, body) = request(
+        control_port,
+        "GET",
+        &format!("/v1/projects/{sibling_id}/bill"),
+        &reading,
+        None,
+    );
+    assert_eq!(status, 200, "sibling bill: {body}");
+    let sibling_bill: Value = serde_json::from_str(&body).expect("sibling bill");
+    assert_eq!(sibling_bill["projectId"], sibling_id);
+    assert!(
+        sibling_bill["lineItems"]
+            .as_array()
+            .expect("sibling lines")
+            .iter()
+            .filter(|line| line["resource"] == "storage_bytes")
+            .all(|line| line["quantity"] == 0),
+        "a sibling must not inherit the other project's stored bytes"
+    );
 }
 
 /// Poll one observability signal until a record arrives.

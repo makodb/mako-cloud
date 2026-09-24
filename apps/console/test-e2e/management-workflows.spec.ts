@@ -60,18 +60,11 @@ test("role management, provisioning health, and deletion grace run through the A
   await page.goto(`/teams/${TEAM_ID}`);
   await expect(page.getByRole("heading", { name: "Mako Test Team" })).toBeVisible();
 
-  // The bill renders with its non-payable notice before any number, shows the
-  // metered quantities, and a balance that has gone negative -- shown, marked,
-  // and never clamped, because hiding the number is the one thing this
-  // surface must not do.
-  await expect(page.getByRole("heading", { name: "Billing" })).toBeVisible();
-  await expect(page.getByText("no charge will be made during the beta")).toBeVisible();
-  await expect(page.getByRole("cell", { name: "storage bytes" })).toBeVisible();
-  await expect(page.getByRole("cell", { name: "120.0 MiB" })).toBeVisible();
-  await expect(page.getByText("$2.50")).toBeVisible();
-  const negativeBalance = page.getByText("-$22.50");
-  await expect(negativeBalance).toBeVisible();
-  await expect(negativeBalance).toHaveAttribute("data-negative", "true");
+  await expect(page.getByRole("heading", { name: "Billing", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Usage and plan" })).toHaveAttribute(
+    "href",
+    "/usage-and-plan",
+  );
 
   const memberRole = page.getByLabel("Role for dev_member01");
   await memberRole.selectOption("viewer");
@@ -121,7 +114,8 @@ test("personal projects stay separate from teams and are created without naming 
   // developer has joined follow it.
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Personal projects" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Create your first project" })).toBeVisible();
+  await expect(page.getByText("No personal projects yet.")).toBeVisible();
+  await page.getByRole("button", { name: "Create project", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Teams" })).toBeVisible();
   await expect(page.getByRole("button", { name: /Mako Test Team/u })).toBeVisible();
 
@@ -129,8 +123,9 @@ test("personal projects stay separate from teams and are created without naming 
   await page.getByLabel("Data region").selectOption("local");
   await page.getByRole("button", { name: "Create and provision" }).click();
 
-  // The space now exists and its projects replace the empty state; it is
-  // never listed among the teams.
+  // Creation opens the new workspace; the root lists the personal project.
+  await expect(page).toHaveURL(/\/projects\/prj_persona1$/u);
+  await page.goto("/");
   await expect(page.getByRole("button", { name: /Side project/u })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Create your first project" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: /Mako Test Team/u })).toHaveCount(1);
@@ -159,7 +154,7 @@ test("personal projects stay separate from teams and are created without naming 
   // management: a personal space has exactly one member and refuses changes.
   await page.goto(`/teams/${PERSONAL_TEAM_ID}`);
   await expect(page.getByRole("heading", { name: "Personal projects", exact: true })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Billing" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Usage and plan" })).toBeVisible();
   await expect(page.getByRole("button", { name: /Side project/u })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Members" })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Invite a member" })).toHaveCount(0);

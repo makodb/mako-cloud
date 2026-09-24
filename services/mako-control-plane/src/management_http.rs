@@ -92,6 +92,11 @@ pub(crate) fn add_management_routes(
         (HttpMethod::Post, "/v1/projects", handle_create_project),
         (
             HttpMethod::Get,
+            "/v1/projects/{projectId}/bill",
+            handle_project_bill,
+        ),
+        (
+            HttpMethod::Get,
             "/v1/projects/{projectId}",
             handle_get_project,
         ),
@@ -1015,7 +1020,11 @@ fn handle_organization_bill(
             {
                 continue;
             }
-            let (rated, derived_from) = derive_rated_period(
+            let DerivedBill {
+                rated,
+                retained_from: derived_from,
+                ..
+            } = derive_rated_period(
                 graph,
                 &actor,
                 request,
@@ -1063,7 +1072,11 @@ fn handle_organization_bill(
             // timestamps carry whole seconds, and a sample that observability
             // already serves must not be missing from the bill read alongside.
             None => {
-                let (rated, derived_from) = derive_rated_period(
+                let DerivedBill {
+                    rated,
+                    retained_from: derived_from,
+                    ..
+                } = derive_rated_period(
                     graph,
                     &actor,
                     request,
@@ -1128,6 +1141,78 @@ fn handle_organization_bill(
     })
 }
 
+/// A project's current usage costs under its owner's shared plan. This read
+/// does not close invoices or change credits, plans, or payment state.
+fn handle_project_bill(
+    graph: &Arc<ControlPlaneGraph>,
+    request: &HttpRequest,
+) -> Result<HttpResponse, HttpApiError> {
+    no_payload(request)?;
+    let project_id = project_id(request)?;
+    with_developer(graph, request, |actor, now| async move {
+        let project = graph
+            .project_service()
+            .get_project(&actor, &project_id, now)
+            .await
+            .map_err(|error| project_error(request, error))?;
+        let organization = graph
+            .organization_store()
+            .get_organization(project.organization_id())
+            .await
+            .map_err(|_| unavailable(request, "project owner is unavailable"))?
+            .ok_or_else(|| not_found(request, "project owner was not found"))?;
+        let exceptions = graph
+            .operator_service()
+            .plan_exceptions(organization.id(), now)
+            .await
+            .map_err(|_| unavailable(request, "plan exceptions are unavailable"))?;
+        let (year, month) = year_and_month(now);
+        let start = month_start_milliseconds(year, month);
+        let derived = derive_rated_period(
+            graph,
+            &actor,
+            request,
+            &organization,
+            &exceptions,
+            start,
+            now.saturating_add(1).saturating_mul(1_000),
+            now,
+        )
+        .await?;
+        let lines = derived
+            .projects
+            .get(project_id.as_str())
+            .ok_or_else(|| unavailable(request, "project billing changed; retry the request"))?;
+        let total = lines.iter().fold(0_i64, |sum, line| {
+            sum.saturating_add(line.amount_micro_dollars)
+        });
+        json(
+            request,
+            200,
+            &serde_json::json!({
+                "projectId": project_id.as_str(),
+                "teamId": organization.id().as_str(),
+                "planId": derived.rated.plan_id,
+                "periodStart": format_timestamp(request, start / 1_000)?,
+                "periodEnd": format_timestamp(request, now)?,
+                "retainedFrom": format_timestamp(request, derived.retained_from / 1_000)?,
+                "observedAt": format_timestamp(request, now)?,
+                "lineItems": lines,
+                "totalMicroDollars": total,
+                "allocation": "proportional_resource_usage",
+                "collectable": false,
+                "notice": "This bill is informational. Nothing is payable and no charge will be made during the beta.",
+            }),
+        )
+    })
+}
+
+struct DerivedBill {
+    rated: mako_billing::rating::RatedPeriod,
+    retained_from: u64,
+    projects: std::collections::BTreeMap<String, Vec<mako_billing::rating::ProjectCostLine>>,
+}
+
 /// Ended months this many back are closed on any bill read. Three keeps every
 /// month whose end can still be inside the ninety-day telemetry retention.
 const CLOSABLE_MONTHS_BACK: u32 = 3;
@@ -1150,7 +1235,7 @@ async fn derive_rated_period(
     period_start: u64,
     period_end: u64,
     now: u64,
-) -> Result<(mako_billing::rating::RatedPeriod, u64), HttpApiError> {
+) -> Result<DerivedBill, HttpApiError> {
     let now_milliseconds = now.saturating_mul(1_000);
     // Which plan held when, as stretch starts in milliseconds clipped to the
     // window. Weights come from the calendar window, not from retention: the
@@ -1174,19 +1259,33 @@ async fn derive_rated_period(
     // gigabytes, but twelve samples of one environment's gigabyte are one.
     let mut usage_by_segment: Vec<std::collections::BTreeMap<mako_api::QuotaResource, u64>> =
         vec![std::collections::BTreeMap::new(); segments.len()];
+    let mut project_usage = std::collections::BTreeMap::new();
     let mut evidence_start = period_start;
-    let limit = NonZeroUsize::new(100).expect("listing limit");
+    let limit = NonZeroUsize::new(LIST_LIMIT + 1).expect("listing limit");
     let projects = graph
         .project_store()
         .list_projects(organization.id(), limit)
         .await
         .map_err(|_| unavailable(request, "the team's projects are unavailable"))?;
+    if projects.len() > LIST_LIMIT {
+        return Err(unavailable(
+            request,
+            "project billing exceeds the listing limit",
+        ));
+    }
     for project in &projects {
+        let mut project_segments = vec![std::collections::BTreeMap::new(); segments.len()];
         let environments = graph
             .project_store()
             .list_environments(project.id(), limit)
             .await
             .map_err(|_| unavailable(request, "the project's environments are unavailable"))?;
+        if environments.len() > LIST_LIMIT {
+            return Err(unavailable(
+                request,
+                "environment billing exceeds the listing limit",
+            ));
+        }
         for environment in &environments {
             let tenant = TenantScope::new(project.id().clone(), environment.id().clone());
             let mut per_segment: Vec<
@@ -1241,14 +1340,23 @@ async fn derive_rated_period(
                     break;
                 }
             }
+            if cursor.is_some() {
+                return Err(unavailable(
+                    request,
+                    "usage billing exceeds the retained-record limit",
+                ));
+            }
             for (index, resources) in per_segment.into_iter().enumerate() {
                 for (resource, records) in resources {
                     let quantity = mako_billing::rating::period_quantity(resource, &records);
                     let entry = usage_by_segment[index].entry(resource).or_insert(0);
                     *entry = entry.saturating_add(quantity);
+                    let project_entry = project_segments[index].entry(resource).or_insert(0_u64);
+                    *project_entry = project_entry.saturating_add(quantity);
                 }
             }
         }
+        project_usage.insert(project.id().as_str().to_owned(), project_segments);
     }
 
     let card = mako_billing::rating::default_rate_card();
@@ -1266,7 +1374,31 @@ async fn derive_rated_period(
         .ok_or_else(|| internal(request, "the period has no time to rate"))?;
     // Evidence beginning after the window ended means none of it remained;
     // the clamp records that as an empty window rather than an inverted one.
-    Ok((rated, evidence_start.min(period_end)))
+    let mut project_quantities = std::collections::BTreeMap::new();
+    for (id, usage) in project_usage {
+        let project_segments: Vec<_> = rated_segments
+            .iter()
+            .zip(usage)
+            .map(|(segment, usage)| mako_billing::rating::PlanSegment {
+                plan: segment.plan.clone(),
+                milliseconds: segment.milliseconds,
+                usage,
+            })
+            .collect();
+        let quantities = mako_billing::rating::rate_period_prorated(&card, &project_segments)
+            .ok_or_else(|| internal(request, "the project period has no time to rate"))?
+            .line_items
+            .into_iter()
+            .map(|line| (line.resource, line.quantity))
+            .collect();
+        project_quantities.insert(id, quantities);
+    }
+    let projects = mako_billing::rating::allocate_project_costs(&rated, &project_quantities);
+    Ok(DerivedBill {
+        rated,
+        retained_from: evidence_start.min(period_end),
+        projects,
+    })
 }
 
 #[allow(clippy::too_many_arguments)]

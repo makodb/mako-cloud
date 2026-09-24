@@ -1,4 +1,5 @@
-import { expect, test, type Page, type Route } from "@playwright/test";
+import { resolve } from "node:path";
+import { expect, type Page, type Route, test } from "@playwright/test";
 
 const NOW = "2026-08-06T12:00:00.000Z";
 const TEAM_ID = "org_abcdefgh";
@@ -142,24 +143,19 @@ test("a failing usage or bill source marks only its own section unavailable", as
   expect(api.unhandled).toEqual([]);
 });
 
-test("project usage lists every environment and the team's bill with a negative balance marked", async ({
-  page,
-}) => {
+test("project usage lists every environment and links to its own billing", async ({ page }) => {
   const api = new UsageActivityHarness();
   await api.install(page);
 
   await page.goto(`/projects/${PROJECT_ID}/usage`);
   await expect(page.getByRole("heading", { name: "Usage", exact: true })).toBeVisible();
 
-  const billSection = page.locator("section[aria-labelledby='usage-bill-title']");
-  await expect(billSection).toHaveAttribute("data-state", "ready");
-  await expect(billSection.getByRole("note")).toContainText("no charge will be made");
-  await expect(billSection.locator(".bill-summary dd").first()).toHaveText("pro");
-  await expect(billSection.getByText("$25.00")).toBeVisible();
-  await expect(billSection.getByText("$2.50")).toBeVisible();
-  const balance = billSection.getByText("-$22.50");
-  await expect(balance).toBeVisible();
-  await expect(balance).toHaveAttribute("data-negative", "true");
+  await expect(page.getByRole("heading", { name: "Team bill" })).toHaveCount(0);
+  await expect(page.getByText("-$22.50")).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "View project billing" })).toHaveAttribute(
+    "href",
+    `/projects/${PROJECT_ID}/billing`,
+  );
 
   const sectionA = page.locator(`section[data-environment-id="${ENV_A}"]`);
   const sectionB = page.locator(`section[data-environment-id="${ENV_B}"]`);
@@ -183,6 +179,59 @@ test("project usage lists every environment and the team's bill with a negative 
       .map((query) => `${query.environmentId}:${query.cursor ?? ""}`)
       .sort(),
   ).toEqual([`${ENV_A}:`, `${ENV_A}:usage-page-2`, `${ENV_B}:`]);
+});
+
+test("project billing excludes shared balances and links to overall usage and plan", async ({
+  page,
+}) => {
+  const api = new UsageActivityHarness();
+  await api.install(page);
+  await page.goto(`/projects/${PROJECT_ID}/billing`);
+  await expect(page.getByRole("heading", { name: "Billing", exact: true })).toBeVisible();
+  await expect(page.getByRole("note")).toContainText("no charge will be made");
+  await expect(page.getByText("Project usage total")).toBeVisible();
+  await expect(page.getByRole("cell", { name: "250.0 MiB" })).toBeVisible();
+  await expect(page.getByText("$0.25").first()).toBeVisible();
+  await expect(page.getByText("-$22.50")).toHaveCount(0);
+  await expect(page.getByText("$25.00")).toHaveCount(0);
+  await page.screenshot({
+    path: resolve(
+      import.meta.dirname,
+      "../../../.local/console-project-billing/project-desktop.png",
+    ),
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  );
+  await page.screenshot({
+    path: resolve(
+      import.meta.dirname,
+      "../../../.local/console-project-billing/project-mobile.png",
+    ),
+    fullPage: true,
+  });
+  await page.getByRole("link", { name: "Overall usage and plan" }).click();
+  await expect(page.getByRole("heading", { name: "Usage and plan", exact: true })).toBeVisible();
+  await expect(page.getByText("-$22.50")).toHaveAttribute("data-negative", "true");
+  await expect(page.getByRole("link", { name: "Mako Test Project billing" })).toHaveAttribute(
+    "href",
+    `/projects/${PROJECT_ID}/billing`,
+  );
+  expect(api.unhandled).toEqual([]);
+});
+
+test("project billing failures do not show zero costs or an owner's bill", async ({ page }) => {
+  const api = new UsageActivityHarness();
+  api.billFails = true;
+  await api.install(page);
+  await page.goto(`/projects/${PROJECT_ID}/billing`);
+  await expect(page.getByRole("alert")).toBeVisible();
+  await expect(page.getByText("Loading project billing…")).toHaveCount(0);
+  await expect(page.getByText("Project usage total")).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Overall usage and plan" })).toBeVisible();
+  expect(api.unhandled).toEqual([]);
 });
 
 test("the activity feed lists newest first, filters by outcome and action, and loads more", async ({
@@ -305,6 +354,27 @@ class UsageActivityHarness {
         await json(route, apiError("unavailable", "The bill cannot be rated right now."), 503);
       } else {
         await json(route, billFixture());
+      }
+    } else if (path === `/v1/projects/${PROJECT_ID}/bill` && method === "GET") {
+      if (this.billFails) {
+        await json(route, apiError("unavailable", "Project billing is unavailable."), 503);
+      } else {
+        await json(route, {
+          projectId: PROJECT_ID,
+          teamId: TEAM_ID,
+          planId: "pro",
+          periodStart: "2026-08-01T00:00:00.000Z",
+          periodEnd: NOW,
+          retainedFrom: "2026-08-01T00:00:00.000Z",
+          observedAt: NOW,
+          lineItems: [
+            { resource: "storage_bytes", quantity: 250 * MIB, amountMicroDollars: 250_000 },
+          ],
+          totalMicroDollars: 250_000,
+          collectable: false,
+          allocation: "proportional_resource_usage",
+          notice: billFixture().notice,
+        });
       }
     } else if (path === "/v1/projects" && method === "GET") {
       await json(route, { items: [projectFixture()] });

@@ -143,6 +143,56 @@ paths:
                   collectable: {type: boolean}
                   notice: {type: string}
         default: {$ref: "#/components/responses/ApiError"}
+  /v1/projects/{projectId}/bill:
+    get:
+      tags: [Management]
+      operationId: getProjectBill
+      summary: Current usage costs for one project
+      description: >-
+        The project's current calendar-month usage and proportional share of
+        each resource's usage charge under its owner's shared plan. Base fees,
+        credits, and balances remain with the owner and are not allocated.
+        Quantities sum flows and average levels per environment before summing
+        environments, with time weighting across plan changes. Resource charges
+        are attributed by these project quantities, with integer rounding in
+        project-id order. This read does not close invoices. Retention gaps are
+        reported and incomplete bounded reads fail instead of returning partial
+        costs. Informational only; nothing is payable during the beta.
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: Project usage and allocated costs for the current month
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [projectId, teamId, planId, periodStart, periodEnd, retainedFrom, observedAt, lineItems, totalMicroDollars, allocation, collectable, notice]
+                properties:
+                  projectId: {$ref: "#/components/schemas/ProjectId"}
+                  teamId: {$ref: "#/components/schemas/TeamId"}
+                  planId: {type: string}
+                  periodStart: {type: string, format: date-time}
+                  periodEnd: {type: string, format: date-time}
+                  retainedFrom: {type: string, format: date-time}
+                  observedAt: {type: string, format: date-time}
+                  lineItems:
+                    type: array
+                    maxItems: 32
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required: [resource, quantity, amountMicroDollars]
+                      properties:
+                        resource: {$ref: "#/components/schemas/QuotaResource"}
+                        quantity: {type: integer, format: int64, minimum: 0}
+                        amountMicroDollars: {type: integer, format: int64, minimum: 0}
+                  totalMicroDollars: {type: integer, format: int64, minimum: 0}
+                  allocation: {type: string, const: proportional_resource_usage}
+                  collectable: {type: boolean, const: false}
+                  notice: {type: string}
+        default: {$ref: "#/components/responses/ApiError"}
   /v1/teams/{teamId}:
     parameters:
       - $ref: "#/components/parameters/TeamId"

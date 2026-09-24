@@ -126,7 +126,7 @@ test("an unavailable owner listing does not pretend the developer has no project
   await expect(page.getByText("No projects match your search")).toHaveCount(0);
 });
 
-test("project search and direct database entry avoid intermediate landing pages", async ({
+test("personal projects have one creation action, no search, and direct database entry", async ({
   page,
 }) => {
   const api = new HomeApiHarness();
@@ -134,13 +134,15 @@ test("project search and direct database entry avoid intermediate landing pages"
   await api.install(page);
   await page.goto("/");
   await expect(page.getByRole("complementary", { name: "Workspace navigation" })).toBeVisible();
-  await page.getByRole("textbox", { name: "Search projects" }).fill("eu-west");
+  await expect(page.getByRole("textbox", { name: "Search projects" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /^(New|Create) project$/u })).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "Billing and plan" })).toHaveCount(0);
   const row = page.getByRole("article", { name: "Side project" });
   await expect(row).toBeVisible();
-  await expect(page.getByRole("article", { name: "Mako Test Project" })).toHaveCount(0);
-  await page.getByRole("textbox", { name: "Search projects" }).fill("no-match");
-  await expect(page.getByText("No projects match your search")).toBeVisible();
-  await page.getByRole("button", { name: "Clear search" }).click();
+  await expect(row.getByRole("link", { name: "Billing", exact: true })).toHaveAttribute(
+    "href",
+    `/projects/${PERSONAL_PROJECT_ID}/billing`,
+  );
   await expect(page.getByRole("article", { name: "Mako Test Project" })).toBeVisible();
   await page.screenshot({
     path: resolve(import.meta.dirname, "../../../.local/console-redesign/home-desktop.png"),
@@ -148,6 +150,43 @@ test("project search and direct database entry avoid intermediate landing pages"
   });
   await row.getByRole("button", { name: "Browse data" }).click();
   await expect(page).toHaveURL(/\/projects\/prj_persona1\/environments\/env_[^/]+\/data$/u);
+});
+
+test("overall usage keeps personal and team plans separate and links to project billing", async ({
+  page,
+}) => {
+  const api = new HomeApiHarness();
+  api.withProjects();
+  await api.install(page);
+  await page.goto("/usage-and-plan");
+  await expect(page.getByRole("heading", { name: "Usage and plan", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Personal projects", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Mako Test Team", exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Shared usage and plan", exact: true }),
+  ).toHaveCount(2);
+  await expect(page.getByRole("note")).toHaveCount(2);
+  await expect(page.getByRole("link", { name: "Side project billing" })).toHaveAttribute(
+    "href",
+    `/projects/${PERSONAL_PROJECT_ID}/billing`,
+  );
+  await expect(
+    page.getByRole("navigation", { name: "Teams", exact: true }).getByRole("link"),
+  ).toHaveText(["Mako Test Team"]);
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+    ).toBe(true);
+    await page.screenshot({
+      path: resolve(
+        import.meta.dirname,
+        `../../../.local/console-project-billing/overall-${width}.png`,
+      ),
+      fullPage: true,
+    });
+  }
+  expect(api.unhandled).toEqual([]);
 });
 
 test("a usage source that fails marks only its own row", async ({ page }) => {
@@ -174,6 +213,7 @@ test("a developer creates the first project and continues in its workspace", asy
   await page.goto("/");
   const guide = page.getByRole("region", { name: "Connect your first project" });
   await expect(guide).toBeVisible();
+  await expect(page.getByRole("button", { name: /^(New|Create) project$/u })).toHaveCount(0);
   await expect(guide.getByLabel("Owner")).toHaveValue("");
   await guide.getByLabel("Project name").fill("First app");
   await guide.getByLabel("Data region").selectOption("local");

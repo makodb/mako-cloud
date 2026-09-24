@@ -83,6 +83,22 @@ async function settleAndPrint(context: CommandContext, project: Project): Promis
 
 export const projectsCommands: readonly Command[] = [
   {
+    path: ["projects", "bill"],
+    summary: "Show this project's current usage costs under its shared plan",
+    operations: ["getProjectBill"],
+    positionals: [PROJECT_ID],
+    run: async (context, args) => {
+      const client = await context.management();
+      const statement = await client.getProjectBill(args.requirePositional(0, "project-id"));
+      if (!context.json) {
+        context.io.stdout.write(
+          `${statement.notice}\nUsage costs only. Shared base fees and credits appear in the owner's bill.\n\n`,
+        );
+      }
+      context.out(statement);
+    },
+  },
+  {
     path: ["projects", "list"],
     summary: "List projects in one team, or in every team you belong to",
     operations: ["listProjects", "listTeams"],
