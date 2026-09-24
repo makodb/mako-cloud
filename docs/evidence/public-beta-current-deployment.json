@@ -1,30 +1,30 @@
 {
   "schemaVersion": 1,
-  "recordedAt": "2026-09-24T05:54:19.381426+00:00",
-  "status": "risk-accepted-public-preview-active",
+  "recordedAt": "2026-09-24T15:39:52.885746+00:00",
+  "status": "restricted-pre-gate-pending-operator-review",
   "environment": "public-beta",
   "vmId": 124,
   "address": "130.245.173.11",
   "publicOrigin": "https://cloud-test.makodb.com",
   "planHash": "d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073",
   "release": {
-    "digest": "fb3e84fe10f0b6be0cef3d598cffe8596a7830480ea182c91e999a20cf7d4847",
-    "sourceCommit": "f3d8f0f2e4d0703a76e0aa578d984eda2886ebc8",
-    "sourceDigest": "b4b1bafd0bd7723b60881fe6d0ab3aa3921895b0ad5917f482af714ee16b10e6",
+    "digest": "a2d2a458811dbc8354fae1f817dab720ffa3b039aeeb6486d16337e01b00a25b",
+    "sourceCommit": "d3b8894fa4bce7bfcd9ddbdfa189982636ccdd2a",
+    "sourceDigest": "1c721e7eeb6e116e6e7ff3e92e553ebf3e9dace5050495f5369a6968d96d90c8",
     "runtimeDigest": "b0e4ea7b66166492c3c29910858dc5d1b7f9786df81aed7057d80f34a1ad2abd",
     "dependencyDigest": "26a03b9772b571513a6335eeb349cc628c747b8c5bcfa42e50f9eadda09a63ad",
-    "artifactDigest": "56d1a61dcb505241c638fcd60fa1fe108199a635481d7e186d9c74276a0c977d",
-    "selectedPath": "/opt/mako/releases/fb3e84fe10f0b6be0cef3d598cffe8596a7830480ea182c91e999a20cf7d4847",
-    "lastKnownGood": "b60ec9752ab27c6aff8f311ef500866300689f4a9a441060293764c78aa80fb9",
+    "artifactDigest": "9a834e7a87f28b36233c32d7046a4e8d81626aeb4a1fd1e3367336d8c8f73675",
+    "selectedPath": "/opt/mako/releases/a2d2a458811dbc8354fae1f817dab720ffa3b039aeeb6486d16337e01b00a25b",
+    "lastKnownGood": "fb3e84fe10f0b6be0cef3d598cffe8596a7830480ea182c91e999a20cf7d4847",
     "releaseOperation": {
       "schemaVersion": 1,
       "kind": "upgrade",
-      "from": "b60ec9752ab27c6aff8f311ef500866300689f4a9a441060293764c78aa80fb9",
-      "to": "fb3e84fe10f0b6be0cef3d598cffe8596a7830480ea182c91e999a20cf7d4847",
+      "from": "fb3e84fe10f0b6be0cef3d598cffe8596a7830480ea182c91e999a20cf7d4847",
+      "to": "a2d2a458811dbc8354fae1f817dab720ffa3b039aeeb6486d16337e01b00a25b",
       "operator": "mako-admin",
-      "startedAtUnixSeconds": 1790228710,
-      "completedAtUnixSeconds": 1790228769,
-      "durationSeconds": 59,
+      "startedAtUnixSeconds": 1790264027,
+      "completedAtUnixSeconds": 1790264087,
+      "durationSeconds": 60,
       "checkpointVerified": true,
       "storageFormatCompatible": true,
       "configurationSnapshotBound": true,
@@ -34,16 +34,17 @@
     }
   },
   "networkAdmission": {
-    "mode": "risk_accepted_preview",
+    "mode": "pre_gate",
     "publicHttpListenerPresent": true,
     "publicHttpsListenerPresent": true,
     "httpRedirectStatus": 308,
     "trustedHttpsStatus": 200,
     "hstsEnabled": true,
     "unrestrictedPublicAdmissionApproved": false,
-    "riskAcceptedPublicPreviewActive": true,
-    "previewApprovalPersistence": "until-manually-paused",
-    "previewApprovalExpiresAt": null
+    "riskAcceptedPublicPreviewActive": false,
+    "previewApprovalStatus": "invalidated",
+    "freshOperatorApprovalRequired": true,
+    "qualificationAccess": "Existing explicit source network allowlist only"
   },
   "qualification": {
     "privateReadinessEndpoints": 4,
@@ -53,13 +54,14 @@
     "operatorBreakGlassBearerEnabled": false,
     "upgradeCheckpointVerified": true,
     "backupTimersActive": true,
-    "publicPreviewGuardValid": true,
+    "publicPreviewGuardValid": false,
+    "publicPreviewGuardTimerActive": false,
     "releaseAssetsVerified": 5,
     "deployedBrowserCheck": "passed-with-intercepted-synthetic-management-responses",
     "exactReleaseHostedQualification": "not-run-for-this-deployment",
     "mixedStorageTopology": "control-sqlite-and-service-owned-rocksdb",
     "evidence": [
-      "docs/evidence/public-beta-project-billing-deployment.json"
+      "docs/evidence/public-beta-rxdb-docs-deployment.json"
     ]
   },
   "historicalQualification": {
@@ -112,6 +114,10 @@
       {
         "path": "docs/evidence/public-beta-personal-projects-deployment.json",
         "releaseDigest": "b60ec9752ab27c6aff8f311ef500866300689f4a9a441060293764c78aa80fb9"
+      },
+      {
+        "path": "docs/evidence/public-beta-project-billing-deployment.json",
+        "releaseDigest": "fb3e84fe10f0b6be0cef3d598cffe8596a7830480ea182c91e999a20cf7d4847"
       }
     ]
   }
