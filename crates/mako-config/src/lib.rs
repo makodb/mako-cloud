@@ -161,6 +161,9 @@ pub struct ServiceConfig {
     pub operator_authentication: OperatorAuthenticationSettings,
     pub object_store_endpoint: Url,
     pub data_plane_address: SocketAddr,
+    /// Where the edge gateway resolves functions and custom domains: the
+    /// control plane's loopback listener.
+    pub control_plane_address: SocketAddr,
     /// Where the control plane's scheduler invokes functions: the edge
     /// gateway's loopback listener.
     pub edge_gateway_address: SocketAddr,
@@ -173,6 +176,9 @@ pub struct ServiceConfig {
     /// `None` without a public URL or when its host is an IP address.
     pub public_hostname: Option<String>,
     pub runtime_supervisor_address: SocketAddr,
+    /// Where the edge gateway sends invocations: the edge runtime's main
+    /// worker. Deploys and health checks go to the supervisor instead.
+    pub runtime_address: SocketAddr,
     pub telemetry_query_address: SocketAddr,
     pub otlp_address: SocketAddr,
     pub max_request_bytes: u64,
@@ -516,9 +522,11 @@ struct RawConfig {
     operator_break_glass_bearer_enabled: String,
     object_store_endpoint: String,
     data_plane_address: String,
+    control_plane_address: String,
     edge_gateway_address: String,
     dns_resolver: Option<String>,
     runtime_supervisor_address: String,
+    runtime_address: String,
     telemetry_query_address: String,
     otlp_address: String,
     max_request_bytes: String,
@@ -625,9 +633,11 @@ impl RawConfig {
             operator_break_glass_bearer_enabled: "false".into(),
             object_store_endpoint: "http://127.0.0.1:8333".into(),
             data_plane_address: "127.0.0.1:8080".into(),
+            control_plane_address: "127.0.0.1:8081".into(),
             edge_gateway_address: "127.0.0.1:8082".into(),
             dns_resolver: None,
             runtime_supervisor_address: "127.0.0.1:9001".into(),
+            runtime_address: "127.0.0.1:9000".into(),
             telemetry_query_address: "127.0.0.1:9465".into(),
             otlp_address: "127.0.0.1:4317".into(),
             max_request_bytes: (1024 * 1024).to_string(),
@@ -849,6 +859,9 @@ impl RawConfig {
         if let Some(value) = overlay.dependencies.data_plane_address {
             self.data_plane_address = value;
         }
+        if let Some(value) = overlay.dependencies.control_plane_address {
+            self.control_plane_address = value;
+        }
         if let Some(value) = overlay.dependencies.edge_gateway_address {
             self.edge_gateway_address = value;
         }
@@ -857,6 +870,9 @@ impl RawConfig {
         }
         if let Some(value) = overlay.dependencies.runtime_supervisor_address {
             self.runtime_supervisor_address = value;
+        }
+        if let Some(value) = overlay.dependencies.runtime_address {
+            self.runtime_address = value;
         }
         if let Some(value) = overlay.dependencies.telemetry_query_address {
             self.telemetry_query_address = value;
@@ -1180,6 +1196,11 @@ impl RawConfig {
         )?;
         apply_string(
             loader,
+            "MAKO_CONTROL_PLANE_ENDPOINT",
+            &mut self.control_plane_address,
+        )?;
+        apply_string(
+            loader,
             "MAKO_EDGE_GATEWAY_ENDPOINT",
             &mut self.edge_gateway_address,
         )?;
@@ -1189,6 +1210,7 @@ impl RawConfig {
             "MAKO_RUNTIME_SUPERVISOR_ENDPOINT",
             &mut self.runtime_supervisor_address,
         )?;
+        apply_string(loader, "MAKO_RUNTIME_ENDPOINT", &mut self.runtime_address)?;
         apply_string(
             loader,
             "MAKO_TELEMETRY_QUERY_ENDPOINT",
@@ -1890,6 +1912,31 @@ impl RawConfig {
                 "control-plane data plane must use a loopback address",
             ));
         }
+        if service == ServiceKind::EdgeGateway && !data_plane_address.ip().is_loopback() {
+            return Err(invalid(
+                "dependencies.data_plane_address",
+                "edge-gateway data plane must use a loopback address",
+            ));
+        }
+        // The gateway resolves functions over the same internal RPC, and hands
+        // invocations to a runtime on its own node.
+        let control_plane_address = parse_socket(
+            &self.control_plane_address,
+            "dependencies.control_plane_address",
+        )?;
+        if service == ServiceKind::EdgeGateway && !control_plane_address.ip().is_loopback() {
+            return Err(invalid(
+                "dependencies.control_plane_address",
+                "edge-gateway control plane must use a loopback address",
+            ));
+        }
+        let runtime_address = parse_socket(&self.runtime_address, "dependencies.runtime_address")?;
+        if service == ServiceKind::EdgeGateway && !runtime_address.ip().is_loopback() {
+            return Err(invalid(
+                "dependencies.runtime_address",
+                "edge-gateway runtime must use a loopback address",
+            ));
+        }
         // The scheduler invokes functions through the edge gateway over the
         // same loopback-only internal RPC.
         let edge_gateway_address = parse_socket(
@@ -2005,10 +2052,12 @@ impl RawConfig {
             operator_authentication,
             object_store_endpoint,
             data_plane_address,
+            control_plane_address,
             edge_gateway_address,
             dns_resolver,
             public_hostname,
             runtime_supervisor_address,
+            runtime_address,
             telemetry_query_address,
             otlp_address,
             max_request_bytes,
@@ -2094,9 +2143,11 @@ struct DependenciesOverlay {
     smtp_address: Option<String>,
     object_store_endpoint: Option<String>,
     data_plane_address: Option<String>,
+    control_plane_address: Option<String>,
     edge_gateway_address: Option<String>,
     dns_resolver: Option<String>,
     runtime_supervisor_address: Option<String>,
+    runtime_address: Option<String>,
     telemetry_query_address: Option<String>,
     otlp_address: Option<String>,
 }
@@ -2823,6 +2874,45 @@ mod tests {
             .expect_err("non-loopback telemetry query source must fail");
         assert_eq!(error.code, ConfigErrorCode::InvalidValue);
         assert_eq!(error.field, "dependencies.telemetry_query_address");
+    }
+
+    #[test]
+    fn edge_gateway_dependencies_follow_the_environment_and_stay_on_loopback() {
+        let config = ConfigLoader::from_environment(std::iter::empty::<(&str, &str)>())
+            .load(ServiceKind::EdgeGateway)
+            .expect("valid config");
+        assert_eq!(config.data_plane_address.port(), 8080);
+        assert_eq!(config.control_plane_address.port(), 8081);
+        assert_eq!(config.runtime_address.port(), 9000);
+
+        let config = ConfigLoader::from_environment([
+            ("MAKO_DATA_PLANE_ENDPOINT", "127.0.0.1:18080"),
+            ("MAKO_CONTROL_PLANE_ENDPOINT", "127.0.0.1:18081"),
+            ("MAKO_RUNTIME_ENDPOINT", "127.0.0.1:19000"),
+        ])
+        .load(ServiceKind::EdgeGateway)
+        .expect("valid config");
+        assert_eq!(config.data_plane_address.port(), 18080);
+        assert_eq!(config.control_plane_address.port(), 18081);
+        assert_eq!(config.runtime_address.port(), 19000);
+
+        for (name, field) in [
+            (
+                "MAKO_DATA_PLANE_ENDPOINT",
+                "dependencies.data_plane_address",
+            ),
+            (
+                "MAKO_CONTROL_PLANE_ENDPOINT",
+                "dependencies.control_plane_address",
+            ),
+            ("MAKO_RUNTIME_ENDPOINT", "dependencies.runtime_address"),
+        ] {
+            let error = ConfigLoader::from_environment([(name, "192.0.2.1:9000")])
+                .load(ServiceKind::EdgeGateway)
+                .expect_err("non-loopback gateway dependency must fail");
+            assert_eq!(error.code, ConfigErrorCode::InvalidValue);
+            assert_eq!(error.field, field);
+        }
     }
 
     #[test]
