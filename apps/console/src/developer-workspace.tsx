@@ -28,6 +28,7 @@ import {
   Input,
   Label,
   NativeSelect,
+  Skeleton,
   Table,
   TableBody,
   TableCell,
@@ -229,6 +230,7 @@ export function EnvironmentWorkspaceLayout({
   const [destinations, setDestinations] = useState<WorkspaceDestination[]>([]);
   const [failure, setFailure] = useState<ConsoleApiFailure | null>(null);
   const [navigationFailure, setNavigationFailure] = useState<ConsoleApiFailure | null>(null);
+  const [navigationLoaded, setNavigationLoaded] = useState(false);
   useEffect(() => {
     let active = true;
     void Promise.all([client.getProject(projectId), client.listEnvironments(projectId)]).then(
@@ -245,9 +247,14 @@ export function EnvironmentWorkspaceLayout({
         if (active) {
           setDestinations(value);
           setNavigationFailure(null);
+          setNavigationLoaded(true);
         }
       },
-      (error: unknown) => active && setNavigationFailure(toConsoleApiFailure(error)),
+      (error: unknown) => {
+        if (!active) return;
+        setNavigationFailure(toConsoleApiFailure(error));
+        setNavigationLoaded(true);
+      },
     );
     return () => {
       active = false;
@@ -285,6 +292,12 @@ export function EnvironmentWorkspaceLayout({
     { label: "Configure", ids: ["connect", "credentials", "api-docs", "settings"] },
   ];
   const currentEnvironment = environments.find((environment) => environment.id === environmentId);
+  // Until the project answers, its name is unknown: a placeholder holds its
+  // place. The raw id stood in before, and an id has nowhere to wrap, so it
+  // widened the sidebar past its edge and the environment picker with it.
+  const projectLoading = project === null && failure === null;
+  const projectLabel = project?.name ?? projectId;
+  const environmentLabel = currentEnvironment?.name ?? environmentId;
   return (
     <div className="grid min-h-[calc(100vh-3.5rem)] grid-cols-1 md:grid-cols-[16rem_minmax(0,1fr)]">
       <aside
@@ -308,33 +321,44 @@ export function EnvironmentWorkspaceLayout({
           <Eyebrow>Database workspace</Eyebrow>
           <Button
             variant="ghost"
-            className="h-auto justify-start gap-2 whitespace-normal px-0 py-0 text-left text-base font-semibold hover:bg-transparent hover:underline"
+            aria-label={projectLoading ? "Project" : undefined}
+            className="h-auto min-w-0 items-start justify-start gap-2 whitespace-normal px-0 py-0 text-left text-base font-semibold hover:bg-transparent hover:underline"
             onClick={() => navigate(`/projects/${projectId}`)}
           >
-            <FolderOpen aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
-            {project?.name ?? projectId}
+            <FolderOpen aria-hidden="true" className="mt-1 size-4 shrink-0 text-muted-foreground" />
+            {projectLoading ? (
+              <Skeleton className="h-5 w-36" />
+            ) : (
+              <span className="line-clamp-2 min-w-0 [overflow-wrap:anywhere]" title={projectLabel}>
+                {projectLabel}
+              </span>
+            )}
           </Button>
           <div className="grid gap-1">
             <Label htmlFor="environment-switcher" className="text-xs text-muted-foreground">
               Environment
             </Label>
-            <NativeSelect
-              id="environment-switcher"
-              size="sm"
-              aria-label="Switch environment"
-              value={environmentId}
-              onChange={(event) =>
-                navigate(
-                  `/projects/${projectId}/environments/${event.currentTarget.value}/overview`,
-                )
-              }
-            >
-              {environments.map((environment) => (
-                <option key={environment.id} value={environment.id}>
-                  {environment.name} · {environment.state}
-                </option>
-              ))}
-            </NativeSelect>
+            {projectLoading ? (
+              <Skeleton className="h-8 w-full" />
+            ) : (
+              <NativeSelect
+                id="environment-switcher"
+                size="sm"
+                aria-label="Switch environment"
+                value={environmentId}
+                onChange={(event) =>
+                  navigate(
+                    `/projects/${projectId}/environments/${event.currentTarget.value}/overview`,
+                  )
+                }
+              >
+                {environments.map((environment) => (
+                  <option key={environment.id} value={environment.id}>
+                    {environment.name} · {environment.state}
+                  </option>
+                ))}
+              </NativeSelect>
+            )}
           </div>
         </div>
         <nav aria-label="Environment destinations" className="min-w-0">
@@ -370,6 +394,18 @@ export function EnvironmentWorkspaceLayout({
               <div key={group.label} className="min-w-40 md:min-w-0">
                 <Eyebrow className="mb-1 px-3 text-[10px]">{group.label}</Eyebrow>
                 <ul className="m-0 grid list-none gap-0.5 p-0">
+                  {navigationLoaded
+                    ? null
+                    : group.ids.map((id) => (
+                        <li
+                          key={id}
+                          aria-hidden="true"
+                          className="flex items-center gap-3 border border-transparent px-3 py-1.5"
+                        >
+                          <Skeleton className="size-4 shrink-0 rounded-sm" />
+                          <Skeleton className="my-0.5 h-4 w-24" />
+                        </li>
+                      ))}
                   {allDestinations
                     .filter((destination) => group.ids.includes(destination.id))
                     .map((destination) => {
@@ -433,13 +469,25 @@ export function EnvironmentWorkspaceLayout({
               navigate(`/projects/${projectId}`);
             }}
           >
-            {project?.name ?? projectId}
+            {projectLoading ? (
+              <Skeleton className="inline-block h-4 w-28 align-middle" />
+            ) : (
+              <span className="block max-w-64 truncate" title={projectLabel}>
+                {projectLabel}
+              </span>
+            )}
           </a>
           <span aria-hidden="true" className="flex text-muted-foreground/60">
             <ChevronRight className="size-3.5" />
           </span>
           <strong className="font-medium text-foreground">
-            {currentEnvironment?.name ?? environmentId}
+            {projectLoading ? (
+              <Skeleton className="inline-block h-4 w-24 align-middle" />
+            ) : (
+              <span className="block max-w-64 truncate" title={environmentLabel}>
+                {environmentLabel}
+              </span>
+            )}
           </strong>
         </nav>
         <ApiFailureNotice failure={failure} />
