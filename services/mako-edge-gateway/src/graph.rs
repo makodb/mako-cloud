@@ -221,7 +221,12 @@ impl FunctionRouteResolver for PrivateRouteResolver {
         project_ref: &str,
         function_name: &str,
     ) -> Result<Option<ResolvedFunctionRoute>, FunctionRouteError> {
-        let tenant = tenant_from_project_ref(project_ref).ok_or(FunctionRouteError::Unavailable)?;
+        // A reference that names no environment, a bare project id say, is an
+        // address nothing can own: not found, like an unknown function. It used
+        // to be reported as unavailable, a 503 that tells the client to retry.
+        let Some(tenant) = tenant_from_project_ref(project_ref) else {
+            return Ok(None);
+        };
         let key = (project_ref.to_owned(), function_name.to_owned());
         if let Some(cached) = self.cached(&key) {
             return Ok(Some(self.route_from(tenant, cached)));
@@ -930,6 +935,25 @@ mod tests {
             resolver.cached(&key).is_none(),
             "an entry older than the cache interval was still reused"
         );
+    }
+
+    #[test]
+    fn a_reference_without_an_environment_resolves_to_no_function() {
+        let directory = local_tempdir("edge-gateway-bare-reference");
+        let config = config_for(directory.path(), DeploymentEnvironment::Local);
+        let graph = EdgeGatewayGraph::open(&config).expect("edge graph");
+        for reference in [
+            "prj_example00",
+            "prj_example00--",
+            "prj_example00--env_",
+            "prj_example00--environment",
+        ] {
+            let route = block_on(graph.routes.resolve(reference, "hello"));
+            assert!(
+                matches!(route, Ok(None)),
+                "{reference} must be not found, not unavailable"
+            );
+        }
     }
 
     #[test]

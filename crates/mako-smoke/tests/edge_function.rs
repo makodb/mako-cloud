@@ -344,8 +344,8 @@ fn deployed_function_is_served_through_the_edge_gateway() {
     // A bare project reference carries no environment and must be refused.
     let bare = format!("/{PROJECT_ID}/functions/v1/{FUNCTION_NAME}");
     let (status, _) = request(GATEWAY_PORT, "GET", &bare, &BTreeMap::new(), None);
-    assert_ne!(
-        status, 200,
+    assert_eq!(
+        status, 404,
         "a project reference without an environment must not resolve"
     );
 
