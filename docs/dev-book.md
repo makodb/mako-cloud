@@ -1584,7 +1584,7 @@ Every Mako web surface — the developer console and the Rational sample — is 
 | `scripts/proxmox/*` | `scripts/proxmox` | Plan, apply, teardown planner, cloud-init rendering, inventory, firewall, admission stop, backup target |
 | `scripts/public-beta-preview-approval.js` | `scripts` | Digest-bound preview approval plan/approve |
 | `scripts/cleanup-expired-operator-sessions.js` | `scripts` | Bounded cleanup of expired local operator tokens |
-| `scripts/export-rational-app.mjs`, `publish-rxdb-client.mjs` | `scripts` | Publish Rational to its repository; publish `@mako-cloud/rxdb` to npm |
+| `scripts/export-rational-app.mjs`, `publish-rxdb-client.mjs` | `scripts` | Publish Rational to its repository; publish the built `@mako-cloud/rxdb` package to its [public distribution repository](https://github.com/makodb/mako-rxdb) |
 | `scripts/run-*-qualification.sh`, `run-performance-benchmarks.sh` | `scripts` | The qualification runners behind the `test:*` scripts |
 | `scripts/validate-*.js`, `scan-public-beta-secrets.js` | `scripts` | The CI validators |
 

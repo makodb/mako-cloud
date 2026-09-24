@@ -2454,7 +2454,7 @@ Public failures use the versioned `ApiErrorEnvelope` ([shape and codes](#errors-
 
 | Package | For | Notes |
 | --- | --- | --- |
-| [`@mako-cloud/rxdb`](../packages/rxdb-client/README.md) | Application code (browser, mobile, Node) | Published on npm. Auth, replication, storage. Carries only a public key and an application-user session |
+| [`@mako-cloud/rxdb`](../packages/rxdb-client/README.md) | Application code (browser, mobile, Node) | Install from the [built release archive](#install-and-configure). Auth, replication, storage. Carries only a public key and an application-user session |
 | `@mako-cloud/edge-sdk` | Edge functions | Supplied by the runtime; never installed. Caller-aware client plus the explicit service client |
 | `@mako-cloud/management-sdk` | Scripts, CI, tools | `createManagementClient({ endpoint, credential: { kind, accessToken } })` → `MakoManagementClient` with one typed method per management operation (`accessToken` may be a string or a provider function); `createDeveloperAuthClient` for registration and sessions; `createOperatorClient` for operator inventory. Errors are `ManagementApiError` carrying the envelope |
 | `@mako-cloud/api-types` | Anyone generating a client | The generated OpenAPI types and a minimal fetch client (`createMakoApiClient`) |
