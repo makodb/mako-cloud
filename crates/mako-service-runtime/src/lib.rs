@@ -1519,20 +1519,31 @@ fn build_response(
     stopping: Arc<AtomicBool>,
 ) -> Result<ResponseBox, ServiceRuntimeError> {
     let headers = response_headers(response.headers, &response.content_type, request_id)?;
+    let fixed = matches!(response.body, ResponseBody::Fixed(_));
     let body = match response.body {
         ResponseBody::Fixed(body) => ResponseBody::Fixed(body),
         ResponseBody::Streaming(body) => {
             ResponseBody::Streaming(body.with_shutdown(Arc::clone(&stopping)))
         }
     };
-    Ok(Response::new(
+    let response = Response::new(
         StatusCode(response.status),
         headers,
         body,
         response.body_length,
         None,
-    )
-    .boxed())
+    );
+    // tiny_http sends any HTTP/1.1 body of 32 KiB or more chunked, even when its
+    // length is known. A buffered body always carries its length instead: the
+    // internal clients read exactly Content-Length and refuse chunked framing,
+    // so a large page -- a month of usage, a bill's records -- failed as
+    // "unavailable" once it crossed the threshold. Streams stay chunked.
+    let response = if fixed {
+        response.with_chunked_threshold(usize::MAX)
+    } else {
+        response
+    };
+    Ok(response.boxed())
 }
 
 fn response_headers(
@@ -2160,6 +2171,29 @@ mod tests {
         assert!(wire.starts_with("HTTP/1.1 200 OK\r\n"));
         assert!(wire.contains("Transfer-Encoding: chunked\r\n"));
         assert!(wire.contains("\r\n5\r\nfirst\r\n6\r\nsecond\r\n0\r\n\r\n"));
+    }
+
+    #[test]
+    fn a_large_buffered_response_carries_its_length_instead_of_chunking() {
+        let items = vec!["x".repeat(1_024); 64];
+        let response = HttpResponse::json(200, &json!({ "items": items })).expect("json");
+        let mut wire = Vec::new();
+        build_response(
+            response,
+            "req_length_test",
+            Arc::new(AtomicBool::new(false)),
+        )
+        .expect("response")
+        .raw_print(&mut wire, HTTPVersion(1, 1), &[], false, None)
+        .expect("wire response");
+        let wire = String::from_utf8(wire).expect("ASCII response");
+        let (head, body) = wire.split_once("\r\n\r\n").expect("header terminator");
+        assert!(
+            body.len() > 64 * 1_024,
+            "the body must cross the chunking threshold"
+        );
+        assert!(!head.to_ascii_lowercase().contains("transfer-encoding"));
+        assert!(head.contains(&format!("Content-Length: {}", body.len())));
     }
 
     #[test]
