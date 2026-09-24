@@ -24,7 +24,9 @@ use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
 use crate::{
     ControlPlaneGraph,
-    http_support::{project_id, public_json, public_value, query_value, reject_unknown_query},
+    http_support::{
+        no_body, project_id, public_json, public_value, query_value, reject_unknown_query,
+    },
     management_http::{
         conflict, forbidden, invalid, no_payload, no_query, not_found, parse_json, require_json,
         unavailable,
@@ -255,7 +257,7 @@ fn handle_tenants(
     request: &HttpRequest,
 ) -> Result<HttpResponse, HttpApiError> {
     let (actor, now) = authorize_operator(graph, request, false)?;
-    no_payload(request)?;
+    no_body(request)?;
     reject_unknown_query(
         request,
         &[
@@ -316,7 +318,7 @@ fn handle_inventory(
     request: &HttpRequest,
 ) -> Result<HttpResponse, HttpApiError> {
     let (actor, now) = authorize_operator(graph, request, false)?;
-    no_payload(request)?;
+    no_body(request)?;
     reject_unknown_query(request, &["projectId", "from", "until"])?;
     let kind: InventoryKind = serde_json::from_value(serde_json::Value::String(
         request
@@ -355,7 +357,7 @@ fn handle_alerts(
     request: &HttpRequest,
 ) -> Result<HttpResponse, HttpApiError> {
     let (actor, now) = authorize_operator(graph, request, false)?;
-    no_payload(request)?;
+    no_body(request)?;
     reject_unknown_query(request, &["projectId", "cursor", "limit"])?;
     let project = query_value(request, "projectId")?
         .map(ProjectId::parse)
@@ -377,7 +379,7 @@ fn handle_alert(
     request: &HttpRequest,
 ) -> Result<HttpResponse, HttpApiError> {
     let (actor, now) = authorize_operator(graph, request, false)?;
-    no_payload(request)?;
+    no_body(request)?;
     reject_unknown_query(request, &["projectId"])?;
     let project = query_value(request, "projectId")?
         .map(ProjectId::parse)
@@ -401,7 +403,7 @@ fn handle_incidents(
     request: &HttpRequest,
 ) -> Result<HttpResponse, HttpApiError> {
     let (actor, now) = authorize_operator(graph, request, false)?;
-    no_payload(request)?;
+    no_body(request)?;
     reject_unknown_query(
         request,
         &[
@@ -538,7 +540,7 @@ fn handle_recovery_jobs(
     request: &HttpRequest,
 ) -> Result<HttpResponse, HttpApiError> {
     let (actor, now) = authorize_operator(graph, request, false)?;
-    no_payload(request)?;
+    no_body(request)?;
     reject_unknown_query(request, &["projectId", "cursor", "limit"])?;
     let project = query_value(request, "projectId")?
         .map(ProjectId::parse)
@@ -611,7 +613,7 @@ fn handle_activity(
     request: &HttpRequest,
 ) -> Result<HttpResponse, HttpApiError> {
     let (actor, now) = authorize_operator(graph, request, false)?;
-    no_payload(request)?;
+    no_body(request)?;
     reject_unknown_query(request, &["cursor", "limit", "query", "from", "until"])?;
     let page = block_on(
         graph.operator_control_center().activity(
@@ -715,7 +717,7 @@ fn handle_provisioning_inventory(
     request: &HttpRequest,
 ) -> Result<HttpResponse, HttpApiError> {
     let (actor, now) = authorize_operator(graph, request, false)?;
-    no_payload(request)?;
+    no_body(request)?;
     reject_unknown_query(request, &["projectId", "limit"])?;
     let project = query_value(request, "projectId")?
         .map(|value| mako_api::ProjectId::parse(value.to_owned()))
@@ -738,7 +740,7 @@ fn handle_quota_override_inventory(
     request: &HttpRequest,
 ) -> Result<HttpResponse, HttpApiError> {
     let (actor, now) = authorize_operator(graph, request, false)?;
-    no_payload(request)?;
+    no_body(request)?;
     reject_unknown_query(request, &["limit"])?;
     let project = project_id(request)?;
     let limit = NonZeroUsize::new(query_usize(request, "limit", 25, 100)?)
@@ -820,7 +822,7 @@ fn handle_abuse_response_inventory(
     request: &HttpRequest,
 ) -> Result<HttpResponse, HttpApiError> {
     let (actor, now) = authorize_operator(graph, request, false)?;
-    no_payload(request)?;
+    no_body(request)?;
     reject_unknown_query(request, &["limit"])?;
     let project = project_id(request)?;
     let limit = NonZeroUsize::new(query_usize(request, "limit", 25, 100)?)
@@ -867,7 +869,7 @@ fn handle_support_session_inventory(
     request: &HttpRequest,
 ) -> Result<HttpResponse, HttpApiError> {
     let (actor, now) = authorize_operator(graph, request, false)?;
-    no_payload(request)?;
+    no_body(request)?;
     reject_unknown_query(request, &["limit"])?;
     let project = project_id(request)?;
     let limit = NonZeroUsize::new(query_usize(request, "limit", 25, 100)?)
@@ -886,7 +888,7 @@ fn handle_current_support_sessions(
     request: &HttpRequest,
 ) -> Result<HttpResponse, HttpApiError> {
     let (actor, now) = authorize_operator(graph, request, false)?;
-    no_payload(request)?;
+    no_body(request)?;
     reject_unknown_query(request, &["limit"])?;
     let limit = NonZeroUsize::new(query_usize(request, "limit", 25, 100)?)
         .expect("validated limit is positive");
@@ -904,7 +906,7 @@ fn handle_operator_security(
     request: &HttpRequest,
 ) -> Result<HttpResponse, HttpApiError> {
     let (actor, now) = authorize_operator(graph, request, false)?;
-    no_payload(request)?;
+    no_body(request)?;
     reject_unknown_query(request, &["limit"])?;
     if !actor.allows(OperatorPermission::SecurityRead)
         && !actor.allows(OperatorPermission::TenantRead)

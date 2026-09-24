@@ -27,6 +27,10 @@ if (form === null || title === null) {
   throw new Error("reference app form is missing");
 }
 
+/** The environment's password policy: Mako's default asks for 12 characters.
+ * Declared before the sign-in below awaits, which reads it. */
+const MINIMUM_PASSWORD_LENGTH = 12;
+
 status.textContent = "starting";
 const { application, email } = await startApplication();
 requiredElement("app").hidden = false;
@@ -36,6 +40,12 @@ if (email !== null) {
   requiredElement("sign-out").addEventListener("click", () => {
     void application.signOut().finally(() => window.location.reload());
   });
+}
+
+interface SignInAttempt {
+  email: string;
+  password: string;
+  createAccount: boolean;
 }
 
 /**
@@ -64,27 +74,37 @@ async function startApplication(): Promise<{
   if (signInForm === null) {
     throw new Error("sign-in form is missing");
   }
+  // One listener for the life of the form. A listener added per attempt left
+  // the form without one while an attempt ran or after one threw, and the
+  // next click fell through to the browser's own submit: a reload, with the
+  // email and password in the URL. A submit during an attempt is ignored.
+  let waiting: ((attempt: SignInAttempt) => void) | null = null;
+  signInForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const resolve = waiting;
+    if (resolve === null) {
+      return;
+    }
+    waiting = null;
+    const data = new FormData(signInForm);
+    const submitter = (event as SubmitEvent).submitter as HTMLButtonElement | null;
+    resolve({
+      email: String(data.get("email") ?? "").trim(),
+      password: String(data.get("password") ?? ""),
+      createAccount: submitter?.value === "create",
+    });
+  });
   panel.hidden = false;
   status.textContent = "signed out";
   for (;;) {
-    const attempt = await new Promise<{ email: string; password: string; createAccount: boolean }>(
-      (resolve) =>
-        signInForm.addEventListener(
-          "submit",
-          (event) => {
-            event.preventDefault();
-            const data = new FormData(signInForm);
-            const submitter = (event as SubmitEvent).submitter as HTMLButtonElement | null;
-            resolve({
-              email: String(data.get("email") ?? "").trim(),
-              password: String(data.get("password") ?? ""),
-              createAccount: submitter?.value === "create",
-            });
-          },
-          { once: true },
-        ),
-    );
+    const attempt = await new Promise<SignInAttempt>((resolve) => {
+      waiting = resolve;
+    });
     failure.textContent = "";
+    if (attempt.createAccount && Array.from(attempt.password).length < MINIMUM_PASSWORD_LENGTH) {
+      failure.textContent = `Use a password of at least ${MINIMUM_PASSWORD_LENGTH} characters.`;
+      continue;
+    }
     status.textContent = attempt.createAccount ? "creating account" : "signing in";
     try {
       const application = await createReferenceApplication(

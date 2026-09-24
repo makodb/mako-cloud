@@ -35,6 +35,17 @@ pub(crate) fn query_value<'a>(
     Ok(value)
 }
 
+/// Refuses a request body and nothing else. A handler that reads query
+/// parameters uses this with `reject_unknown_query`, not `no_payload`, which
+/// also refuses every query parameter.
+pub(crate) fn no_body(request: &HttpRequest) -> Result<(), HttpApiError> {
+    if request.body().is_empty() {
+        Ok(())
+    } else {
+        Err(invalid(request, "request body is not supported"))
+    }
+}
+
 pub(crate) fn reject_unknown_query(
     request: &HttpRequest,
     allowed: &[&str],

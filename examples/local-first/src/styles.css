@@ -135,3 +135,8 @@ button.secondary {
   color: #9b2c2c;
   font-size: 0.9rem;
 }
+
+#password-hint {
+  color: #52665b;
+  font-size: 0.85rem;
+}

@@ -2199,6 +2199,43 @@ mod tests {
     /// allows for that ever reaches a management, operator, or developer
     /// workspace route: the control plane installs no cross-origin
     /// middleware at all, so there is nothing to misconfigure.
+    /// A route that validates its own query parameters has to receive them.
+    /// `no_payload` refuses every query parameter, and fourteen routes that
+    /// read filters and paging called it before their own checks, so their
+    /// filters could never be used. Sent unauthenticated, each of these must
+    /// get past its query checks and stop at authentication instead.
+    #[test]
+    fn routes_that_read_query_parameters_receive_them() {
+        let directory = local_tempdir("control-plane-query");
+        let config = config_for(directory.path(), DeploymentEnvironment::Local);
+        let unavailable = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("unused listener");
+        let endpoint = unavailable.local_addr().expect("unused endpoint");
+        drop(unavailable);
+        let graph = Arc::new(
+            ControlPlaneGraph::open_with_data_plane_endpoint(&config, endpoint)
+                .expect("control-plane graph"),
+        );
+        let router = crate::control_plane_router(Arc::clone(&graph)).expect("router");
+        for (path, query) in [
+            (
+                "/v1/projects/prj_example0001/environments/env_example0001/sync/summary",
+                vec![("collectionId", "todos"), ("from", "1"), ("until", "60")],
+            ),
+            (
+                "/v1/operator/activity",
+                vec![("limit", "10"), ("query", "todo")],
+            ),
+            ("/v1/operator/tenants", vec![("query", "todo")]),
+            ("/v1/operator/incidents", vec![("limit", "10")]),
+        ] {
+            let response = router.respond_for_test(
+                request(HttpMethod::Get, path, None, None, b"", "127.0.0.9:1000")
+                    .with_query_for_test(query),
+            );
+            assert_eq!(response.status_for_test(), 401, "{path} refused its query");
+        }
+    }
+
     #[test]
     fn the_management_api_never_answers_cross_origin() {
         let directory = local_tempdir("control-plane-cors");
