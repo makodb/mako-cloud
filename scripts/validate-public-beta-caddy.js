@@ -53,6 +53,7 @@ const data = matcher("data_api");
 const control = matcher("control_api");
 const operatorControl = matcher("operator_control_api");
 const developerWorkspace = matcher("developer_workspace_api");
+const explorerData = matcher("explorer_data_api");
 const serviceCredential = matcher("service_credential_api");
 const edge = matcher("edge_function");
 const operatorAuth = matcher("operator_auth");
@@ -124,11 +125,29 @@ for (const template of openapiPaths) {
     control.test(path),
     operatorControl.test(path),
     developerWorkspace.test(path),
+    explorerData.test(path),
     edge.test(path),
   ];
   assert(
     matches.filter(Boolean).length === 1,
     `${template} is not owned by exactly one Caddy upstream`,
+  );
+  if (template.includes("/explorer/collections/")) {
+    assert(explorerData.test(path), `${template} must reach the data plane`);
+  } else if (template.includes("/explorer/grants")) {
+    assert(developerWorkspace.test(path), `${template} must reach the control plane`);
+  } else {
+    assert(!explorerData.test(path), `${template} entered the explorer data matcher`);
+  }
+}
+
+for (const [name, port] of [
+  ["explorer_data_api", 8080],
+  ["developer_workspace_api", 8081],
+]) {
+  assert(
+    caddy.includes(`reverse_proxy @${name} 127.0.0.1:${port} {`),
+    `${name} targets the wrong service`,
   );
 }
 
@@ -139,6 +158,9 @@ for (const path of [
   "/v1/projects/prj_example0001/environments/env_example0001/service/collections/documents/doc_example0001",
   "/v1/projects/prj_example0001/not-documented",
   "/v1/projects/prj_example0001/bill/private",
+  "/v1/projects/prj_example0001/environments/env_example0001/explorer/collections/documents/browse/private",
+  "/v1/projects/prj_example0001/environments/env_example0001/explorer/collections//browse",
+  "/v1/projects/prj_example0001/environments/env_example0001/explorer/collections/documents/query/plan/private",
 ]) {
   assert(
     serviceCredential.test(path) ||
@@ -146,6 +168,7 @@ for (const path of [
         !control.test(path) &&
         !operatorControl.test(path) &&
         !developerWorkspace.test(path) &&
+        !explorerData.test(path) &&
         !edge.test(path)),
     `${path} escaped the route allowlist`,
   );
@@ -171,6 +194,7 @@ const orderedRouteDirectives = [
   "respond @service_credential_api 404",
   "reverse_proxy @replication_stream",
   "reverse_proxy @data_api",
+  "reverse_proxy @explorer_data_api",
   "reverse_proxy @control_api",
   "reverse_proxy @operator_control_api",
   "reverse_proxy @developer_workspace_api",
@@ -265,6 +289,8 @@ for (const path of [
   "/v1/operator/overview",
   "/v1/developer-auth/sessions",
   "/v1/projects/prj_example0001/environments/env_example0001/explorer/grants",
+  "/v1/projects/prj_example0001/environments/env_example0001/explorer/collections/documents/browse",
+  "/v1/projects/prj_example0001/environments/env_example0001/explorer/collections/documents/documents/doc_example0001",
   "/prj_example0001/functions/v1/health",
   "/_internal/v1/custom-domains/ask",
   "/v1/projects/prj_example0001/environments/env_example0001/service/collections/documents/query",
@@ -292,6 +318,7 @@ for (const forbidden of [
   "@control_api",
   "@operator_control_api",
   "@developer_workspace_api",
+  "@explorer_data_api",
   "@console_route",
   "@console_workspace_route",
   "@console_asset",

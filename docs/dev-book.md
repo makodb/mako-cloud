@@ -606,6 +606,7 @@ A gate that silently skips stops being a gate. Suites that need something the ho
 | `happy_path.rs` | Bootstrap, application sign-up and sign-in, push, pull, and the negative control without a session (`npm run test:e2e-smoke`; writes `docs/evidence/e2e-smoke-qualification.json`) |
 | `developer_cli.rs` | The built `mako-cloud` CLI through a console workflow (skips with a notice when `packages/cli/dist` is absent) |
 | `database_service.rs` | Document and `/service/` routes: encoded ids, request-id reuse, idempotency |
+| `explorer_proxy.rs` | Personal and team projects through the production Caddy routes: grants, browsing, queries, edits, revocation, scope enforcement, and custom-domain denial |
 | `auth_providers.rs` | Provider start/callback/exchange and magic links against a loopback provider stub |
 | `file_storage.rs` | Buckets, objects, policy, conditional uploads, public buckets, totals, removal (with `ObjectStoreStub`) |
 | `webhooks.rs` | A real endpoint receiving and verifying signed deliveries |
@@ -617,6 +618,8 @@ A gate that silently skips stops being a gate. Suites that need something the ho
 | `sample_app.rs`, `rational.rs` | The Rational model over HTTP (`npm run test:rational-smoke`; writes `docs/evidence/rational-smoke-qualification.json`) |
 
 Each run allocates ephemeral ports and a temporary directory under `MAKO_STORAGE_TMPDIR`, so runs do not collide with a development stack or with each other (the edge suite is the exception: the gateway's ports are compiled in). `MAKO_SMOKE_BINARY_DIR` overrides where binaries are found.
+
+The explorer proxy suite requires Caddy and Python with Jinja2. It renders the production Caddy template with loopback listeners and upstream ports, then starts real services with temporary storage. Set `MAKO_SMOKE_CADDY` and `MAKO_SMOKE_PYTHON` if those executables are outside `PATH`, then run `cargo test -p mako-smoke --test explorer_proxy`. CI installs these dependencies before running the integration targets. The route validator also checks that document explorer requests reach the data plane while grant requests reach the control plane. Neither route is exposed on custom domains.
 
 ### Qualification suites
 

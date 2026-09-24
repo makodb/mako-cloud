@@ -114,7 +114,13 @@ jobs:
       - run: npm ci
       - name: Build service binaries for end-to-end targets
         run: cargo build --workspace --bins
+      - name: Install the console proxy smoke dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y caddy python3-jinja2
       - name: Test Rust integration targets
+        env:
+          MAKO_SMOKE_PYTHON: /usr/bin/python3
         run: cargo test --workspace --tests
       - name: Test TypeScript integrations
         run: npm run test:integration
