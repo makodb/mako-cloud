@@ -1,4 +1,3 @@
-import { ManagementApiError } from "@mako-cloud/management-sdk";
 import type {
   ArtifactGrant,
   Collection,
@@ -12,6 +11,7 @@ import type {
   ExplorerRevision,
   ExplorerSimulation,
 } from "@mako-cloud/management-sdk";
+import { ManagementApiError } from "@mako-cloud/management-sdk";
 import {
   Alert,
   AlertDescription,
@@ -30,6 +30,7 @@ import {
   Input,
   Label,
   NativeSelect,
+  Skeleton,
   Table,
   TableBody,
   TableCell,
@@ -47,8 +48,8 @@ import { type FormEvent, type ReactNode, useCallback, useEffect, useRef, useStat
 
 import { ApiFailureNotice, type ConsoleApiFailure, toConsoleApiFailure } from "./api-error.js";
 import { useDeveloperAuth } from "./auth.js";
-import { useManagementClient } from "./management.js";
 import { createExplorerAccess, type ExplorerAccess } from "./explorer-access.js";
+import { useManagementClient } from "./management.js";
 
 /** JSON that is read: a bordered, scrolling block in the code face. */
 const JSON_BLOCK =
@@ -354,9 +355,13 @@ export function DataExplorer({
         <div className="flex items-center gap-2 text-sm font-semibold">
           <Table2 aria-hidden="true" className="size-4 text-primary" />
           Collections
-          <Badge variant="secondary" className="ml-auto">
-            {collections?.length ?? "…"}
-          </Badge>
+          {collections === null ? (
+            <Skeleton className="ml-auto h-5 w-6 rounded-full" />
+          ) : (
+            <Badge variant="secondary" className="ml-auto">
+              {collections.length}
+            </Badge>
+          )}
         </div>
         <div className="relative">
           <Search
@@ -375,6 +380,9 @@ export function DataExplorer({
           aria-label="Browse collections"
           className="flex gap-1 overflow-x-auto xl:grid xl:max-h-[60vh] xl:overflow-y-auto"
         >
+          {collections === null
+            ? [0, 1, 2].map((row) => <Skeleton key={row} className="h-8 w-28 shrink-0 xl:w-full" />)
+            : null}
           {(collections ?? [])
             .filter((collection) =>
               collection.id.toLowerCase().includes(collectionSearch.toLowerCase()),
@@ -426,6 +434,7 @@ export function DataExplorer({
               id="explorer-collection"
               className="font-mono"
               value={collectionId}
+              disabled={collections === null}
               onChange={(event) => switchCollection(event.currentTarget.value)}
             >
               {collections?.map((collection) => (
@@ -438,7 +447,12 @@ export function DataExplorer({
         </header>
         <ApiFailureNotice failure={failure} />
         {collections === null ? (
-          <p className="m-0 text-sm text-muted-foreground">Loading collections…</p>
+          <>
+            <p role="status" className="sr-only">
+              Loading collections…
+            </p>
+            <DocumentsSkeleton withTools />
+          </>
         ) : collections.length === 0 ? (
           <Alert>
             <Info aria-hidden="true" />
@@ -452,9 +466,12 @@ export function DataExplorer({
             Document browsing is unavailable in this deployment.
           </p>
         ) : loading ? (
-          <p role="status" className="m-0 text-sm text-muted-foreground">
-            Loading documents…
-          </p>
+          <>
+            <p role="status" className="sr-only">
+              Loading documents…
+            </p>
+            {grant === null ? <DocumentsSkeleton withTools /> : null}
+          </>
         ) : grant === null && failure !== null && collectionId !== "" ? (
           <div>
             <Button variant="outline" onClick={() => void browse()}>
@@ -542,6 +559,8 @@ export function DataExplorer({
                     onHistory={(document) => void loadHistory(document)}
                     onNext={() => void nextPage()}
                   />
+                ) : loading ? (
+                  <ResultsSkeleton />
                 ) : (
                   <div className="grid min-h-48 place-items-center rounded-lg border border-dashed bg-card p-6 text-center text-sm text-muted-foreground">
                     <div>
@@ -734,6 +753,63 @@ function QueryBuilder({
             </Alert>
           )
         ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * The documents view before it can be drawn: its tabs, its toolbar, and the
+ * results table, in the places they will occupy, so nothing moves when the
+ * collection, the access grant, and the first page arrive.
+ */
+function DocumentsSkeleton({ withTools }: { readonly withTools: boolean }) {
+  return (
+    <div aria-hidden="true" className="grid min-w-0 gap-5">
+      {withTools ? (
+        <>
+          <div className="flex items-center justify-between gap-3 border-b pb-1">
+            <div className="flex h-9 items-center gap-6 px-1">
+              <Skeleton className="h-4 w-20" />
+              <Skeleton className="h-4 w-24" />
+              <Skeleton className="h-4 w-24" />
+            </div>
+            <Skeleton className="h-8 w-28" />
+          </div>
+          <div className="flex flex-wrap items-end gap-3 rounded-lg border bg-card p-3">
+            <Skeleton className="h-9 w-40" />
+            <Skeleton className="h-9 w-52" />
+            <div className="ml-auto grid gap-2">
+              <Skeleton className="h-4 w-24" />
+              <Skeleton className="h-9 w-60" />
+            </div>
+          </div>
+        </>
+      ) : null}
+      <ResultsSkeleton />
+    </div>
+  );
+}
+
+/** The results table while its first page loads. */
+function ResultsSkeleton() {
+  return (
+    <Card aria-hidden="true" className="min-w-0">
+      <CardHeader>
+        <Skeleton className="h-5 w-56" />
+        <Skeleton className="h-4 w-96 max-w-full" />
+      </CardHeader>
+      <CardContent className="grid gap-3">
+        <div className="grid gap-4 rounded-md border p-3">
+          {[0, 1, 2, 3, 4].map((row) => (
+            <div key={row} className="grid grid-cols-6 gap-4">
+              {[0, 1, 2, 3, 4, 5].map((column) => (
+                <Skeleton key={column} className={cn("h-4", row === 0 && "h-3 w-2/3")} />
+              ))}
+            </div>
+          ))}
+        </div>
+        <Skeleton className="h-9 w-24" />
       </CardContent>
     </Card>
   );

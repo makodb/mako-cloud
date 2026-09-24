@@ -1,3 +1,13 @@
+import type {
+  WebhookDelivery,
+  WebhookDeliveryPage,
+  WebhookDeliveryState,
+  WebhookEndpoint,
+  WebhookEndpointCreate,
+  WebhookEndpointUpdate,
+  WebhookEvent,
+  WebhookSubscription,
+} from "@mako-cloud/management-sdk";
 import {
   Alert,
   AlertDescription,
@@ -9,6 +19,7 @@ import {
   CardHeader,
   CardTitle,
   Checkbox,
+  cn,
   EmptyState,
   Eyebrow,
   Field,
@@ -21,21 +32,9 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-  cn,
 } from "@mako-cloud/ui";
 import { Webhook } from "lucide-react";
 import { type FormEvent, type ReactNode, useCallback, useEffect, useId, useState } from "react";
-
-import type {
-  WebhookDelivery,
-  WebhookDeliveryPage,
-  WebhookDeliveryState,
-  WebhookEndpoint,
-  WebhookEndpointCreate,
-  WebhookEndpointUpdate,
-  WebhookEvent,
-  WebhookSubscription,
-} from "@mako-cloud/management-sdk";
 
 import { ApiFailureNotice, type ConsoleApiFailure, toConsoleApiFailure } from "./api-error.js";
 import { useManagementClient } from "./management.js";
@@ -195,7 +194,11 @@ function EndpointListScreen({
             <CardTitle id="endpoint-list-title">Endpoints</CardTitle>
           </CardHeader>
           <CardContent>
-            {endpoints === null ? (
+            {endpoints === null && failure !== null ? (
+              // A failed load used to leave "Loading endpoints…" up for good,
+              // with nothing to do but reload the page.
+              <LoadRetry what="Endpoints" onRetry={() => void reload()} />
+            ) : endpoints === null ? (
               <p className="m-0 text-sm text-muted-foreground" aria-live="polite">
                 Loading endpoints…
               </p>
@@ -551,7 +554,9 @@ function EndpointScreen({
           onDismiss={() => setOneTime(null)}
         />
       )}
-      {endpoint === null ? (
+      {endpoint === null && failure !== null ? (
+        <LoadRetry what="This webhook" onRetry={() => void reloadEndpoint()} />
+      ) : endpoint === null ? (
         <p className="m-0 text-sm text-muted-foreground" aria-live="polite">
           Loading webhook…
         </p>
@@ -1132,6 +1137,18 @@ export function subscriptionsFrom(
 }
 
 class FormInputError extends Error {}
+
+/** What a view shows when its first load failed: the failure is above it. */
+function LoadRetry({ what, onRetry }: { readonly what: string; readonly onRetry: () => void }) {
+  return (
+    <div className="grid justify-items-start gap-3">
+      <p className="m-0 text-sm text-muted-foreground">{what} could not be loaded.</p>
+      <Button type="button" size="sm" variant="outline" onClick={onRetry}>
+        Try again
+      </Button>
+    </div>
+  );
+}
 
 function failureFrom(error: unknown): ConsoleApiFailure {
   return error instanceof FormInputError
