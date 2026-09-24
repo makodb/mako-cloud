@@ -132,6 +132,18 @@ impl TenantKeyspace {
         prefix_range(&prefix)
     }
 
+    /// All system keys whose domain starts with `domain_prefix`. Unlike
+    /// `system_domain_range`, this does not terminate the domain segment.
+    /// Include a separator in the prefix when selecting a domain subtree.
+    pub fn system_domain_prefix_range(
+        domain_prefix: impl AsRef<[u8]>,
+    ) -> Result<KeyRange, KeyCodecError> {
+        let mut prefix = vec![FORMAT_VERSION, SYSTEM_NAMESPACE];
+        encode_required_segment(&mut prefix, "system domain prefix", domain_prefix.as_ref())?;
+        prefix.truncate(prefix.len() - 2); // Remove the encoded segment terminator.
+        prefix_range(&prefix)
+    }
+
     pub fn project_range(project: impl AsRef<[u8]>) -> Result<KeyRange, KeyCodecError> {
         let mut prefix = vec![FORMAT_VERSION, PROJECT_NAMESPACE];
         encode_required_segment(&mut prefix, "project", project.as_ref())?;
@@ -1189,6 +1201,35 @@ fn require_end(key: &[u8], offset: usize) -> Result<(), KeyCodecError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn system_domain_prefix_ranges_include_descendants_without_widening_exact_ranges() {
+        for prefix in [b"control/jobs/".as_slice(), b"control/jo\0bs/".as_slice()] {
+            let range = TenantKeyspace::system_domain_prefix_range(prefix).expect("prefix range");
+            for suffix in [b"".as_slice(), b"project/env", b"project/env/index/state"] {
+                let domain = [prefix, suffix].concat();
+                let key = TenantKeyspace::system_key(&domain, "job").expect("key");
+                assert!(range.contains(&key));
+                let exact = TenantKeyspace::system_domain_range(prefix).expect("exact range");
+                assert_eq!(exact.contains(&key), suffix.is_empty());
+            }
+            for domain in [
+                prefix[..prefix.len() - 1].to_vec(),
+                [
+                    prefix[..prefix.len() - 1].to_vec(),
+                    b"-other/project/env".to_vec(),
+                ]
+                .concat(),
+                b"unrelated".to_vec(),
+            ] {
+                assert!(!range.contains(&TenantKeyspace::system_key(domain, "job").expect("key")));
+            }
+        }
+        assert!(TenantKeyspace::system_domain_prefix_range(b"").is_err());
+        assert!(
+            TenantKeyspace::system_domain_prefix_range(vec![b'x'; MAX_SEGMENT_BYTES + 1]).is_err()
+        );
+    }
 
     #[test]
     fn bucket_and_object_keys_stay_inside_their_bucket_and_decode_back() {

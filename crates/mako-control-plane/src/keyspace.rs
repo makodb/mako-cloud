@@ -86,7 +86,10 @@ impl ControlKeyspace {
     }
 
     pub fn all_data_jobs_range() -> Result<KeyRange, ControlKeyspaceError> {
-        TenantKeyspace::system_domain_range(DATA_JOBS).map_err(ControlKeyspaceError)
+        // Records use tenant-specific domain segments. An exact domain range
+        // terminates before `/project/environment` and cannot see those keys.
+        TenantKeyspace::system_domain_prefix_range([DATA_JOBS, b"/"].concat())
+            .map_err(ControlKeyspaceError)
     }
 
     pub fn data_job_key(
@@ -1201,6 +1204,48 @@ mod tests {
         let tenant = TenantKeyspace::new("prj_abcdefgh", "env_abcdefgh").expect("tenant");
         let tenant_range = tenant.environment_range().expect("tenant range");
         assert!(keys.iter().all(|key| !tenant_range.contains(key)));
+    }
+
+    #[test]
+    fn global_data_job_scan_includes_existing_tenant_keys() {
+        let global = ControlKeyspace::all_data_jobs_range().expect("global job range");
+        for (project, environment) in [
+            ("prj_abcdefgh", "env_abcdefgh"),
+            ("prj_abcdefgh", "env_ijklmnop"),
+            ("prj_ijklmnop", "env_abcdefgh"),
+        ] {
+            let project = ProjectId::parse(project).expect("project");
+            let environment = EnvironmentId::parse(environment).expect("environment");
+            let key = ControlKeyspace::data_job_key(&project, &environment, "djob_abcdefgh")
+                .expect("job key");
+            assert!(
+                global.contains(&key),
+                "global scan must include tenant jobs"
+            );
+            let tenant =
+                ControlKeyspace::data_jobs_range(&project, &environment).expect("tenant range");
+            assert!(tenant.contains(&key));
+            let index = ControlKeyspace::data_job_index_key(
+                &project,
+                &environment,
+                "state",
+                "queued",
+                1,
+                "djob_abcdefgh",
+            )
+            .expect("index");
+            assert!(global.contains(&index));
+            assert!(
+                !tenant.contains(&index),
+                "tenant listing excludes index values"
+            );
+        }
+        let unrelated = TenantKeyspace::system_key(
+            b"control/developer-workspace/v1/data-jobs-unrelated/prj_abcdefgh/env_abcdefgh",
+            b"djob_abcdefgh",
+        )
+        .expect("unrelated key");
+        assert!(!global.contains(&unrelated));
     }
 
     proptest! {
