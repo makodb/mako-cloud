@@ -9,8 +9,15 @@ import type { ReferenceTodo } from "./reference-app.js";
 
 /** Everything needed to reach a running deployment and act as a second client. */
 export interface LiveBackendOptions extends ReferenceBackendConfig {
-  readonly email: string;
-  readonly password: string;
+  /** The application user. A page that leaves these out asks the person using it. */
+  readonly email?: string;
+  readonly password?: string;
+  /**
+   * Register the address before signing in. On by default, because a
+   * bootstrapped tenant has no users yet; the page's "Sign in" turns it off so
+   * a mistyped address fails instead of quietly creating a new account.
+   */
+  readonly createAccount?: boolean;
   /** Credentials for the second client used by putRemote and deleteRemote. */
   readonly remoteEmail: string;
   readonly remotePassword: string;
@@ -96,11 +103,16 @@ export class LiveMakoBackend implements ReferenceBackend {
   };
 
   async authenticate(auth: MakoAuthClient): Promise<void> {
-    // A bootstrapped tenant has no application users, so the first run registers
-    // one. Sign-up is idempotent from the caller's point of view: an existing
-    // address still signs in.
-    await auth.signUp(this.#options.email, this.#options.password).catch(() => undefined);
-    await auth.signInWithPassword(this.#options.email, this.#options.password);
+    const { email, password } = this.#options;
+    if (email === undefined || password === undefined) {
+      throw new Error("an email address and password are required to sign in");
+    }
+    // Sign-up is idempotent from the caller's point of view: an existing
+    // address still signs in afterwards.
+    if (this.#options.createAccount !== false) {
+      await auth.signUp(email, password).catch(() => undefined);
+    }
+    await auth.signInWithPassword(email, password);
   }
 
   diagnostics(): ReferenceBackendDiagnostics {

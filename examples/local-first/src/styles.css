@@ -99,3 +99,39 @@ button {
   color: #52665b;
   font-size: 0.8rem;
 }
+
+.auth-form {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.auth-actions {
+  display: flex;
+  gap: 0.6rem;
+  margin-top: 0.4rem;
+}
+
+button.secondary {
+  background: white;
+  color: #235f47;
+}
+
+#account {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 1.5rem;
+}
+
+#account[hidden],
+#app[hidden],
+#sign-in[hidden] {
+  display: none;
+}
+
+#sign-in-error {
+  min-height: 1.2em;
+  margin: 0;
+  color: #9b2c2c;
+  font-size: 0.9rem;
+}

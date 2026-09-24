@@ -1,7 +1,10 @@
-import type { ReferenceBackend } from "./backend.js";
 import { type LiveBackendOptions, LiveMakoBackend } from "./live-backend.js";
 import { FakeMakoBackend } from "./mock-backend.js";
-import { createReferenceApplication, type ReferenceTodo } from "./reference-app.js";
+import {
+  createReferenceApplication,
+  type ReferenceApplication,
+  type ReferenceTodo,
+} from "./reference-app.js";
 import "./styles.css";
 
 /**
@@ -15,11 +18,6 @@ declare global {
   }
 }
 
-function selectBackend(): ReferenceBackend {
-  const live = window.__MAKO_EXAMPLE__;
-  return live === undefined ? new FakeMakoBackend() : new LiveMakoBackend(live);
-}
-
 const status = requiredElement("status");
 const diagnostics = requiredElement("diagnostics");
 const todoList = requiredElement("todos");
@@ -30,7 +28,78 @@ if (form === null || title === null) {
 }
 
 status.textContent = "starting";
-const application = await createReferenceApplication(selectBackend());
+const { application, email } = await startApplication();
+requiredElement("app").hidden = false;
+if (email !== null) {
+  requiredElement("account-email").textContent = email;
+  requiredElement("account").hidden = false;
+  requiredElement("sign-out").addEventListener("click", () => {
+    void application.signOut().finally(() => window.location.reload());
+  });
+}
+
+/**
+ * Starts the app as someone. The fake backend and a page configured with
+ * credentials sign in by themselves; a live page without them asks, so each
+ * person works as their own application user and the collection's policy
+ * decides what they see.
+ */
+async function startApplication(): Promise<{
+  application: ReferenceApplication;
+  email: string | null;
+}> {
+  const live = window.__MAKO_EXAMPLE__;
+  if (live === undefined) {
+    return { application: await createReferenceApplication(new FakeMakoBackend()), email: null };
+  }
+  if (live.email !== undefined && live.password !== undefined) {
+    return {
+      application: await createReferenceApplication(new LiveMakoBackend(live)),
+      email: live.email,
+    };
+  }
+  const panel = requiredElement("sign-in");
+  const signInForm = panel.querySelector<HTMLFormElement>("form");
+  const failure = requiredElement("sign-in-error");
+  if (signInForm === null) {
+    throw new Error("sign-in form is missing");
+  }
+  panel.hidden = false;
+  status.textContent = "signed out";
+  for (;;) {
+    const attempt = await new Promise<{ email: string; password: string; createAccount: boolean }>(
+      (resolve) =>
+        signInForm.addEventListener(
+          "submit",
+          (event) => {
+            event.preventDefault();
+            const data = new FormData(signInForm);
+            const submitter = (event as SubmitEvent).submitter as HTMLButtonElement | null;
+            resolve({
+              email: String(data.get("email") ?? "").trim(),
+              password: String(data.get("password") ?? ""),
+              createAccount: submitter?.value === "create",
+            });
+          },
+          { once: true },
+        ),
+    );
+    failure.textContent = "";
+    status.textContent = attempt.createAccount ? "creating account" : "signing in";
+    try {
+      const application = await createReferenceApplication(
+        new LiveMakoBackend({ ...live, ...attempt }),
+      );
+      panel.hidden = true;
+      return { application, email: attempt.email };
+    } catch (error) {
+      failure.textContent = `${attempt.createAccount ? "Could not create the account" : "Could not sign in"}: ${
+        error instanceof Error ? error.message : String(error)
+      }`;
+      status.textContent = "signed out";
+    }
+  }
+}
 
 // A failed local write used to vanish: the promise was dropped and nothing
 // on the page changed. Say what went wrong, where the todo was typed.

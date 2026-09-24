@@ -10,6 +10,31 @@
       <p class="eyebrow">Mako Cloud + RxDB</p>
       <h1>Local-first todos</h1>
       <p>Writes remain available offline and synchronize when the network returns.</p>
+      <section class="card" id="sign-in" aria-label="Sign in" hidden>
+        <form class="auth-form">
+          <label for="email">Email</label>
+          <input id="email" name="email" type="email" autocomplete="username" required />
+          <label for="password">Password</label>
+          <input
+            id="password"
+            name="password"
+            type="password"
+            autocomplete="current-password"
+            minlength="8"
+            required
+          />
+          <div class="auth-actions">
+            <button type="submit" value="sign-in">Sign in</button>
+            <button type="submit" value="create" class="secondary">Create account</button>
+          </div>
+          <p id="sign-in-error" role="alert"></p>
+        </form>
+      </section>
+      <p id="account" hidden>
+        Signed in as <strong id="account-email"></strong>
+        <button id="sign-out" type="button" class="secondary">Sign out</button>
+      </p>
+      <div id="app" hidden>
       <section class="card" aria-label="Todo editor">
         <form id="todo-form">
           <label for="title">Todo</label>
@@ -22,6 +47,7 @@
         <button id="offline" type="button">Go offline</button>
         <button id="online" type="button">Go online</button>
       </section>
+      </div>
       <p>Replication: <span id="status" role="status">loading</span></p>
       <output id="diagnostics"></output>
     </main>

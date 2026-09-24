@@ -59,6 +59,8 @@ export interface ReferenceApplication {
   putRemote(document: ReferenceTodo): Promise<void>;
   removeRemote(id: string, updatedAt: number): Promise<void>;
   revokeAccess(): Promise<void>;
+  /** End the session on the server and stop replicating. */
+  signOut(): Promise<void>;
   setOnline(online: boolean): Promise<void>;
   updateTodo(id: string, title: string, updatedAt: number): Promise<void>;
   waitForSync(): Promise<void>;
@@ -379,6 +381,11 @@ class ReferenceApplicationImpl implements ReferenceApplication {
       return;
     }
     throw new Error("the simulated access revocation was not enforced");
+  }
+
+  async signOut(): Promise<void> {
+    await this.#auth.signOut().catch(() => undefined);
+    await this.close();
   }
 
   async close(): Promise<void> {
