@@ -202,6 +202,7 @@ export function DataExplorer({
       ) {
         throw new Error("Confirm that administrative access bypasses document policies.");
       }
+      const reason = mode === "administrative" ? accessReason(data) : null;
       scope += 1;
       await revoke();
       if (scope !== scopeVersion.current) return;
@@ -212,7 +213,7 @@ export function DataExplorer({
         operations: mode === "administrative" ? [...ADMIN_OPERATIONS] : [...POLICY_OPERATIONS],
         applicationUserId:
           mode === "administrative" ? null : requiredText(data, "applicationUserId"),
-        reason: mode === "administrative" ? requiredText(data, "reason") : null,
+        reason,
         durationSeconds: 300,
       });
       if (scope !== scopeVersion.current) {
@@ -1870,6 +1871,23 @@ function requiredText(data: FormData, name: string): string {
   const value = data.get(name);
   if (typeof value !== "string" || value.trim() === "") throw new Error(`${name} is required.`);
   return value.trim();
+}
+/**
+ * The access reason as the service accepts it: one line of 3 to 500
+ * characters. Line breaks and runs of spaces collapse to single spaces, and a
+ * reason out of range is reported here in words instead of as the service's
+ * generic "explorer request is invalid".
+ */
+function accessReason(data: FormData): string {
+  const value = data.get("reason");
+  const reason = typeof value === "string" ? value.replace(/\s+/gu, " ").trim() : "";
+  if (reason.length < 3) {
+    throw new Error("Give an access reason of at least 3 characters.");
+  }
+  if (reason.length > 500) {
+    throw new Error("Keep the access reason to 500 characters or fewer.");
+  }
+  return reason;
 }
 function optionalText(data: FormData, name: string): string | null {
   const value = data.get(name);

@@ -237,6 +237,52 @@ test("an expired capability is discarded before any explorer data request", asyn
   );
 });
 
+test("an access reason the service would refuse is reported in the form", async ({ page }) => {
+  const grantBodies: Array<Record<string, unknown>> = [];
+  await page.route("**/v1/**", async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    if (await serveWorkspaceShell(route, path)) return;
+    if (path.endsWith("/collections") && request.method() === "GET")
+      return json(route, { items: [collection()] });
+    if (path.endsWith("/users") && request.method() === "GET")
+      return json(route, { users: [], truncated: false });
+    if (path.endsWith("/explorer/grants") && request.method() === "POST") {
+      grantBodies.push(request.postDataJSON() as Record<string, unknown>);
+      return json(
+        route,
+        {
+          grantId: "xgr_reason0123456789abcdef0123456789a",
+          capability: CAPABILITY,
+          mode: "administrative",
+          operations: ["get", "browse", "query", "plan", "history", "simulate", "mutate"],
+          applicationUserId: null,
+          issuedAtUnixSeconds: Math.floor(Date.now() / 1000),
+          expiresAtUnixSeconds: Math.floor(Date.now() / 1000) + 300,
+          authorizationEpoch: 1,
+        },
+        201,
+      );
+    }
+    if (path.endsWith("/data-jobs") && request.method() === "GET")
+      return json(route, { items: [], nextCursor: null });
+    return json(route, { error: "unhandled" }, 500);
+  });
+
+  await page.goto(`/projects/${PROJECT_ID}/environments/${ENVIRONMENT_ID}/data`);
+  await page.getByLabel("Mode").selectOption("administrative");
+  await page.getByLabel("I understand this access bypasses application document policies.").check();
+  await page.getByLabel("Access reason").fill("ok");
+  await page.getByRole("button", { name: "Create access grant" }).click();
+  await expect(page.getByText("Give an access reason of at least 3 characters.")).toBeVisible();
+  expect(grantBodies).toEqual([]);
+
+  await page.getByLabel("Access reason").fill("  checking\n   dev data  ");
+  await page.getByRole("button", { name: "Create access grant" }).click();
+  await expect(page.getByText("Administrative policy bypass active")).toBeVisible();
+  expect(grantBodies.map((body) => body.reason)).toEqual(["checking dev data"]);
+});
+
 test("administrative mode exposes audited conflicts, history, tombstones, and data jobs", async ({
   page,
 }) => {
