@@ -1,4 +1,4 @@
-import { expect, test, type Page, type Route } from "@playwright/test";
+import { expect, type Page, type Route, test } from "@playwright/test";
 
 const NOW = "2026-08-06T12:00:00.000Z";
 const LATER = "2026-08-07T12:00:00.000Z";
@@ -97,6 +97,36 @@ test("the endpoint list shows every state with its reason and Webhooks is a real
   // Listing never carries a secret, and the page never shows one.
   expect(await page.content()).not.toContain("whs_");
   expect(api.unhandled).toEqual([]);
+});
+
+test("a list that could not be reached says so and loads on Try again", async ({ page }) => {
+  const api = new WebhookApiHarness();
+  await api.install(page);
+  // Registered after the harness, so it is consulted first: until the
+  // connection is back, list requests get no answer at all, as when the
+  // network or a tunnel drops.
+  let connected = false;
+  await page.route(`**${WEBHOOKS_PATH}`, async (route) =>
+    connected || route.request().method() !== "GET"
+      ? route.fallback()
+      : route.abort("internetdisconnected"),
+  );
+
+  await page.goto(WEBHOOKS_URL);
+  await expect(
+    page.getByText(
+      "The management API could not be reached. Check the connection, then try again.",
+    ),
+  ).toBeVisible();
+  await expect(page.getByText("Loading endpoints…")).toHaveCount(0);
+  connected = true;
+  await page.getByRole("button", { name: "Try again" }).click();
+
+  await expect(page.locator(`tr[data-webhook-id="${ACTIVE}"]`)).toContainText(
+    "https://hooks.example.test/orders",
+  );
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Try again" })).toHaveCount(0);
 });
 
 test("registering an endpoint posts its subscriptions and shows the signing secret exactly once", async ({
