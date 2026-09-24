@@ -197,6 +197,21 @@ pub struct FunctionRecord {
     configuration: FunctionConfiguration,
     created_at_unix_seconds: u64,
     updated_at_unix_seconds: u64,
+    /// True from creation until a deployment is first handed to the runtime,
+    /// so deleting the function or reading its logs need not ask a runtime
+    /// that holds nothing for it, and works while none is reachable. It is
+    /// cleared before the first deploy call, never after it: the runtime can
+    /// accept a deployment the control plane then fails to record, and that
+    /// still has to be retired. Records written before this field read as
+    /// `false`, the safe answer, and like `allowed_hosts` it serializes to
+    /// nothing when false, so a round-trip reproduces their stored bytes.
+    #[serde(default, skip_serializing_if = "is_false")]
+    runtime_untouched: bool,
+}
+
+#[allow(clippy::trivially_copy_pass_by_ref)] // serde passes a reference
+const fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 impl FunctionRecord {
@@ -538,6 +553,7 @@ impl FunctionAdminService {
             configuration: input.configuration,
             created_at_unix_seconds: input.now_unix_seconds,
             updated_at_unix_seconds: input.now_unix_seconds,
+            runtime_untouched: true,
         };
         let key = function_key(&record)?;
         let mut batch = WriteBatch::new();
@@ -725,6 +741,14 @@ impl FunctionAdminService {
             bundle: bundle_bytes,
             secrets,
         };
+        // Record that the runtime may hold a deployment before asking it to
+        // take one: a delete that races this deploy, or follows one the
+        // runtime accepted but this service never recorded, must retire it.
+        if function.runtime_untouched {
+            let mut handed_over = function.clone();
+            handed_over.runtime_untouched = false;
+            self.replace_function(&function, &handed_over).await?;
+        }
         let result = self.backend.deploy(&spec).await?;
         validate_deployment_result(&result)?;
         let record = FunctionVersionRecord {
@@ -971,8 +995,17 @@ impl FunctionAdminService {
         if query.limit == 0 || query.limit > 1000 {
             return Err(FunctionAdminError::InvalidLogQuery);
         }
-        self.function(tenant, name).await?;
-        let mut page = self.backend.logs(tenant, name, query).await?;
+        let function = self.function(tenant, name).await?;
+        // Nothing has run, so there is nothing to read, and a runtime that is
+        // down must not fail the read.
+        let mut page = if function.runtime_untouched {
+            FunctionLogPage {
+                items: Vec::new(),
+                next_cursor: None,
+            }
+        } else {
+            self.backend.logs(tenant, name, query).await?
+        };
         if page.items.len() > query.limit {
             return Err(FunctionAdminError::InvalidBackendResponse);
         }
@@ -1034,7 +1067,13 @@ impl FunctionAdminService {
     ) -> Result<FunctionRecord, FunctionAdminError> {
         let organization = self.authorize(actor, tenant, true, now).await?;
         let previous = self.function(tenant, name).await?;
-        self.backend.delete_function(tenant, name).await?;
+        // A function never handed to the runtime holds nothing there to
+        // retire, so its delete does not wait on one. A deploy that starts
+        // meanwhile clears the flag first, and the write below then fails its
+        // comparison instead of deleting a function the runtime now serves.
+        if !previous.runtime_untouched {
+            self.backend.delete_function(tenant, name).await?;
+        }
         let mut next = previous.clone();
         next.state = FunctionState::Deleted;
         next.active_version = None;
@@ -2095,6 +2134,267 @@ mod tests {
                     .state(),
                 FunctionState::Deleted
             );
+        });
+    }
+
+    /// A backend with no runtime behind it: every call fails, the way the
+    /// HTTP backend does when the supervisor cannot be reached.
+    #[derive(Default)]
+    struct Unreachable {
+        calls: Mutex<Vec<&'static str>>,
+    }
+    impl Unreachable {
+        fn refuse<T>(&self, call: &'static str) -> Result<T, FunctionBackendError> {
+            self.calls.lock().expect("calls").push(call);
+            Err(
+                FunctionBackendError::new("the runtime supervisor could not be reached")
+                    .expect("safe message"),
+            )
+        }
+        fn calls(&self) -> Vec<&'static str> {
+            self.calls.lock().expect("calls").clone()
+        }
+    }
+    #[async_trait]
+    impl FunctionDeploymentBackend for Unreachable {
+        async fn deploy(
+            &self,
+            _: &FunctionDeploymentSpec,
+        ) -> Result<FunctionDeploymentResult, FunctionBackendError> {
+            self.refuse("deploy")
+        }
+        async fn health(
+            &self,
+            _: &FunctionDeploymentSpec,
+        ) -> Result<FunctionDeploymentResult, FunctionBackendError> {
+            self.refuse("health")
+        }
+        async fn test(
+            &self,
+            _: &FunctionDeploymentSpec,
+            _: &FunctionTestRequest,
+        ) -> Result<FunctionTestResponse, FunctionBackendError> {
+            self.refuse("test")
+        }
+        async fn logs(
+            &self,
+            _: &TenantScope,
+            _: &FunctionName,
+            _: &FunctionLogQuery,
+        ) -> Result<FunctionLogPage, FunctionBackendError> {
+            self.refuse("logs")
+        }
+        async fn delete_version(
+            &self,
+            _: &TenantScope,
+            _: &FunctionName,
+            _: u64,
+        ) -> Result<(), FunctionBackendError> {
+            self.refuse("delete_version")
+        }
+        async fn delete_function(
+            &self,
+            _: &TenantScope,
+            _: &FunctionName,
+        ) -> Result<(), FunctionBackendError> {
+            self.refuse("delete_function")
+        }
+    }
+
+    async fn service_without_runtime(
+        backend: Arc<Unreachable>,
+    ) -> (FunctionAdminService, DeveloperPrincipal, TenantScope) {
+        let adapter: Arc<dyn KvAdapter> = Arc::new(MemoryAdapter::new());
+        let organizations =
+            OrganizationStore::new(adapter.clone(), Durability::Memory).expect("organizations");
+        let projects = ProjectStore::new(adapter.clone(), Durability::Memory).expect("projects");
+        let organization = OrganizationId::parse("org_example00").expect("organization");
+        let developer = DeveloperIdentityId::parse("dev_example00").expect("developer");
+        organizations
+            .create_organization(
+                &OrganizationRecord::new(organization.clone(), "Example", 1).expect("organization"),
+                &MembershipRecord::new(
+                    organization.clone(),
+                    developer.clone(),
+                    OrganizationRole::Owner,
+                    1,
+                ),
+            )
+            .await
+            .expect("organization");
+        let project = ProjectId::parse("prj_example00").expect("project");
+        let environment = EnvironmentId::parse("env_example00").expect("environment");
+        projects
+            .create_project(
+                &ProjectRecord::new(project.clone(), organization, "Mako", "local", 1)
+                    .expect("project"),
+            )
+            .await
+            .expect("project");
+        projects
+            .create_environment(
+                &EnvironmentRecord::new(environment.clone(), project.clone(), "Development", 1)
+                    .expect("environment"),
+            )
+            .await
+            .expect("environment");
+        let audit: Arc<dyn ControlAuditSink> = Arc::new(Audit);
+        let credentials = CredentialAdminService::new(
+            adapter.clone(),
+            Durability::Memory,
+            projects.clone(),
+            organizations.clone(),
+            audit.clone(),
+            KeyEncryptionKey::generate(),
+            FunctionSecretEncryptionKey::generate(),
+        )
+        .expect("credentials");
+        let service = FunctionAdminService::new(
+            adapter,
+            Durability::Memory,
+            projects,
+            organizations,
+            audit,
+            credentials,
+            Arc::new(MemoryObjectStore::default()),
+            backend,
+        )
+        .expect("service");
+        (
+            service,
+            DeveloperPrincipal::for_test(developer, "owner@example.test"),
+            TenantScope::new(project, environment),
+        )
+    }
+
+    /// Deleting a function, or reading its logs, used to ask the runtime
+    /// first, so neither worked while no runtime was reachable -- not even
+    /// for a function that had never been deployed and held nothing there.
+    #[test]
+    fn a_function_never_handed_to_the_runtime_is_deleted_without_one() {
+        futures::executor::block_on(async {
+            let backend = Arc::new(Unreachable::default());
+            let (service, actor, tenant) = service_without_runtime(backend.clone()).await;
+            let create = |name: &'static str| {
+                let service = &service;
+                let actor = &actor;
+                let tenant = tenant.clone();
+                async move {
+                    service
+                        .create_function(
+                            actor,
+                            NewFunction {
+                                tenant,
+                                name: FunctionName::parse(name).expect("name"),
+                                configuration: configuration(vec![]),
+                                now_unix_seconds: 2,
+                            },
+                        )
+                        .await
+                        .expect("create function")
+                }
+            };
+            let query = FunctionLogQuery {
+                cursor: None,
+                limit: 10,
+            };
+
+            // Never deployed: no logs to read and nothing to retire.
+            let fresh = create("never-deployed").await;
+            assert_eq!(
+                serde_json::to_value(&fresh).expect("record")["runtimeUntouched"],
+                true
+            );
+            let logs = service
+                .logs(&actor, &tenant, fresh.name(), &query, 3)
+                .await
+                .expect("logs of a function that never ran");
+            assert!(logs.items.is_empty() && logs.next_cursor.is_none());
+            let deleted = service
+                .delete_function(&actor, &tenant, fresh.name(), 4)
+                .await
+                .expect("delete without a runtime");
+            assert_eq!(deleted.state(), FunctionState::Deleted);
+            assert!(
+                backend.calls().is_empty(),
+                "the runtime was asked: {:?}",
+                backend.calls()
+            );
+
+            // A deploy that reached for the runtime, even one that failed, may
+            // have left a deployment there, so its delete still retires.
+            let attempted = create("deploy-attempted").await;
+            let bundle = service
+                .upload_bundle(
+                    &actor,
+                    &tenant,
+                    FunctionBundleUpload::Source {
+                        entrypoint: "index.ts".to_owned(),
+                        files: vec![crate::FunctionSourceFile {
+                            path: "index.ts".to_owned(),
+                            contents: b"export default () => new Response('ok');\n".to_vec(),
+                        }],
+                        dependencies: std::collections::BTreeMap::new(),
+                    },
+                    5,
+                )
+                .await
+                .expect("upload bundle")
+                .artifact
+                .expect("valid artifact");
+            assert!(
+                service
+                    .deploy_version(
+                        &actor,
+                        NewFunctionVersion {
+                            tenant: tenant.clone(),
+                            function_name: attempted.name().clone(),
+                            version: 1,
+                            bundle_digest: bundle.digest().to_owned(),
+                            entrypoint: "index.ts".to_owned(),
+                            runtime_version: "deno-test".to_owned(),
+                            now_unix_seconds: 6,
+                        },
+                    )
+                    .await
+                    .is_err()
+            );
+            assert!(
+                service
+                    .delete_function(&actor, &tenant, attempted.name(), 7)
+                    .await
+                    .is_err()
+            );
+            assert!(
+                service
+                    .logs(&actor, &tenant, attempted.name(), &query, 7)
+                    .await
+                    .is_err()
+            );
+            assert_eq!(backend.calls(), ["deploy", "delete_function", "logs"]);
+
+            // A record stored before the flag existed may have been deployed,
+            // so it is treated like one that was.
+            let older = create("from-before").await;
+            let mut stored_before = older.clone();
+            stored_before.runtime_untouched = false;
+            service
+                .replace_function(&older, &stored_before)
+                .await
+                .expect("store the older shape");
+            assert!(
+                serde_json::to_value(&stored_before)
+                    .expect("record")
+                    .get("runtimeUntouched")
+                    .is_none()
+            );
+            assert!(
+                service
+                    .delete_function(&actor, &tenant, older.name(), 8)
+                    .await
+                    .is_err()
+            );
+            assert_eq!(backend.calls().last(), Some(&"delete_function"));
         });
     }
 }
