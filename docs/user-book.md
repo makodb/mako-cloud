@@ -1165,13 +1165,13 @@ The code below follows the browser-tested implementation in [`examples/local-fir
 
 ### Install and configure
 
-Install a supported RxDB 17 release and RxJS 7 alongside the adapter:
+The adapter is not yet published to npm. Install its built `v0.2.0` release from the public [distribution repository](https://github.com/makodb/mako-rxdb) over HTTPS, alongside RxDB 17 and RxJS 7:
 
 ```sh
-npm install @mako-cloud/rxdb rxdb@17 rxjs@7
+npm install https://codeload.github.com/makodb/mako-rxdb/tar.gz/refs/tags/v0.2.0 rxdb@17 rxjs@7
 ```
 
-`rxdb` (`>=17.0.0 <18.0.0`) and `rxjs` (`>=7.8.0 <8.0.0`) are peer dependencies. Node 20.19 or newer, or any modern browser; the package is ESM only and ships browser and Node builds behind one entry point. The package is published on its own and depends on nothing else from this repository ([npm landing page](../packages/rxdb-client/README.md)).
+`rxdb` (`>=17.0.0 <18.0.0`) and `rxjs` (`>=7.8.0 <8.0.0`) are peer dependencies. Node 20.19 or newer, or any modern browser; the package is ESM only and ships browser and Node builds behind one entry point. The archive includes the compiled package and depends on nothing else from this repository ([package README](../packages/rxdb-client/README.md)). Keep importing from `@mako-cloud/rxdb`; only the installation source differs. Commit your package lockfile to preserve the resolved archive and integrity hash.
 
 Create one normalized configuration per replicated collection:
 

@@ -22,9 +22,16 @@ management or operator API.
 
 ## Install
 
+The package is not yet published to npm. Install the built `v0.2.0` release from the
+public [distribution repository](https://github.com/makodb/mako-rxdb) over HTTPS:
+
 ```sh
-npm install @mako-cloud/rxdb rxdb@17 rxjs@7
+npm install https://codeload.github.com/makodb/mako-rxdb/tar.gz/refs/tags/v0.2.0 rxdb@17 rxjs@7
 ```
+
+The archive includes the compiled package, so no monorepo checkout or build is needed.
+Keep importing from `@mako-cloud/rxdb`; only the installation source differs. Commit your
+package lockfile to preserve the resolved archive and integrity hash.
 
 `rxdb` and `rxjs` are peer dependencies, so your application controls their versions:
 
