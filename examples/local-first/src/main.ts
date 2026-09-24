@@ -48,14 +48,12 @@ let currentTodos: readonly ReferenceTodo[] = [];
 // every change, local or pulled, so an edit in progress has to survive that.
 let editing: { readonly id: string; draft: string } | null = null;
 
-/** The next `todo-N`, above every todo already present -- including the ones
- * pulled from the server, which a counter starting at zero collided with. */
+/** A new todo's id, unique across every user of the collection. Ids are
+ * primary keys shared by all users, while each user reads only their own todos
+ * under an owner policy: an id derived from what one user can see would clash
+ * with another user's todo that they cannot, and be refused. */
 function nextTodoId(): string {
-  const highest = currentTodos.reduce((max, todo) => {
-    const match = /^todo-(\d+)$/u.exec(todo.id);
-    return match === null ? max : Math.max(max, Number(match[1]));
-  }, 0);
-  return `todo-${highest + 1}`;
+  return `todo-${crypto.randomUUID()}`;
 }
 
 function renderTodos(todos: readonly ReferenceTodo[]): void {
@@ -161,7 +159,7 @@ form.addEventListener("submit", (event) => {
   application
     .addTodo({
       id: nextTodoId(),
-      ownerId: "user-example",
+      ownerId: application.userId,
       title: value,
       updatedAt: Date.now(),
     })

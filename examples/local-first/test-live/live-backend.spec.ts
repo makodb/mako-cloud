@@ -80,7 +80,9 @@ test("keeps offline writes locally and pushes them after reconnect", async ({ pa
   await page.getByRole("textbox", { name: "Todo" }).fill("written while offline");
   await page.getByRole("button", { name: "Add" }).click();
 
-  await expect(page.locator('[data-testid="todo-todo-1"]')).toHaveText("written while offline");
+  await expect(
+    page.locator('[data-testid^="todo-"]', { hasText: "written while offline" }),
+  ).toHaveCount(1);
   expect(await page.evaluate(() => window.makoExample.diagnostics().acceptedWrites)).toBe(before);
 
   await page.evaluate(() => window.makoExample.setOnline(true));

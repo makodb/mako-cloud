@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 
 // `window.makoExample` is typed once for both suites in
 // test-support/browser-globals.d.ts.
@@ -8,6 +8,9 @@ interface Todo {
   title: string;
   updatedAt: number;
 }
+
+/** Every todo title on the page, in list order. */
+const titles = (page: Page) => page.locator('[data-testid^="todo-"]');
 
 test.beforeEach(async ({ page }) => {
   await page.goto("/");
@@ -19,7 +22,7 @@ test("keeps offline writes locally and pushes them after reconnect", async ({ pa
   await page.getByRole("textbox", { name: "Todo" }).fill("written while offline");
   await page.getByRole("button", { name: "Add" }).click();
 
-  await expect(page.locator('[data-testid="todo-todo-1"]')).toHaveText("written while offline");
+  await expect(titles(page)).toHaveText(["written while offline"]);
   expect(await page.evaluate(() => window.makoExample.diagnostics().acceptedWrites)).toBe(0);
 
   await page.evaluate(() => window.makoExample.setOnline(true));
@@ -31,7 +34,7 @@ test("keeps offline writes locally and pushes them after reconnect", async ({ pa
 test("edits and deletes a todo from the page and pushes each change", async ({ page }) => {
   await page.getByRole("textbox", { name: "Todo" }).fill("draft");
   await page.getByRole("button", { name: "Add" }).click();
-  await expect(page.locator('[data-testid="todo-todo-1"]')).toHaveText("draft");
+  await expect(titles(page)).toHaveText(["draft"]);
   await expect
     .poll(() => page.evaluate(() => window.makoExample.diagnostics().acceptedWrites))
     .toBe(1);
@@ -40,28 +43,31 @@ test("edits and deletes a todo from the page and pushes each change", async ({ p
   const editor = page.getByRole("textbox", { name: "Edit draft" });
   await editor.fill("final");
   await editor.press("Enter");
-  await expect(page.locator('[data-testid="todo-todo-1"]')).toHaveText("final");
+  await expect(titles(page)).toHaveText(["final"]);
   await expect
     .poll(() => page.evaluate(() => window.makoExample.diagnostics().acceptedWrites))
     .toBe(2);
 
   await page.getByRole("button", { name: "Delete final" }).click();
-  await expect(page.locator('[data-testid="todo-todo-1"]')).toHaveCount(0);
+  await expect(titles(page)).toHaveCount(0);
   await expect.poll(() => page.evaluate(() => window.makoExample.listTodos())).toEqual([]);
   await expect
     .poll(() => page.evaluate(() => window.makoExample.diagnostics().acceptedWrites))
     .toBe(3);
 });
 
-test("numbers a new todo above the ones already synced", async ({ page }) => {
-  await page.evaluate(
-    (document) => window.makoExample.putRemote(document),
-    todo("todo-5", "from the server", 100),
-  );
-  await expect(page.locator('[data-testid="todo-todo-5"]')).toHaveText("from the server");
-  await page.getByRole("textbox", { name: "Todo" }).fill("added afterwards");
-  await page.getByRole("button", { name: "Add" }).click();
-  await expect(page.locator('[data-testid="todo-todo-6"]')).toHaveText("added afterwards");
+test("gives each new todo its own id, stamped with the signed-in user", async ({ page }) => {
+  for (const value of ["first", "second"]) {
+    await page.getByRole("textbox", { name: "Todo" }).fill(value);
+    await page.getByRole("button", { name: "Add" }).click();
+  }
+  await expect(titles(page)).toHaveCount(2);
+  const todos = await page.evaluate(() => window.makoExample.listTodos());
+  expect(new Set(todos.map((item) => item.id)).size).toBe(2);
+  for (const item of todos) {
+    expect(item.id).toMatch(/^todo-[0-9a-f-]{36}$/u);
+    expect(item.ownerId).toBe("user-example");
+  }
 });
 
 test("resolves concurrent conflicts using the collection conflict handler", async ({ page }) => {

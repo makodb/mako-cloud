@@ -46,6 +46,8 @@ interface ReferenceCollections {
 export interface ReferenceApplication {
   readonly backend: ReferenceBackend;
   readonly collection: RxCollection<ReferenceTodo>;
+  /** The signed-in application user; a todo's `ownerId`, which the policy checks. */
+  readonly userId: string;
   addTodo(document: ReferenceTodo): Promise<void>;
   close(): Promise<void>;
   deleteTodo(id: string): Promise<void>;
@@ -134,6 +136,10 @@ export async function createReferenceApplication(
   });
   const auth = new MakoAuthClient(config, { fetch: backend.fetch, now: backend.now });
   await backend.authenticate(auth);
+  const userId = auth.currentSession()?.user.id;
+  if (userId === undefined) {
+    throw new Error("authentication did not establish a session");
+  }
 
   const database = await createRxDatabase<ReferenceCollections>({
     name: `makoexample${crypto.randomUUID().replaceAll("-", "")}`,
@@ -212,6 +218,7 @@ export async function createReferenceApplication(
     signals,
     signalSubscription,
     state,
+    userId,
   );
 }
 
@@ -250,6 +257,7 @@ class ReferenceApplicationImpl implements ReferenceApplication {
       reconnects: number;
       revoked: boolean;
     },
+    readonly userId: string,
   ) {
     this.#auth = auth;
     this.#database = database;
