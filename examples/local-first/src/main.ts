@@ -38,6 +38,9 @@ if (email !== null) {
   });
 }
 
+/** The environment's password policy: Mako's default asks for 12 characters. */
+const MINIMUM_PASSWORD_LENGTH = 12;
+
 /**
  * Starts the app as someone. The fake backend and a page configured with
  * credentials sign in by themselves; a live page without them asks, so each
@@ -85,6 +88,10 @@ async function startApplication(): Promise<{
         ),
     );
     failure.textContent = "";
+    if (attempt.createAccount && Array.from(attempt.password).length < MINIMUM_PASSWORD_LENGTH) {
+      failure.textContent = `Use a password of at least ${MINIMUM_PASSWORD_LENGTH} characters.`;
+      continue;
+    }
     status.textContent = attempt.createAccount ? "creating account" : "signing in";
     try {
       const application = await createReferenceApplication(

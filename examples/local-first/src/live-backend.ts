@@ -108,8 +108,12 @@ export class LiveMakoBackend implements ReferenceBackend {
       throw new Error("an email address and password are required to sign in");
     }
     // Sign-up is idempotent from the caller's point of view: an existing
-    // address still signs in afterwards.
-    if (this.#options.createAccount !== false) {
+    // address is accepted and still signs in afterwards. When the person
+    // asked for a new account, a refusal is theirs to see; swallowing it only
+    // surfaced the sign-in that followed, as a wrong password.
+    if (this.#options.createAccount === true) {
+      await auth.signUp(email, password);
+    } else if (this.#options.createAccount !== false) {
       await auth.signUp(email, password).catch(() => undefined);
     }
     await auth.signInWithPassword(email, password);

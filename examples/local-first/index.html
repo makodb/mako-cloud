@@ -20,9 +20,11 @@
             name="password"
             type="password"
             autocomplete="current-password"
-            minlength="8"
+            minlength="12"
+            aria-describedby="password-hint"
             required
           />
+          <small id="password-hint">At least 12 characters.</small>
           <div class="auth-actions">
             <button type="submit" value="sign-in">Sign in</button>
             <button type="submit" value="create" class="secondary">Create account</button>
