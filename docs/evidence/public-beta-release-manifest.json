@@ -10,7 +10,7 @@
   },
   "planHash": "d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073",
   "source": {
-    "digest": "92289373e5e43772de89633905b37551142264ae91e113902c1a171cb40a3d17",
+    "digest": "5d3e8518f51ab3e8a2da9a10a5852a43dacb594bebb738dbd1dec196b815797e",
     "files": [
       {
         "path": ".env.example",
@@ -200,8 +200,8 @@
       },
       {
         "path": "apps/console/src/home.tsx",
-        "sha256": "ec5e0f4808d0f64094f1524f334f6ea102082b860a5302e025e79cba3d297ee6",
-        "size": 35133,
+        "sha256": "969a451939992770552b71cc9af08d985ff083bdbf5decca155689f3b99380e1",
+        "size": 35012,
         "mode": 420
       },
       {
@@ -290,8 +290,8 @@
       },
       {
         "path": "apps/console/src/projects.tsx",
-        "sha256": "61fcf74374852de584f4088263148c34752cdb1619d7ab32fa76703c452b101c",
-        "size": 21848,
+        "sha256": "5a524664a23a32d2255d154d514243ddf5214bce7b7c7265d165933bbd6f832c",
+        "size": 21873,
         "mode": 420
       },
       {
@@ -320,8 +320,8 @@
       },
       {
         "path": "apps/console/src/teams.tsx",
-        "sha256": "0e700ff78ae4f4e39d06d5fd4184dca45c75efe3686fae0e41ad55dc16eddb0b",
-        "size": 18823,
+        "sha256": "b1c034e443b7b5b7edbac6e2621cd18867683989875ea4ecc9c9a3cb03ded786",
+        "size": 18842,
         "mode": 420
       },
       {
@@ -404,14 +404,14 @@
       },
       {
         "path": "apps/console/test-e2e/home-dashboard.spec.ts",
-        "sha256": "cac7388f0957070fcb43f7669c99ba69c1bc992c605226659c8930659f5383ec",
-        "size": 18898,
+        "sha256": "68d7f181b0e5f6073143bacb5aef84969d12658ba7bb0f0aab40d65096ba60cd",
+        "size": 19242,
         "mode": 420
       },
       {
         "path": "apps/console/test-e2e/management-workflows.spec.ts",
-        "sha256": "466a659e3d91800737b825d8ecc4ad0976b8d2cf508db11aeab7dac45bb7959b",
-        "size": 30431,
+        "sha256": "0d1f1c01922735556b6944066177b867da2212359801bc393befd4834ea2bfed",
+        "size": 30666,
         "mode": 420
       },
       {
@@ -5512,7 +5512,7 @@
     ]
   },
   "artifacts": {
-    "digest": "9e1453badaaa3eec298f3ea8f7921b9959fa247adce9f1db1e5e0b659e518b35",
+    "digest": "b825c1d19fa1833ebaa945f6935511153cc8a92b96e54665524d4245cb1e6dd4",
     "files": [
       {
         "path": "bin/mako-control-plane",
@@ -5599,10 +5599,10 @@
         "mode": 420
       },
       {
-        "path": "console/assets/index-DruQLebC.js",
-        "source": "apps/console/web-dist/assets/index-DruQLebC.js",
-        "sha256": "9ddad599673088718ebfab752c12b5106fbcbb023dd565db49841cb19993d82b",
-        "size": 562771,
+        "path": "console/assets/index-icmpUDSg.js",
+        "source": "apps/console/web-dist/assets/index-icmpUDSg.js",
+        "sha256": "88ac94e86c1630418f963ae4da6b926da9aa16d5033afad3283bae8b58d594a1",
+        "size": 562708,
         "mode": 420
       },
       {
@@ -5678,14 +5678,14 @@
       {
         "path": "console/docs/user-book/index.html",
         "source": "apps/console/web-dist/docs/user-book/index.html",
-        "sha256": "dd215b15ed843a0bb8e0ed025a4d22201c66fd6e042ef6931ffcbf1ef5a4494a",
-        "size": 317427,
+        "sha256": "ef09014938541761ea68f5dcaf1440bfd830d6fa6306eb4c08f9c479f43a5616",
+        "size": 317714,
         "mode": 420
       },
       {
         "path": "console/index.html",
         "source": "apps/console/web-dist/index.html",
-        "sha256": "740f76da96b9635684fd69b4ecaa27778f180c2a1842e357dc590929a396e5fd",
+        "sha256": "38c70784135e19434dffbc88b7b353a852c791b359e9c7aaa05344ddbfaedd5e",
         "size": 1381,
         "mode": 420
       },
@@ -5712,10 +5712,10 @@
       }
     ]
   },
-  "releaseDigest": "74de0ba2578288e1263f961223f6184384a998e620c02e395673a8e76ce593cd",
-  "generatedAt": "2026-09-23T23:30:52.884Z",
+  "releaseDigest": "b60ec9752ab27c6aff8f311ef500866300689f4a9a441060293764c78aa80fb9",
+  "generatedAt": "2026-09-24T03:38:22.483Z",
   "candidateLayout": {
-    "root": ".local/public-beta-candidates/74de0ba2578288e1263f961223f6184384a998e620c02e395673a8e76ce593cd",
+    "root": ".local/public-beta-candidates/b60ec9752ab27c6aff8f311ef500866300689f4a9a441060293764c78aa80fb9",
     "manifest": "manifest.json",
     "binaries": "bin",
     "console": "console"

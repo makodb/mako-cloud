@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "recordedAt": "2026-09-23T23:38:45.410270+00:00",
+  "recordedAt": "2026-09-24T03:46:16.436450+00:00",
   "status": "risk-accepted-public-preview-active",
   "environment": "public-beta",
   "vmId": 124,
@@ -8,23 +8,23 @@
   "publicOrigin": "https://cloud-test.makodb.com",
   "planHash": "d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073",
   "release": {
-    "digest": "74de0ba2578288e1263f961223f6184384a998e620c02e395673a8e76ce593cd",
-    "sourceCommit": "4d03a50de621729df913bca0bedf4b12af4eef6a",
-    "sourceDigest": "92289373e5e43772de89633905b37551142264ae91e113902c1a171cb40a3d17",
+    "digest": "b60ec9752ab27c6aff8f311ef500866300689f4a9a441060293764c78aa80fb9",
+    "sourceCommit": "aa370e677636446f226d1d99ff63af99be4dcf9d",
+    "sourceDigest": "5d3e8518f51ab3e8a2da9a10a5852a43dacb594bebb738dbd1dec196b815797e",
     "runtimeDigest": "b0e4ea7b66166492c3c29910858dc5d1b7f9786df81aed7057d80f34a1ad2abd",
     "dependencyDigest": "26a03b9772b571513a6335eeb349cc628c747b8c5bcfa42e50f9eadda09a63ad",
-    "artifactDigest": "9e1453badaaa3eec298f3ea8f7921b9959fa247adce9f1db1e5e0b659e518b35",
-    "selectedPath": "/opt/mako/releases/74de0ba2578288e1263f961223f6184384a998e620c02e395673a8e76ce593cd",
-    "lastKnownGood": "d7bec53355decb88145469f70a9fd6e97aa53d9631449d936f9c8ca461a15d86",
+    "artifactDigest": "b825c1d19fa1833ebaa945f6935511153cc8a92b96e54665524d4245cb1e6dd4",
+    "selectedPath": "/opt/mako/releases/b60ec9752ab27c6aff8f311ef500866300689f4a9a441060293764c78aa80fb9",
+    "lastKnownGood": "74de0ba2578288e1263f961223f6184384a998e620c02e395673a8e76ce593cd",
     "releaseOperation": {
       "schemaVersion": 1,
       "kind": "upgrade",
-      "from": "d7bec53355decb88145469f70a9fd6e97aa53d9631449d936f9c8ca461a15d86",
-      "to": "74de0ba2578288e1263f961223f6184384a998e620c02e395673a8e76ce593cd",
+      "from": "74de0ba2578288e1263f961223f6184384a998e620c02e395673a8e76ce593cd",
+      "to": "b60ec9752ab27c6aff8f311ef500866300689f4a9a441060293764c78aa80fb9",
       "operator": "mako-admin",
-      "startedAtUnixSeconds": 1790206332,
-      "completedAtUnixSeconds": 1790206390,
-      "durationSeconds": 58,
+      "startedAtUnixSeconds": 1790221188,
+      "completedAtUnixSeconds": 1790221249,
+      "durationSeconds": 61,
       "checkpointVerified": true,
       "storageFormatCompatible": true,
       "configurationSnapshotBound": true,
@@ -59,7 +59,7 @@
     "exactReleaseHostedQualification": "not-run-for-this-deployment",
     "mixedStorageTopology": "control-sqlite-and-service-owned-rocksdb",
     "evidence": [
-      "docs/evidence/public-beta-home-list-deployment.json"
+      "docs/evidence/public-beta-personal-projects-deployment.json"
     ]
   },
   "historicalQualification": {
@@ -104,6 +104,10 @@
       {
         "path": "docs/evidence/public-beta-console-deployment.json",
         "releaseDigest": "d7bec53355decb88145469f70a9fd6e97aa53d9631449d936f9c8ca461a15d86"
+      },
+      {
+        "path": "docs/evidence/public-beta-home-list-deployment.json",
+        "releaseDigest": "74de0ba2578288e1263f961223f6184384a998e620c02e395673a8e76ce593cd"
       }
     ]
   }
