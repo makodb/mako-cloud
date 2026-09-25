@@ -195,6 +195,18 @@ impl<'a> ApplicationSessionStore<'a> {
             {
                 return Ok(RefreshSessionOutcome::Invalid);
             }
+            // A session that was signed out, expired, or whose user was
+            // disabled, deleted, or signed out everywhere ends its refresh
+            // family. Its credential is refused like a spent one, before any
+            // rotation is written; failing only after rotating reported the
+            // refusal as an outage, which clients retry instead of signing in.
+            if !self
+                .identity
+                .session_is_active(&family.user_id, &family.session_id, now_unix_seconds)
+                .await?
+            {
+                return Ok(RefreshSessionOutcome::Invalid);
+            }
             if family.current_digest == presented_digest {
                 if let Some(grant) = self
                     .rotate(
@@ -600,6 +612,64 @@ mod tests {
                     .await
                     .expect("session state")
             );
+        });
+    }
+    #[test]
+    fn a_signed_out_session_refuses_its_refresh_credential() {
+        block_on(async {
+            let tenant = TenantScope::new(
+                ProjectId::parse("prj_abcdefgh").expect("project"),
+                EnvironmentId::parse("env_abcdefgh").expect("environment"),
+            );
+            let store = IdentityStore::new(
+                Arc::new(MemoryAdapter::new()),
+                &tenant,
+                &tenant,
+                Durability::Memory,
+            )
+            .expect("store");
+            let email = NormalizedEmail::parse("person@example.com").expect("email");
+            let user_id = AppUserId::parse("usr_abcdefgh").expect("user");
+            let user = AppUserRecord::new(
+                tenant.clone(),
+                user_id.clone(),
+                AppUserStatus::Active,
+                TrustedAppMetadata::new(json!({})).expect("trusted metadata"),
+                UserProfileMetadata::new(json!({})).expect("profile metadata"),
+                1,
+            );
+            let identity = UserIdentityRecord::new(
+                tenant.clone(),
+                UserIdentityId::parse("idn_abcdefgh").expect("identity"),
+                user_id.clone(),
+                IdentityProvider::Email,
+                email.as_str(),
+                1,
+            )
+            .expect("identity record");
+            store
+                .create_email_user(&user, &identity, &email)
+                .await
+                .expect("create user");
+            let key = KeyEncryptionKey::generate();
+            let sessions = ApplicationSessionStore::new(&store, &key);
+            let issued = sessions.create(&user_id, 10).await.expect("session");
+            let credential = issued
+                .refresh_credential
+                .expose_for_token_response()
+                .to_owned();
+            store
+                .sign_out_session(&user_id, issued.session.id(), 11)
+                .await
+                .expect("sign out");
+            // Refused, not an error the service would report as unavailable,
+            // and nothing was rotated: a second attempt is refused the same way.
+            for now in [12, 13] {
+                assert!(matches!(
+                    sessions.refresh(&credential, now).await.expect("refresh"),
+                    RefreshSessionOutcome::Invalid
+                ));
+            }
         });
     }
 }
