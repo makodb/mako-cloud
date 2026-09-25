@@ -36,6 +36,7 @@ import type {
 } from "@mako-cloud/management-sdk";
 
 import { ApiFailureNotice, type ConsoleApiFailure, toConsoleApiFailure } from "./api-error.js";
+import { withOccurrenceKeys } from "./list-keys.js";
 import { useManagementClient } from "./management.js";
 
 const VIEW_IDS = ["usage", "quotas", "health", "replication", "auth", "audit"] as const;
@@ -342,8 +343,8 @@ function ObservabilityTable({
         </TableRow>
       </TableHeader>
       <TableBody>
-        {records.map((record) => (
-          <TableRow key={`${record.timestamp}:${payloadIdentity(record.payload)}`}>
+        {withOccurrenceKeys(records, recordIdentity).map(({ item: record, key }) => (
+          <TableRow key={key}>
             <TableCell className="align-top text-muted-foreground tabular-nums">
               {new Date(record.timestamp).toLocaleString()}
             </TableCell>
@@ -518,8 +519,12 @@ function csvCell(value: string): string {
   return `"${safe.replaceAll('"', '""')}"`;
 }
 
-function payloadIdentity(payload: ObservabilityPayload): string {
-  return flattenPayload(payload).slice(0, 128);
+/** A record's time and whole payload: two records share it only as exact copies. */
+function recordIdentity(record: {
+  readonly timestamp: string;
+  readonly payload: ObservabilityPayload;
+}): string {
+  return `${record.timestamp}:${flattenPayload(record.payload)}`;
 }
 
 function humanize(value: string): string {
@@ -686,16 +691,18 @@ function IndexStatePanel({
                             {group.history.length} events
                           </summary>
                           <ol className="m-0 mt-2 grid gap-1 pl-5 text-xs">
-                            {group.history.map((record) => (
-                              <li key={record.timestamp}>
-                                {new Date(record.timestamp).toLocaleString()}:{" "}
-                                {humanize(record.payload.state)} v{record.payload.indexVersion} (
-                                {clampPercent(record.payload.progressPercent)}%)
-                                {record.payload.message === null
-                                  ? ""
-                                  : ` — ${record.payload.message}`}
-                              </li>
-                            ))}
+                            {withOccurrenceKeys(group.history, recordIdentity).map(
+                              ({ item: record, key }) => (
+                                <li key={key}>
+                                  {new Date(record.timestamp).toLocaleString()}:{" "}
+                                  {humanize(record.payload.state)} v{record.payload.indexVersion} (
+                                  {clampPercent(record.payload.progressPercent)}%)
+                                  {record.payload.message === null
+                                    ? ""
+                                    : ` — ${record.payload.message}`}
+                                </li>
+                              ),
+                            )}
                           </ol>
                         </details>
                       )}

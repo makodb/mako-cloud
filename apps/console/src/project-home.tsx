@@ -68,6 +68,7 @@ import { ActivityScreen } from "./activity.js";
 import { ApiFailureNotice, type ConsoleApiFailure, toConsoleApiFailure } from "./api-error.js";
 import { ProjectBillingScreen } from "./billing.js";
 import { CustomDomainsScreen } from "./custom-domains.js";
+import { withOccurrenceKeys } from "./list-keys.js";
 import { useManagementClient } from "./management.js";
 import { LifecycleBadge } from "./projects.js";
 import { confirmDestructiveAction } from "./safety.js";
@@ -956,8 +957,12 @@ function HealthPanel({
           <p className="m-0 text-sm text-muted-foreground">No retained health observations.</p>
         ) : (
           <ul className="m-0 grid list-none gap-2 p-0 text-sm">
-            {health.map((record) => (
-              <li key={`${record.timestamp}-${record.payload.service}-${record.payload.region}`}>
+            {withOccurrenceKeys(
+              health,
+              (record) =>
+                `${record.timestamp}:${record.payload.service}:${record.payload.region ?? ""}:${record.payload.status}`,
+            ).map(({ item: record, key }) => (
+              <li key={key}>
                 <strong className="font-medium">{record.payload.service}</strong> in{" "}
                 {record.payload.region}: {record.payload.status}
                 {record.payload.diagnostic === null ? null : (
