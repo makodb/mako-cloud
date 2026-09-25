@@ -240,6 +240,15 @@ export function InvitationAcceptScreen({
   const client = useManagementClient();
   const [failure, setFailure] = useState<ConsoleApiFailure | null>(null);
   const [pending, setPending] = useState(false);
+  // An invitation link carries its token in the fragment, which never reaches
+  // a server; it is read once and dropped from the address bar and history.
+  const [linkToken] = useState(() => {
+    const token = new URLSearchParams(window.location.hash.slice(1)).get("token") ?? "";
+    if (token !== "") {
+      window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
+    }
+    return token;
+  });
   const tokenId = useId();
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -276,6 +285,7 @@ export function InvitationAcceptScreen({
               required
               minLength={16}
               autoComplete="off"
+              defaultValue={linkToken}
             />
           </Field>
           <Button type="submit" disabled={pending} className="justify-self-start">
@@ -476,9 +486,11 @@ function InvitationPanel({
           </Button>
         </form>
         {issue === null ? null : (
+          // The invitee needs the invitation's own page as well as its token;
+          // a bare token gave them nowhere to use it. The link carries both.
           <OneTimeSecretValue
-            label="invitation token"
-            value={issue.token}
+            label="invitation link"
+            value={`${window.location.origin}/invitations/${issue.invitation.id}#token=${encodeURIComponent(issue.token)}`}
             onDismiss={() => setIssue(null)}
           />
         )}

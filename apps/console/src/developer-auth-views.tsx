@@ -31,11 +31,20 @@ export function HostedSignInView({ navigate }: { readonly navigate: Navigate }) 
   const [pending, setPending] = useState(false);
   const [failed, setFailed] = useState(false);
 
+  // Shown in place of a page that needs a session -- an invitation link, say --
+  // signing in returns there; from the sign-in page itself it goes home.
+  const destination =
+    window.location.pathname === "/login"
+      ? "/"
+      : `${window.location.pathname}${window.location.search}${window.location.hash}`;
   useEffect(() => {
     if (state.status === "authenticated") {
-      navigate(state.session.audience === "mako-developer-waitlist" ? "/wait-list" : "/", true);
+      navigate(
+        state.session.audience === "mako-developer-waitlist" ? "/wait-list" : destination,
+        true,
+      );
     }
-  }, [navigate, state]);
+  }, [destination, navigate, state]);
 
   if (selfService === null) return null;
   const submit = async (event: FormEvent<HTMLFormElement>) => {
@@ -48,7 +57,7 @@ export function HostedSignInView({ navigate }: { readonly navigate: Navigate }) 
         requiredText(data, "email"),
         requiredText(data, "password"),
       );
-      navigate(session.audience === "mako-developer-waitlist" ? "/wait-list" : "/", true);
+      navigate(session.audience === "mako-developer-waitlist" ? "/wait-list" : destination, true);
     } catch {
       setFailed(true);
       setPending(false);

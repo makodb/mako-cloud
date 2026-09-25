@@ -48,7 +48,7 @@ test.beforeEach(async ({ page }) => {
 // A lead setting up a team from nothing: the console used to offer no way to
 // create one, and an invitation handed out only a bare token, with nowhere for
 // the invitee to use it.
-test("a lead creates a team from Home", async ({ page }) => {
+test("a lead creates a team from Home and hands out an invitation link", async ({ page }) => {
   const api = new TeamApi();
   await api.install(page);
 
@@ -60,6 +60,31 @@ test("a lead creates a team from Home", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Website team" })).toBeVisible();
   expect(api.created).toEqual([{ name: "Website team" }]);
 
+  await page.getByLabel("Email", { exact: true }).fill("teammate@example.test");
+  await page.getByLabel("Role", { exact: true }).selectOption("developer");
+  await page.getByRole("button", { name: "Create invitation" }).click();
+  await expect(page.getByText("Copy this invitation link now.")).toBeVisible();
+  await page.getByRole("button", { name: "Reveal value" }).click();
+  const origin = new URL(page.url()).origin;
+  await expect(
+    page.getByRole("complementary", { name: /Copy this invitation link now/u }).locator("code"),
+  ).toHaveText(`${origin}/invitations/${INVITATION_ID}#token=${encodeURIComponent(TOKEN)}`);
+  expect(api.invited).toMatchObject([{ email: "teammate@example.test", role: "developer" }]);
+  expect(api.unhandled).toEqual([]);
+});
+
+test("the invitation link fills in its token, leaves no token in the address bar, and joins the team", async ({
+  page,
+}) => {
+  const api = new TeamApi();
+  await api.install(page);
+
+  await page.goto(`/invitations/${INVITATION_ID}#token=${encodeURIComponent(TOKEN)}`);
+  await expect(page.getByLabel("Invitation token")).toHaveValue(TOKEN);
+  expect(new URL(page.url()).hash).toBe("");
+  await page.getByRole("button", { name: "Accept invitation" }).click();
+  await expect(page).toHaveURL(new RegExp(`/teams/${TEAM_ID}$`, "u"));
+  expect(api.accepted).toEqual([{ token: TOKEN }]);
   expect(api.unhandled).toEqual([]);
 });
 
