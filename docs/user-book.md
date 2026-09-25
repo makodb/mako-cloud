@@ -1583,10 +1583,12 @@ All carry `X-Mako-Key` and the application user's bearer token.
 | --- | --- | --- |
 | `documents` | `{ documents, checkpoint, cursor }` | Changes visible to the caller since the last event |
 | `checkpoint` | `{ checkpoint, cursor }` | The checkpoint advanced with nothing to deliver |
-| `heartbeat` | `{ cursor }` | Keep-alive |
+| `heartbeat` | `{ cursor }` | Keep-alive, every 15 seconds |
 | `resync` | `{ reason }` | The client must pull from its checkpoint again: `reconnected`, `stream_gap`, `checkpoint_expired`, `authorization_epoch_changed`, `service_failover` |
 
 The server keeps a bounded buffer (1000 events) per stream; a client that falls behind receives `resync` with `stream_gap`. Reconnect with `Last-Event-ID` set to the last `cursor` to resume; the environment-scoped stream names the collection beside each event and takes each collection's cursor back. A policy or claim change arrives as `authorization_epoch_changed`, after which the client must run its security reset before pulling again.
+
+A stream can also stop delivering without ending: the connection goes half-open when a device sleeps or changes networks, or a proxy between the browser and the service holds the events back. `@mako-cloud/rxdb` treats a stream that sends nothing — not even a heartbeat — for `silenceTimeoutMs` (default 45 000, three missed heartbeats) as dead: it drops the connection, asks RxDB to resync, and reconnects, so changes it missed arrive by pull.
 
 ---
 

@@ -16,6 +16,15 @@ export interface MakoLiveStreamOptions {
   readonly maximumBufferedEvents?: number;
   readonly reconnectMinimumDelayMs?: number;
   readonly reconnectMaximumDelayMs?: number;
+  /**
+   * How long an open stream may go without a single byte before it is treated
+   * as dead and reconnected. The service sends a heartbeat every 15 seconds,
+   * so the default of 45 seconds is three missed heartbeats. A connection that
+   * went half-open when a device slept or changed networks, or a proxy that
+   * holds the stream back, otherwise leaves the client waiting forever and
+   * never learns of remote changes.
+   */
+  readonly silenceTimeoutMs?: number;
   readonly onResyncReason?: (reason: MakoResyncReason) => Promise<void> | void;
   /** Records every checkpoint the stream advances to so a restart can resume from it. */
   readonly checkpoints?: ReplicationCheckpointPersistence;
@@ -28,11 +37,14 @@ export class MakoLivePullStream<RxDocType> {
   readonly #maximumBufferedEvents: number;
   readonly #minimumDelay: number;
   readonly #maximumDelay: number;
+  readonly #silenceTimeout: number;
   readonly #onResyncReason: ((reason: MakoResyncReason) => Promise<void> | void) | undefined;
   readonly #checkpoints: ReplicationCheckpointPersistence | undefined;
   readonly #subject = new Subject<RxReplicationPullStreamItem<RxDocType, MakoCheckpoint>>();
   readonly #queue: RxReplicationPullStreamItem<RxDocType, MakoCheckpoint>[] = [];
   #abort: AbortController | null = null;
+  #reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
+  #silence: ReturnType<typeof setTimeout> | undefined;
   #running = false;
   #closed = false;
   #draining = false;
@@ -50,6 +62,7 @@ export class MakoLivePullStream<RxDocType> {
     this.#maximumBufferedEvents = boundedInteger(options.maximumBufferedEvents ?? 100, 1, 1_000);
     this.#minimumDelay = boundedInteger(options.reconnectMinimumDelayMs ?? 500, 10, 60_000);
     this.#maximumDelay = boundedInteger(options.reconnectMaximumDelayMs ?? 30_000, 10, 300_000);
+    this.#silenceTimeout = boundedInteger(options.silenceTimeoutMs ?? 45_000, 10, 600_000);
     this.#onResyncReason = options.onResyncReason;
     this.#checkpoints = options.checkpoints;
     if (this.#maximumDelay < this.#minimumDelay) {
@@ -78,6 +91,11 @@ export class MakoLivePullStream<RxDocType> {
     this.#running = false;
     this.#abort?.abort();
     this.#abort = null;
+    clearTimeout(this.#silence);
+    // Cancelling the body ends a read the abort did not reach, so nothing is
+    // left holding the connection or a timer after close.
+    void this.#reader?.cancel().catch(ignore);
+    this.#reader = null;
     this.#queue.length = 0;
     this.#subject.complete();
   }
@@ -134,6 +152,29 @@ export class MakoLivePullStream<RxDocType> {
     const accessToken = await this.#auth.validAccessToken();
     const abort = new AbortController();
     this.#abort = abort;
+    // Any bytes -- a heartbeat included -- prove the stream is alive. After
+    // too long without any, drop it: the reconnect asks RxDB to resync, so
+    // whatever the stream failed to deliver arrives by pull instead.
+    const armSilence = (): void => {
+      clearTimeout(this.#silence);
+      if (this.#closed) {
+        return;
+      }
+      this.#silence = setTimeout(() => {
+        abort.abort();
+        void this.#reader?.cancel().catch(ignore);
+      }, this.#silenceTimeout);
+    };
+    armSilence();
+    try {
+      await this.#readStream(accessToken, abort, armSilence);
+    } finally {
+      clearTimeout(this.#silence);
+      this.#reader = null;
+    }
+  }
+
+  async #readStream(accessToken: string, abort: AbortController, alive: () => void): Promise<void> {
     const response = await sendReplicationRequest(this.#auth, accessToken, async (token) => {
       try {
         return await this.#fetch(streamUrl(this.#config, this.#checkpoint, this.#cursor), {
@@ -155,6 +196,12 @@ export class MakoLivePullStream<RxDocType> {
       throw replicationNetworkError();
     }
     const reader = response.body.getReader();
+    this.#reader = reader;
+    if (this.#closed) {
+      void reader.cancel().catch(ignore);
+      return;
+    }
+    alive();
     const decoder = new TextDecoder();
     let pending = "";
     while (!this.#closed && !abort.signal.aborted) {
@@ -162,6 +209,7 @@ export class MakoLivePullStream<RxDocType> {
       if (chunk.done) {
         break;
       }
+      alive();
       pending += decoder.decode(chunk.value, { stream: true }).replaceAll("\r\n", "\n");
       let boundary = pending.indexOf("\n\n");
       while (boundary >= 0) {
@@ -171,7 +219,13 @@ export class MakoLivePullStream<RxDocType> {
         boundary = pending.indexOf("\n\n");
       }
     }
-    reader.releaseLock();
+    // A stream left because the client closed or dropped it is cancelled, so
+    // the connection is released rather than kept open behind a lock.
+    if (this.#closed || abort.signal.aborted) {
+      void reader.cancel().catch(ignore);
+    } else {
+      reader.releaseLock();
+    }
   }
 
   #acceptFrame(frame: string): void {

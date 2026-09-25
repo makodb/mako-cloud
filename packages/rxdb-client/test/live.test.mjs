@@ -143,6 +143,76 @@ test("renews once on a refused stream and ends it rather than reconnecting forev
   assert.deepEqual(counts, { stream: 2, token: 1 });
 });
 
+test("drops a stream that goes silent and resyncs instead of waiting forever", async () => {
+  let streams = 0;
+  const fetch = async (input) => {
+    if (String(input).endsWith("/auth/signin")) {
+      return Response.json(session());
+    }
+    streams += 1;
+    // Headers arrive, then nothing: a half-open connection, or a proxy that
+    // holds the stream back. The body ignores the abort signal on purpose.
+    return new Response(new ReadableStream({ start() {} }), {
+      headers: { "content-type": "text/event-stream" },
+    });
+  };
+  const auth = new MakoAuthClient(config(), { fetch });
+  await auth.signInWithPassword("user@example.test", "password");
+  const stream = createMakoLivePullStream(config(), auth, {
+    fetch,
+    silenceTimeoutMs: 30,
+    reconnectMinimumDelayMs: 10,
+    reconnectMaximumDelayMs: 10,
+  });
+  const event = await new Promise((resolve) => {
+    stream.stream$.subscribe((value) => {
+      stream.close();
+      resolve(value);
+    });
+    stream.start();
+  });
+  assert.equal(event, "RESYNC");
+  assert.equal(streams, 1, "the silent stream was dropped, and the resync precedes the reconnect");
+});
+
+test("heartbeats keep a quiet stream open", async () => {
+  let streams = 0;
+  const fetch = async (input) => {
+    if (String(input).endsWith("/auth/signin")) {
+      return Response.json(session());
+    }
+    streams += 1;
+    const heartbeat = new TextEncoder().encode(sse({ event: "heartbeat", data: { cursor: "msc1.beat" } }));
+    let timer;
+    return new Response(
+      new ReadableStream({
+        start(controller) {
+          timer = setInterval(() => controller.enqueue(heartbeat), 10);
+        },
+        cancel() {
+          clearInterval(timer);
+        },
+      }),
+      { headers: { "content-type": "text/event-stream" } },
+    );
+  };
+  const auth = new MakoAuthClient(config(), { fetch });
+  await auth.signInWithPassword("user@example.test", "password");
+  const stream = createMakoLivePullStream(config(), auth, {
+    fetch,
+    silenceTimeoutMs: 40,
+    reconnectMinimumDelayMs: 10,
+    reconnectMaximumDelayMs: 10,
+  });
+  const events = [];
+  stream.stream$.subscribe((value) => events.push(value));
+  stream.start();
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  stream.close();
+  assert.equal(streams, 1, "a stream that keeps sending heartbeats is never dropped");
+  assert.deepEqual(events, []);
+});
+
 function sse(value) {
   return `event: ${value.event}\ndata: ${JSON.stringify(value)}\n\n`;
 }
