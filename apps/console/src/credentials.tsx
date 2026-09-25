@@ -87,20 +87,34 @@ export function CredentialsScreen({
   const [oneTime, setOneTime] = useState<OneTimeSecret | null>(null);
   const [initializedKey, setInitializedKey] = useState<JwtSigningKey | null>(null);
   const [failure, setFailure] = useState<ConsoleApiFailure | null>(null);
+  const [tokensFailure, setTokensFailure] = useState<ConsoleApiFailure | null>(null);
   const reload = useCallback(async () => {
     try {
       const project = await client.getProject(projectId);
-      const [nextTokens, nextSigningKeys] = await Promise.all([
+      setTeamId(project.teamId);
+      // Each list stands on its own: when the team's tokens could not be read,
+      // the environment's signing keys used to stay "Loading…" with them.
+      const [nextTokens, nextSigningKeys] = await Promise.allSettled([
         client.listAutomationTokens(project.teamId),
         client.listJwtSigningKeys(projectId, environmentId),
       ]);
-      setTeamId(project.teamId);
-      setTokens(nextTokens);
-      setSigningKeys(nextSigningKeys);
-      setSelectedToken((current) =>
-        current === null ? null : (nextTokens.find((token) => token.id === current.id) ?? null),
-      );
-      setFailure(null);
+      if (nextTokens.status === "fulfilled") {
+        setTokens(nextTokens.value);
+        setSelectedToken((current) =>
+          current === null
+            ? null
+            : (nextTokens.value.find((token) => token.id === current.id) ?? null),
+        );
+        setTokensFailure(null);
+      } else {
+        setTokensFailure(failureFrom(nextTokens.reason));
+      }
+      if (nextSigningKeys.status === "fulfilled") {
+        setSigningKeys(nextSigningKeys.value);
+        setFailure(null);
+      } else {
+        setFailure(failureFrom(nextSigningKeys.reason));
+      }
     } catch (error) {
       setFailure(failureFrom(error));
     }
@@ -402,6 +416,7 @@ export function CredentialsScreen({
         />
         <AutomationTokensPanel
           tokens={tokens}
+          failure={tokensFailure}
           selected={selectedToken}
           onSelect={setSelectedToken}
           onCreate={createToken}
@@ -697,6 +712,7 @@ function FunctionSecretsPanel({
 
 function AutomationTokensPanel({
   tokens,
+  failure,
   selected,
   onSelect,
   onCreate,
@@ -704,6 +720,7 @@ function AutomationTokensPanel({
   onRevoke,
 }: {
   readonly tokens: AutomationToken[] | null;
+  readonly failure: ConsoleApiFailure | null;
   readonly selected: AutomationToken | null;
   readonly onSelect: (token: AutomationToken) => void;
   readonly onCreate: (event: FormEvent<HTMLFormElement>) => void;
@@ -744,7 +761,9 @@ function AutomationTokensPanel({
             Create scoped token
           </Button>
         </form>
-        {tokens === null ? (
+        {tokens === null && failure !== null ? (
+          <ApiFailureNotice failure={failure} />
+        ) : tokens === null ? (
           <p className="m-0 text-sm text-muted-foreground">Loading automation tokens…</p>
         ) : tokens.length === 0 ? null : (
           <Table aria-labelledby="automation-title">
