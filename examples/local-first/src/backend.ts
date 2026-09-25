@@ -1,4 +1,4 @@
-import type { MakoAuthClient } from "@mako-cloud/rxdb";
+import type { AuthSessionPersistence, MakoAuthClient } from "@mako-cloud/rxdb";
 
 import type { ReferenceTodo } from "./reference-app.js";
 
@@ -35,6 +35,13 @@ export interface ReferenceBackend {
   readonly config: ReferenceBackendConfig;
   readonly fetch: typeof globalThis.fetch;
   readonly now: () => number;
+  /**
+   * Keep the local database in the browser (IndexedDB) rather than in memory,
+   * so writes made offline survive the tab closing until they are pushed.
+   */
+  readonly persistLocalData?: boolean;
+  /** Where the session is kept; left out, it lives only as long as the page. */
+  readonly sessionPersistence?: AuthSessionPersistence | undefined;
   /** Establish the application's session, registering the user if required. */
   authenticate(auth: MakoAuthClient): Promise<void>;
   diagnostics(): ReferenceBackendDiagnostics;

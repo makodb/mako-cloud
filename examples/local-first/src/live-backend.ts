@@ -1,4 +1,8 @@
-import type { MakoAuthClient } from "@mako-cloud/rxdb";
+import {
+  type AuthSessionPersistence,
+  BrowserAuthSessionPersistence,
+  type MakoAuthClient,
+} from "@mako-cloud/rxdb";
 
 import type {
   ReferenceBackend,
@@ -18,6 +22,12 @@ export interface LiveBackendOptions extends ReferenceBackendConfig {
    * a mistyped address fails instead of quietly creating a new account.
    */
   readonly createAccount?: boolean;
+  /**
+   * Keep the session in the browser so a reload, or coming back later, stays
+   * signed in. Without credentials, `authenticate` then resumes the stored
+   * session and fails when there is none, so the page can ask instead.
+   */
+  readonly rememberSession?: boolean;
   /** Credentials for the second client used by putRemote and deleteRemote. */
   readonly remoteEmail: string;
   readonly remotePassword: string;
@@ -88,8 +98,23 @@ export class LiveMakoBackend implements ReferenceBackend {
   #remote: WireSession | null = null;
   #streamConnections = 0;
 
+  readonly sessionPersistence: AuthSessionPersistence | undefined;
+  readonly persistLocalData: boolean;
+  /** The address of the user this backend signed in, once it has. */
+  signedInEmail: string | null = null;
+
   constructor(options: LiveBackendOptions) {
     this.#options = options;
+    // A page that remembers who is signed in also keeps their data: the two
+    // together are what let someone close the tab and pick up where they were.
+    this.persistLocalData = options.rememberSession === true;
+    this.sessionPersistence =
+      options.rememberSession === true
+        ? new BrowserAuthSessionPersistence({
+            projectId: options.projectId,
+            environmentId: options.environmentId,
+          })
+        : undefined;
     this.config = {
       endpoint: options.endpoint,
       projectId: options.projectId,
@@ -143,6 +168,13 @@ export class LiveMakoBackend implements ReferenceBackend {
   async authenticate(auth: MakoAuthClient): Promise<void> {
     const { email, password } = this.#options;
     if (email === undefined || password === undefined) {
+      // Resume a remembered session: a refresh token that has expired or been
+      // revoked is refused here, and the page asks the person to sign in.
+      if (this.sessionPersistence !== undefined && (await auth.restoreSession()) !== null) {
+        await auth.validAccessToken();
+        this.signedInEmail = auth.currentSession()?.user.email ?? null;
+        return;
+      }
       throw new Error("an email address and password are required to sign in");
     }
     // Sign-up is idempotent from the caller's point of view: an existing
@@ -165,6 +197,7 @@ export class LiveMakoBackend implements ReferenceBackend {
       await auth.signUp(email, password).catch(() => undefined);
     }
     await auth.signInWithPassword(email, password);
+    this.signedInEmail = email;
   }
 
   diagnostics(): ReferenceBackendDiagnostics {

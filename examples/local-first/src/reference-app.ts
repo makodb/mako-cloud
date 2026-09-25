@@ -17,6 +17,7 @@ import {
   type WithDeleted,
 } from "rxdb";
 import { type RxReplicationState, replicateRxCollection } from "rxdb/plugins/replication";
+import { getRxStorageDexie } from "rxdb/plugins/storage-dexie";
 import { getRxStorageMemory } from "rxdb/plugins/storage-memory";
 import { RXDB_VERSION } from "rxdb/plugins/utils";
 import type { Subscription } from "rxjs";
@@ -56,7 +57,7 @@ export interface ReferenceApplication {
   /** The signed-in application user; a todo's `ownerId`, which the policy checks. */
   readonly userId: string;
   addTodo(document: ReferenceTodo): Promise<void>;
-  close(): Promise<void>;
+  close(options?: { readonly forget?: boolean }): Promise<void>;
   deleteTodo(id: string): Promise<void>;
   diagnostics(): ReferenceApplicationDiagnostics;
   forceReconnect(): Promise<void>;
@@ -145,17 +146,31 @@ export async function createReferenceApplication(
     pullBatchSize: 100,
     pushBatchSize: 100,
   });
-  const auth = new MakoAuthClient(config, { fetch: backend.fetch, now: backend.now });
+  const auth = new MakoAuthClient(config, {
+    fetch: backend.fetch,
+    now: backend.now,
+    ...(backend.sessionPersistence === undefined
+      ? {}
+      : { persistence: backend.sessionPersistence }),
+  });
   await backend.authenticate(auth);
   const userId = auth.currentSession()?.user.id;
   if (userId === undefined) {
     throw new Error("authentication did not establish a session");
   }
 
+  // A persistent database is named for the tenant and the user, so the same
+  // person finds it again on the next visit and another person on this
+  // browser never opens it. Unpushed writes wait in it until they sync.
+  const persistent = backend.persistLocalData === true;
   const database = await createRxDatabase<ReferenceCollections>({
-    name: `makoexample${crypto.randomUUID().replaceAll("-", "")}`,
-    storage: getRxStorageMemory(),
-    multiInstance: false,
+    name: persistent
+      ? `makotodos${await digest(`${config.projectId}/${config.environmentId}/${userId}`)}`
+      : `makoexample${crypto.randomUUID().replaceAll("-", "")}`,
+    storage: persistent ? getRxStorageDexie() : getRxStorageMemory(),
+    // Two tabs of the same user share one database; RxDB lets one of them
+    // replicate at a time.
+    multiInstance: persistent,
     eventReduce: true,
   });
   const collections = await database.addCollections({
@@ -431,18 +446,28 @@ class ReferenceApplicationImpl implements ReferenceApplication {
     throw new Error("the simulated access revocation was not enforced");
   }
 
+  /** Signing out also deletes this user's data from the browser. */
   async signOut(): Promise<void> {
     await this.#auth.signOut().catch(() => undefined);
-    await this.close();
+    await this.close({ forget: true });
   }
 
-  async close(): Promise<void> {
+  /**
+   * Stops replication. A persistent database is kept for the next visit,
+   * with any unpushed writes, unless the caller asks to forget it.
+   */
+  async close(options: { readonly forget?: boolean } = {}): Promise<void> {
     this.#subscription.unsubscribe();
     this.#signals.complete();
     this.#live.close();
     await this.#replication.cancel();
-    if (!this.#state.revoked) {
+    if (this.#state.revoked) {
+      return;
+    }
+    if (options.forget === true || this.backend.persistLocalData !== true) {
       await this.#database.remove();
+    } else {
+      await this.#database.close();
     }
   }
 
@@ -471,4 +496,12 @@ async function waitUntil(predicate: () => boolean): Promise<void> {
     }
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
+}
+
+/** A short, name-safe digest: RxDB database names are lowercase letters and digits. */
+async function digest(value: string): Promise<string> {
+  const bytes = new Uint8Array(
+    await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)),
+  );
+  return Array.from(bytes.slice(0, 12), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }

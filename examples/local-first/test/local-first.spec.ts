@@ -65,9 +65,19 @@ test("gives each new todo its own id, stamped with the signed-in user", async ({
   const todos = await page.evaluate(() => window.makoExample.listTodos());
   expect(new Set(todos.map((item) => item.id)).size).toBe(2);
   for (const item of todos) {
-    expect(item.id).toMatch(/^todo-[0-9a-f-]{36}$/u);
+    expect(item.id).toMatch(/^todo-[0-9a-z]{9}-[0-9a-f-]{36}$/u);
     expect(item.ownerId).toBe("user-example");
   }
+});
+
+test("lists todos in the order they were added", async ({ page }) => {
+  const shopping = ["milk", "eggs", "bread", "apples", "coffee", "tea"];
+  for (const value of shopping) {
+    await page.getByRole("textbox", { name: "Todo" }).fill(value);
+    await page.getByRole("button", { name: "Add" }).click();
+    await expect(titles(page).last()).toHaveText(value);
+  }
+  await expect(titles(page)).toHaveText(shopping);
 });
 
 test("resolves concurrent conflicts using the collection conflict handler", async ({ page }) => {

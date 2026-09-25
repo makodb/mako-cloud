@@ -56,9 +56,14 @@ proxies `/v1` to it, and drives the scenarios over real HTTP. Nothing is interce
 in for real, its writes are persisted, and every "remote" edit comes from a second authenticated
 application user.
 
-The proxy is not a convenience. The data plane emits no CORS headers, so a browser can only reach it
-same-origin — which is how a deployment serves it, behind one reverse proxy. The live suite
-reproduces that topology rather than loosening the server to suit a test.
+The live suite serves the page and the API from one origin, the way a deployment behind one reverse
+proxy does. A page on another origin works too once that origin is in the environment's
+[allowed origins](../../docs/user-book.md#allowed-origins-cors).
+
+A live page that asks for credentials keeps the session in `localStorage` and the todos in IndexedDB,
+under a database named for the project, environment, and user. A reload, or coming back later, stays
+signed in, and a todo written offline is still there, and is pushed, after the tab was closed.
+Signing out deletes both. The in-browser fake keeps everything in memory.
 
 The implementation is in [`src/reference-app.ts`](src/reference-app.ts), the protocol fixture is in
 [`src/mock-backend.ts`](src/mock-backend.ts), and the assertions are in

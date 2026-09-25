@@ -73,6 +73,16 @@ async function startApplication(): Promise<{
       email: live.email,
     };
   }
+  // A session kept from an earlier visit signs the person straight back in;
+  // with none, or one the service no longer accepts, the form is shown.
+  const remembered = new LiveMakoBackend({ ...live, rememberSession: true });
+  status.textContent = "resuming session";
+  try {
+    const application = await createReferenceApplication(remembered);
+    return { application, email: remembered.signedInEmail };
+  } catch {
+    await remembered.sessionPersistence?.clear();
+  }
   const panel = requiredElement("sign-in");
   const signInForm = panel.querySelector<HTMLFormElement>("form");
   const failure = requiredElement("sign-in-error");
@@ -130,7 +140,7 @@ async function startApplication(): Promise<{
     status.textContent = attempt.createAccount ? "creating account" : "signing in";
     try {
       const application = await createReferenceApplication(
-        new LiveMakoBackend({ ...live, ...attempt }),
+        new LiveMakoBackend({ ...live, ...attempt, rememberSession: true }),
       );
       panel.hidden = true;
       return { application, email: attempt.email };
@@ -165,9 +175,11 @@ let editing: { readonly id: string; draft: string } | null = null;
 /** A new todo's id, unique across every user of the collection. Ids are
  * primary keys shared by all users, while each user reads only their own todos
  * under an owner policy: an id derived from what one user can see would clash
- * with another user's todo that they cannot, and be refused. */
+ * with another user's todo that they cannot, and be refused. The list is
+ * sorted by id, so the id starts with the time, in fixed-width base 36: a
+ * random id alone showed the list in a shuffled order. */
 function nextTodoId(): string {
-  return `todo-${crypto.randomUUID()}`;
+  return `todo-${Date.now().toString(36).padStart(9, "0")}-${crypto.randomUUID()}`;
 }
 
 function renderTodos(todos: readonly ReferenceTodo[]): void {
