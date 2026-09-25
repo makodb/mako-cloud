@@ -27,7 +27,7 @@ use mako_sync::{
     LiveStreamError, LiveStreamEvent, LiveStreamLimits, LiveStreamRequest, LiveStreamSession,
     OpaqueCheckpoint, OpaqueStreamCursor, PullError, PullRequest, PullService, PushError,
     PushRequest, PushService, ReplicationFilter, ReplicationTokenCodec, ReplicationTokenKey,
-    ResyncReason, SseFrame,
+    ResyncReason, SchemaMigrationRequired, SseFrame,
 };
 use serde::Deserialize;
 
@@ -1012,7 +1012,7 @@ fn map_pull_error(request: &HttpRequest, error: PullError) -> HttpApiError {
         | PullError::CheckpointBeyondHighWater => {
             invalid(request, "replication checkpoint or pull request is invalid")
         }
-        PullError::SchemaMigrationRequired(_) => schema_mismatch(request),
+        PullError::SchemaMigrationRequired(required) => schema_mismatch(request, &required),
         PullError::CheckpointExpired { minimum_position } => {
             checkpoint_expired(request, minimum_position)
         }
@@ -1027,7 +1027,7 @@ fn map_push_error(request: &HttpRequest, error: PushError) -> HttpApiError {
         PushError::Contract(_) | PushError::ScopeMismatch => {
             invalid(request, "replication push request is invalid")
         }
-        PushError::SchemaMigrationRequired(_) => schema_mismatch(request),
+        PushError::SchemaMigrationRequired(required) => schema_mismatch(request, &required),
         PushError::Document(_)
         | PushError::Mutation(_)
         | PushError::Read(_)
@@ -1043,7 +1043,7 @@ fn map_live_error(request: &HttpRequest, error: LiveStreamError) -> HttpApiError
         | LiveStreamError::PositionBeyondHighWater => {
             invalid(request, "replication stream position is invalid")
         }
-        LiveStreamError::SchemaMigrationRequired(_) => schema_mismatch(request),
+        LiveStreamError::SchemaMigrationRequired(required) => schema_mismatch(request, &required),
         LiveStreamError::ChangeLog(_)
         | LiveStreamError::Retention(_)
         | LiveStreamError::Json(_)
@@ -1054,14 +1054,23 @@ fn map_live_error(request: &HttpRequest, error: LiveStreamError) -> HttpApiError
     }
 }
 
-fn schema_mismatch(request: &HttpRequest) -> HttpApiError {
-    HttpApiError::new(
-        409,
-        ErrorCode::SchemaMismatch,
-        "replication schema migration is required",
-        request.request_id(),
-        RetryAdvice::Never,
-    )
+/// Names the version the client must migrate to, as `requiredSchemaVersion`:
+/// without it a client learned that its schema was stale but not what to
+/// install, and the recovery coordinator's hook received `null`.
+fn schema_mismatch(request: &HttpRequest, required: &SchemaMigrationRequired) -> HttpApiError {
+    let envelope = ApiErrorEnvelope::new(
+        ApiError::new(
+            ErrorCode::SchemaMismatch,
+            "replication schema migration is required",
+            request.request_id(),
+            RetryAdvice::Never,
+        )
+        .with_detail(
+            "requiredSchemaVersion",
+            SafeDetail::String(required.required_schema_version().get().to_string()),
+        ),
+    );
+    HttpApiError::from_envelope(409, envelope)
 }
 
 fn checkpoint_expired(request: &HttpRequest, minimum_position: u64) -> HttpApiError {
