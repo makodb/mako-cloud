@@ -254,7 +254,7 @@ export class RuntimeSupervisor {
         case PROBE_PATH:
           return this.#probe(payload, requestId);
         case TEST_PATH:
-          return await this.#test(payload, requestId);
+          return await this.#test(payload, requestId, request);
         case LOGS_PATH:
           return this.#logs(payload, requestId);
         case RETIRE_PATH:
@@ -380,7 +380,7 @@ export class RuntimeSupervisor {
     return deploymentStatus(deployment, "healthy", this.#region, requestId);
   }
 
-  async #test(payload: unknown, requestId: string): Promise<Response> {
+  async #test(payload: unknown, requestId: string, incoming: Request): Promise<Response> {
     if (!isTestRequest(payload) || payload.requestId !== requestId) {
       return runtimeError(400, "invalid_deployment", requestId, false);
     }
@@ -396,7 +396,11 @@ export class RuntimeSupervisor {
       headers,
       body: payload.method === "GET" || payload.method === "HEAD" ? null : bytesBuffer(body),
     });
-    const response = await this.#invoke(record, target, payload.path, requestId, false);
+    // The test request is built here rather than received, and the runtime
+    // refuses to hand a user worker a request that carries no tag from one it
+    // received: every console test answered worker_crashed. The tag comes from
+    // the supervisor request that asked for the test.
+    const response = await this.#invoke(record, target, payload.path, requestId, false, incoming);
     const responseBody = new Uint8Array(await response.arrayBuffer());
     return runtimeJson(
       200,
@@ -473,6 +477,7 @@ export class RuntimeSupervisor {
     pathAndQuery: string,
     requestId: string,
     tagRequest: boolean,
+    tagSource: Request | null = tagRequest ? source : null,
   ): Promise<Response> {
     const limits = record.load.manifest.limits;
     if (record.activeInvocations >= limits.concurrency) {
@@ -499,7 +504,7 @@ export class RuntimeSupervisor {
       headers,
       body: source.method === "GET" || source.method === "HEAD" ? null : bytesBuffer(body),
     });
-    if (tagRequest) EdgeRuntime.applySupabaseTag(source, target);
+    if (tagSource !== null) EdgeRuntime.applySupabaseTag(tagSource, target);
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), limits.wallMilliseconds);
     record.activeInvocations += 1;
