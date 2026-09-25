@@ -5767,6 +5767,8 @@ export interface components {
         ObservabilityFrom: string;
         ObservabilityUntil: string;
         ObservabilityLimit: number;
+        /** @description `newest` pages from the latest record back, each cursor continuing towards older ones, as a feed of recent activity reads; `oldest`, the default, pages forward from the start of the window. */
+        ObservabilityOrder: "newest" | "oldest";
         ProvisioningWorkflowId: string;
         SupportSessionId: components["schemas"]["SupportSessionId"];
         IdempotencyKey: string;
@@ -9634,6 +9636,8 @@ export interface operations {
                 from?: components["parameters"]["ObservabilityFrom"];
                 until?: components["parameters"]["ObservabilityUntil"];
                 limit?: components["parameters"]["ObservabilityLimit"];
+                /** @description `newest` pages from the latest record back, each cursor continuing towards older ones, as a feed of recent activity reads; `oldest`, the default, pages forward from the start of the window. */
+                order?: components["parameters"]["ObservabilityOrder"];
             };
             header?: never;
             path: {
@@ -9656,6 +9660,8 @@ export interface operations {
                 from?: components["parameters"]["ObservabilityFrom"];
                 until?: components["parameters"]["ObservabilityUntil"];
                 limit?: components["parameters"]["ObservabilityLimit"];
+                /** @description `newest` pages from the latest record back, each cursor continuing towards older ones, as a feed of recent activity reads; `oldest`, the default, pages forward from the start of the window. */
+                order?: components["parameters"]["ObservabilityOrder"];
             };
             header?: never;
             path: {
@@ -9678,6 +9684,8 @@ export interface operations {
                 from?: components["parameters"]["ObservabilityFrom"];
                 until?: components["parameters"]["ObservabilityUntil"];
                 limit?: components["parameters"]["ObservabilityLimit"];
+                /** @description `newest` pages from the latest record back, each cursor continuing towards older ones, as a feed of recent activity reads; `oldest`, the default, pages forward from the start of the window. */
+                order?: components["parameters"]["ObservabilityOrder"];
             };
             header?: never;
             path: {
@@ -9700,6 +9708,8 @@ export interface operations {
                 from?: components["parameters"]["ObservabilityFrom"];
                 until?: components["parameters"]["ObservabilityUntil"];
                 limit?: components["parameters"]["ObservabilityLimit"];
+                /** @description `newest` pages from the latest record back, each cursor continuing towards older ones, as a feed of recent activity reads; `oldest`, the default, pages forward from the start of the window. */
+                order?: components["parameters"]["ObservabilityOrder"];
             };
             header?: never;
             path: {
@@ -9722,6 +9732,8 @@ export interface operations {
                 from?: components["parameters"]["ObservabilityFrom"];
                 until?: components["parameters"]["ObservabilityUntil"];
                 limit?: components["parameters"]["ObservabilityLimit"];
+                /** @description `newest` pages from the latest record back, each cursor continuing towards older ones, as a feed of recent activity reads; `oldest`, the default, pages forward from the start of the window. */
+                order?: components["parameters"]["ObservabilityOrder"];
             };
             header?: never;
             path: {
@@ -9744,6 +9756,8 @@ export interface operations {
                 from?: components["parameters"]["ObservabilityFrom"];
                 until?: components["parameters"]["ObservabilityUntil"];
                 limit?: components["parameters"]["ObservabilityLimit"];
+                /** @description `newest` pages from the latest record back, each cursor continuing towards older ones, as a feed of recent activity reads; `oldest`, the default, pages forward from the start of the window. */
+                order?: components["parameters"]["ObservabilityOrder"];
             };
             header?: never;
             path: {
@@ -9766,6 +9780,8 @@ export interface operations {
                 from?: components["parameters"]["ObservabilityFrom"];
                 until?: components["parameters"]["ObservabilityUntil"];
                 limit?: components["parameters"]["ObservabilityLimit"];
+                /** @description `newest` pages from the latest record back, each cursor continuing towards older ones, as a feed of recent activity reads; `oldest`, the default, pages forward from the start of the window. */
+                order?: components["parameters"]["ObservabilityOrder"];
             };
             header?: never;
             path: {
@@ -9788,6 +9804,8 @@ export interface operations {
                 from?: components["parameters"]["ObservabilityFrom"];
                 until?: components["parameters"]["ObservabilityUntil"];
                 limit?: components["parameters"]["ObservabilityLimit"];
+                /** @description `newest` pages from the latest record back, each cursor continuing towards older ones, as a feed of recent activity reads; `oldest`, the default, pages forward from the start of the window. */
+                order?: components["parameters"]["ObservabilityOrder"];
             };
             header?: never;
             path: {
@@ -9810,6 +9828,8 @@ export interface operations {
                 from?: components["parameters"]["ObservabilityFrom"];
                 until?: components["parameters"]["ObservabilityUntil"];
                 limit?: components["parameters"]["ObservabilityLimit"];
+                /** @description `newest` pages from the latest record back, each cursor continuing towards older ones, as a feed of recent activity reads; `oldest`, the default, pages forward from the start of the window. */
+                order?: components["parameters"]["ObservabilityOrder"];
             };
             header?: never;
             path: {

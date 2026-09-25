@@ -89,6 +89,7 @@ impl ProductionOperatorProvider {
             from_unix_milliseconds: Some(from_unix_seconds.saturating_mul(1_000)),
             until_unix_milliseconds: Some(until_unix_seconds.saturating_mul(1_000)),
             limit: 100,
+            newest_first: false,
         };
         let page = self
             .observability

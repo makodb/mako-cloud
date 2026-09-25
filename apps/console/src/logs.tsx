@@ -407,6 +407,7 @@ function presetRange(preset: RangePreset, now = Date.now()): TimeRange {
 function logQuery(range: TimeRange, cursor?: string): ObservabilityQuery {
   return {
     limit: PAGE_SIZE,
+    order: "newest",
     from: range.from,
     ...(range.until === null ? {} : { until: range.until }),
     ...(cursor === undefined ? {} : { cursor }),

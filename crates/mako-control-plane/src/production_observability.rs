@@ -172,7 +172,7 @@ impl ProductionObservabilityBackend {
             .ok_or(ObservabilityBackendError::Unavailable)?;
         let page = self
             .audit
-            .query(
+            .query_in_order(
                 tenant,
                 &AuditFilter::default(),
                 from,
@@ -180,6 +180,7 @@ impl ProductionObservabilityBackend {
                 limit,
                 cursor.as_deref(),
                 now,
+                query.newest_first,
             )
             .await
             .map_err(|error| map_audit_error(error, retained_from))?;
@@ -791,6 +792,7 @@ mod tests {
                 from_unix_milliseconds: Some(now - 1_000),
                 until_unix_milliseconds: Some(now),
                 limit: 1,
+                newest_first: false,
             };
             let first = backend
                 .query(&tenant, ObservabilitySignal::Audit, &query)
@@ -825,6 +827,7 @@ mod tests {
                         from_unix_milliseconds: Some(now - 2 * 60 * 60 * 1000),
                         until_unix_milliseconds: Some(now),
                         limit: 1,
+                        newest_first: false,
                     },
                 )
                 .await;
@@ -885,6 +888,7 @@ mod tests {
                 from_unix_milliseconds: None,
                 until_unix_milliseconds: None,
                 limit: 10,
+                newest_first: false,
             },
         ))
         .expect("page");

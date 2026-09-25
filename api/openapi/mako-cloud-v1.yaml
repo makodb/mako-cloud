@@ -3528,6 +3528,7 @@ paths:
         - $ref: "#/components/parameters/ObservabilityFrom"
         - $ref: "#/components/parameters/ObservabilityUntil"
         - $ref: "#/components/parameters/ObservabilityLimit"
+        - $ref: "#/components/parameters/ObservabilityOrder"
       responses:
         "200":
           $ref: "#/components/responses/ObservabilityPage"
@@ -3545,6 +3546,7 @@ paths:
         - $ref: "#/components/parameters/ObservabilityFrom"
         - $ref: "#/components/parameters/ObservabilityUntil"
         - $ref: "#/components/parameters/ObservabilityLimit"
+        - $ref: "#/components/parameters/ObservabilityOrder"
       responses:
         "200":
           $ref: "#/components/responses/ObservabilityPage"
@@ -3562,6 +3564,7 @@ paths:
         - $ref: "#/components/parameters/ObservabilityFrom"
         - $ref: "#/components/parameters/ObservabilityUntil"
         - $ref: "#/components/parameters/ObservabilityLimit"
+        - $ref: "#/components/parameters/ObservabilityOrder"
       responses:
         "200":
           $ref: "#/components/responses/ObservabilityPage"
@@ -3578,6 +3581,7 @@ paths:
         - $ref: "#/components/parameters/ObservabilityFrom"
         - $ref: "#/components/parameters/ObservabilityUntil"
         - $ref: "#/components/parameters/ObservabilityLimit"
+        - $ref: "#/components/parameters/ObservabilityOrder"
       responses:
         "200":
           $ref: "#/components/responses/ObservabilityPage"
@@ -3594,6 +3598,7 @@ paths:
         - $ref: "#/components/parameters/ObservabilityFrom"
         - $ref: "#/components/parameters/ObservabilityUntil"
         - $ref: "#/components/parameters/ObservabilityLimit"
+        - $ref: "#/components/parameters/ObservabilityOrder"
       responses:
         "200":
           $ref: "#/components/responses/ObservabilityPage"
@@ -3610,6 +3615,7 @@ paths:
         - $ref: "#/components/parameters/ObservabilityFrom"
         - $ref: "#/components/parameters/ObservabilityUntil"
         - $ref: "#/components/parameters/ObservabilityLimit"
+        - $ref: "#/components/parameters/ObservabilityOrder"
       responses:
         "200":
           $ref: "#/components/responses/ObservabilityPage"
@@ -3626,6 +3632,7 @@ paths:
         - $ref: "#/components/parameters/ObservabilityFrom"
         - $ref: "#/components/parameters/ObservabilityUntil"
         - $ref: "#/components/parameters/ObservabilityLimit"
+        - $ref: "#/components/parameters/ObservabilityOrder"
       responses:
         "200":
           $ref: "#/components/responses/ObservabilityPage"
@@ -3642,6 +3649,7 @@ paths:
         - $ref: "#/components/parameters/ObservabilityFrom"
         - $ref: "#/components/parameters/ObservabilityUntil"
         - $ref: "#/components/parameters/ObservabilityLimit"
+        - $ref: "#/components/parameters/ObservabilityOrder"
       responses:
         "200":
           $ref: "#/components/responses/ObservabilityPage"
@@ -3659,6 +3667,7 @@ paths:
         - $ref: "#/components/parameters/ObservabilityFrom"
         - $ref: "#/components/parameters/ObservabilityUntil"
         - $ref: "#/components/parameters/ObservabilityLimit"
+        - $ref: "#/components/parameters/ObservabilityOrder"
       responses:
         "200":
           $ref: "#/components/responses/ObservabilityPage"
@@ -6394,6 +6403,18 @@ components:
         minimum: 1
         maximum: 1000
         default: 100
+    ObservabilityOrder:
+      name: order
+      in: query
+      required: false
+      description: >-
+        `newest` pages from the latest record back, each cursor continuing
+        towards older ones, as a feed of recent activity reads; `oldest`, the
+        default, pages forward from the start of the window.
+      schema:
+        type: string
+        enum: [newest, oldest]
+        default: oldest
     ProvisioningWorkflowId:
       name: provisioningWorkflowId
       in: path

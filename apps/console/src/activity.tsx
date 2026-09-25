@@ -129,6 +129,7 @@ export function ActivityScreen({
     try {
       const page = await client.queryAuditEvents(projectId, environmentId, {
         limit: PAGE_LIMIT,
+        order: "newest",
         cursor,
       });
       const older = rowsFromPage(page, environmentId, environmentId, current.rows.length);
@@ -367,7 +368,12 @@ async function readEnvironmentFeed(
   projectId: string,
   environmentId: string,
 ): Promise<Feed> {
-  const page = await client.queryAuditEvents(projectId, environmentId, { limit: PAGE_LIMIT });
+  // Newest first: read oldest first, a page is the start of the retention
+  // window, days before anything the developer just did.
+  const page = await client.queryAuditEvents(projectId, environmentId, {
+    limit: PAGE_LIMIT,
+    order: "newest",
+  });
   return {
     rows: newestFirst(rowsFromPage(page, environmentId, environmentId, 0)),
     observedAt: page.retention.observedAt,
@@ -385,7 +391,7 @@ async function readProjectFeed(client: MakoManagementClient, projectId: string):
   const environments: Environment[] = await client.listEnvironments(projectId);
   const results = await Promise.allSettled(
     environments.map((environment) =>
-      client.queryAuditEvents(projectId, environment.id, { limit: PAGE_LIMIT }),
+      client.queryAuditEvents(projectId, environment.id, { limit: PAGE_LIMIT, order: "newest" }),
     ),
   );
   const rows: ActivityRow[] = [];

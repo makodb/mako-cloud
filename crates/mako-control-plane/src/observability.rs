@@ -515,6 +515,7 @@ mod tests {
                 from_unix_milliseconds: Some(5_000),
                 until_unix_milliseconds: Some(10_000),
                 limit: 10,
+                newest_first: false,
             };
             let page = service
                 .query_usage(&actor, &tenant, &query, 10_000)

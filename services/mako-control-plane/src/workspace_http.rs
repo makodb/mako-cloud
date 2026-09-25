@@ -188,6 +188,12 @@ fn workspace_summary(
             from_unix_milliseconds: Some(now.saturating_sub(60 * 60).saturating_mul(1_000)),
             until_unix_milliseconds: Some(now.saturating_mul(1_000)),
             limit: 100,
+            newest_first: false,
+        };
+        // Activity is a feed: the latest hundred, not the first hundred of the hour.
+        let recent = ObservabilityQuery {
+            newest_first: true,
+            ..query.clone()
         };
         for (id, result) in [
             (
@@ -208,7 +214,7 @@ fn workspace_summary(
                 "activity",
                 graph
                     .observability_service()
-                    .query_audit_events(&actor, &tenant, &query, now.saturating_mul(1_000))
+                    .query_audit_events(&actor, &tenant, &recent, now.saturating_mul(1_000))
                     .await,
             ),
         ] {
@@ -717,6 +723,7 @@ fn sync_summary(
             from_unix_milliseconds: Some(from.saturating_mul(1_000)),
             until_unix_milliseconds: Some(until.saturating_mul(1_000)),
             limit: 1_000,
+            newest_first: false,
         };
         let page = graph
             .observability_service()

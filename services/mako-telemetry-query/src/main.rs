@@ -322,20 +322,28 @@ impl TelemetryStore {
             return Err(ServiceError::CursorExpired);
         }
         let prefix = record_prefix(&request.tenant, request.signal)?;
-        let mut start = timestamp_key(&prefix, from);
+        let lowest = timestamp_key(&prefix, from);
+        let beyond = timestamp_key(&prefix, until.saturating_add(1));
+        let (mut start, mut end) = (lowest.clone(), beyond.clone());
         if let Some(cursor) = &request.query.cursor {
             let decoded = decode_cursor(cursor)?;
-            if !decoded.starts_with(&prefix)
-                || decoded < start
-                || decoded >= timestamp_key(&prefix, until.saturating_add(1))
-            {
+            if !decoded.starts_with(&prefix) || decoded < lowest || decoded >= beyond {
                 return Err(ServiceError::InvalidRequest);
             }
-            start = decoded;
-            start.push(0);
+            if request.query.newest_first {
+                // The next page ends just below the last record answered.
+                end = decoded;
+            } else {
+                start = decoded;
+                start.push(0);
+            }
         }
-        let range = KeyRange::new(start, timestamp_key(&prefix, until.saturating_add(1)))
-            .map_err(|_| ServiceError::InvalidRequest)?;
+        let range = KeyRange::new(start, end).map_err(|_| ServiceError::InvalidRequest)?;
+        let direction = if request.query.newest_first {
+            ScanDirection::Reverse
+        } else {
+            ScanDirection::Forward
+        };
         let scan_limit = request
             .query
             .limit
@@ -345,7 +353,7 @@ impl TelemetryStore {
             .storage
             .scan(ScanRequest::new(
                 range,
-                ScanDirection::Forward,
+                direction,
                 NonZeroUsize::new(scan_limit).ok_or(ServiceError::InvalidRequest)?,
             ))
             .await
@@ -1114,6 +1122,7 @@ mod tests {
                 from_unix_milliseconds: Some(now - 10_000),
                 until_unix_milliseconds: Some(now),
                 limit: 1,
+                newest_first: false,
             },
             observed_at_unix_milliseconds: now,
         }))
@@ -1133,11 +1142,66 @@ mod tests {
                 from_unix_milliseconds: Some(now - 10_000),
                 until_unix_milliseconds: Some(now),
                 limit: 10,
+                newest_first: false,
             },
             observed_at_unix_milliseconds: now,
         }))
         .expect("second page");
         assert_eq!(second.page.items.len(), 1);
+    }
+
+    #[test]
+    fn newest_first_pages_from_the_latest_record_back_to_the_oldest() {
+        let store = store(MemoryAdapter::new());
+        let now = now_milliseconds().expect("clock");
+        let alpha = tenant("alpha");
+        block_on(
+            store.ingest(
+                TelemetryIngestRequest {
+                    records: (1..=5)
+                        .map(|second| record(alpha.clone(), now - 10_000 + second * 1_000, "entry"))
+                        .collect(),
+                    ..ingest(alpha.clone(), now - 9_000, 1, "unused")
+                },
+                now,
+            ),
+        )
+        .expect("ingest");
+        let page = |cursor: Option<String>, id: &str| {
+            block_on(store.query(TelemetryQueryRequest {
+                protocol_version: TELEMETRY_PROTOCOL_VERSION,
+                request_id: id.to_owned(),
+                tenant: alpha.clone(),
+                signal: ObservabilitySignal::ProjectLog,
+                query: ObservabilityQuery {
+                    cursor,
+                    from_unix_milliseconds: Some(now - 20_000),
+                    until_unix_milliseconds: Some(now),
+                    limit: 2,
+                    newest_first: true,
+                },
+                observed_at_unix_milliseconds: now,
+            }))
+            .expect("page")
+            .page
+        };
+        let times = |page: &ObservabilityPage| {
+            page.items
+                .iter()
+                .map(|record| now - record.timestamp_unix_milliseconds)
+                .collect::<Vec<_>>()
+        };
+        let first = page(None, "req_newest0000001");
+        assert_eq!(times(&first), vec![5_000, 6_000], "newest two first");
+        let second = page(first.next_cursor.clone(), "req_newest0000002");
+        assert_eq!(
+            times(&second),
+            vec![7_000, 8_000],
+            "then the next two, older"
+        );
+        let third = page(second.next_cursor.clone(), "req_newest0000003");
+        assert_eq!(times(&third), vec![9_000], "then the oldest");
+        assert!(third.next_cursor.is_none());
     }
 
     fn usage(tenant: TenantScope, timestamp: u64, quantity: u64) -> ObservabilityRecord {
@@ -1176,6 +1240,7 @@ mod tests {
                 from_unix_milliseconds: None,
                 until_unix_milliseconds: Some(now),
                 limit: 10,
+                newest_first: false,
             },
             observed_at_unix_milliseconds: now,
         }))
@@ -1295,6 +1360,7 @@ mod tests {
                 from_unix_milliseconds: None,
                 until_unix_milliseconds: Some(now),
                 limit: 10,
+                newest_first: false,
             },
             observed_at_unix_milliseconds: now,
         }))

@@ -988,7 +988,7 @@ function ActivityPanel({
 }) {
   const load = useCallback(
     (client: MakoManagementClient) =>
-      client.queryAuditEvents(projectId, environment.id, { limit: 10 }),
+      client.queryAuditEvents(projectId, environment.id, { limit: 10, order: "newest" }),
     [environment.id, projectId],
   );
   const page = useSummary(load);

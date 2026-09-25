@@ -411,6 +411,8 @@ export interface ObservabilityQuery {
   readonly from?: string;
   readonly until?: string;
   readonly limit?: number;
+  /** `newest` reads a feed: the latest records first, older ones on each next page. */
+  readonly order?: "newest" | "oldest";
 }
 
 export type ManagementCredential =

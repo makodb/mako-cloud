@@ -72,7 +72,14 @@ fn handle_observability(
     if !request.body().is_empty() {
         return Err(invalid(request, "request body is not supported"));
     }
-    reject_unknown_query(request, &["cursor", "from", "until", "limit"])?;
+    reject_unknown_query(request, &["cursor", "from", "until", "limit", "order"])?;
+    // `order=newest` pages from the latest record back; the default, oldest
+    // first, is what these routes have always answered.
+    let newest_first = match query_value(request, "order")? {
+        None | Some("oldest") => false,
+        Some("newest") => true,
+        Some(_) => return Err(invalid(request, "observability order is invalid")),
+    };
     let query = ObservabilityQuery {
         cursor: query_value(request, "cursor")?.map(str::to_owned),
         from_unix_milliseconds: query_timestamp(request, "from")?,
@@ -83,6 +90,7 @@ fn handle_observability(
                 .map_err(|_| invalid(request, "observability limit is invalid"))?,
             None => 100,
         },
+        newest_first,
     };
     if !(1..=1_000).contains(&query.limit)
         || query.cursor.as_ref().is_some_and(|cursor| {

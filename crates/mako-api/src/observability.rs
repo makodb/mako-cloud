@@ -79,6 +79,17 @@ pub struct ObservabilityQuery {
     pub from_unix_milliseconds: Option<u64>,
     pub until_unix_milliseconds: Option<u64>,
     pub limit: usize,
+    /// Pages from the newest record back, each cursor continuing towards the
+    /// oldest. A feed of recent activity needs this: read oldest first, a
+    /// page shows the start of the retention window, days old. Absent on the
+    /// wire when false, so callers that predate it are unchanged.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub newest_first: bool,
+}
+
+#[allow(clippy::trivially_copy_pass_by_ref)] // serde passes a reference
+const fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 impl ObservabilityQuery {

@@ -309,6 +309,35 @@ impl AuditStore {
         cursor: Option<&str>,
         now_unix_milliseconds: u64,
     ) -> Result<AuditPage, AuditStoreError> {
+        self.query_in_order(
+            tenant,
+            filter,
+            from_unix_milliseconds,
+            until_unix_milliseconds,
+            limit,
+            cursor,
+            now_unix_milliseconds,
+            false,
+        )
+        .await
+    }
+
+    /// `query`, optionally newest first: pages from the latest event in the
+    /// window back towards `from`, each cursor continuing below the last event
+    /// it answered. A cursor carries its order in the fingerprint it is bound
+    /// to, so one issued for one order is refused by the other.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn query_in_order(
+        &self,
+        tenant: &TenantScope,
+        filter: &AuditFilter,
+        from_unix_milliseconds: u64,
+        until_unix_milliseconds: Option<u64>,
+        limit: NonZeroUsize,
+        cursor: Option<&str>,
+        now_unix_milliseconds: u64,
+        newest_first: bool,
+    ) -> Result<AuditPage, AuditStoreError> {
         filter.validate()?;
         if limit > self.config.maximum_page_records {
             return Err(AuditStoreError::InvalidQuery);
@@ -323,6 +352,7 @@ impl AuditStore {
             filter,
             from_unix_milliseconds,
             until_unix_milliseconds,
+            newest_first,
         )?;
         let domain = event_domain(tenant);
         let range = TenantKeyspace::system_domain_range(&domain)
@@ -330,6 +360,67 @@ impl AuditStore {
         let cursor_payload = cursor
             .map(|value| self.decode_cursor(value, tenant, &fingerprint, retained_from))
             .transpose()?;
+        let lowest = TenantKeyspace::system_key(
+            &domain,
+            format!("{from_unix_milliseconds:020}/").as_bytes(),
+        )
+        .map_err(|_| AuditStoreError::InvalidQuery)?;
+        if newest_first {
+            // The first page ends after the window's last millisecond; each
+            // later one just below the last event the previous page answered.
+            let end = match cursor_payload {
+                Some(payload) => {
+                    if payload.last_occurred_at_unix_milliseconds < retained_from {
+                        return Err(AuditStoreError::CursorExpired);
+                    }
+                    let last = URL_SAFE_NO_PAD
+                        .decode(payload.last_key)
+                        .map_err(|_| AuditStoreError::InvalidCursor)?;
+                    if !range.contains(&last) {
+                        return Err(AuditStoreError::InvalidCursor);
+                    }
+                    last
+                }
+                None => match until_unix_milliseconds {
+                    Some(until) => TenantKeyspace::system_key(
+                        &domain,
+                        format!("{:020}/", until.saturating_add(1)).as_bytes(),
+                    )
+                    .map_err(|_| AuditStoreError::InvalidQuery)?
+                    .min(range.end_exclusive.clone()),
+                    None => range.end_exclusive.clone(),
+                },
+            };
+            if end <= lowest {
+                return Ok(AuditPage {
+                    records: Vec::new(),
+                    next_cursor: None,
+                    examined_records: 0,
+                    retained_from_unix_milliseconds: retained_from,
+                    observed_at_unix_milliseconds: now_unix_milliseconds,
+                });
+            }
+            let snapshot = self.adapter.snapshot().await?;
+            return self
+                .scan_page(
+                    snapshot.as_ref(),
+                    tenant,
+                    filter,
+                    fingerprint,
+                    KeyRange::new(lowest, end).map_err(|_| AuditStoreError::InvalidQuery)?,
+                    from_unix_milliseconds,
+                    Some(
+                        until_unix_milliseconds
+                            .unwrap_or(now_unix_milliseconds)
+                            .min(now_unix_milliseconds),
+                    ),
+                    limit,
+                    retained_from,
+                    now_unix_milliseconds,
+                    true,
+                )
+                .await;
+        }
         let start = cursor_payload.map_or_else(
             || {
                 TenantKeyspace::system_key(
@@ -377,6 +468,7 @@ impl AuditStore {
             limit,
             retained_from,
             now_unix_milliseconds,
+            false,
         )
         .await
     }
@@ -535,7 +627,13 @@ impl AuditStore {
         limit: NonZeroUsize,
         retained_from: u64,
         now: u64,
+        newest_first: bool,
     ) -> Result<AuditPage, AuditStoreError> {
+        let direction = if newest_first {
+            ScanDirection::Reverse
+        } else {
+            ScanDirection::Forward
+        };
         let adapter_limit = self.adapter.capabilities().maximum_scan_items.get();
         let chunk_size = adapter_limit.min(256);
         let mut examined = 0;
@@ -550,7 +648,7 @@ impl AuditStore {
             let entries = snapshot
                 .scan(ScanRequest::new(
                     range.clone(),
-                    ScanDirection::Forward,
+                    direction,
                     NonZeroUsize::new(requested).ok_or(AuditStoreError::InvalidConfiguration)?,
                 ))
                 .await?;
@@ -565,10 +663,14 @@ impl AuditStore {
                 record.validate_for(tenant)?;
                 let timestamp = record.event.occurred_at_unix_milliseconds;
                 last_examined = Some((entry.key.clone(), timestamp));
-                if timestamp < from {
+                // Walking forward, events before `from` are skipped and one past
+                // `until` ends the window; walking back, the other way round.
+                let before = timestamp < from;
+                let after = until.is_some_and(|upper| timestamp > upper);
+                if (!newest_first && before) || (newest_first && after) {
                     continue;
                 }
-                if until.is_some_and(|upper| timestamp > upper) {
+                if (!newest_first && after) || (newest_first && before) {
                     reached_end = true;
                     break;
                 }
@@ -587,17 +689,26 @@ impl AuditStore {
                 reached_end = true;
                 break;
             }
-            let mut next = entries
+            let last = entries
                 .last()
                 .ok_or(AuditStoreError::CorruptStore)?
                 .key
                 .clone();
-            next.push(0);
-            if next >= range.end_exclusive {
-                reached_end = true;
-                break;
+            if newest_first {
+                if last <= range.start_inclusive {
+                    reached_end = true;
+                    break;
+                }
+                range.end_exclusive = last;
+            } else {
+                let mut next = last;
+                next.push(0);
+                if next >= range.end_exclusive {
+                    reached_end = true;
+                    break;
+                }
+                range.start_inclusive = next;
             }
-            range.start_inclusive = next;
         }
 
         let has_extra_match = records.len() > limit.get();
@@ -839,6 +950,7 @@ fn query_fingerprint(
     filter: &AuditFilter,
     from: u64,
     until: Option<u64>,
+    newest_first: bool,
 ) -> Result<String, AuditStoreError> {
     #[derive(Serialize)]
     struct Fingerprint<'a> {
@@ -846,12 +958,17 @@ fn query_fingerprint(
         filter: &'a AuditFilter,
         from: u64,
         until: Option<u64>,
+        // Absent when false, so a forward query keeps the fingerprint, and
+        // the cursors, it always had.
+        #[serde(skip_serializing_if = "std::ops::Not::not")]
+        newest_first: bool,
     }
     let bytes = serde_json::to_vec(&Fingerprint {
         tenant,
         filter,
         from,
         until,
+        newest_first,
     })
     .map_err(|_| AuditStoreError::Serialization)?;
     Ok(blake3::hash(&bytes).to_hex().to_string())
@@ -1057,6 +1174,75 @@ mod tests {
                     .await,
                 Err(AuditStoreError::InvalidCursor)
             ));
+        });
+    }
+
+    #[test]
+    fn newest_first_pages_back_from_the_latest_event_and_keeps_its_own_cursors() {
+        block_on(async {
+            let store = store();
+            let tenant = test_tenant("example00", "example00");
+            let redactor = TelemetryRedactor::new(Vec::<String>::new()).expect("redactor");
+            for (id, timestamp) in [
+                ("aud_event0001", 11_000),
+                ("aud_event0002", 12_000),
+                ("aud_event0003", 13_000),
+                ("aud_event0004", 14_000),
+                ("aud_event0005", 15_000),
+            ] {
+                store
+                    .append(
+                        &tenant,
+                        AuditCategory::Control,
+                        audit_event(&tenant, id, timestamp, "project.read"),
+                        &redactor,
+                    )
+                    .await
+                    .expect("append");
+            }
+            let filter = AuditFilter::default();
+            let two = NonZeroUsize::new(2).expect("non-zero");
+            let ids = |page: &AuditPage| {
+                page.records
+                    .iter()
+                    .map(|record| record.event.event_id.clone())
+                    .collect::<Vec<_>>()
+            };
+            let first = store
+                .query_in_order(&tenant, &filter, 12_000, None, two, None, NOW, true)
+                .await
+                .expect("first page");
+            assert_eq!(ids(&first), ["aud_event0005", "aud_event0004"]);
+            let cursor = first.next_cursor.clone().expect("continuation");
+            let second = store
+                .query_in_order(
+                    &tenant,
+                    &filter,
+                    12_000,
+                    None,
+                    two,
+                    Some(&cursor),
+                    NOW,
+                    true,
+                )
+                .await
+                .expect("second page");
+            assert_eq!(ids(&second), ["aud_event0003", "aud_event0002"]);
+            // The window starts at 12 000: the event before it is never answered,
+            // so the second page is the last.
+            assert!(second.next_cursor.is_none());
+            // A cursor names its order: a forward read refuses a backward one.
+            assert!(matches!(
+                store
+                    .query(&tenant, &filter, 12_000, None, two, Some(&cursor), NOW)
+                    .await,
+                Err(AuditStoreError::InvalidCursor)
+            ));
+            let until = store
+                .query_in_order(&tenant, &filter, 11_000, Some(13_500), two, None, NOW, true)
+                .await
+                .expect("bounded page");
+            assert_eq!(ids(&until), ["aud_event0003", "aud_event0002"]);
         });
     }
 

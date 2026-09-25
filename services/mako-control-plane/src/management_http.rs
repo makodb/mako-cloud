@@ -1307,6 +1307,7 @@ async fn derive_rated_period(
                             from_unix_milliseconds: None,
                             until_unix_milliseconds: None,
                             limit: 1_000,
+                            newest_first: false,
                         },
                         now_milliseconds,
                     )
