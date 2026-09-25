@@ -149,8 +149,15 @@ impl ProductionObservabilityBackend {
         let retained_from = now
             .saturating_sub(retention_milliseconds(&self.config))
             .max(1);
+        // With no `from`, a page starts at the retention window's start rounded
+        // up to the hour. The exact start moves every millisecond, and a cursor
+        // is bound to the `from` it was issued under, so paging a feed ("Load
+        // more") failed as soon as the window had moved past it. On the hour, a
+        // cursor stays good for up to an hour, at the cost of at most an hour at
+        // the far end of the window.
+        let default_from = retained_from.div_ceil(HOUR_MILLISECONDS) * HOUR_MILLISECONDS;
         let (from, cursor) = match query.cursor.as_deref() {
-            None => (query.from_unix_milliseconds.unwrap_or(retained_from), None),
+            None => (query.from_unix_milliseconds.unwrap_or(default_from), None),
             Some(cursor) => {
                 let decoded =
                     decode_audit_cursor(cursor).ok_or(ObservabilityBackendError::Unavailable)?;
@@ -505,6 +512,8 @@ fn redact_many<'a>(values: impl IntoIterator<Item = &'a mut String>, redactor: &
         redact(value, redactor);
     }
 }
+
+const HOUR_MILLISECONDS: u64 = 60 * 60 * 1_000;
 
 fn redact(value: &mut String, redactor: &TelemetryRedactor) {
     *value = redactor.redact_text(value).into_string();
