@@ -116,6 +116,18 @@ test("a teammate sees the owner as owner, and an administrator cannot edit the o
   expect(api.unhandled).toEqual([]);
 });
 
+test("a removed member opening the team is told plainly, not left on Loading", async ({ page }) => {
+  const api = new TeamApi();
+  api.removed = true;
+  await api.install(page);
+  await page.goto(`/teams/${TEAM_ID}`);
+  await expect(page.getByRole("heading", { name: "Team unavailable" })).toBeVisible();
+  await expect(page.getByText("You are not a member of this team.")).toBeVisible();
+  await expect(page.getByText("Loading…")).toHaveCount(0);
+  await expect(page.getByText("forbidden")).toHaveCount(0);
+  expect(api.unhandled).toEqual([]);
+});
+
 class TeamApi {
   readonly unhandled: string[] = [];
   readonly created: unknown[] = [];

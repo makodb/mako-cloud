@@ -1,4 +1,10 @@
-import type { InvitationIssue, Team, TeamMembership, TeamRole } from "@mako-cloud/management-sdk";
+import {
+  type InvitationIssue,
+  ManagementApiError,
+  type Team,
+  type TeamMembership,
+  type TeamRole,
+} from "@mako-cloud/management-sdk";
 import {
   Alert,
   AlertDescription,
@@ -136,10 +142,13 @@ export function TeamScreen({
   const [teams, setTeams] = useState<Team[]>([]);
   const [members, setMembers] = useState<TeamMembership[] | null>(null);
   const [failure, setFailure] = useState<ConsoleApiFailure | null>(null);
+  // Refused or unknown: a member who was removed, or a mistyped link.
+  const [unavailable, setUnavailable] = useState(false);
   const reload = useCallback(async () => {
     setFailure(null);
     try {
       const [selected, available] = await Promise.all([client.getTeam(teamId), client.listTeams()]);
+      setUnavailable(false);
       // A personal space has exactly one member and refuses membership changes,
       // so there is nothing to manage and nothing to fetch.
       const membershipItems = selected.kind === "personal" ? [] : await client.listMembers(teamId);
@@ -147,6 +156,10 @@ export function TeamScreen({
       setTeams(available);
       setMembers(membershipItems);
     } catch (error) {
+      if (error instanceof ManagementApiError && (error.status === 403 || error.status === 404)) {
+        setUnavailable(true);
+        return;
+      }
       setFailure(toConsoleApiFailure(error));
     }
   }, [client, teamId]);
@@ -160,6 +173,27 @@ export function TeamScreen({
   const personal = team?.kind === "personal";
   const switcherId = useId();
 
+  if (unavailable && team === null) {
+    // Said once, plainly: the page used to sit on "Loading…" under two raw
+    // "forbidden" errors, one for the team and one for its projects.
+    return (
+      <section aria-labelledby="team-title" className="grid max-w-xl gap-4">
+        <Eyebrow>Team</Eyebrow>
+        <h1 id="team-title" className="text-2xl">
+          Team unavailable
+        </h1>
+        <Alert role="alert">
+          <AlertDescription className="block">
+            You are not a member of this team. If you were removed, ask one of its owners to invite
+            you again.
+          </AlertDescription>
+        </Alert>
+        <a href="/" className="text-sm text-primary underline underline-offset-4">
+          Back to Home
+        </a>
+      </section>
+    );
+  }
   return (
     <section aria-labelledby="team-title" className="grid gap-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
