@@ -696,6 +696,7 @@ impl DataJobService {
                         &record.view.job_id,
                         now_unix_seconds,
                         terminal,
+                        &error,
                     )
                     .await?;
                     if terminal {
@@ -1000,6 +1001,7 @@ impl DataJobService {
         job_id: &str,
         now_unix_seconds: u64,
         terminal: bool,
+        error: &DataJobError,
     ) -> Result<(), DataJobError> {
         self.update_record(tenant, job_id, |record| {
             if !job_is_terminal(record.view.state) {
@@ -1015,6 +1017,9 @@ impl DataJobService {
                     } else {
                         "worker_dependency_retry_scheduled".to_owned()
                     });
+                    if record.view.errors.len() < 100 {
+                        record.view.errors.push(worker_failure_code(error));
+                    }
                 }
                 record.view.updated_at_unix_seconds = now_unix_seconds;
             }
@@ -1443,6 +1448,50 @@ pub struct DataJobWorkerReport {
     pub deferred: u64,
 }
 
+// Persist only closed error categories. Messages, request bodies, URLs and
+// remote details can contain tenant data and must never enter job diagnostics.
+fn worker_failure_code(error: &DataJobError) -> String {
+    let category = match error {
+        DataJobError::Internal(InternalClientError::Remote { status, envelope }) => {
+            let code =
+                serde_json::to_value(envelope.error.code).expect("closed error enum serializes");
+            return format!(
+                "worker_internal_http_{status}:{}",
+                code.as_str().expect("error code is a string")
+            );
+        }
+        DataJobError::Internal(error) => match error {
+            InternalClientError::InvalidConfiguration => "internal_configuration",
+            InternalClientError::InvalidPayload => "internal_payload",
+            InternalClientError::ClockUnavailable => "internal_clock",
+            InternalClientError::Unavailable => "internal_transport",
+            InternalClientError::ResponseTooLarge => "internal_response_size",
+            InternalClientError::InvalidResponse => "internal_response",
+            InternalClientError::CorrelationFailed => "internal_correlation",
+            InternalClientError::UnsafeRemoteError => "internal_unsafe_response",
+            InternalClientError::Authentication(_) => "internal_authentication",
+            InternalClientError::Remote { .. } => unreachable!("handled above"),
+        },
+        DataJobError::InvalidConfiguration => "configuration",
+        DataJobError::InvalidRequest => "request",
+        DataJobError::InvalidState => "state",
+        DataJobError::InvalidArtifact => "artifact",
+        DataJobError::InvalidArtifactGrant => "artifact_grant",
+        DataJobError::NotFound => "not_found",
+        DataJobError::Forbidden => "forbidden",
+        DataJobError::QuotaExceeded => "quota",
+        DataJobError::Conflict => "conflict",
+        DataJobError::Project(_) => "project",
+        DataJobError::Organization(_) => "organization",
+        DataJobError::Collection(_) => "collection",
+        DataJobError::Keyspace(_) => "keyspace",
+        DataJobError::Storage(_) => "storage",
+        DataJobError::Object(_) => "object_store",
+        DataJobError::Serialization(_) => "serialization",
+    };
+    format!("worker_{category}")
+}
+
 const fn worker_error_is_retryable(error: &DataJobError) -> bool {
     matches!(
         error,
@@ -1725,6 +1774,10 @@ mod tests {
                 .expect("stored record");
             assert_eq!(stored.view.state, DataJobState::Failed);
             assert_eq!(stored.execution_attempt, 1);
+            assert_eq!(
+                stored.view.errors,
+                vec!["worker_failure_terminal", "worker_state"]
+            );
             let idle = service.run_worker_once(10).await.expect("idle pass");
             assert_eq!(
                 idle.claimed + idle.failed + idle.cancelled + idle.expired,
@@ -1841,6 +1894,34 @@ mod tests {
             validate_json_lines(oversized.as_bytes()),
             Err(DataJobError::InvalidArtifact)
         ));
+    }
+
+    #[test]
+    fn worker_diagnostics_distinguish_transport_and_remote_errors_without_tenant_data() {
+        let remote = DataJobError::Internal(InternalClientError::Remote {
+            status: 503,
+            envelope: Box::new(mako_api::ApiErrorEnvelope::new(
+                mako_api::ApiError::new(
+                    mako_api::ErrorCode::Unavailable,
+                    "private document body",
+                    "secret-request-id",
+                    mako_api::RetryAdvice::Immediate,
+                )
+                .with_detail("secret", mako_api::SafeDetail::String("credential".into())),
+            )),
+        });
+        assert_eq!(
+            worker_failure_code(&remote),
+            "worker_internal_http_503:unavailable"
+        );
+        assert_eq!(
+            worker_failure_code(&DataJobError::Internal(InternalClientError::Unavailable)),
+            "worker_internal_transport"
+        );
+        assert_eq!(
+            worker_failure_code(&DataJobError::InvalidArtifact),
+            "worker_artifact"
+        );
     }
 
     #[test]
