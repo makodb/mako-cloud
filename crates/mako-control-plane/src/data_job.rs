@@ -52,6 +52,8 @@ struct DataJobRecord {
 }
 
 const DATA_JOB_STATE_COUNT: usize = 10;
+const WORKER_SCAN_LIMIT: usize = 1_000;
+const WORKER_JOB_LIMIT: usize = 16;
 
 /// Fixed-cardinality transition counters for data jobs. The dimensions are a
 /// closed enum; tenant, actor, artifact, document, and email values can never
@@ -94,6 +96,7 @@ pub struct DataJobService {
     data_plane: ControlToDataClient,
     audit: Arc<dyn ControlAuditSink>,
     metrics: Arc<DataJobMetrics>,
+    worker_scan_after: Arc<futures::lock::Mutex<Option<Vec<u8>>>>,
 }
 
 impl fmt::Debug for DataJobService {
@@ -137,6 +140,7 @@ impl DataJobService {
             public_origin: public_origin.trim_end_matches('/').to_owned(),
             data_plane,
             audit,
+            worker_scan_after: Arc::new(futures::lock::Mutex::new(None)),
             metrics: Arc::new(DataJobMetrics {
                 transitions_by_state: array::from_fn(|_| AtomicU64::new(0)),
             }),
@@ -617,10 +621,8 @@ impl DataJobService {
         now_unix_seconds: u64,
     ) -> Result<DataJobWorkerReport, DataJobError> {
         let mut report = DataJobWorkerReport::default();
-        let records = self
-            .list_all_records(NonZeroUsize::new(1_000).expect("worker limit"))
-            .await?;
-        for record in records.into_iter().take(16) {
+        let records = self.next_worker_records(now_unix_seconds).await?;
+        for record in records {
             if now_unix_seconds >= record.view.expires_at_unix_seconds
                 && record.view.state != DataJobState::Expired
             {
@@ -1118,22 +1120,57 @@ impl DataJobService {
             .collect()
     }
 
-    async fn list_all_records(
+    async fn next_worker_records(
         &self,
-        limit: NonZeroUsize,
+        now_unix_seconds: u64,
     ) -> Result<Vec<DataJobRecord>, DataJobError> {
+        // The cursor is shared by service clones and advances over raw keys,
+        // including secondary indexes and inactive jobs. Each pass bounds both
+        // storage reads and actionable work; the next pass resumes where it left
+        // off rather than repeatedly inspecting the same first page.
+        let mut after = self.worker_scan_after.lock().await;
+        let domain = ControlKeyspace::all_data_jobs_range()?;
+        let Some(range) = ControlKeyspace::range_after(domain, after.clone()) else {
+            *after = None;
+            return Ok(Vec::new());
+        };
         let entries = self
             .adapter
             .scan(ScanRequest::new(
-                ControlKeyspace::all_data_jobs_range()?,
+                range,
                 ScanDirection::Forward,
-                limit,
+                NonZeroUsize::new(WORKER_SCAN_LIMIT).expect("worker scan limit"),
             ))
             .await?;
-        Ok(entries
-            .into_iter()
-            .filter_map(|entry| serde_json::from_slice::<DataJobRecord>(&entry.value).ok())
-            .collect())
+        let mut records = Vec::new();
+        let mut visited = 0;
+        for (index, entry) in entries.iter().enumerate() {
+            *after = Some(entry.key.clone());
+            visited = index + 1;
+            // Index values contain job IDs, not serialized job records.
+            let Ok(record) = serde_json::from_slice::<DataJobRecord>(&entry.value) else {
+                continue;
+            };
+            let needs_expiration = now_unix_seconds >= record.view.expires_at_unix_seconds
+                && record.view.state != DataJobState::Expired;
+            let needs_execution = !job_is_terminal(record.view.state)
+                && (record.cancel_requested
+                    || matches!(
+                        record.view.state,
+                        DataJobState::Queued | DataJobState::Running | DataJobState::Cancelling
+                    ));
+            if needs_expiration || needs_execution {
+                records.push(record);
+                if records.len() == WORKER_JOB_LIMIT {
+                    break;
+                }
+            }
+        }
+        if visited == entries.len() && entries.len() < WORKER_SCAN_LIMIT {
+            // Revisit jobs that become runnable behind the cursor on the next sweep.
+            *after = None;
+        }
+        Ok(records)
     }
 
     async fn update_record(
@@ -1487,6 +1524,293 @@ data_job_error_from!(InternalClientError, Internal);
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct NoopAudit;
+
+    impl ControlAuditSink for NoopAudit {
+        fn record(&self, _event: ControlAuditEvent) {}
+    }
+
+    fn worker_fixture() -> DataJobService {
+        worker_fixture_at("127.0.0.1:1".parse().expect("unused address"))
+    }
+
+    fn worker_fixture_at(endpoint: std::net::SocketAddr) -> DataJobService {
+        use mako_internal_rpc::{
+            DeploymentKey, InternalCaller, InternalHttpClient, InternalHttpClientConfig,
+        };
+        let adapter: Arc<dyn KvAdapter> = Arc::new(mako_storage::MemoryAdapter::new());
+        let projects = ProjectStore::new(adapter.clone(), Durability::Memory).expect("projects");
+        let organizations =
+            OrganizationStore::new(adapter.clone(), Durability::Memory).expect("organizations");
+        let collections = CollectionAdminService::new(
+            adapter.clone(),
+            Durability::Memory,
+            projects.clone(),
+            organizations.clone(),
+            Arc::new(NoopAudit),
+        )
+        .expect("collections");
+        let client = InternalHttpClient::new(
+            InternalHttpClientConfig::loopback(endpoint),
+            DeploymentKey::derive("data-job-worker-test-key-not-for-production").expect("key"),
+            InternalCaller::ControlPlane,
+        )
+        .expect("client");
+        DataJobService::new(
+            adapter,
+            Durability::Memory,
+            projects,
+            organizations,
+            collections,
+            Arc::new(mako_object_store::MemoryObjectStore::default()),
+            [1; 32],
+            "https://example.test",
+            ControlToDataClient::new(client).expect("data client"),
+            Arc::new(NoopAudit),
+        )
+        .expect("service")
+    }
+
+    fn worker_record(number: usize, state: DataJobState) -> DataJobRecord {
+        DataJobRecord {
+            view: DataJobView {
+                job_id: format!("djob_{number:032}"),
+                kind: DataJobKind::Import,
+                state,
+                tenant: mako_api::TenantScope::new(
+                    mako_api::ProjectId::parse("prj_abcdefgh").expect("project"),
+                    mako_api::EnvironmentId::parse("env_abcdefgh").expect("environment"),
+                ),
+                collection_id: mako_api::CollectionId::parse("todos").expect("collection"),
+                creator_id: "dev_abcdefgh".to_owned(),
+                conflict_strategy: None,
+                progress: empty_progress(),
+                errors: Vec::new(),
+                manifest: None,
+                created_at_unix_seconds: 1,
+                updated_at_unix_seconds: 1,
+                expires_at_unix_seconds: 100,
+            },
+            upload_digest: None,
+            output_digest: None,
+            cancel_requested: false,
+            execution_attempt: 0,
+            worker_failures: 0,
+        }
+    }
+
+    async fn store_worker_records(service: &DataJobService, records: &[DataJobRecord]) {
+        let mut batch = WriteBatch::new();
+        for record in records {
+            let view = &record.view;
+            batch.put(
+                ControlKeyspace::data_job_key(
+                    view.tenant.project_id(),
+                    view.tenant.environment_id(),
+                    &view.job_id,
+                )
+                .expect("job key"),
+                serde_json::to_vec(record).expect("record"),
+            );
+            for key in index_keys(view).expect("indexes") {
+                batch.put(key, view.job_id.as_bytes());
+            }
+        }
+        service
+            .adapter
+            .write(batch, Durability::Memory)
+            .await
+            .expect("store jobs");
+    }
+
+    #[test]
+    fn worker_completes_an_empty_export_and_publishes_its_artifact() {
+        let server = tiny_http::Server::http("127.0.0.1:0").expect("data-plane stub");
+        let service = worker_fixture_at(server.server_addr().to_ip().expect("address"));
+        let response = std::thread::spawn(move || {
+            let mut request = server
+                .recv_timeout(std::time::Duration::from_secs(5))
+                .expect("receive RPC")
+                .expect("worker should execute the export");
+            let correlation = request
+                .headers()
+                .iter()
+                .find(|header| header.field.equiv("x-mako-request-id"))
+                .expect("request correlation")
+                .value
+                .as_str()
+                .to_owned();
+            let command: IdentityAdminCommand =
+                serde_json::from_reader(request.as_reader()).expect("export command");
+            assert_eq!(command.operation, IdentityAdminOperation::ExportDataJobPage);
+            assert_eq!(command.input["collectionId"], "todos");
+            let page = DataJobExportPageOutput {
+                rows: Vec::new(),
+                next_cursor: None,
+                snapshot: "empty-snapshot".to_owned(),
+                schema_version: 1,
+            };
+            request
+                .respond(
+                    tiny_http::Response::from_data(serde_json::to_vec(&page).expect("page"))
+                        .with_header(
+                            tiny_http::Header::from_bytes("x-mako-request-id", correlation)
+                                .expect("header"),
+                        ),
+                )
+                .expect("reply");
+        });
+        futures::executor::block_on(async {
+            let mut record = worker_record(0, DataJobState::Queued);
+            record.view.kind = DataJobKind::Export;
+            store_worker_records(&service, &[record.clone()]).await;
+            let report = service.run_worker_once(10).await.expect("worker");
+            assert_eq!(report.claimed, 1);
+            assert_eq!(report.succeeded, 1);
+            let stored = service
+                .get_record(&record.view.tenant, &record.view.job_id)
+                .await
+                .expect("export");
+            assert_eq!(stored.view.state, DataJobState::Succeeded);
+            let manifest = stored.view.manifest.expect("finalized manifest");
+            assert_eq!(manifest.row_count, 0);
+            assert_eq!(manifest.snapshot.as_deref(), Some("empty-snapshot"));
+            let address = ObjectAddress::data_job_artifact(
+                record.view.tenant.clone(),
+                &record.view.job_id,
+                DataJobArtifactKind::ExportOutput,
+                &manifest.digest,
+            )
+            .expect("artifact address");
+            let bytes = service
+                .objects
+                .get(&record.view.tenant, &address)
+                .await
+                .expect("artifact lookup")
+                .expect("published artifact");
+            assert_eq!(bytes.as_ref(), b"\n");
+            assert_eq!(manifest.digest, sha256_digest(&bytes));
+            assert_eq!(manifest.byte_count, bytes.len() as u64);
+        });
+        response.join().expect("data-plane stub");
+    }
+
+    #[test]
+    fn worker_claims_queued_jobs_and_handles_cancellation_and_expiration() {
+        futures::executor::block_on(async {
+            let service = worker_fixture();
+            let mut expired = worker_record(2, DataJobState::Succeeded);
+            expired.view.expires_at_unix_seconds = 5;
+            store_worker_records(
+                &service,
+                &[
+                    worker_record(0, DataJobState::Queued),
+                    worker_record(1, DataJobState::Cancelling),
+                    expired,
+                ],
+            )
+            .await;
+            let report = service.run_worker_once(10).await.expect("worker");
+            // The intentionally incomplete import fails validation after being claimed.
+            // No RPC is needed to prove that existing tenant records are discovered.
+            assert_eq!(report.claimed, 1);
+            assert_eq!(report.failed, 1);
+            assert_eq!(report.cancelled, 1);
+            assert_eq!(report.expired, 1);
+            let record = worker_record(0, DataJobState::Queued);
+            let stored = service
+                .get_record(&record.view.tenant, &record.view.job_id)
+                .await
+                .expect("stored record");
+            assert_eq!(stored.view.state, DataJobState::Failed);
+            assert_eq!(stored.execution_attempt, 1);
+            let idle = service.run_worker_once(10).await.expect("idle pass");
+            assert_eq!(
+                idle.claimed + idle.failed + idle.cancelled + idle.expired,
+                0
+            );
+        });
+    }
+
+    #[test]
+    fn worker_skips_inactive_records_and_bounds_work_without_losing_the_remainder() {
+        futures::executor::block_on(async {
+            let service = worker_fixture();
+            let mut records: Vec<_> = (0..16)
+                .map(|i| worker_record(i, DataJobState::AwaitingUpload))
+                .collect();
+            records.extend((16..32).map(|i| {
+                let mut record = worker_record(i, DataJobState::Cancelled);
+                record.cancel_requested = true;
+                record
+            }));
+            records.extend((32..52).map(|i| worker_record(i, DataJobState::Cancelling)));
+            store_worker_records(&service, &records).await;
+            assert_eq!(
+                service
+                    .run_worker_once(10)
+                    .await
+                    .expect("first pass")
+                    .cancelled,
+                16
+            );
+            // Cloned service handles must share the same scan position.
+            assert_eq!(
+                service
+                    .clone()
+                    .run_worker_once(10)
+                    .await
+                    .expect("second pass")
+                    .cancelled,
+                4
+            );
+            assert_eq!(
+                service
+                    .run_worker_once(10)
+                    .await
+                    .expect("idle pass")
+                    .cancelled,
+                0
+            );
+        });
+    }
+
+    #[test]
+    fn worker_advances_past_a_full_page_and_wraps_for_new_work() {
+        futures::executor::block_on(async {
+            let service = worker_fixture();
+            let mut records: Vec<_> = (0..1_000)
+                .map(|i| worker_record(i, DataJobState::Succeeded))
+                .collect();
+            records.push(worker_record(1_000, DataJobState::Cancelling));
+            store_worker_records(&service, &records).await;
+            assert_eq!(
+                service
+                    .run_worker_once(10)
+                    .await
+                    .expect("inactive page")
+                    .cancelled,
+                0
+            );
+            assert_eq!(
+                service
+                    .run_worker_once(10)
+                    .await
+                    .expect("next page")
+                    .cancelled,
+                1
+            );
+            // This key sorts behind the cursor. A later sweep must revisit it,
+            // even when intervening pages contain only secondary index values.
+            store_worker_records(&service, &[worker_record(0, DataJobState::Cancelling)]).await;
+            let mut cancelled = 0;
+            for _ in 0..10 {
+                cancelled += service.run_worker_once(10).await.expect("sweep").cancelled;
+            }
+            assert_eq!(cancelled, 1);
+        });
+    }
 
     #[test]
     fn json_lines_parser_is_object_only_bounded_and_exact() {

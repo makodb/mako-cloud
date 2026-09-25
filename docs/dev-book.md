@@ -1300,6 +1300,20 @@ Escalate immediately for tenant-scope mismatches, unsafe links, possible respons
 6. For restore incidents, keep the target inaccessible. Promotion and overwrite are prohibited for developer requests. Escalate verification/isolation failure through the operator recovery and production RocksDB runbooks.
 7. Before re-enabling, verify audit continuity/redaction, bounded labels, cross-tenant denial, capability expiry/revocation, HTTPS allowlists, browser-storage absence, and the affected quota.
 
+If import/export jobs remain `queued` with no progress, check the deployed
+control-plane revision and its data-job worker before recreating jobs. The worker
+runs in the control-plane process on a two-second loop and reports dependency
+failures as `data-job worker pass failed: class=worker_dependency`. Its global
+scan must include the tenant-specific `data-jobs/<project>/<environment>` domain
+segments; an exact scan of the parent domain finds no jobs. Each pass scans at
+most 1,000 keys and selects at most 16 actionable jobs, continuing across passes
+and wrapping after the last page. Secondary indexes, completed jobs, and imports
+awaiting upload/confirmation must not permanently hide later queued work. The
+scan cursor is process-local; restart begins a new sweep while durable job state
+and import progress remain authoritative. Worker discovery preserves existing
+job keys, so deploying the corrected control plane requires no storage migration;
+retention expiration and normal retry rules still apply.
+
 ### Runbook: tenant-isolation signal
 
 Severity: critical/P0. Owner: security incident commander. Any impossible cross-project or cross-environment observation is presumed to be a confidentiality or integrity incident until disproved.
