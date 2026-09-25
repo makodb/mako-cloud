@@ -98,7 +98,7 @@ export function DatabaseOverview({
       title: "Functions",
       icon: SquareFunction,
       value: count(payload(sections.functions), "count"),
-      detail: "Deployed function definitions",
+      detail: "Functions defined in this environment",
       path: "functions",
     },
     {

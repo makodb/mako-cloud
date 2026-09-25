@@ -12,8 +12,8 @@ use mako_api::{
     WorkspaceDestination, WorkspaceSummary, WorkspaceSummarySection,
 };
 use mako_control_plane::{
-    DeveloperWorkspaceError, LifecycleState, ObservabilityPayload, ObservabilityQuery,
-    ProjectDataPermission,
+    DeveloperWorkspaceError, FunctionState, LifecycleState, ObservabilityPayload,
+    ObservabilityQuery, ProjectDataPermission,
 };
 use mako_identity::{ProjectCredentialKind, ProjectCredentialMetadata, ProjectCredentialState};
 use mako_internal_rpc::{IdentityAdminCommand, IdentityAdminOperation, IdentityAdminPermission};
@@ -241,11 +241,17 @@ fn workspace_summary(
             .await
         {
             Ok(functions) => {
+                // A deleted function keeps its record, so the list names it;
+                // the environment no longer has it.
+                let count = functions
+                    .iter()
+                    .filter(|function| function.state() != FunctionState::Deleted)
+                    .count();
                 sections.insert(
                     "functions".to_owned(),
                     current_section(
                         now,
-                        json_value!({"count": functions.len(), "limited": functions.len() == 100}),
+                        json_value!({"count": count, "limited": functions.len() == 100}),
                     ),
                 );
             }
