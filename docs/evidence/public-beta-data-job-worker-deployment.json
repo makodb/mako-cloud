@@ -1,0 +1,199 @@
+{
+  "schemaVersion": 1,
+  "checkedAt": "2026-09-25T01:07:09.942490+00:00",
+  "releaseDigest": "38a4ee2fbfff7bf89d8ca6524b1bea7a0914dfe84bc1e694e2abc0b70f5bd0c1",
+  "sourceCommit": "a571bd72d8fb40685bbfc6818ade0715f722d546",
+  "publicOrigin": "https://cloud-test.makodb.com",
+  "hosted": {
+    "inspection": {
+      "release": {
+        "releaseRoot": "/opt/mako",
+        "current": "38a4ee2fbfff7bf89d8ca6524b1bea7a0914dfe84bc1e694e2abc0b70f5bd0c1",
+        "lastKnownGood": "302e7f89b308bf187f31c90c4df66e094088c56055a92e05e8aeb1b0732cef87"
+      },
+      "publicAdmission": {
+        "caddyActive": "active",
+        "caddyEnabled": "enabled"
+      },
+      "services": [
+        {
+          "name": "mako-data-plane",
+          "state": "active"
+        },
+        {
+          "name": "mako-control-plane",
+          "state": "active"
+        },
+        {
+          "name": "mako-edge-gateway",
+          "state": "active"
+        },
+        {
+          "name": "mako-telemetry-query",
+          "state": "active"
+        }
+      ],
+      "storage": [
+        {
+          "service": "mako-data-plane",
+          "path": "/srv/mako-data/rocksdb/data-plane",
+          "state": "active",
+          "nonempty": true
+        },
+        {
+          "service": "mako-edge-gateway",
+          "path": "/srv/mako-data/rocksdb/edge-gateway",
+          "state": "active",
+          "nonempty": true
+        },
+        {
+          "service": "mako-telemetry-query",
+          "path": "/srv/mako-data/rocksdb/telemetry-query",
+          "state": "active",
+          "nonempty": true
+        },
+        {
+          "service": "mako-control-plane",
+          "path": "/srv/mako-data/sqlite/control-plane/live/control.sqlite3",
+          "engine": "sqlite",
+          "state": "active",
+          "nonempty": true
+        }
+      ]
+    },
+    "privateReadiness": {
+      "8080": 200,
+      "8081": 200,
+      "8082": 200,
+      "9465": 200
+    },
+    "authentication": {
+      "developerRegistrationEnabled": true,
+      "operatorPasswordAuthenticationEnabled": true,
+      "operatorBreakGlassBearerEnabled": false
+    },
+    "timers": {
+      "mako-checkpoint-backup@data-plane.timer": "active",
+      "mako-checkpoint-backup@control-plane.timer": "active",
+      "mako-public-preview-admission.timer": "active"
+    },
+    "previewGuard": {
+      "valid": true,
+      "kind": "risk-accepted-public-preview",
+      "persistence": "until-manually-paused",
+      "expiresAt": null,
+      "planHash": "d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073",
+      "releaseDigest": "3d25eacc5dec6654f146ba26d3911f5fba62275c4ef007d57ad17ac4c1dfef30",
+      "mode": "risk_accepted_preview",
+      "invalidated": false,
+      "acceptedAt": "2026-09-24T15:44:09.050Z",
+      "releaseDigestMeaning": "Historical qualification provenance under the existing user-approved preview acceptance. Current readiness, backups, TLS, and release assets were checked for this deployment."
+    },
+    "operation": {
+      "schemaVersion": 1,
+      "kind": "upgrade",
+      "from": "302e7f89b308bf187f31c90c4df66e094088c56055a92e05e8aeb1b0732cef87",
+      "to": "38a4ee2fbfff7bf89d8ca6524b1bea7a0914dfe84bc1e694e2abc0b70f5bd0c1",
+      "operator": "mako-admin",
+      "startedAtUnixSeconds": 1790298184,
+      "completedAtUnixSeconds": 1790298249,
+      "durationSeconds": 65,
+      "checkpointVerified": true,
+      "storageFormatCompatible": true,
+      "configurationSnapshotBound": true,
+      "storageFencedBeforeSelection": true,
+      "allServicesReady": true,
+      "publicAdmissionEnabled": false
+    }
+  },
+  "publicChecks": {
+    "homepage": 200,
+    "releaseAssetsVerified": 5,
+    "userBook": 200,
+    "userBookMatchesReleaseArtifact": true,
+    "workingRxdbInstallCommandPublished": true,
+    "directBrowsingInstructionsPublished": true,
+    "obsoleteNpmPublicationClaimRemoved": true,
+    "/usage-and-plan": 200,
+    "/projects/prj_verify0001/billing": 200,
+    "/v1/projects/prj_verify0001/bill": 401,
+    "/v1/projects/prj_verify0001/bill/private": 404,
+    "/v1/projects/prj_verify0001/environments/env_verify0001/workspace/summary": 401,
+    "/internal/deployment-probe": 404,
+    "/unknown-deployment-probe": 404,
+    "/v1/projects/prj_routeprobe/environments/env_routeprobe/data-jobs": 401,
+    "explorerRouteOwnership": {
+      "GET /v1/projects/prj_routeprobe/environments/env_routeprobe/explorer/grants": 405,
+      "POST /v1/projects/prj_routeprobe/environments/env_routeprobe/explorer/grants/xgr_routeprobe": 405,
+      "GET /v1/projects/prj_routeprobe/environments/env_routeprobe/explorer/collections/routeprobe/browse": 405,
+      "GET /v1/projects/prj_routeprobe/environments/env_routeprobe/explorer/collections/routeprobe/query": 405,
+      "GET /v1/projects/prj_routeprobe/environments/env_routeprobe/explorer/collections/routeprobe/query/plan": 405,
+      "GET /v1/projects/prj_routeprobe/environments/env_routeprobe/explorer/collections/routeprobe/simulate": 405,
+      "GET /v1/projects/prj_routeprobe/environments/env_routeprobe/explorer/collections/routeprobe/mutate": 405,
+      "POST /v1/projects/prj_routeprobe/environments/env_routeprobe/explorer/collections/routeprobe/documents/doc_routeprobe": 405,
+      "POST /v1/projects/prj_routeprobe/environments/env_routeprobe/explorer/collections/routeprobe/documents/doc_routeprobe/history": 405
+    },
+    "httpRedirect": 308,
+    "trustedHttps": true,
+    "hstsEnabled": true
+  },
+  "passed": true,
+  "scope": "Read-only private readiness, storage-state, preserved authentication configuration, preview guard, real HTTPS and release assets. Verification did not read or write tenant documents or mutate live accounts.",
+  "artifactComparison": {
+    "previousRelease": "302e7f89b308bf187f31c90c4df66e094088c56055a92e05e8aeb1b0732cef87",
+    "releaseDigest": "38a4ee2fbfff7bf89d8ca6524b1bea7a0914dfe84bc1e694e2abc0b70f5bd0c1",
+    "identicalBackendArtifacts": false,
+    "changedBackendArtifacts": ["bin/mako-control-plane"],
+    "backendArtifactCount": 14,
+    "identicalBuildRuntime": true,
+    "proxyConfigurationChanged": false,
+    "identicalDependencies": false,
+    "dependencyChange": "Cargo.lock records the existing tiny_http dependency for control-plane tests",
+    "identicalConsoleArtifacts": true
+  },
+  "localValidation": {
+    "publicBetaPreflight": "passed",
+    "rustTestsPassed": 358,
+    "rustPackages": 8,
+    "docsValidation": "196 links passed",
+    "productionReleaseBuild": "passed",
+    "candidateBinarySmokeTests": 1,
+    "candidateBinarySmokeSuite": "deployment_data_jobs",
+    "candidateBinariesVerifiedAgainstManifest": true,
+    "dataJobRoundTrip": {
+      "passed": true,
+      "emptyExportCompleted": true,
+      "emptyArtifactDownloaded": true,
+      "importUploadDryRunAndConfirmation": true,
+      "importCommittedRows": 1,
+      "populatedExportRows": 1,
+      "exportedDocumentMatchedInput": true,
+      "unauthenticatedArtifactDownloadDenied": true,
+      "scope": "Real candidate control-plane and data-plane service processes over loopback with isolated SQLite/RocksDB storage and synthetic fixtures. The S3-compatible object store uses the existing in-memory loopback stub. No production fixture or account was created."
+    }
+  },
+  "browser": {
+    "rerun": false,
+    "reason": "Console artifacts are byte-for-byte identical to the previous verified deployment. Public HTML served successfully; console asset and User Book hashes were verified over trusted HTTPS."
+  },
+  "pullRequest": {
+    "number": 2,
+    "url": "https://github.com/makodb/mako-cloud/pull/2",
+    "state": "merged",
+    "mergeCommit": "a571bd72d8fb40685bbfc6818ade0715f722d546",
+    "reviewedHead": "22a1b8b1de563514563b8de0d002f435a7b755e7"
+  },
+  "ci": "GitHub Actions jobs could not start because of an account payment or spending-limit restriction. Local validation is recorded separately.",
+  "changes": [
+    "Merges PR #2 and fixes discovery of existing tenant data jobs without changing stored keys or requiring migration.",
+    "Advances the worker scan across bounded pages and skips inactive records so later queued work is reached.",
+    "Preserves cancellation, retries, retention cleanup, and scope boundaries. Only the control-plane executable changed among the packaged runtime artifacts."
+  ],
+  "limits": [
+    "The import/export round trip was verified locally with the exact candidate binaries and an S3 protocol stub. Live customer jobs and documents were not read or modified directly during verification.",
+    "Deploying this fix enables existing unexpired queued imports and exports to run under their original authorization; ordinary cancellation, retry, and retention rules still apply.",
+    "Full hosted qualification, rollback drills, mail delivery, and account lifecycle suites were not rerun.",
+    "The existing user-approved latency and 30-day capacity/cost exceptions and historical qualification provenance are unchanged.",
+    "The earlier audit-health failure remains undiagnosed; no recurrence was observed in these deployment checks."
+  ]
+}

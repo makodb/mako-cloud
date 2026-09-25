@@ -10,7 +10,7 @@
   },
   "planHash": "d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073",
   "source": {
-    "digest": "39aaa02e393b6c9fb07046a4e9be39d077a6d70c80bdf6e1f5c46bc36075b50c",
+    "digest": "12b6cfde60add862ddc3b09e256815ef1c0b04a5d1d5b7a4b6e9126bf5b67ecb",
     "files": [
       {
         "path": ".env.example",
@@ -26,8 +26,8 @@
       },
       {
         "path": "Cargo.lock",
-        "sha256": "ef7c72d6bc052fc971b0cc9f7510700572828fa6de8cbb0a8a3b09ab055e110c",
-        "size": 65722,
+        "sha256": "1c4a1d9e7d855f575cfff6e8ea7503f5d7de5936e8e312e885f8e00ffc77c4ef",
+        "size": 65736,
         "mode": 420
       },
       {
@@ -692,8 +692,8 @@
       },
       {
         "path": "crates/mako-control-plane/Cargo.toml",
-        "sha256": "4633c3ad1313e117d06db08c4ce6c56db75a60a5e7e850b65d8e90ae527a996e",
-        "size": 1144,
+        "sha256": "eac9ffc36c5a3785e9f3d1aa476973674a9ed0dec0b866f74ba4ff19b1279e20",
+        "size": 1171,
         "mode": 420
       },
       {
@@ -746,8 +746,8 @@
       },
       {
         "path": "crates/mako-control-plane/src/data_job.rs",
-        "sha256": "09b179edff8392c78899470e4b14364b084f105aa69195371b6f15f71509ddf3",
-        "size": 55610,
+        "sha256": "1dfae6010c6e987d8c72b1cffa6b642bc56c1be62a5b96cb7a554a4a0708781c",
+        "size": 68954,
         "mode": 420
       },
       {
@@ -812,8 +812,8 @@
       },
       {
         "path": "crates/mako-control-plane/src/keyspace.rs",
-        "sha256": "0e4751a958a01c0a32453466127a299786f2b3be91d738c562ae5c15cf39aa6b",
-        "size": 45062,
+        "sha256": "c0dbdae345c5411b56cbc16733e22272fd40442a67e0a77777a695079cc1996f",
+        "size": 46917,
         "mode": 420
       },
       {
@@ -1634,8 +1634,8 @@
       },
       {
         "path": "crates/mako-storage/src/key_codec.rs",
-        "sha256": "3101ebd68f69b667475958d507b89b81bf58443328b6d4b7dcaa8a676c8e8da4",
-        "size": 52621,
+        "sha256": "358106970f7609900235c495e9cd3f31790a8d4a0653700a62bd624c1758713a",
+        "size": 54629,
         "mode": 420
       },
       {
@@ -5519,12 +5519,12 @@
     }
   },
   "dependencies": {
-    "digest": "26a03b9772b571513a6335eeb349cc628c747b8c5bcfa42e50f9eadda09a63ad",
+    "digest": "108b3bfeda5b20d6189ab7e8430be4ee548225ad0e7d8027875117c3261806d1",
     "files": [
       {
         "path": "Cargo.lock",
-        "sha256": "ef7c72d6bc052fc971b0cc9f7510700572828fa6de8cbb0a8a3b09ab055e110c",
-        "size": 65722,
+        "sha256": "1c4a1d9e7d855f575cfff6e8ea7503f5d7de5936e8e312e885f8e00ffc77c4ef",
+        "size": 65736,
         "mode": 420
       },
       {
@@ -5536,13 +5536,13 @@
     ]
   },
   "artifacts": {
-    "digest": "0a3fb541cbb31dd02328c9ffba33674301ba33466dcf992d83a258fb5959b52d",
+    "digest": "a0940ba445f6f28a97d235eab3c78fbc3936b063904068110ffc3cc8cf67892b",
     "files": [
       {
         "path": "bin/mako-control-plane",
         "source": "target/release/mako-control-plane",
-        "sha256": "16d52a86d8b14d7ac80a595a096814781a54a44254f8065393b50c3b591e0406",
-        "size": 18397672,
+        "sha256": "c7be289e0a5bb035033fa89c7100c713ea9bf922c80c3c9c09c4746b977e5f4d",
+        "size": 18402216,
         "mode": 493
       },
       {
@@ -5736,10 +5736,10 @@
       }
     ]
   },
-  "releaseDigest": "302e7f89b308bf187f31c90c4df66e094088c56055a92e05e8aeb1b0732cef87",
-  "generatedAt": "2026-09-24T20:09:31.031Z",
+  "releaseDigest": "38a4ee2fbfff7bf89d8ca6524b1bea7a0914dfe84bc1e694e2abc0b70f5bd0c1",
+  "generatedAt": "2026-09-25T01:01:32.991Z",
   "candidateLayout": {
-    "root": ".local/public-beta-candidates/302e7f89b308bf187f31c90c4df66e094088c56055a92e05e8aeb1b0732cef87",
+    "root": ".local/public-beta-candidates/38a4ee2fbfff7bf89d8ca6524b1bea7a0914dfe84bc1e694e2abc0b70f5bd0c1",
     "manifest": "manifest.json",
     "binaries": "bin",
     "console": "console"
