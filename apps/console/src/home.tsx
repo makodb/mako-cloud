@@ -273,8 +273,11 @@ export function HomeDashboard({
                 Manage your databases, connect applications, and inspect your data.
               </p>
             </div>
-            {!loading && !noProjects && !guideActive && failure === null ? (
-              <Button onClick={() => setCreating((value) => !value)} aria-expanded={creating}>
+            {/* Hidden while the form is open: as a toggle it closed the form and
+                discarded what was typed when clicked to submit. The form has
+                its own submit and Cancel. */}
+            {!loading && !noProjects && !guideActive && failure === null && !creating ? (
+              <Button onClick={() => setCreating(true)} aria-expanded={creating}>
                 <Plus aria-hidden="true" />
                 Create project
               </Button>

@@ -136,6 +136,9 @@ test("personal projects stay separate from teams and are created without naming 
 
   // Creating from the personal projects panel posts without a team as well.
   await page.getByText("Create project", { exact: true }).click();
+  // While the form is open the button that opened it is gone: clicked again
+  // as if to submit, it used to close the form and discard what was typed.
+  await expect(page.getByRole("button", { name: "Create project", exact: true })).toHaveCount(0);
   await page.getByLabel("Project name").fill("Second project");
   await page.getByLabel("Data region").selectOption("local");
   await page.getByRole("button", { name: "Create and provision" }).click();
