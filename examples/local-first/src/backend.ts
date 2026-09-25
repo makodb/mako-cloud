@@ -50,4 +50,9 @@ export interface ReferenceBackend {
   disconnectStreams(): void;
   /** Make the current session permanently unusable. */
   revokeAccess(auth: MakoAuthClient): Promise<void>;
+  /**
+   * Test hook: answer every replication request as a server whose collection
+   * has moved on to `version`. Only the in-browser fake can do this.
+   */
+  requireSchemaVersion?(version: number): void;
 }

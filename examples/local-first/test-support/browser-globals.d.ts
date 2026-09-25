@@ -14,7 +14,9 @@ interface ReferenceDiagnosticsWire {
   acceptedWrites: number;
   activity: string;
   conflicts: number;
+  errors: number;
   reconnects: number;
+  recovery: string | null;
   refreshes: number;
   streamConnections: number;
 }
@@ -28,6 +30,7 @@ interface ReferenceBrowserApplication {
   listTodos(): Promise<ReferenceTodoWire[]>;
   putRemote(document: ReferenceTodoWire): Promise<void>;
   removeRemote(id: string, updatedAt: number): Promise<void>;
+  requireSchemaVersion(version: number): void;
   revokeAccess(): Promise<void>;
   setOnline(online: boolean): Promise<void>;
   updateTodo(id: string, title: string, updatedAt: number): Promise<void>;

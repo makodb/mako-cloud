@@ -5,6 +5,7 @@ import {
   type MakoCheckpoint,
   MakoLivePullStream,
   type MakoReplicationActivity,
+  MakoReplicationRecoveryCoordinator,
   MakoReplicationSignals,
   normalizeMakoRxdbConfig,
 } from "@mako-cloud/rxdb";
@@ -37,6 +38,12 @@ export interface ReferenceApplicationDiagnostics extends ReferenceBackendDiagnos
   readonly lastError: string | null;
   readonly received: number;
   readonly reconnects: number;
+  /**
+   * Why replication stopped and is waiting on the app, or `null` while it runs:
+   * `schema_migration_required` (with the version the server now requires) or
+   * `full_resync_required`.
+   */
+  readonly recovery: string | null;
 }
 
 interface ReferenceCollections {
@@ -58,6 +65,8 @@ export interface ReferenceApplication {
   observeTodos(listener: (todos: readonly ReferenceTodo[]) => void): Subscription;
   putRemote(document: ReferenceTodo): Promise<void>;
   removeRemote(id: string, updatedAt: number): Promise<void>;
+  /** Test hook: the fake backend moves its collection to schema `version`. */
+  requireSchemaVersion(version: number): void;
   revokeAccess(): Promise<void>;
   /** End the session on the server and stop replicating. */
   signOut(): Promise<void>;
@@ -162,8 +171,13 @@ export async function createReferenceApplication(
     },
   });
   const collection = collections.todos;
+  // Set once replication exists; the live stream reports resync reasons to it.
+  let recovery: MakoReplicationRecoveryCoordinator | null = null;
   const live = new MakoLivePullStream<ReferenceTodo>(config, auth, {
     fetch: backend.fetch,
+    onResyncReason: async (reason) => {
+      await recovery?.handleResyncReason(reason);
+    },
     reconnectMinimumDelayMs: timing.reconnectMinimumDelayMs,
     reconnectMaximumDelayMs: timing.reconnectMaximumDelayMs,
   });
@@ -190,7 +204,31 @@ export async function createReferenceApplication(
     received: 0,
     reconnects: 0,
     revoked: false,
+    recovery: null as string | null,
   };
+  // A schema mismatch or an expired checkpoint is a state to recover from, not
+  // an error to retry: the coordinator pauses replication and names what the
+  // app must do. Without it RxDB repeated the refused request every retryTime,
+  // and the page never learned that it had to update.
+  recovery = new MakoReplicationRecoveryCoordinator({
+    async pauseReplication() {
+      await replication.pause();
+      live.close();
+    },
+    onSchemaMigrationRequired({ requiredSchemaVersion }) {
+      state.recovery =
+        requiredSchemaVersion === null
+          ? "schema_migration_required"
+          : `schema_migration_required:${requiredSchemaVersion}`;
+    },
+    onFullResyncRequired({ reason }) {
+      state.recovery = `full_resync_required:${reason}`;
+    },
+  });
+  const coordinator = recovery;
+  signalSubscription.add(
+    replication.error$.subscribe((error) => void coordinator.handleError(error)),
+  );
   signalSubscription.add(signals.activity$.subscribe((activity) => (state.activity = activity)));
   signalSubscription.add(signals.conflicts$.subscribe(() => (state.conflicts += 1)));
   signalSubscription.add(
@@ -238,6 +276,7 @@ class ReferenceApplicationImpl implements ReferenceApplication {
     received: number;
     reconnects: number;
     revoked: boolean;
+    recovery: string | null;
   };
   readonly #subscription: Subscription;
 
@@ -258,6 +297,7 @@ class ReferenceApplicationImpl implements ReferenceApplication {
       received: number;
       reconnects: number;
       revoked: boolean;
+      recovery: string | null;
     },
     readonly userId: string,
   ) {
@@ -320,7 +360,15 @@ class ReferenceApplicationImpl implements ReferenceApplication {
       lastError: this.#state.lastError,
       received: this.#state.received,
       reconnects: this.#state.reconnects,
+      recovery: this.#state.recovery,
     };
+  }
+
+  requireSchemaVersion(version: number): void {
+    if (this.backend.requireSchemaVersion === undefined) {
+      throw new Error("only the fake backend can change its schema");
+    }
+    this.backend.requireSchemaVersion(version);
   }
 
   async setOnline(online: boolean): Promise<void> {

@@ -232,7 +232,16 @@ function button(text: string, onClick: () => void): HTMLButtonElement {
 function renderDiagnostics(): void {
   const value = application.diagnostics();
   diagnostics.textContent = JSON.stringify(value);
-  status.textContent = value.activity;
+  if (value.recovery === null) {
+    status.textContent = value.activity;
+    return;
+  }
+  // Replication is paused until the app is updated; local writes still land
+  // in the browser and are sent once a version with the new schema runs.
+  status.textContent = "update required";
+  notice.textContent = value.recovery.startsWith("schema_migration_required")
+    ? "This app is out of date: the server now uses a newer data format. Your changes are kept on this device; reload to update and sync them."
+    : "Sync must restart from the beginning. Reload the page to resync.";
 }
 
 const todoSubscription = application.observeTodos(renderTodos);

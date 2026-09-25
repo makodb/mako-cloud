@@ -32,6 +32,7 @@ export class FakeMakoBackend implements ReferenceBackend {
   #online = true;
   #refreshes = 0;
   #revoked = false;
+  #requiredSchemaVersion: number | null = null;
   #sequence = 0;
   #streamConnections = 0;
 
@@ -79,6 +80,9 @@ export class FakeMakoBackend implements ReferenceBackend {
     if (this.#revoked) {
       return apiError(401, "unauthenticated", "the session was revoked", "never");
     }
+    if (this.#requiredSchemaVersion !== null) {
+      return schemaMismatch(this.#requiredSchemaVersion);
+    }
     if (url.pathname.endsWith("/replication/pull")) {
       return this.#pull(init);
     }
@@ -110,6 +114,11 @@ export class FakeMakoBackend implements ReferenceBackend {
     if (!online) {
       this.disconnectStreams();
     }
+  }
+
+  requireSchemaVersion(version: number): void {
+    this.#requiredSchemaVersion = version;
+    this.disconnectStreams();
   }
 
   async revokeAccess(_auth?: MakoAuthClient): Promise<void> {
@@ -291,6 +300,23 @@ function apiError(
       },
     },
     status,
+  );
+}
+
+/** The answer of a server whose collection's active schema is now `version`. */
+function schemaMismatch(version: number): Response {
+  return jsonResponse(
+    {
+      apiVersion: "v1",
+      error: {
+        code: "schema_mismatch",
+        message: "replication schema migration is required",
+        requestId: "req_reference_app",
+        retry: { kind: "never" },
+        details: { requiredSchemaVersion: String(version) },
+      },
+    },
+    409,
   );
 }
 

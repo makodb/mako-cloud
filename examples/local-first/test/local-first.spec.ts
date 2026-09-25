@@ -137,3 +137,27 @@ test("clears local data and requires authentication after access revocation", as
 function todo(id: string, title: string, updatedAt: number): Todo {
   return { id, ownerId: "user-example", title, updatedAt };
 }
+
+test("stops and asks for an update when the server's schema moves on, keeping local writes", async ({
+  page,
+}) => {
+  await page.getByRole("textbox", { name: "Todo" }).fill("synced before the change");
+  await page.getByRole("button", { name: "Add" }).click();
+  await page.evaluate(() => window.makoExample.waitForSync());
+
+  await page.evaluate(() => window.makoExample.requireSchemaVersion(2));
+  await page.getByRole("textbox", { name: "Todo" }).fill("written after the change");
+  await page.getByRole("button", { name: "Add" }).click();
+
+  await page.waitForFunction(
+    () => window.makoExample.diagnostics().recovery === "schema_migration_required:2",
+  );
+  await expect(page.locator("#status")).toHaveText("update required");
+  await expect(page.getByRole("alert")).toContainText("out of date");
+  // Replication is paused rather than retrying the refused request.
+  const errors = await page.evaluate(() => window.makoExample.diagnostics().errors);
+  await page.waitForTimeout(1_000);
+  expect(await page.evaluate(() => window.makoExample.diagnostics().errors)).toBe(errors);
+  // The write made after the change is still on this device.
+  await expect(titles(page)).toHaveText(["synced before the change", "written after the change"]);
+});
