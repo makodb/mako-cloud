@@ -14,6 +14,7 @@ mod query;
 mod read;
 mod retention;
 mod sequencer;
+mod stored_check;
 mod validation;
 
 pub use authorization::{
@@ -52,6 +53,9 @@ pub use read::{
 pub use retention::{CheckpointStatus, CompactionMode, CompactionReport, RetentionError};
 pub use sequencer::{
     EnvironmentSequencer, FinalizeOutcome, SequenceDisposition, SequenceLease, SequencerError,
+};
+pub use stored_check::{
+    MAX_REPORTED_FAILURES, StoredDocumentCheck, StoredDocumentCheckError,
 };
 pub use validation::{
     DocumentValidationError, DocumentValidator, SchemaValidationIssue, ValidatedDocumentBody,

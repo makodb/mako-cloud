@@ -6,7 +6,7 @@ use mako_documents::{
     CollectionMetadataVersion, DocumentEngine, DocumentEngineScopeError, DocumentValidationError,
     DocumentValidator, IndexBuildError, IndexBuildProgress, IndexDefinition, IndexError,
     IndexField, IndexKind, IndexName, IndexVersion, PrimaryKeyDefinition, SchemaCompatibility,
-    SchemaVersion, ScopedCollectionEngine,
+    SchemaVersion, ScopedCollectionEngine, StoredDocumentCheck,
 };
 use mako_storage::{
     AtomicWrite, CompareAndWriteResult, Durability, KeyCondition, KvAdapter, ScanDirection,
@@ -98,6 +98,14 @@ pub struct SchemaMigrationRecord {
     request_fingerprint: String,
     created_at_unix_seconds: u64,
     updated_at_unix_seconds: u64,
+    /// The schema the migration moves to, so completing it can check the
+    /// stored documents against it and activate it. Records planned before
+    /// this field hold none; they cannot be completed and must be planned
+    /// again.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    target_json_schema: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    target_primary_key: Option<PrimaryKeyDefinition>,
 }
 
 impl SchemaMigrationRecord {
@@ -566,6 +574,8 @@ impl CollectionAdminService {
             &input.target_primary_key,
             &input.reason,
         );
+        let target_json_schema = input.target_json_schema.clone();
+        let target_primary_key = input.target_primary_key.clone();
         let proposed = CollectionMetadata::new(
             input.collection_id.clone(),
             CollectionMetadataVersion::new(
@@ -600,6 +610,8 @@ impl CollectionAdminService {
             request_fingerprint,
             created_at_unix_seconds: input.now_unix_seconds,
             updated_at_unix_seconds: input.now_unix_seconds,
+            target_json_schema: Some(target_json_schema),
+            target_primary_key: Some(target_primary_key),
         };
         let key = migration_key(&record)?;
         let mut batch = WriteBatch::new();
@@ -703,6 +715,90 @@ impl CollectionAdminService {
             now_unix_seconds,
         );
         Ok(updated)
+    }
+
+    /// The collection metadata a migration would activate: its target schema
+    /// at the next metadata version. The caller checks the stored documents
+    /// against it -- only the data plane holds them -- and passes the result
+    /// to [`Self::complete_migration`].
+    pub async fn migration_target(
+        &self,
+        actor: &DeveloperPrincipal,
+        tenant: &TenantScope,
+        collection_id: &CollectionId,
+        migration_id: &SchemaMigrationId,
+        now_unix_seconds: u64,
+    ) -> Result<CollectionMetadata, CollectionAdminError> {
+        self.authorize(
+            actor,
+            tenant,
+            true,
+            ControlAuditAction::CollectionMigrationCreate,
+            now_unix_seconds,
+        )
+        .await?;
+        let migration = self
+            .get_migration_record(tenant, collection_id, migration_id)
+            .await?;
+        let current = self.collection(tenant, collection_id).await?;
+        Ok(migration_target_metadata(&migration, &current)?.1)
+    }
+
+    /// Completes a running migration by activating its target schema, once
+    /// every stored document satisfies it. Documents are never rewritten:
+    /// the developer brings them to the new shape while the migration runs,
+    /// and completing it checks that they all arrived. From then on clients
+    /// on the old version are told to migrate, as with any new version.
+    pub async fn complete_migration(
+        &self,
+        actor: &DeveloperPrincipal,
+        tenant: &TenantScope,
+        collection_id: &CollectionId,
+        migration_id: &SchemaMigrationId,
+        check: &StoredDocumentCheck,
+        now_unix_seconds: u64,
+    ) -> Result<(SchemaMigrationRecord, CollectionMetadata), CollectionAdminError> {
+        let organization_id = self
+            .authorize(
+                actor,
+                tenant,
+                true,
+                ControlAuditAction::CollectionMigrationCreate,
+                now_unix_seconds,
+            )
+            .await?;
+        let previous = self
+            .get_migration_record(tenant, collection_id, migration_id)
+            .await?;
+        let mut completed = previous.clone();
+        completed.transition(SchemaMigrationState::Completed, now_unix_seconds)?;
+        let current = self.collection(tenant, collection_id).await?;
+        let (already_active, target) = migration_target_metadata(&previous, &current)?;
+        if !already_active {
+            if !check.passes() {
+                return Err(CollectionAdminError::MigrationDocumentsInvalid {
+                    documents_checked: check.documents_checked,
+                    failing: check.failing.clone(),
+                });
+            }
+            self.replace_collection(tenant, &current, &target).await?;
+        }
+        self.replace_record(
+            migration_key(&previous)?,
+            serde_json::to_vec(&previous)?,
+            serde_json::to_vec(&completed)?,
+        )
+        .await?;
+        self.audit(
+            actor,
+            &organization_id,
+            ControlAuditAction::CollectionSchemaPublish,
+            tenant,
+            collection_id.as_str(),
+            now_unix_seconds,
+        );
+        let active = if already_active { current } else { target };
+        Ok((completed, active))
     }
 
     pub async fn create_index(
@@ -1093,6 +1189,49 @@ impl CollectionAdminService {
     }
 }
 
+/// The metadata a migration activates, and whether it is already active (a
+/// completion whose activation was written but whose record update was not).
+/// A migration applies only to the version it was planned from, and cannot
+/// change the primary key: stored documents are keyed by it.
+fn migration_target_metadata(
+    migration: &SchemaMigrationRecord,
+    current: &CollectionMetadata,
+) -> Result<(bool, CollectionMetadata), CollectionAdminError> {
+    let (Some(schema), Some(primary_key)) = (
+        migration.target_json_schema.clone(),
+        migration.target_primary_key.clone(),
+    ) else {
+        return Err(CollectionAdminError::MigrationTargetUnknown);
+    };
+    if &primary_key != current.primary_key() {
+        return Err(CollectionAdminError::MigrationChangesPrimaryKey);
+    }
+    if current.schema_version().get() == migration.to_schema_version
+        && Value::Object(current.json_schema().clone()) == schema
+    {
+        return Ok((true, current.clone()));
+    }
+    if current.schema_version().get() != migration.from_schema_version {
+        return Err(CollectionAdminError::MigrationStale);
+    }
+    let target = CollectionMetadata::new(
+        current.collection_id().clone(),
+        CollectionMetadataVersion::new(
+            current
+                .metadata_version()
+                .get()
+                .checked_add(1)
+                .ok_or(CollectionAdminError::VersionExhausted)?,
+        )?,
+        SchemaVersion::new(migration.to_schema_version)?,
+        schema,
+        primary_key,
+        SchemaCompatibility::Compatible,
+        CollectionLifecycle::Active,
+    )?;
+    Ok((false, target))
+}
+
 fn static_compatibility_issues(
     current: &CollectionMetadata,
     proposed: &CollectionMetadata,
@@ -1286,6 +1425,16 @@ pub enum CollectionAdminError {
     InvalidMigrationReason,
     InvalidMigrationTransition,
     MigrationNotRequired,
+    /// The migration was planned before migrations kept their target schema.
+    MigrationTargetUnknown,
+    /// The collection has moved off the version the migration was planned from.
+    MigrationStale,
+    MigrationChangesPrimaryKey,
+    /// Stored documents do not satisfy the target schema yet.
+    MigrationDocumentsInvalid {
+        documents_checked: u64,
+        failing: Vec<String>,
+    },
     SchemaVersionMustIncrease,
     VersionExhausted,
     Scope(ScopeError),
@@ -1315,6 +1464,16 @@ impl fmt::Display for CollectionAdminError {
             Self::InvalidMigrationReason => "schema migration reason is invalid",
             Self::InvalidMigrationTransition => "schema migration state transition is invalid",
             Self::MigrationNotRequired => "the compatible schema can be published directly",
+            Self::MigrationTargetUnknown => {
+                "this migration predates recorded targets; plan it again to complete it"
+            }
+            Self::MigrationStale => {
+                "the collection is no longer on the schema version this migration starts from"
+            }
+            Self::MigrationChangesPrimaryKey => "a migration cannot change the primary key",
+            Self::MigrationDocumentsInvalid { .. } => {
+                "stored documents do not satisfy the migration's target schema yet"
+            }
             Self::SchemaVersionMustIncrease => "schema version must increase",
             Self::VersionExhausted => "collection metadata version is exhausted",
             Self::Scope(_) => "collection scope is invalid",
@@ -1589,6 +1748,189 @@ mod tests {
             properties.extend(extra.clone());
         }
         value
+    }
+
+    #[test]
+    fn completing_a_migration_activates_its_target_once_every_document_satisfies_it() {
+        futures::executor::block_on(async {
+            let (service, actor, tenant) = fixture().await;
+            let collection_id = CollectionId::parse("notes").expect("collection");
+            let key = || PrimaryKeyDefinition::field("id").expect("primary key");
+            service
+                .create_collection(
+                    &actor,
+                    NewCollection {
+                        tenant: tenant.clone(),
+                        collection_id: collection_id.clone(),
+                        schema_version: 1,
+                        json_schema: schema(json!({ "priority": { "type": "integer" } })),
+                        primary_key: key(),
+                        now_unix_seconds: 2,
+                    },
+                )
+                .await
+                .expect("create collection");
+            let required = json!({
+                "type": "object",
+                "required": ["id", "priority"],
+                "properties": { "id": { "type": "string" }, "priority": { "type": "integer" } }
+            });
+            let migration = service
+                .create_migration(
+                    &actor,
+                    NewSchemaMigration {
+                        id: SchemaMigrationId::parse("mig_required0").expect("migration"),
+                        tenant: tenant.clone(),
+                        collection_id: collection_id.clone(),
+                        target_schema_version: 2,
+                        target_json_schema: required.clone(),
+                        target_primary_key: key(),
+                        reason: "priority becomes required".to_owned(),
+                        now_unix_seconds: 3,
+                    },
+                )
+                .await
+                .expect("migration");
+            service
+                .transition_migration(
+                    &actor,
+                    &tenant,
+                    &collection_id,
+                    migration.id(),
+                    SchemaMigrationState::Running,
+                    4,
+                )
+                .await
+                .expect("running");
+            let target = service
+                .migration_target(&actor, &tenant, &collection_id, migration.id(), 5)
+                .await
+                .expect("target");
+            assert_eq!(target.schema_version().get(), 2);
+
+            // A document still without the field: refused, and still running.
+            let failing = StoredDocumentCheck {
+                documents_checked: 3,
+                failing: vec!["note-2".to_owned()],
+            };
+            assert!(matches!(
+                service
+                    .complete_migration(&actor, &tenant, &collection_id, migration.id(), &failing, 6)
+                    .await,
+                Err(CollectionAdminError::MigrationDocumentsInvalid { documents_checked: 3, ref failing })
+                    if failing == &["note-2".to_owned()]
+            ));
+            let current = service
+                .get_collection(&actor, &tenant, &collection_id, 7)
+                .await
+                .expect("collection");
+            assert_eq!(
+                current.schema_version().get(),
+                1,
+                "a failed check activates nothing"
+            );
+
+            // Every document backfilled: v2 is active and the migration completed.
+            let passing = StoredDocumentCheck {
+                documents_checked: 3,
+                failing: Vec::new(),
+            };
+            let (completed, active) = service
+                .complete_migration(&actor, &tenant, &collection_id, migration.id(), &passing, 8)
+                .await
+                .expect("complete");
+            assert_eq!(completed.state(), SchemaMigrationState::Completed);
+            assert_eq!(active.schema_version().get(), 2);
+            assert_eq!(Value::Object(active.json_schema().clone()), required);
+            assert_eq!(
+                service
+                    .get_collection(&actor, &tenant, &collection_id, 9)
+                    .await
+                    .expect("collection")
+                    .schema_version()
+                    .get(),
+                2
+            );
+            // Completing twice is refused by the state machine, not re-applied.
+            assert!(matches!(
+                service
+                    .complete_migration(
+                        &actor,
+                        &tenant,
+                        &collection_id,
+                        migration.id(),
+                        &passing,
+                        10
+                    )
+                    .await,
+                Err(CollectionAdminError::InvalidMigrationTransition)
+            ));
+
+            // A migration planned from a version the collection has left is stale.
+            let stale = service
+                .create_migration(
+                    &actor,
+                    NewSchemaMigration {
+                        id: SchemaMigrationId::parse("mig_required1").expect("migration"),
+                        tenant: tenant.clone(),
+                        collection_id: collection_id.clone(),
+                        target_schema_version: 3,
+                        target_json_schema: json!({
+                            "type": "object",
+                            "required": ["id", "priority", "title"],
+                            "properties": {
+                                "id": { "type": "string" },
+                                "priority": { "type": "integer" },
+                                "title": { "type": "string" }
+                            }
+                        }),
+                        target_primary_key: key(),
+                        reason: "title becomes required".to_owned(),
+                        now_unix_seconds: 11,
+                    },
+                )
+                .await
+                .expect("second migration");
+            service
+                .transition_migration(
+                    &actor,
+                    &tenant,
+                    &collection_id,
+                    stale.id(),
+                    SchemaMigrationState::Running,
+                    12,
+                )
+                .await
+                .expect("running");
+            service
+                .publish_schema(
+                    &actor,
+                    PublishSchema {
+                        tenant: tenant.clone(),
+                        collection_id: collection_id.clone(),
+                        schema_version: 3,
+                        json_schema: json!({
+                            "type": "object",
+                            "required": ["id", "priority"],
+                            "properties": {
+                                "id": { "type": "string" },
+                                "priority": { "type": "integer" },
+                                "note": { "type": "string" }
+                            }
+                        }),
+                        primary_key: key(),
+                        now_unix_seconds: 13,
+                    },
+                )
+                .await
+                .expect("an additive publication moves the collection on");
+            assert!(matches!(
+                service
+                    .complete_migration(&actor, &tenant, &collection_id, stale.id(), &passing, 14)
+                    .await,
+                Err(CollectionAdminError::MigrationStale)
+            ));
+        });
     }
 
     #[test]

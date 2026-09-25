@@ -265,6 +265,11 @@ pub enum IdentityAdminOperation {
     /// traffic cannot resolve a collection until its metadata exists in the
     /// data plane's own store.
     InstallCollection,
+    /// Validate every stored document of a collection against the schema in
+    /// the metadata given (an `InstallCollectionInput`), installing nothing.
+    /// Only the data plane holds the documents, so a schema migration asks it
+    /// before the control plane activates the migration's target.
+    CheckStoredDocuments,
     /// Install and activate a document policy in the data plane that serves the
     /// environment. Document authorization is default-deny, so a policy that
     /// exists only in the control store leaves every read filtered out and every

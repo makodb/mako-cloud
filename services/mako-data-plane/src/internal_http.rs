@@ -499,6 +499,9 @@ async fn execute_operation(
         IdentityAdminOperation::InstallCollection => {
             execute_collection_operation(graph, request, tenant, command, now).await
         }
+        IdentityAdminOperation::CheckStoredDocuments => {
+            execute_stored_document_check(graph, request, tenant, command, now).await
+        }
         IdentityAdminOperation::InstallPolicy => {
             execute_policy_operation(graph, request, tenant, command, now).await
         }
@@ -1164,6 +1167,58 @@ async fn execute_collection_operation(
         "status": status,
     }))
     .map_err(|_| auth_http::unavailable(request, "collection response could not be encoded"))
+}
+
+/// Validate a collection's stored documents against the metadata's schema.
+/// Reads only; the control plane decides what a failing document means.
+async fn execute_stored_document_check(
+    graph: &Arc<DataPlaneGraph>,
+    request: &HttpRequest,
+    tenant: &mako_api::TenantScope,
+    command: &IdentityAdminCommand,
+    now: u64,
+) -> Result<Vec<u8>, HttpApiError> {
+    require_permission(
+        graph,
+        request,
+        tenant,
+        command,
+        IdentityAdminPermission::ManageCollections,
+        "stored_document_check",
+        "collections",
+        now,
+    )
+    .await?;
+    let input: InstallCollectionInput = parse_input(request, &command.input)?;
+    let collection_id = mako_api::CollectionId::parse(input.collection_id)
+        .map_err(|_| auth_http::invalid(request, "collection id is invalid"))?;
+    let encoded = serde_json::to_vec(&input.metadata)
+        .map_err(|_| auth_http::invalid(request, "collection metadata is invalid"))?;
+    let metadata = CollectionMetadata::decode(&encoded)
+        .map_err(|_| auth_http::invalid(request, "collection metadata is invalid"))?;
+    if metadata.collection_id() != &collection_id {
+        return Err(auth_http::invalid(
+            request,
+            "collection metadata does not match the requested collection",
+        ));
+    }
+    let check = graph
+        .document_engine()
+        .scope_collection(
+            tenant,
+            mako_api::CollectionScope::new(tenant.clone(), collection_id),
+        )
+        .map_err(|_| auth_http::invalid(request, "collection scope is invalid"))?
+        .check_stored_documents(&metadata)
+        .await
+        .map_err(|error| match error {
+            mako_documents::StoredDocumentCheckError::Schema(_) => {
+                auth_http::invalid(request, "collection schema is invalid")
+            }
+            _ => auth_http::unavailable(request, "stored documents could not be checked"),
+        })?;
+    serde_json::to_vec(&check)
+        .map_err(|_| auth_http::unavailable(request, "document check could not be encoded"))
 }
 
 /// Install and activate a document policy so this data plane enforces it.
@@ -2419,6 +2474,7 @@ fn json_bytes(body: Vec<u8>) -> HttpResponse {
 const fn operation_name(operation: IdentityAdminOperation) -> &'static str {
     match operation {
         IdentityAdminOperation::InstallCollection => "install_collection",
+        IdentityAdminOperation::CheckStoredDocuments => "check_stored_documents",
         IdentityAdminOperation::InstallPolicy => "install_policy",
         IdentityAdminOperation::InstallBucket => "install_bucket",
         IdentityAdminOperation::RemoveBucket => "remove_bucket",

@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
-use mako_api::{CollectionId, TenantScope};
+use mako_api::{
+    ApiError, ApiErrorEnvelope, CollectionId, ErrorCode, RetryAdvice, SafeDetail, TenantScope,
+};
 use mako_control_plane::{
     CollectionAdminError, CollectionAdminService, CollectionCompatibilityReport,
     DeveloperPrincipal, IndexBuildStatus, NewCollection, NewIndex, NewSchemaMigration,
@@ -9,7 +11,7 @@ use mako_control_plane::{
 };
 use mako_documents::{
     CollectionMetadata, IndexDirection, IndexError, IndexField, IndexKind, IndexName, IndexState,
-    IndexVersion, PrimaryKeyDefinition,
+    IndexVersion, PrimaryKeyDefinition, StoredDocumentCheck,
 };
 use mako_internal_rpc::IdentityAdminOperation;
 use mako_service_runtime::{
@@ -369,6 +371,9 @@ fn handle_update_migration(
     let collection_id = collection_id(request)?;
     let migration_id = migration_id(request)?;
     let body: MigrationStateWire = parse_json(request)?;
+    if body.state == SchemaMigrationState::Completed {
+        return complete_migration(graph, request, &tenant, &collection_id, &migration_id);
+    }
     with_developer(graph, request, |actor, now| async move {
         let record = graph
             .collection_service()
@@ -391,6 +396,76 @@ fn handle_update_migration(
         )?;
         json(request, 200, &migration_wire(request, &record)?)
     })
+}
+
+/// Completing a migration activates its target schema, once the data plane,
+/// which holds the documents, reports that every one of them satisfies it.
+/// Until then the migration stays running, and the answer names the documents
+/// still to bring to the new shape.
+fn complete_migration(
+    graph: &Arc<ControlPlaneGraph>,
+    request: &HttpRequest,
+    tenant: &TenantScope,
+    collection_id: &CollectionId,
+    migration_id: &SchemaMigrationId,
+) -> Result<HttpResponse, HttpApiError> {
+    with_developer(graph, request, |actor, now| async move {
+        let service = graph.collection_service();
+        let target = service
+            .migration_target(&actor, tenant, collection_id, migration_id, now)
+            .await
+            .map_err(|error| collection_error(request, error))?;
+        let check = administer(
+            graph,
+            request,
+            &actor,
+            tenant,
+            IdentityAdminOperation::CheckStoredDocuments,
+            json!({"collectionId": collection_id.as_str(), "metadata": metadata_value(request, &target)?}),
+            false,
+        )
+        .await?;
+        let check: StoredDocumentCheck = serde_json::from_value(check)
+            .map_err(|_| unavailable(request, "stored document check could not be read"))?;
+        let (record, active) = service
+            .complete_migration(&actor, tenant, collection_id, migration_id, &check, now)
+            .await
+            .map_err(|error| collection_error(request, error))?;
+        // As after a publish: the data plane serves the new version only once
+        // it holds the metadata. A refused install leaves the control-side
+        // record ahead; completing again installs it, as the target is active.
+        let _: Value = administer(
+            graph,
+            request,
+            &actor,
+            tenant,
+            IdentityAdminOperation::InstallCollection,
+            json!({"collectionId": collection_id.as_str(), "metadata": metadata_value(request, &active)?}),
+            false,
+        )
+        .await?;
+        explorer_invalidation::advance_tenant(
+            graph,
+            request,
+            tenant,
+            actor.identity_id().as_str(),
+            "schema-migration",
+        )?;
+        json(request, 200, &migration_wire(request, &record)?)
+    })
+}
+
+fn metadata_value(
+    request: &HttpRequest,
+    metadata: &CollectionMetadata,
+) -> Result<Value, HttpApiError> {
+    let servable = CollectionAdminService::servable_metadata(metadata)
+        .map_err(|error| collection_error(request, error))?;
+    let encoded = servable
+        .encode()
+        .map_err(|_| unavailable(request, "collection metadata could not be encoded"))?;
+    serde_json::from_slice(&encoded)
+        .map_err(|_| unavailable(request, "collection metadata could not be encoded"))
 }
 
 fn handle_list_indexes(
@@ -568,6 +643,47 @@ fn collection_error(request: &HttpRequest, error: CollectionAdminError) -> HttpA
             not_found(request, "collection resource was not found")
         }
         CollectionAdminError::Forbidden => forbidden(request, "collection action is forbidden"),
+        CollectionAdminError::MigrationDocumentsInvalid {
+            documents_checked,
+            failing,
+        } => {
+            let envelope = ApiErrorEnvelope::new(
+                ApiError::new(
+                    ErrorCode::Conflict,
+                    "stored documents do not satisfy the migration's target schema yet; \
+                     update them, then complete the migration again",
+                    request.request_id(),
+                    RetryAdvice::Never,
+                )
+                .with_detail(
+                    "documentsChecked",
+                    SafeDetail::String(documents_checked.to_string()),
+                )
+                .with_detail(
+                    "failingDocuments",
+                    SafeDetail::String(
+                        failing
+                            .iter()
+                            .take(20)
+                            .cloned()
+                            .collect::<Vec<_>>()
+                            .join(","),
+                    ),
+                ),
+            );
+            HttpApiError::from_envelope(409, envelope)
+        }
+        CollectionAdminError::MigrationTargetUnknown => conflict(
+            request,
+            "this migration predates recorded targets; plan it again to complete it",
+        ),
+        CollectionAdminError::MigrationStale => conflict(
+            request,
+            "the collection is no longer on the schema version this migration starts from",
+        ),
+        CollectionAdminError::MigrationChangesPrimaryKey => {
+            conflict(request, "a migration cannot change the primary key")
+        }
         CollectionAdminError::Conflict
         | CollectionAdminError::InvalidMigrationTransition
         | CollectionAdminError::MigrationNotRequired

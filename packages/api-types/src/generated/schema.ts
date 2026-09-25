@@ -456,7 +456,10 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        /** Advance, retry, complete, or cancel a migration workflow */
+        /**
+         * Advance, retry, complete, or cancel a migration workflow
+         * @description Moving a running migration to `completed` checks every stored document against the target schema. When all satisfy it, the target schema version becomes active; otherwise the answer is `409` with `documentsChecked` and up to 20 `failingDocuments` in its details, and nothing changes.
+         */
         patch: operations["updateSchemaMigration"];
         trace?: never;
     };
