@@ -463,4 +463,98 @@ fn applications_sign_users_in_through_providers_and_magic_links() {
         Some(&without_secret),
     );
     assert_eq!(status, 400, "a new provider needs a secret: {body}");
+
+    // --- With verification on, a sign-up confirms its address first. -------
+    let (status, body) = request(
+        data_port,
+        "POST",
+        &format!("{scope}/auth/signup"),
+        &keyed,
+        Some(&json!({ "email": "ana@app.test", "password": "correct horse battery" })),
+    );
+    assert_eq!(status, 202, "sign-up without verification: {body}");
+    assert_eq!(
+        serde_json::from_str::<Value>(&body).expect("signup json")["verificationRequired"],
+        false
+    );
+    let mut verifying = settings_update(None);
+    verifying["emailVerification"] = json!({ "required": true });
+    let (status, body) = request(
+        control_port,
+        "PUT",
+        &format!("{scope}/auth-settings"),
+        &manage("settings-4"),
+        Some(&verifying),
+    );
+    assert_eq!(status, 200, "turning verification on failed: {body}");
+    let view: Value = serde_json::from_str(&body).expect("settings json");
+    assert_eq!(view["emailVerification"]["required"], true);
+    let sign_up = |redirect: Option<&str>| {
+        let mut body = json!({ "email": "kai@app.test", "password": "correct horse battery" });
+        if let Some(redirect) = redirect {
+            body["redirectUrl"] = json!(redirect);
+        }
+        request(
+            data_port,
+            "POST",
+            &format!("{scope}/auth/signup"),
+            &keyed,
+            Some(&body),
+        )
+    };
+    let (status, body) = sign_up(None);
+    assert_eq!(status, 400, "a verifying sign-up needs a redirect: {body}");
+    let (status, body) = sign_up(Some("https://elsewhere.example/steal"));
+    assert_eq!(status, 400, "an unregistered redirect is refused: {body}");
+    let (status, body) = sign_up(Some(APP_REDIRECT));
+    assert_eq!(status, 202, "verifying sign-up failed: {body}");
+    assert_eq!(
+        serde_json::from_str::<Value>(&body).expect("signup json")["verificationRequired"],
+        true
+    );
+    let sign_in = || {
+        request(
+            data_port,
+            "POST",
+            &format!("{scope}/auth/signin"),
+            &keyed,
+            Some(&json!({ "email": "kai@app.test", "password": "correct horse battery" })),
+        )
+        .0
+    };
+    assert_eq!(sign_in(), 401, "an unverified account cannot sign in");
+    let mail = relay
+        .wait_for("kai@app.test", Duration::from_secs(120))
+        .unwrap_or_else(|| {
+            panic!(
+                "the verification mail never reached the relay; captured: {:?}",
+                relay.messages()
+            )
+        });
+    let text = mail.text();
+    let link = text
+        .split_whitespace()
+        .find(|word| word.contains("#verification_token="))
+        .unwrap_or_else(|| panic!("the mail carries the link: {text}"));
+    assert!(
+        link.starts_with(APP_REDIRECT),
+        "the link lands on the app: {link}"
+    );
+    let token = fragment_parameter(link, "verification_token").expect("verification token");
+    let verify = || {
+        request(
+            data_port,
+            "POST",
+            &format!("{scope}/auth/verify-email"),
+            &keyed,
+            Some(&json!({ "token": token })),
+        )
+    };
+    let (status, body) = verify();
+    assert_eq!(status, 200, "verification failed: {body}");
+    assert_eq!(sign_in(), 200, "a verified account signs in");
+    assert_eq!(verify().0, 401, "a spent link is refused");
+    // Signing up again with the address mails nothing and answers the same.
+    let (status, _) = sign_up(Some(APP_REDIRECT));
+    assert_eq!(status, 202);
 }

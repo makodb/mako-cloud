@@ -2,6 +2,7 @@ import type {
   AuthProviderKind,
   AuthProviderUpdate,
   AuthSettingsUpdate,
+  EmailVerificationSettings,
   MagicLinkSettings,
 } from "@mako-cloud/management-sdk";
 
@@ -21,7 +22,7 @@ const INPUT_OPTION: Readonly<Record<string, OptionSpec>> = {
     type: "string",
     required: true,
     description:
-      "The whole settings document {providers, redirectUrls, magicLinks}: @path, - for stdin, or inline JSON",
+      "The whole settings document {providers, redirectUrls, magicLinks, emailVerification?}: @path, - for stdin, or inline JSON",
     placeholder: "<@file|-|json>",
   },
 };
@@ -95,12 +96,22 @@ function magicLinksFrom(value: unknown): MagicLinkSettings {
   return { enabled, linkTtlSeconds };
 }
 
+function emailVerificationFrom(value: unknown): EmailVerificationSettings {
+  const at = "--input.emailVerification";
+  if (!isJsonObject(value) || typeof value.required !== "boolean") {
+    throw usageError(`${at} must be an object {required: true|false}`);
+  }
+  return { required: value.required };
+}
+
 async function updateFrom(context: CommandContext, args: CommandArgs): Promise<AuthSettingsUpdate> {
   const value = await context.readJson(args.requireString("input"), "--input");
   if (!isJsonObject(value)) {
-    throw usageError("--input must be a JSON object {providers, redirectUrls, magicLinks}");
+    throw usageError(
+      "--input must be a JSON object {providers, redirectUrls, magicLinks, emailVerification?}",
+    );
   }
-  const { providers, redirectUrls, magicLinks } = value;
+  const { providers, redirectUrls, magicLinks, emailVerification } = value;
   if (!Array.isArray(providers)) throw usageError("--input.providers must be an array");
   if (!Array.isArray(redirectUrls) || !redirectUrls.every(isNonEmptyString)) {
     throw usageError("--input.redirectUrls must be an array of absolute URLs");
@@ -109,6 +120,9 @@ async function updateFrom(context: CommandContext, args: CommandArgs): Promise<A
     providers: providers.map(providerFrom),
     redirectUrls: redirectUrls as string[],
     magicLinks: magicLinksFrom(magicLinks),
+    ...(emailVerification !== undefined
+      ? { emailVerification: emailVerificationFrom(emailVerification) }
+      : {}),
   };
 }
 

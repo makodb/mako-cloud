@@ -117,6 +117,7 @@ test("saving sends new secrets once, keeps stored ones by omission, and never sh
   // Typed, the secret lives only in its password field: never in visible text.
   expect(await page.locator("main").innerText()).not.toContain(SECRET);
 
+  await page.getByLabel("Require new accounts to confirm their email before signing in").check();
   await page.getByRole("button", { name: "Save sign-in settings" }).click();
   await expect(page.getByRole("status")).toContainText("Sign-in settings saved (version 4).");
 
@@ -156,6 +157,7 @@ test("saving sends new secrets once, keeps stored ones by omission, and never sh
       "https://staging.example.test/auth/callback",
     ],
     magicLinks: { enabled: true, linkTtlSeconds: 600 },
+    emailVerification: { required: true },
   });
   // After the save the secret is gone from the page and the row reads as stored.
   await expect(table.getByRole("row", { name: /okta/u })).toContainText("stored");
@@ -234,6 +236,7 @@ class AuthSettingsHarness {
     ] as ProviderFixture[],
     redirectUrls: ["https://app.example.test/auth/callback", "http://localhost:3000/auth/callback"],
     magicLinks: { enabled: true, linkTtlSeconds: 900 },
+    emailVerification: { required: false },
     version: 3,
   };
 
@@ -310,6 +313,7 @@ class AuthSettingsHarness {
         providers: (Omit<ProviderFixture, "hasSecret"> & { clientSecret?: string })[];
         redirectUrls: string[];
         magicLinks: { enabled: boolean; linkTtlSeconds: number };
+        emailVerification: { required: boolean };
       };
       this.settings = {
         providers: update.providers.map(({ clientSecret, ...provider }) => ({
@@ -322,6 +326,7 @@ class AuthSettingsHarness {
         })),
         redirectUrls: update.redirectUrls,
         magicLinks: update.magicLinks,
+        emailVerification: update.emailVerification,
         version: this.settings.version + 1,
       };
       await json(route, this.settings);

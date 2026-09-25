@@ -14,8 +14,8 @@ use std::sync::Arc;
 
 use mako_api::{ErrorCode, RetryAdvice, TenantScope};
 use mako_auth_providers::{
-    AuthProviderSettings, MagicLinkSettings, ProviderConfig, ProviderKind, ProviderSecretKey,
-    SealedSecret, SettingsError,
+    AuthProviderSettings, EmailVerificationSettings, MagicLinkSettings, ProviderConfig,
+    ProviderKind, ProviderSecretKey, SealedSecret, SettingsError,
 };
 use mako_control_plane::DeveloperPrincipal;
 use mako_internal_rpc::{IdentityAdminCommand, IdentityAdminOperation, InternalClientError};
@@ -229,6 +229,8 @@ struct AuthSettingsView {
     redirect_urls: Vec<String>,
     #[serde(default)]
     magic_links: MagicLinkSettings,
+    #[serde(default)]
+    email_verification: EmailVerificationSettings,
     version: u64,
 }
 
@@ -254,6 +256,10 @@ struct AuthSettingsUpdateWire {
     providers: Vec<AuthProviderUpdateWire>,
     redirect_urls: Vec<String>,
     magic_links: MagicLinkSettings,
+    /// Optional so a client written before the setting existed still
+    /// replaces the settings; leaving it out turns verification off.
+    #[serde(default)]
+    email_verification: EmailVerificationSettings,
 }
 
 impl AuthSettingsUpdateWire {
@@ -300,6 +306,7 @@ impl AuthSettingsUpdateWire {
             providers,
             redirect_urls: self.redirect_urls,
             magic_links: self.magic_links,
+            email_verification: self.email_verification,
             version: installed.version.saturating_add(1),
         };
         validate_with_kept_secrets(&settings)
@@ -334,6 +341,7 @@ mod tests {
             providers,
             redirect_urls: vec!["https://app.example.test/callback".to_owned()],
             magic_links: MagicLinkSettings::default(),
+            email_verification: EmailVerificationSettings::default(),
             version,
         }
     }
@@ -602,6 +610,8 @@ mod tests {
                 }],
                 "redirectUrls": ["https://app.example.test/callback"],
                 "magicLinks": { "enabled": true, "linkTtlSeconds": 900 },
+                // A data plane that predates the setting reads as off.
+                "emailVerification": { "required": false },
                 "version": 7,
             })
         );

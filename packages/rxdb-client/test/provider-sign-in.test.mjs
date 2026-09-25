@@ -32,6 +32,13 @@ test("classifies location fragments with or without the leading hash", () => {
     kind: "error",
     value: "email_not_verified",
   });
+  assert.deepEqual(MakoAuthClient.signInFragment("#verification_token=abc123"), {
+    kind: "none",
+    value: null,
+  });
+  assert.equal(MakoAuthClient.verificationFragment("#verification_token=abc123"), "abc123");
+  assert.equal(MakoAuthClient.verificationFragment("verification_token=abc123"), "abc123");
+  assert.equal(MakoAuthClient.verificationFragment("#magic_link_token=x"), null);
   assert.deepEqual(MakoAuthClient.signInFragment(""), { kind: "none", value: null });
   assert.deepEqual(MakoAuthClient.signInFragment("#"), { kind: "none", value: null });
   assert.deepEqual(MakoAuthClient.signInFragment("#/route?x=1"), { kind: "none", value: null });
@@ -244,6 +251,39 @@ test("redeems a magic link token into a persisted session", async () => {
   assert.equal((await persistence.load()).refreshToken, "magic-refresh");
   assert.equal(await auth.validAccessToken(), "magic-access");
   await assert.rejects(() => auth.redeemMagicLink(""), MakoAuthError);
+});
+
+test("signs up with a verification redirect and redeems the mailed token", async () => {
+  const requests = [];
+  const fetch = async (input, init) => {
+    requests.push({ url: String(input), init });
+    return String(input).endsWith("/auth/signup")
+      ? Response.json({ accepted: true, verificationRequired: true }, { status: 202 })
+      : Response.json({ verified: true });
+  };
+  const auth = new MakoAuthClient(config(), { fetch, now: () => 0 });
+  const accepted = await auth.signUp("new@example.test", "a long password", {
+    redirectUrl: "https://app.example.test/",
+  });
+  assert.equal(accepted.verificationRequired, true);
+  assert.deepEqual(JSON.parse(requests[0].init.body), {
+    email: "new@example.test",
+    password: "a long password",
+    redirectUrl: "https://app.example.test/",
+  });
+  await auth.signUp("plain@example.test", "a long password");
+  assert.deepEqual(Object.keys(JSON.parse(requests[1].init.body)), ["email", "password"]);
+  assert.deepEqual(await auth.verifyEmail("evc-token"), { verified: true });
+  assert.equal(
+    requests[2].url,
+    "https://api.example.test/v1/projects/prj_abcdefgh/environments/env_abcdefgh/auth/verify-email",
+  );
+  assert.deepEqual(JSON.parse(requests[2].init.body), { token: "evc-token" });
+  await assert.rejects(() => auth.verifyEmail(""), MakoAuthError);
+  await assert.rejects(
+    () => auth.signUp("x@example.test", "a long password", { redirectUrl: "not a url" }),
+    MakoAuthError,
+  );
 });
 
 function config() {

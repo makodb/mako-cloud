@@ -60,3 +60,45 @@ test("asks for 12 characters before sending a sign-up", async ({ page }) => {
   ).toBe(true);
   expect(signUps).toBe(0);
 });
+
+test("a verifying environment asks for the mailed link, and the link confirms the address", async ({
+  page,
+}) => {
+  const signUps: Array<Record<string, string>> = [];
+  await page.route("**/auth/signup", async (route) => {
+    signUps.push(JSON.parse(route.request().postData() ?? "{}") as Record<string, string>);
+    await route.fulfill({
+      status: 202,
+      contentType: "application/json",
+      body: JSON.stringify({ accepted: true, verificationRequired: true }),
+    });
+  });
+  const verifications: string[] = [];
+  await page.route("**/auth/verify-email", async (route) => {
+    verifications.push(route.request().postData() ?? "");
+    await route.fulfill({
+      status: verifications.length === 1 ? 200 : 401,
+      contentType: "application/json",
+      body: verifications.length === 1 ? JSON.stringify({ verified: true }) : "{}",
+    });
+  });
+  await page.goto("/");
+  await page.getByRole("textbox", { name: "Email" }).fill("new-person@example.test");
+  await page.getByRole("textbox", { name: "Password" }).fill("password1234");
+  await page.getByRole("button", { name: "Create account" }).click();
+  await expect(page.locator("#sign-in-error")).toHaveText(
+    "Check new-person@example.test for a link to confirm the address, then sign in.",
+  );
+  expect(signUps[0]?.redirectUrl).toBe(new URL("/", page.url()).href);
+
+  // Opened from the mail: a fresh load, not a hash change on the same page.
+  await page.goto("about:blank");
+  await page.goto("/#verification_token=evc-token");
+  await expect(page.locator("#sign-in-error")).toHaveText("Email confirmed. Sign in to continue.");
+  expect(JSON.parse(verifications[0] ?? "{}")).toEqual({ token: "evc-token" });
+  expect(page.url()).not.toContain("verification_token");
+
+  await page.goto("about:blank");
+  await page.goto("/#verification_token=evc-token");
+  await expect(page.locator("#sign-in-error")).toContainText("expired or was already used");
+});

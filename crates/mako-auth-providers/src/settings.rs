@@ -66,6 +66,15 @@ impl Default for MagicLinkSettings {
     }
 }
 
+/// Whether a password sign-up must confirm its address before it can sign in.
+/// When required, sign-up mails a single-use link to a registered redirect
+/// URL and the account stays unverified until the link is redeemed.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct EmailVerificationSettings {
+    pub required: bool,
+}
+
 /// An environment's sign-in settings as installed into the data plane.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
@@ -77,6 +86,8 @@ pub struct AuthProviderSettings {
     pub redirect_urls: Vec<String>,
     #[serde(default)]
     pub magic_links: MagicLinkSettings,
+    #[serde(default)]
+    pub email_verification: EmailVerificationSettings,
     pub version: u64,
 }
 
@@ -135,6 +146,11 @@ impl AuthProviderSettings {
         {
             return Err(SettingsError::Invalid(
                 "magic link lifetime must be between 60 and 3600 seconds",
+            ));
+        }
+        if self.email_verification.required && self.redirect_urls.is_empty() {
+            return Err(SettingsError::Invalid(
+                "email verification needs a redirect url for its links",
             ));
         }
         Ok(())
@@ -311,6 +327,7 @@ pub fn sealed_settings_from_plain(
         providers,
         redirect_urls,
         magic_links,
+        email_verification: EmailVerificationSettings::default(),
         version,
     };
     settings.validate()?;

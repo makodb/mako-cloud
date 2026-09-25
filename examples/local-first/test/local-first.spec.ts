@@ -158,6 +158,9 @@ test("stops and asks for an update when the server's schema moves on, keeping lo
   const errors = await page.evaluate(() => window.makoExample.diagnostics().errors);
   await page.waitForTimeout(1_000);
   expect(await page.evaluate(() => window.makoExample.diagnostics().errors)).toBe(errors);
-  // The write made after the change is still on this device.
-  await expect(titles(page)).toHaveText(["synced before the change", "written after the change"]);
+  // The write made after the change is still on this device. Ids are random,
+  // so the list's order is too.
+  await expect
+    .poll(async () => (await titles(page).allTextContents()).sort())
+    .toEqual(["synced before the change", "written after the change"]);
 });

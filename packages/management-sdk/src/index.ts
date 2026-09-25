@@ -286,6 +286,7 @@ export type AuthProviderKind = components["schemas"]["AuthProviderKind"];
 export type AuthProviderUpdate = components["schemas"]["AuthProviderUpdate"];
 export type AuthSettingsUpdate = components["schemas"]["AuthSettingsUpdate"];
 export type MagicLinkSettings = components["schemas"]["MagicLinkSettings"];
+export type EmailVerificationSettings = components["schemas"]["EmailVerificationSettings"];
 export type StorageBucket = components["schemas"]["StorageBucket"];
 export type StorageBucketAccess = components["schemas"]["StorageBucketAccess"];
 export type StorageBucketRule = components["schemas"]["StorageBucketRule"];

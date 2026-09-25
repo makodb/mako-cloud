@@ -2755,6 +2755,31 @@ paths:
                 $ref: "#/components/schemas/SignUpAccepted"
         default:
           $ref: "#/components/responses/ApiError"
+  /v1/projects/{projectId}/environments/{environmentId}/auth/verify-email:
+    post:
+      tags: [Auth]
+      operationId: verifyEmail
+      summary: Redeem a sign-up's verification link so the account can sign in
+      security:
+        - publicProjectKey: []
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/EnvironmentId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VerifyEmailRequest"
+      responses:
+        "200":
+          description: The address is verified and the account is active
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmailVerified"
+        default:
+          $ref: "#/components/responses/ApiError"
   /v1/projects/{projectId}/environments/{environmentId}/auth/jwks:
     get:
       tags: [Auth]
@@ -8930,10 +8955,21 @@ components:
           format: int64
           minimum: 60
           maximum: 3600
+    EmailVerificationSettings:
+      type: object
+      additionalProperties: false
+      required: [required]
+      properties:
+        required:
+          type: boolean
+          description: >-
+            When true, a password sign-up must name a registered redirect URL,
+            is mailed a single-use link to it, and cannot sign in with its
+            password until the link is redeemed.
     AuthSettings:
       type: object
       additionalProperties: false
-      required: [providers, redirectUrls, magicLinks, version]
+      required: [providers, redirectUrls, magicLinks, emailVerification, version]
       properties:
         providers:
           type: array
@@ -8949,6 +8985,8 @@ components:
             maxLength: 2048
         magicLinks:
           $ref: "#/components/schemas/MagicLinkSettings"
+        emailVerification:
+          $ref: "#/components/schemas/EmailVerificationSettings"
         version:
           type: integer
           format: int64
@@ -9004,6 +9042,9 @@ components:
             absolute `https` URLs (or `http` to loopback), matched exactly.
         magicLinks:
           $ref: "#/components/schemas/MagicLinkSettings"
+        emailVerification:
+          $ref: "#/components/schemas/EmailVerificationSettings"
+          description: Omitted means verification is off.
     ProviderSignInStartRequest:
       type: object
       additionalProperties: false
@@ -9634,12 +9675,43 @@ components:
           type: string
           minLength: 8
           maxLength: 1024
+        redirectUrl:
+          type: string
+          format: uri
+          maxLength: 2048
+          description: >-
+            Required when the environment verifies email addresses: one of its
+            registered redirect URLs. The mailed link opens it with
+            `#verification_token=...`.
     SignUpAccepted:
       type: object
       additionalProperties: false
-      required: [accepted]
+      required: [accepted, verificationRequired]
       properties:
         accepted:
+          type: boolean
+          const: true
+        verificationRequired:
+          type: boolean
+          description: >-
+            Whether a new account must redeem its mailed link before it can
+            sign in. The same answer is given for an address already
+            registered, which is sent nothing.
+    VerifyEmailRequest:
+      type: object
+      additionalProperties: false
+      required: [token]
+      properties:
+        token:
+          type: string
+          minLength: 1
+          maxLength: 256
+    EmailVerified:
+      type: object
+      additionalProperties: false
+      required: [verified]
+      properties:
+        verified:
           type: boolean
           const: true
     PasswordSignInRequest:

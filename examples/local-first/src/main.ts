@@ -1,4 +1,9 @@
-import { type LiveBackendOptions, LiveMakoBackend } from "./live-backend.js";
+import {
+  type LiveBackendOptions,
+  LiveMakoBackend,
+  VerificationPendingError,
+  verifyEmail,
+} from "./live-backend.js";
 import { FakeMakoBackend } from "./mock-backend.js";
 import {
   createReferenceApplication,
@@ -96,6 +101,23 @@ async function startApplication(): Promise<{
   });
   panel.hidden = false;
   status.textContent = "signed out";
+  // Opened from a verification mail: confirm the address, then drop the
+  // token from the address bar so a reload or a shared URL cannot replay it.
+  const token = new URLSearchParams(window.location.hash.slice(1)).get("verification_token");
+  if (token !== null && token !== "") {
+    window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
+    status.textContent = "confirming email";
+    try {
+      failure.textContent = (await verifyEmail(live, token))
+        ? "Email confirmed. Sign in to continue."
+        : "That confirmation link has expired or was already used.";
+    } catch (error) {
+      failure.textContent = `Could not confirm the email: ${
+        error instanceof Error ? error.message : String(error)
+      }`;
+    }
+    status.textContent = "signed out";
+  }
   for (;;) {
     const attempt = await new Promise<SignInAttempt>((resolve) => {
       waiting = resolve;
@@ -113,9 +135,12 @@ async function startApplication(): Promise<{
       panel.hidden = true;
       return { application, email: attempt.email };
     } catch (error) {
-      failure.textContent = `${attempt.createAccount ? "Could not create the account" : "Could not sign in"}: ${
-        error instanceof Error ? error.message : String(error)
-      }`;
+      failure.textContent =
+        error instanceof VerificationPendingError
+          ? error.message
+          : `${attempt.createAccount ? "Could not create the account" : "Could not sign in"}: ${
+              error instanceof Error ? error.message : String(error)
+            }`;
       status.textContent = "signed out";
     }
   }

@@ -189,6 +189,15 @@ export interface MakoAuthSession {
 /** Sign-up is accepted without revealing whether the address was already registered. */
 export interface MakoSignUpAccepted {
   readonly accepted: true;
+  /**
+   * The environment verifies email addresses: a new account cannot sign in
+   * with its password until it redeems the link mailed to it.
+   */
+  readonly verificationRequired: boolean;
+}
+
+export interface MakoEmailVerified {
+  readonly verified: true;
 }
 
 /** Where to send the browser to begin an external provider sign-in. */

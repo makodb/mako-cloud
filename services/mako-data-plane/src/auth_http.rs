@@ -1,4 +1,4 @@
-use std::{num::NonZeroU64, sync::Arc, time::SystemTime};
+use std::{collections::BTreeMap, num::NonZeroU64, sync::Arc, time::SystemTime};
 
 use futures::executor::block_on;
 use mako_api::{ErrorCode, RetryAdvice, TenantScope};
@@ -12,8 +12,8 @@ use mako_gateway::{
 };
 use mako_identity::{
     AppUserStatus, AuthenticationAuditError, AuthenticationAuditEvent, AuthenticationAuditOutcome,
-    AuthenticationAuditSink, EmailSignupConfig, SignInRequestMetadata, SignInResponse,
-    SignInService, SignupService, TransactionalEmailProvider, VerificationEmail,
+    AuthenticationAuditSink, EmailSignupConfig, EmailVerificationOutcome, SignInRequestMetadata,
+    SignInResponse, SignInService, SignupService, TransactionalEmailProvider, VerificationEmail,
     VerifiedProjectCredential,
 };
 use mako_service_runtime::{
@@ -21,7 +21,10 @@ use mako_service_runtime::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::{DataPlaneGraph, DataPlaneRefreshOutcome, DataPlaneSessionGrant};
+use crate::{
+    DataPlaneGraph, DataPlaneRefreshOutcome, DataPlaneSessionGrant, application_mail,
+    auth_provider_http::{self, AuthProviderSettingsStore},
+};
 
 const PUBLIC_KEY_HEADER: &str = "x-mako-key";
 const AUTHORIZATION_HEADER: &str = "authorization";
@@ -37,6 +40,13 @@ pub fn add_auth_routes(
         "/v1/projects/{projectId}/environments/{environmentId}/auth/signup",
         Arc::clone(&graph),
         handle_signup,
+    )?;
+    add_route(
+        router,
+        HttpMethod::Post,
+        "/v1/projects/{projectId}/environments/{environmentId}/auth/verify-email",
+        Arc::clone(&graph),
+        handle_verify_email,
     )?;
     add_route(
         router,
@@ -98,19 +108,42 @@ fn handle_signup(
         charge_auth(graph, &tenant, request, now).await?;
         let body: SignUpWire = parse_json(request)?;
         validate_email_password(request, &body.email, &body.password, 8)?;
+        // Verification is the environment's choice. When it is on, the mailed
+        // link lands on a redirect the environment registered, like a magic
+        // link, and the account cannot sign in with its password until then.
+        let settings = AuthProviderSettingsStore::new(Arc::clone(graph.storage_adapter()))
+            .load(&tenant)
+            .await
+            .map_err(|()| unavailable(request, "sign-in settings are unavailable"))?;
+        let require_verification = settings
+            .as_ref()
+            .is_some_and(|settings| settings.email_verification.required);
+        let redirect_url = if require_verification {
+            match (&body.redirect_url, &settings) {
+                (Some(redirect), Some(settings)) if settings.admits_redirect(redirect) => {
+                    Some(redirect.clone())
+                }
+                _ => {
+                    return Err(invalid(
+                        request,
+                        "this environment verifies email addresses: redirectUrl must be one of its registered redirect urls",
+                    ));
+                }
+            }
+        } else {
+            None
+        };
         let store = graph
             .identity_store(&tenant, &tenant)
             .map_err(|_| unavailable(request, "identity authority is unavailable"))?;
-        let email = DisabledEmailProvider;
+        let email = CapturedVerification::default();
         let service = SignupService::new(
             &store,
             graph.password_service(),
             &email,
             EmailSignupConfig {
                 enabled: true,
-                // Email verification is deliberately disabled until its public
-                // completion route and durable SMTP outbox are composed.
-                require_verification: false,
+                require_verification,
                 verification_ttl_seconds: 24 * 60 * 60,
             },
         )
@@ -124,6 +157,38 @@ fn handle_signup(
                 }
                 _ => unavailable(request, "sign-up is unavailable"),
             })?;
+        // Only a new account captures a link; an address already registered
+        // is accepted the same way and sends nothing.
+        let captured = email.0.lock().map(|mut slot| slot.take()).unwrap_or(None);
+        if let (Some(verification), Some(redirect_url)) = (captured, redirect_url) {
+            let link = format!(
+                "{redirect_url}#verification_token={}",
+                verification.token().expose_for_delivery()
+            );
+            let variables = BTreeMap::from([
+                ("link".to_owned(), link),
+                (
+                    "expires_at".to_owned(),
+                    auth_provider_http::rfc3339(verification.expires_at_unix_seconds()),
+                ),
+                (
+                    "email".to_owned(),
+                    verification.recipient().as_str().to_owned(),
+                ),
+            ]);
+            graph
+                .application_mail()
+                .enqueue(
+                    &tenant,
+                    application_mail::KIND_VERIFICATION,
+                    verification.recipient().as_str(),
+                    variables,
+                    verification.user_id().as_str(),
+                    now,
+                )
+                .await
+                .map_err(|_| unavailable(request, "verification mail could not be queued"))?;
+        }
         // A new user changes the count this tenant is measured on.
         graph.storage_sampler().mark_users(&tenant);
         append_audit(
@@ -140,7 +205,85 @@ fn handle_signup(
             now,
         )
         .await?;
-        json(request, 202, &SignUpAcceptedWire { accepted: true })
+        json(
+            request,
+            202,
+            &SignUpAcceptedWire {
+                accepted: true,
+                verification_required: require_verification,
+            },
+        )
+    })
+}
+
+/// Redeems the link a verification mail carried: the account becomes active
+/// and can sign in. A spent, expired, or unknown token gets one answer.
+fn handle_verify_email(
+    graph: &Arc<DataPlaneGraph>,
+    request: &HttpRequest,
+) -> Result<HttpResponse, HttpApiError> {
+    require_json(request)?;
+    let tenant = tenant_for(graph, request)?;
+    let now = now_unix_seconds(request.request_id())?;
+    block_on(async {
+        verify_public_key(graph, &tenant, request, now).await?;
+        charge_auth(graph, &tenant, request, now).await?;
+        let body: VerifyEmailWire = parse_json(request)?;
+        if body.token.is_empty() || body.token.len() > 256 {
+            return Err(unauthenticated(
+                request,
+                "verification link is invalid or expired",
+            ));
+        }
+        let store = graph
+            .identity_store(&tenant, &tenant)
+            .map_err(|_| unavailable(request, "identity authority is unavailable"))?;
+        let email = CapturedVerification::default();
+        let service = SignupService::new(
+            &store,
+            graph.password_service(),
+            &email,
+            EmailSignupConfig {
+                enabled: true,
+                require_verification: true,
+                verification_ttl_seconds: 24 * 60 * 60,
+            },
+        )
+        .map_err(|_| unavailable(request, "verification is unavailable"))?;
+        let outcome = service
+            .verify_email(&body.token, now)
+            .await
+            .map_err(|_| unavailable(request, "verification is unavailable"))?;
+        let verified = outcome == EmailVerificationOutcome::Verified;
+        append_audit(
+            graph,
+            &tenant,
+            AuditCategory::Authentication,
+            ActorIdentity::Anonymous,
+            "application_auth",
+            "email_verification",
+            "application_email_verified",
+            if verified {
+                AuditOutcome::Allowed
+            } else {
+                AuditOutcome::Denied
+            },
+            if verified {
+                "verified"
+            } else {
+                "invalid_or_expired"
+            },
+            request.request_id(),
+            now,
+        )
+        .await?;
+        if !verified {
+            return Err(unauthenticated(
+                request,
+                "verification link is invalid or expired",
+            ));
+        }
+        json(request, 200, &EmailVerifiedWire { verified: true })
     })
 }
 
@@ -484,10 +627,18 @@ pub(crate) async fn charge_auth(
     }
 }
 
-struct DisabledEmailProvider;
+/// Holds the one verification a sign-up produces so the handler can queue
+/// its mail durably, and fail the request if it cannot, once the account is
+/// stored.
+#[derive(Default)]
+struct CapturedVerification(std::sync::Mutex<Option<VerificationEmail>>);
 
-impl TransactionalEmailProvider for DisabledEmailProvider {
-    fn enqueue_verification(&self, _email: VerificationEmail) {}
+impl TransactionalEmailProvider for CapturedVerification {
+    fn enqueue_verification(&self, email: VerificationEmail) {
+        if let Ok(mut slot) = self.0.lock() {
+            *slot = Some(email);
+        }
+    }
 }
 
 pub(crate) struct DataPlaneAuthenticationAudit {
@@ -893,12 +1044,28 @@ pub(crate) fn internal_from_id(request_id: &str, message: &'static str) -> HttpA
 struct SignUpWire {
     email: String,
     password: String,
+    /// Where the verification link lands, when the environment requires one.
+    #[serde(default)]
+    redirect_url: Option<String>,
 }
 
 #[derive(Serialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct SignUpAcceptedWire {
     accepted: bool,
+    verification_required: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct VerifyEmailWire {
+    token: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct EmailVerifiedWire {
+    verified: bool,
 }
 
 #[derive(Deserialize)]

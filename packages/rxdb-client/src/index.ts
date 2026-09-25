@@ -14,6 +14,7 @@ export {
   type ErrorCode,
   type MakoAuthSession,
   type MakoAuthUser,
+  type MakoEmailVerified,
   type MakoMagicLinkAccepted,
   type MakoProviderSignInStart,
   type MakoSignUpAccepted,

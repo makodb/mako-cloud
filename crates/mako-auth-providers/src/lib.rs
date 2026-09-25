@@ -12,8 +12,8 @@ mod state;
 
 pub use exchange::{ProviderClient, ProviderClientConfig, ProviderExchangeError, ProviderIdentity};
 pub use settings::{
-    AuthProviderSettings, MagicLinkSettings, ProviderConfig, ProviderConfigPlain, ProviderKind,
-    ProviderSecretKey, SealedSecret, SettingsError, sealed_settings_from_plain,
-    valid_provider_name,
+    AuthProviderSettings, EmailVerificationSettings, MagicLinkSettings, ProviderConfig,
+    ProviderConfigPlain, ProviderKind, ProviderSecretKey, SealedSecret, SettingsError,
+    sealed_settings_from_plain, valid_provider_name,
 };
 pub use state::{FlowState, FlowStateError, FlowStateKey, FlowStateVerifier};

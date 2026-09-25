@@ -4,6 +4,7 @@ import {
   type ApiErrorEnvelope,
   type MakoAuthSession,
   type MakoAuthUser,
+  type MakoEmailVerified,
   type MakoMagicLinkAccepted,
   type MakoProviderSignInStart,
   type MakoSignUpAccepted,
@@ -12,6 +13,7 @@ import {
 export type {
   MakoAuthSession,
   MakoAuthUser,
+  MakoEmailVerified,
   MakoMagicLinkAccepted,
   MakoProviderSignInStart,
   MakoSignUpAccepted,
@@ -186,6 +188,18 @@ export class MakoAuthClient {
     return { kind: "none", value: null };
   }
 
+  /**
+   * The token a verification link opened the page with, from its
+   * `#verification_token=` fragment, or `null`. Kept apart from
+   * `signInFragment` because redeeming it confirms an address and issues no
+   * session.
+   */
+  static verificationFragment(fragment: string): string | null {
+    const parameters = new URLSearchParams(fragment.startsWith("#") ? fragment.slice(1) : fragment);
+    const token = parameters.get("verification_token");
+    return token !== null && token.length > 0 ? token : null;
+  }
+
   async restoreSession(): Promise<MakoUserSession | null> {
     this.#session = await this.#persistence.load();
     this.#authenticationRequired = this.#session === null;
@@ -258,11 +272,43 @@ export class MakoAuthClient {
     }
   }
 
-  async signUp(email: string, password: string): Promise<MakoSignUpAccepted> {
+  /**
+   * Register an address. Where the environment verifies email addresses,
+   * `redirectUrl` must be one of its registered redirects: the mailed link
+   * lands there with `#verification_token=…`, for `verifyEmail`.
+   */
+  async signUp(
+    email: string,
+    password: string,
+    options: { readonly redirectUrl?: string } = {},
+  ): Promise<MakoSignUpAccepted> {
+    if (options.redirectUrl !== undefined) {
+      assertRedirectUrl(options.redirectUrl);
+    }
     return this.#request<MakoSignUpAccepted>("signup", {
       method: "POST",
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({
+        email,
+        password,
+        ...(options.redirectUrl === undefined ? {} : { redirectUrl: options.redirectUrl }),
+      }),
     });
+  }
+
+  /**
+   * Redeem the token a verification link carried in its
+   * `#verification_token=` fragment. The account can then sign in; no
+   * session is issued, so the password is still asked for.
+   */
+  async verifyEmail(token: string): Promise<MakoEmailVerified> {
+    if (token.length < 1 || token.length > 256) {
+      throw new MakoAuthError("verification token is invalid");
+    }
+    return this.#request<MakoEmailVerified>(
+      "verify-email",
+      { method: "POST", body: JSON.stringify({ token }) },
+      200,
+    );
   }
 
   async signInWithPassword(email: string, password: string): Promise<MakoUserSession> {

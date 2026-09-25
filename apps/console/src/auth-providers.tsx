@@ -70,6 +70,7 @@ export function AuthProvidersScreen({
     enabled: false,
     linkTtlSeconds: DEFAULT_LINK_TTL_SECONDS,
   });
+  const [verifyEmail, setVerifyEmail] = useState(false);
   const [failure, setFailure] = useState<ConsoleApiFailure | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -83,6 +84,7 @@ export function AuthProvidersScreen({
       enabled: settings.magicLinks.enabled,
       linkTtlSeconds: settings.magicLinks.linkTtlSeconds,
     });
+    setVerifyEmail(settings.emailVerification.required);
     setDirty(false);
   }, []);
   const reload = useCallback(async () => {
@@ -168,6 +170,7 @@ export function AuthProvidersScreen({
           enabled: magicLinks.enabled,
           linkTtlSeconds: magicLinks.linkTtlSeconds,
         },
+        emailVerification: { required: verifyEmail },
       };
       const saved = await client.updateAuthSettings(
         projectId,
@@ -474,6 +477,34 @@ export function AuthProvidersScreen({
           </Field>
           <p className="m-0 text-sm text-muted-foreground">
             The email a magic link goes out in is the environment's magic-link template.
+          </p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle id="email-verification-heading">Email verification</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-4">
+          <div className="flex items-center gap-2">
+            <Checkbox
+              id="email-verification-required"
+              checked={verifyEmail}
+              onCheckedChange={(checked) => {
+                setVerifyEmail(checked === true);
+                setDirty(true);
+                setStatus(null);
+              }}
+            />
+            <Label htmlFor="email-verification-required">
+              Require new accounts to confirm their email before signing in
+            </Label>
+          </div>
+          <p className="m-0 text-sm text-muted-foreground">
+            Sign-up then names one of the redirect URLs above and the link lands there with{" "}
+            <code>#verification_token=…</code>; the app redeems it with{" "}
+            <code>POST …/auth/verify-email</code>. The email is the environment's verification
+            template.
           </p>
         </CardContent>
       </Card>

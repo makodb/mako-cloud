@@ -1343,6 +1343,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/projects/{projectId}/environments/{environmentId}/auth/verify-email": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Redeem a sign-up's verification link so the account can sign in */
+        post: operations["verifyEmail"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/projects/{projectId}/environments/{environmentId}/auth/jwks": {
         parameters: {
             query?: never;
@@ -4705,10 +4722,15 @@ export interface components {
             /** Format: int64 */
             linkTtlSeconds: number;
         };
+        EmailVerificationSettings: {
+            /** @description When true, a password sign-up must name a registered redirect URL, is mailed a single-use link to it, and cannot sign in with its password until the link is redeemed. */
+            required: boolean;
+        };
         AuthSettings: {
             providers: components["schemas"]["AuthProviderView"][];
             redirectUrls: string[];
             magicLinks: components["schemas"]["MagicLinkSettings"];
+            emailVerification: components["schemas"]["EmailVerificationSettings"];
             /** Format: int64 */
             version: number;
         };
@@ -4726,6 +4748,8 @@ export interface components {
             /** @description Where a provider callback or magic link may send the browser: absolute `https` URLs (or `http` to loopback), matched exactly. */
             redirectUrls: string[];
             magicLinks: components["schemas"]["MagicLinkSettings"];
+            /** @description Omitted means verification is off. */
+            emailVerification?: components["schemas"]["EmailVerificationSettings"];
         };
         ProviderSignInStartRequest: {
             /** Format: uri */
@@ -5000,10 +5024,24 @@ export interface components {
             /** Format: email */
             email: string;
             password: string;
+            /**
+             * Format: uri
+             * @description Required when the environment verifies email addresses: one of its registered redirect URLs. The mailed link opens it with `#verification_token=...`.
+             */
+            redirectUrl?: string;
         };
         SignUpAccepted: {
             /** @constant */
             accepted: true;
+            /** @description Whether a new account must redeem its mailed link before it can sign in. The same answer is given for an address already registered, which is sent nothing. */
+            verificationRequired: boolean;
+        };
+        VerifyEmailRequest: {
+            token: string;
+        };
+        EmailVerified: {
+            /** @constant */
+            verified: true;
         };
         PasswordSignInRequest: {
             /** Format: email */
@@ -8878,6 +8916,34 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SignUpAccepted"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    verifyEmail: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                environmentId: components["parameters"]["EnvironmentId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VerifyEmailRequest"];
+            };
+        };
+        responses: {
+            /** @description The address is verified and the account is active */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailVerified"];
                 };
             };
             default: components["responses"]["ApiError"];

@@ -569,6 +569,7 @@ function authSettings() {
     ],
     redirectUrls: ["https://app.example.test/auth/callback"],
     magicLinks: { enabled: true, linkTtlSeconds: 900 },
+    emailVerification: { required: false },
     version: 2,
   };
 }

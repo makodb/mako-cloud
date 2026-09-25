@@ -1037,7 +1037,8 @@ Application users belong to exactly one project environment. Their identities, s
 ### Routes
 
 ```text
-POST /v1/projects/{p}/environments/{e}/auth/signup       { email, password (8–1024 chars) } → 202 { accepted: true }
+POST /v1/projects/{p}/environments/{e}/auth/signup       { email, password (8–1024 chars), redirectUrl? } → 202 { accepted: true, verificationRequired }
+POST /v1/projects/{p}/environments/{e}/auth/verify-email { token } → 200 { verified: true }
 POST /v1/projects/{p}/environments/{e}/auth/signin       { email, password } → AuthSession
 POST /v1/projects/{p}/environments/{e}/auth/token        { refreshToken } → AuthSession (rotated)
 POST /v1/projects/{p}/environments/{e}/auth/signout      (bearer) → 204
@@ -1049,7 +1050,7 @@ All take `X-Mako-Key`. An `AuthSession` is `{ accessToken, refreshToken, expires
 
 ### Session lifecycle
 
-1. **Sign-up** validates the project password policy and follows its email-verification setting. Public responses do not reveal whether an account exists. Passwords are hashed with Argon2id and parameters upgrade automatically on sign-in.
+1. **Sign-up** validates the project password policy and follows the environment's [email-verification setting](#email-verification). Public responses do not reveal whether an account exists. Passwords are hashed with Argon2id and parameters upgrade automatically on sign-in.
 2. **Sign-in** issues a short-lived Ed25519-signed access JWT and an opaque refresh credential. The JWT binds issuer, audience, subject, project, environment, role, session, expiry, and authorization epochs.
 3. **Refresh** rotates the stored credential hash. The credential is single-use; a second spend outside a five-second concurrency grace window is a **replay** and revokes the whole refresh family. A refresh family lives at most thirty days.
 4. **Sign-out**, administrator disable or delete, password recovery, or explicit session revocation publishes an ordered invalidation. Gateways fail closed if revocation freshness cannot be proven.
@@ -1117,13 +1118,15 @@ The environment's settings are one document, replaced whole:
       "clientId": "0oa…", "clientSecret": "…", "scopes": ["groups"], "enabled": false }
   ],
   "redirectUrls": ["https://app.example.com/auth/callback", "http://localhost:5173/auth/callback"],
-  "magicLinks": { "enabled": true, "linkTtlSeconds": 900 }
+  "magicLinks": { "enabled": true, "linkTtlSeconds": 900 },
+  "emailVerification": { "required": true }
 }
 ```
 
 - `providers` (at most 16): each has a `name` (lowercase letters, digits, hyphens; 2–64 characters) that appears in the application's URLs, a `kind` — `oidc` with the issuer whose `/.well-known/openid-configuration` the data plane discovers, or `git_hub` for GitHub's OAuth 2.0 — the `clientId` the provider issued, the `clientSecret`, optional extra `scopes` beyond `openid email profile` (ignored for GitHub), and `enabled`. A disabled provider is kept but refuses every flow.
 - `redirectUrls` (at most 32): where a provider callback or a magic link may send the browser. Absolute `https` URLs, or `http` to `localhost` or a loopback address for local development; no fragment, no credentials. Matched **exactly** — never by prefix — so register every page that finishes a sign-in.
 - `magicLinks`: whether passwordless sign-in by email is on, and how long a link lives (60–3600 seconds).
+- `emailVerification` (optional; left out means off): whether a password sign-up must confirm its address before it can sign in. Turning it on needs at least one redirect URL. See [Email verification](#email-verification).
 
 Register the provider's side with the callback URL `https://<your api origin>/v1/projects/{projectId}/environments/{environmentId}/auth/providers/{name}/callback`.
 
@@ -1160,13 +1163,25 @@ With `magicLinks.enabled`:
 
 A link is bound to the environment and the email it was sent to, expires after `linkTtlSeconds`, and is spent on first use: a second redemption, or one after expiry, is refused with `unauthenticated` and no session is issued.
 
+### Email verification
+
+With `emailVerification.required`:
+
+1. `POST …/auth/signup` (`signUp(email, password, { redirectUrl })`) must name one of the registered `redirectUrls`; without one, or with any other, it is refused with `invalid_request`. It answers `202 { "accepted": true, "verificationRequired": true }`. A new account is created `unverified` and a mail intent is written, rendered with the environment's `verification` template (or the built-in default); the link is the redirect with `#verification_token=…` and lives 24 hours. An address that is already registered gets the same answer and no mail.
+2. Until the link is redeemed, password sign-in for the account is refused like a wrong password. A magic link to the same address also proves it and activates the account.
+3. The application reads the token (`MakoAuthClient.verificationFragment(location.hash)`) and calls `POST …/auth/verify-email` (`verifyEmail(token)`) with `{ "token" }`. It answers `200 { "verified": true }` and the account becomes `active`; no session is issued, so the user then signs in with their password. A spent, expired, or unknown token is refused with `unauthenticated`.
+
+With the setting off, which is the default, sign-up activates the account at once, ignores `redirectUrl`, and answers `verificationRequired: false`.
+
+Accounts created while verification was off stay active when it is turned on. A sign-up whose mail could not be queued answers `unavailable` after the account is stored; a retry is accepted without mail, so ask that user to sign in by magic link.
+
 ### Local development
 
 Outside production the data plane also speaks plain HTTP to loopback providers, so a stub standing in for Google or GitHub can be exercised by the smoke suite; `http://localhost:…` and `http://127.0.0.1:…` redirects are admitted for the same reason. In production only `https` redirects and providers are reachable.
 
 ### Where this is tested
 
-`services/mako-control-plane/src/auth_settings_http.rs` (sealing, keep-secret substitution, version numbering, validation), `services/mako-data-plane/src/auth_provider_http.rs` (installation and the start/callback/exchange and magic-link flows), `crates/mako-smoke/tests/auth_providers.rs` (the whole flow against a loopback provider stub), and `packages/cli/test/auth-settings.test.mjs`.
+`services/mako-control-plane/src/auth_settings_http.rs` (sealing, keep-secret substitution, version numbering, validation), `services/mako-data-plane/src/auth_provider_http.rs` (installation and the start/callback/exchange and magic-link flows), `crates/mako-smoke/tests/auth_providers.rs` (the whole flow against a loopback provider stub, and email verification through a captured SMTP relay), and `packages/cli/test/auth-settings.test.mjs`.
 
 ---
 

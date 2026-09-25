@@ -24,6 +24,44 @@ export interface LiveBackendOptions extends ReferenceBackendConfig {
   readonly schemaVersion: number;
 }
 
+/**
+ * Sign-up was accepted where the environment verifies email addresses: the
+ * account signs in once the link mailed to it has been opened.
+ */
+export class VerificationPendingError extends Error {
+  constructor(readonly email: string) {
+    super(`Check ${email} for a link to confirm the address, then sign in.`);
+    this.name = "VerificationPendingError";
+  }
+}
+
+/** This page, as the place a verification link should land. */
+function pageRedirectUrl(): string | undefined {
+  const location = globalThis.location;
+  if (location === undefined || !/^https?:$/u.test(location.protocol)) return undefined;
+  return `${location.origin}${location.pathname}`;
+}
+
+/**
+ * Redeems the token a verification link opened this page with. Resolves to
+ * whether the address is now confirmed; a spent or expired link is `false`.
+ */
+export async function verifyEmail(config: ReferenceBackendConfig, token: string): Promise<boolean> {
+  const response = await globalThis.fetch(
+    `${config.endpoint.replace(/\/$/u, "")}/v1/projects/${config.projectId}/environments/${
+      config.environmentId
+    }/auth/verify-email`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-mako-key": config.publicProjectKey },
+      body: JSON.stringify({ token }),
+    },
+  );
+  if (response.ok) return true;
+  if (response.status === 401) return false;
+  throw new Error(`verification failed with status ${response.status}`);
+}
+
 interface WireSession {
   accessToken: string;
   refreshToken: string;
@@ -111,8 +149,18 @@ export class LiveMakoBackend implements ReferenceBackend {
     // address is accepted and still signs in afterwards. When the person
     // asked for a new account, a refusal is theirs to see; swallowing it only
     // surfaced the sign-in that followed, as a wrong password.
+    // The page's own address is where a verification link lands; an
+    // environment that does not verify addresses ignores it.
     if (this.#options.createAccount === true) {
-      await auth.signUp(email, password);
+      const redirectUrl = pageRedirectUrl();
+      const accepted = await auth.signUp(
+        email,
+        password,
+        redirectUrl === undefined ? {} : { redirectUrl },
+      );
+      if (accepted.verificationRequired === true) {
+        throw new VerificationPendingError(email);
+      }
     } else if (this.#options.createAccount !== false) {
       await auth.signUp(email, password).catch(() => undefined);
     }

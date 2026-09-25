@@ -147,14 +147,20 @@ test("auth-settings set sends the document whole with an idempotency key and nev
 
   const inline = await cli([
     "auth-settings", "set", "--input",
-    JSON.stringify({ providers: [], redirectUrls: [], magicLinks: { enabled: false, linkTtlSeconds: 600 } }),
+    JSON.stringify({
+      providers: [],
+      redirectUrls: ["https://app.example.test/"],
+      magicLinks: { enabled: false, linkTtlSeconds: 600 },
+      emailVerification: { required: true },
+    }),
     "--json",
   ]);
   assert.equal(inline.code, 0, inline.stderr);
   assert.deepEqual(api.find(SETTINGS, "PUT")[2].body, {
     providers: [],
-    redirectUrls: [],
+    redirectUrls: ["https://app.example.test/"],
     magicLinks: { enabled: false, linkTtlSeconds: 600 },
+    emailVerification: { required: true },
   });
 });
 
@@ -175,6 +181,7 @@ test("auth-settings set refuses a malformed document before sending anything, wi
     [{ ...base, providers: [{ ...base.providers[0], clientSecret: 42 }] }, /--input\.providers\[0\]\.clientSecret must be a non-empty string when given/u],
     [{ ...base, providers: [{ ...base.providers[0], scopes: "openid" }] }, /--input\.providers\[0\]\.scopes must be an array of non-empty strings/u],
     [{ ...base, providers: [base.providers[0], { ...base.providers[1], enabled: "no" }] }, /--input\.providers\[1\]\.enabled must be true or false/u],
+    [{ ...base, emailVerification: { required: "yes" } }, /--input\.emailVerification must be an object \{required: true\|false\}/u],
     [[], /--input must be a JSON object/u],
   ];
   for (const [document, expected] of cases) {

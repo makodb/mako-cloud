@@ -93,6 +93,7 @@ fn public_view(settings: &AuthProviderSettings) -> serde_json::Value {
         })).collect::<Vec<_>>(),
         "redirectUrls": settings.redirect_urls,
         "magicLinks": settings.magic_links,
+        "emailVerification": settings.email_verification,
         "version": settings.version,
     })
 }
@@ -177,6 +178,7 @@ pub(crate) async fn execute_auth_provider_operation(
                     providers: Vec::new(),
                     redirect_urls: Vec::new(),
                     magic_links: mako_auth_providers::MagicLinkSettings::default(),
+                    email_verification: mako_auth_providers::EmailVerificationSettings::default(),
                     version: 0,
                 }),
             }
@@ -254,7 +256,7 @@ struct MagicLinkRedeemWire {
     token: String,
 }
 
-async fn settings_for(
+pub(crate) async fn settings_for(
     graph: &DataPlaneGraph,
     request: &HttpRequest,
     tenant: &TenantScope,
@@ -986,7 +988,7 @@ fn random_id(prefix: &str) -> String {
     )
 }
 
-fn rfc3339(unix_seconds: u64) -> String {
+pub(crate) fn rfc3339(unix_seconds: u64) -> String {
     // A minimal UTC formatter: templates show it, nothing parses it back.
     let days = unix_seconds / 86_400;
     let seconds = unix_seconds % 86_400;
