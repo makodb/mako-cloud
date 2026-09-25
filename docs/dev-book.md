@@ -441,6 +441,10 @@ The compose object store starts with **no S3 identity of its own**, so the platf
 
 For local mail, set the plaintext SMTP mode described under [Application and developer mail](#application-and-developer-mail); Mailpit shows what was sent.
 
+#### Without Docker
+
+On a host without a container engine, `scripts/local/dev-services.sh start` runs two small Python stand-ins in its place, configured from `.env`: an S3 subset on the object-store port that checks each request's signature against the configured keys and creates the two buckets the planes use (`mako-function-bundles-v1`, `mako-application-objects-v1`; outside production nothing else creates them), and an SMTP server on `MAKO_DEVELOPER_SMTP_PORT` that checks the configured credentials and keeps every message under `.local/mail`, readable at http://127.0.0.1:8025. Start them before the planes; `stop` and `status` do what they say. They cover exactly what the services call -- no listing, no multipart upload, no delivery -- and are for development only.
+
 ### Build the console
 
 `apps/console/web-dist` is Vite build output and is not committed. The public-beta infrastructure validators inspect that bundle for its same-origin configuration and hosted authentication, and the release build packages it, so build it before running either:
