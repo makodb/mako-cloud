@@ -43,6 +43,7 @@ import { useDeveloperAuth } from "./auth.js";
 import { BillingPanel } from "./billing.js";
 import { useManagementClient } from "./management.js";
 import { LifecycleBadge } from "./projects.js";
+import { CreateTeamForm } from "./teams.js";
 
 /** Summary requests in flight at once across every project on the page. */
 const MAX_IN_FLIGHT = 4;
@@ -197,6 +198,9 @@ export function HomeDashboard({
           ))}
           {teams !== null && failure === null && joinedTeams.length === 0 ? (
             <p className="m-0 px-3 text-xs text-muted-foreground">No teams yet.</p>
+          ) : null}
+          {teams !== null && failure === null ? (
+            <CreateTeamForm onCreated={(team) => onOpenTeam(team.id)} />
           ) : null}
         </nav>
         <p className="mt-auto hidden border-t px-3 pt-4 text-xs leading-5 text-muted-foreground md:block">

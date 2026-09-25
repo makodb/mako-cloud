@@ -552,3 +552,64 @@ function RenameTeamPanel({
     </Card>
   );
 }
+
+/**
+ * Starts a team from the console: a lead setting up a project for several
+ * people needs one before anyone can be invited, and the API's createTeam had
+ * no place in the console.
+ */
+export function CreateTeamForm({ onCreated }: { readonly onCreated: (team: Team) => void }) {
+  const client = useManagementClient();
+  const [open, setOpen] = useState(false);
+  const [failure, setFailure] = useState<ConsoleApiFailure | null>(null);
+  const [pending, setPending] = useState(false);
+  const nameId = useId();
+  if (!open) {
+    return (
+      <Button
+        variant="ghost"
+        size="sm"
+        className="justify-self-start"
+        onClick={() => setOpen(true)}
+      >
+        New team
+      </Button>
+    );
+  }
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const name = String(new FormData(event.currentTarget).get("name") ?? "").trim();
+    if (name === "") {
+      setFailure({ message: "Enter a team name.", requestId: null });
+      return;
+    }
+    setPending(true);
+    setFailure(null);
+    try {
+      onCreated(await client.createTeam(name));
+    } catch (error) {
+      setFailure(toConsoleApiFailure(error));
+      setPending(false);
+    }
+  };
+  return (
+    <form
+      className="grid gap-2 px-3"
+      aria-label="New team"
+      onSubmit={(event) => void submit(event)}
+    >
+      <ApiFailureNotice failure={failure} />
+      <Field label="Team name" htmlFor={nameId}>
+        <Input id={nameId} name="name" required maxLength={200} autoFocus />
+      </Field>
+      <div className="flex gap-2">
+        <Button type="submit" size="sm" disabled={pending}>
+          {pending ? "Creating…" : "Create team"}
+        </Button>
+        <Button type="button" size="sm" variant="ghost" onClick={() => setOpen(false)}>
+          Cancel
+        </Button>
+      </div>
+    </form>
+  );
+}
