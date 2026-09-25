@@ -446,6 +446,57 @@ mod tests {
     }
 
     #[test]
+    fn concurrent_rocksdb_leases_and_finalization_remain_available() {
+        let directory = TempDir::new().expect("temporary directory");
+        let adapter = Arc::new(
+            RocksDbAdapter::open(RocksDbConfig::new(directory.path().join("sequencer")))
+                .expect("open"),
+        );
+        let engine = DocumentEngine::new(adapter);
+        let tenant = tenant();
+        let sequencer = engine
+            .scope_sequencer(&tenant, &tenant, Durability::Sync)
+            .expect("scope");
+        let barrier = Arc::new(std::sync::Barrier::new(8));
+        let workers: Vec<_> = (0..8)
+            .map(|_| {
+                let sequencer = sequencer.clone();
+                let barrier = Arc::clone(&barrier);
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    block_on(async {
+                        let mut positions = Vec::new();
+                        for _ in 0..32 {
+                            let mut lease =
+                                sequencer.lease(NonZeroU64::new(1).expect("one")).await?;
+                            let position = lease.issue().expect("position");
+                            sequencer.mark_committed(position).await?;
+                            sequencer.recover_high_water().await?;
+                            positions.push(position);
+                        }
+                        Ok::<_, SequencerError>(positions)
+                    })
+                })
+            })
+            .collect();
+        let mut positions: Vec<_> = workers
+            .into_iter()
+            .flat_map(|worker| {
+                worker
+                    .join()
+                    .expect("thread")
+                    .expect("sequencer remains available")
+            })
+            .collect();
+        positions.sort_unstable();
+        assert_eq!(positions, (1..=256).collect::<Vec<_>>());
+        assert_eq!(
+            block_on(sequencer.recover_high_water()).expect("final high water"),
+            256
+        );
+    }
+
+    #[test]
     fn concurrent_leases_are_disjoint_and_terminal_status_is_idempotent() {
         block_on(async {
             let adapter = Arc::new(MemoryAdapter::new());

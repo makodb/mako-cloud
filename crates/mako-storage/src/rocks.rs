@@ -308,44 +308,59 @@ impl KvAdapter for RocksDbAdapter {
         self.validate_batch(&request.batch)?;
         let write_options = write_options(self.effective_durability(request.durability));
         let transaction_options = self.transaction_options()?;
-        let transaction = self
-            .db
-            .transaction_opt(&write_options, &transaction_options);
+        for attempt in 0..=16 {
+            let transaction = self
+                .db
+                .transaction_opt(&write_options, &transaction_options);
 
-        for (index, condition) in request.conditions.iter().enumerate() {
-            let actual = transaction
-                .get_for_update(condition.key(), true)
-                .map_err(|error| self.map_error("condition_read", error))?;
-            let matches = match condition {
-                KeyCondition::Missing { .. } => actual.is_none(),
-                KeyCondition::Present { .. } => actual.is_some(),
-                KeyCondition::ValueEquals { value, .. } => actual.as_ref() == Some(value),
-            };
-            if !matches {
-                transaction
-                    .rollback()
-                    .map_err(|error| self.map_error("transaction_rollback", error))?;
-                return Ok(CompareAndWriteResult::Conflict {
-                    failed_condition: index,
-                    actual_value: actual,
-                });
+            for (index, condition) in request.conditions.iter().enumerate() {
+                let actual = transaction
+                    .get_for_update(condition.key(), true)
+                    .map_err(|error| self.map_error("condition_read", error))?;
+                let matches = match condition {
+                    KeyCondition::Missing { .. } => actual.is_none(),
+                    KeyCondition::Present { .. } => actual.is_some(),
+                    KeyCondition::ValueEquals { value, .. } => actual.as_ref() == Some(value),
+                };
+                if !matches {
+                    transaction
+                        .rollback()
+                        .map_err(|error| self.map_error("transaction_rollback", error))?;
+                    return Ok(CompareAndWriteResult::Conflict {
+                        failed_condition: index,
+                        actual_value: actual,
+                    });
+                }
+            }
+
+            for operation in request.batch.operations() {
+                match operation {
+                    WriteOperation::Put { key, value } => transaction
+                        .put(key, value)
+                        .map_err(|error| self.map_error("transaction_put", error))?,
+                    WriteOperation::Delete { key } => transaction
+                        .delete(key)
+                        .map_err(|error| self.map_error("transaction_delete", error))?,
+                }
+            }
+            match transaction.commit() {
+                Ok(()) => return Ok(CompareAndWriteResult::Applied),
+                // Optimistic commit conflicts mean nothing was written. Start a
+                // fresh transaction and re-evaluate every condition: a competing
+                // writer normally makes this a logical CAS conflict. Do not retry
+                // ambiguous I/O or other failures, nor reuse the stale transaction.
+                Err(error)
+                    if matches!(
+                        error.kind(),
+                        RocksErrorKind::Busy | RocksErrorKind::TryAgain
+                    ) && attempt < 16 =>
+                {
+                    thread::yield_now();
+                }
+                Err(error) => return Err(self.map_error("transaction_commit", error)),
             }
         }
-
-        for operation in request.batch.operations() {
-            match operation {
-                WriteOperation::Put { key, value } => transaction
-                    .put(key, value)
-                    .map_err(|error| self.map_error("transaction_put", error))?,
-                WriteOperation::Delete { key } => transaction
-                    .delete(key)
-                    .map_err(|error| self.map_error("transaction_delete", error))?,
-            }
-        }
-        transaction
-            .commit()
-            .map_err(|error| self.map_error("transaction_commit", error))?;
-        Ok(CompareAndWriteResult::Applied)
+        unreachable!("the final attempt returns its commit result")
     }
 
     async fn begin_transaction(
@@ -739,6 +754,59 @@ mod tests {
         let mut batch = WriteBatch::new();
         batch.put(key, value);
         batch
+    }
+
+    #[test]
+    fn concurrent_conditional_writes_return_one_winner_and_logical_conflicts() {
+        let directory = TempDir::new().expect("temporary directory");
+        let adapter = open(&directory.path().join("rocksdb"));
+        let barrier = Arc::new(std::sync::Barrier::new(16));
+        let workers: Vec<_> = (0..16)
+            .map(|worker| {
+                let adapter = adapter.clone();
+                let barrier = Arc::clone(&barrier);
+                thread::spawn(move || {
+                    let mut batch = WriteBatch::new();
+                    let conditions = (0..128)
+                        .map(|index| {
+                            let key = format!("contended-{index:03}").into_bytes();
+                            batch.put(&key, worker.to_string().as_bytes());
+                            KeyCondition::Missing { key }
+                        })
+                        .collect();
+                    barrier.wait();
+                    block_on(adapter.compare_and_write(AtomicWrite {
+                        conditions,
+                        batch,
+                        durability: Durability::Sync,
+                    }))
+                })
+            })
+            .collect();
+        let outcomes: Vec<_> = workers
+            .into_iter()
+            .map(|worker| worker.join().expect("worker"))
+            .collect();
+        assert!(
+            outcomes.iter().all(Result::is_ok),
+            "contention must yield logical conflicts: {outcomes:?}"
+        );
+        assert_eq!(
+            outcomes
+                .iter()
+                .filter(|result| matches!(result, Ok(CompareAndWriteResult::Applied)))
+                .count(),
+            1
+        );
+        let winner = block_on(adapter.get(b"contended-000"))
+            .expect("read")
+            .expect("winner");
+        for index in 0..128 {
+            assert_eq!(
+                block_on(adapter.get(format!("contended-{index:03}").as_bytes())).expect("read"),
+                Some(winner.clone())
+            );
+        }
     }
 
     #[test]
