@@ -1,12 +1,15 @@
 import { expect, test, type Route } from "@playwright/test";
 
 const encode = (value: unknown) => Buffer.from(JSON.stringify(value), "utf8").toString("base64url");
+// The console accepts a session only from its own issuer, which is its origin;
+// playwright.config.ts lets a suite run on another port, so follow it.
+const ISSUER = `http://127.0.0.1:${process.env.CONSOLE_TEST_PORT ?? "4174"}/control-identity`;
 
 function developerToken(audience: "mako-management" | "mako-developer-waitlist") {
   const issuedAt = Math.floor(Date.now() / 1_000);
   const status = audience === "mako-management" ? "active" : "waitlisted";
   return `${encode({ alg: "EdDSA", typ: "JWT", kid: "devkid_0123456789abcdef" })}.${encode({
-    iss: "http://127.0.0.1:4174/control-identity",
+    iss: ISSUER,
     sub: "dev_applicant01",
     aud: [audience],
     email: "applicant@example.test",
