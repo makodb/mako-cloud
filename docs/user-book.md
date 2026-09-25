@@ -507,6 +507,7 @@ Generated from the command registry; every command also answers `--help` with it
 | `mako-cloud envs delete <env-id>` | Start an environment's deletion grace period *(confirmed)* |
 | `mako-cloud envs get <env-id>` | Show an environment |
 | `mako-cloud envs list` | List a project's environments |
+| `mako-cloud envs promote --from <env-id> --to <env-id>` | Copy collections, indexes, policies, and buckets from one environment to another; plans unless `--apply` |
 | `mako-cloud envs restore <env-id>` | Restore a suspended environment or one in its deletion grace period |
 | `mako-cloud envs suspend <env-id>` | Suspend an environment; it stops serving *(confirmed)* |
 
@@ -762,6 +763,18 @@ mako-cloud envs delete env_… -p prj_… --yes
 ```
 
 Each environment has its own collections, policies, users, credentials, signing keys, functions, buckets, webhooks, schedules, sign-in settings, email templates, and allowed origins. Nothing is shared between environments of one project except the project's custom domains, each of which serves exactly one environment.
+
+### Promoting an environment
+
+What you build in Development -- collection schemas, their indexes, each collection's active policy, and storage bucket settings -- is brought to another environment with `envs promote`. It prints a plan and changes nothing until you add `--apply`:
+
+```bash
+mako-cloud envs promote -p prj_… --from env_dev… --to env_prod…                     # the plan
+mako-cloud envs promote -p prj_… --from env_dev… --to env_prod… --collection todos  # only what you name
+mako-cloud envs promote -p prj_… --from env_dev… --to env_prod… --apply             # make the changes
+```
+
+A missing collection is created at the source's schema version; an older one gets the source's schema published over it, which succeeds only when it is compatible -- otherwise the step fails with the issues and the target needs a [migration](#publishing-a-new-schema-version). A policy is activated in the target as a new version above both sides. A target that is ahead of the source is left alone and reported. Data, secrets, keys, webhooks, sign-in settings, allowed origins, and domains are never copied: they belong to each environment. Function code cannot be read back from an environment, so a function that differs is reported with the `functions deploy` command that brings it over. Running the plan again after `--apply` shows what is still different; nothing, once the target matches.
 
 ### Audit
 
