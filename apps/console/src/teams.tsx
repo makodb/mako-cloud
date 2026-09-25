@@ -311,7 +311,15 @@ function MembersPanel({
   readonly onChanged: () => Promise<void>;
 }) {
   const client = useManagementClient();
+  const { state } = useDeveloperAuth();
+  // Members are listed by identity id alone, so the signed-in developer's own
+  // row is marked: without it a lead could not tell they were changing their
+  // own role.
+  const selfId = state.status === "authenticated" ? state.session.profile.id : null;
   const [failure, setFailure] = useState<ConsoleApiFailure | null>(null);
+  // Managers change members; only an owner may change or remove an owner.
+  const editable = (member: TeamMembership) =>
+    canManage && (currentRole === "owner" || member.role !== "owner");
   const updateRole = async (developerIdentityId: string, role: TeamRole) => {
     const previousRole = members?.find(
       (member) => member.developerIdentityId === developerIdentityId,
@@ -376,14 +384,17 @@ function MembersPanel({
                 <TableRow key={member.developerIdentityId}>
                   <TableCell>
                     <code className="font-mono text-xs">{member.developerIdentityId}</code>
+                    {member.developerIdentityId === selfId ? (
+                      <span className="ml-2 text-xs text-muted-foreground">(you)</span>
+                    ) : null}
                   </TableCell>
                   <TableCell>
                     <NativeSelect
-                      aria-label={`Role for ${member.developerIdentityId}`}
+                      aria-label={`Role for ${member.developerIdentityId}${member.developerIdentityId === selfId ? " (you)" : ""}`}
                       size="sm"
                       wrapperClassName="w-auto min-w-36"
                       value={member.role}
-                      disabled={!canManage}
+                      disabled={!editable(member)}
                       onChange={(event) =>
                         void updateRole(
                           member.developerIdentityId,
@@ -391,13 +402,16 @@ function MembersPanel({
                         )
                       }
                     >
-                      {ROLES.filter((role) => currentRole === "owner" || role !== "owner").map(
-                        (role) => (
-                          <option key={role} value={role}>
-                            {role}
-                          </option>
-                        ),
-                      )}
+                      {/* The member's own role is always listed: an owner seen by a
+                          non-owner otherwise showed as the first option offered. */}
+                      {ROLES.filter(
+                        (role) =>
+                          currentRole === "owner" || role !== "owner" || role === member.role,
+                      ).map((role) => (
+                        <option key={role} value={role}>
+                          {role}
+                        </option>
+                      ))}
                     </NativeSelect>
                   </TableCell>
                   <TableCell>
@@ -405,7 +419,8 @@ function MembersPanel({
                       variant="ghost"
                       size="sm"
                       className="text-destructive hover:text-destructive"
-                      disabled={!canManage}
+                      disabled={!editable(member)}
+                      aria-label={`Remove ${member.developerIdentityId}`}
                       onClick={() => void remove(member.developerIdentityId)}
                     >
                       Remove

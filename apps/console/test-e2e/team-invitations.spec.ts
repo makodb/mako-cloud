@@ -59,6 +59,8 @@ test("a lead creates a team from Home and hands out an invitation link", async (
   await expect(page).toHaveURL(new RegExp(`/teams/${TEAM_ID}$`, "u"));
   await expect(page.getByRole("heading", { name: "Website team" })).toBeVisible();
   expect(api.created).toEqual([{ name: "Website team" }]);
+  // The lead's own row says so; members are otherwise listed by identity id.
+  await expect(page.getByLabel("Role for dev_abcdefgh (you)")).toHaveValue("owner");
 
   await page.getByLabel("Email", { exact: true }).fill("teammate@example.test");
   await page.getByLabel("Role", { exact: true }).selectOption("developer");
@@ -85,6 +87,32 @@ test("the invitation link fills in its token, leaves no token in the address bar
   await page.getByRole("button", { name: "Accept invitation" }).click();
   await expect(page).toHaveURL(new RegExp(`/teams/${TEAM_ID}$`, "u"));
   expect(api.accepted).toEqual([{ token: TOKEN }]);
+  expect(api.unhandled).toEqual([]);
+});
+
+test("a teammate sees the owner as owner, and an administrator cannot edit the owner's row", async ({
+  page,
+}) => {
+  const api = new TeamApi();
+  api.teams = [...api.teams, team(TEAM_ID, "Website team", "team")];
+  // The signed-in developer (dev_abcdefgh) is a developer; the owner is someone else.
+  api.members = [membership("dev_owner0001", "owner"), membership("dev_abcdefgh", "developer")];
+  await api.install(page);
+  await page.goto(`/teams/${TEAM_ID}`);
+  await expect(page.getByLabel("Role for dev_owner0001")).toHaveValue("owner");
+  await expect(page.getByLabel("Role for dev_owner0001")).toBeDisabled();
+
+  api.members = [
+    membership("dev_owner0001", "owner"),
+    membership("dev_abcdefgh", "administrator"),
+    membership("dev_member001", "viewer"),
+  ];
+  await page.reload();
+  await expect(page.getByLabel("Role for dev_owner0001")).toHaveValue("owner");
+  await expect(page.getByLabel("Role for dev_owner0001")).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Remove dev_owner0001" })).toBeDisabled();
+  await expect(page.getByLabel("Role for dev_member001")).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Remove dev_member001" })).toBeEnabled();
   expect(api.unhandled).toEqual([]);
 });
 
