@@ -128,6 +128,43 @@ test("a removed member opening the team is told plainly, not left on Loading", a
   expect(api.unhandled).toEqual([]);
 });
 
+test("the team's activity lists its changes in words, newest first, and reads only on request", async ({
+  page,
+}) => {
+  const api = new TeamApi();
+  api.teams = [...api.teams, team(TEAM_ID, "Website team", "team")];
+  api.members = [membership("dev_abcdefgh", "owner")];
+  api.activity = [
+    audit("2026-08-06T12:03:00.000Z", "dev_abcdefgh", "membership_delete", "dev_member001"),
+    audit(
+      "2026-08-06T12:02:00.000Z",
+      "dev_abcdefgh",
+      "automation_token_revoke",
+      `${TEAM_ID}/automation-tokens/atm_ci0000001`,
+    ),
+    audit("2026-08-06T12:01:00.000Z", "dev_member001", "invitation_accept", "inv_abcdefgh1234"),
+  ];
+  await api.install(page);
+  await page.goto(`/teams/${TEAM_ID}`);
+  const activity = page.getByRole("table", { name: "Team activity" });
+  await expect(activity.getByRole("row")).toHaveCount(4);
+  await expect(activity.getByRole("row").nth(1)).toContainText("removed dev_member001");
+  await expect(activity.getByRole("row").nth(1)).toContainText("(you)");
+  await expect(activity.getByRole("row").nth(2)).toContainText(
+    "revoked automation token atm_ci0000001",
+  );
+  await expect(activity.getByRole("row").nth(3)).toContainText(
+    "accepted an invitation inv_abcdefgh1234",
+  );
+  expect(api.activityQueries[0]?.get("changes")).toBe("true");
+  expect(api.activityQueries[0]?.get("order")).toBe("newest");
+
+  await page.getByLabel("Include reads").check();
+  // Asked again, now without leaving reads out.
+  await expect.poll(() => api.activityQueries.at(-1)?.has("changes")).toBe(false);
+  expect(api.unhandled).toEqual([]);
+});
+
 class TeamApi {
   readonly unhandled: string[] = [];
   readonly created: unknown[] = [];
@@ -136,6 +173,8 @@ class TeamApi {
   teams: Record<string, unknown>[] = [team(PERSONAL_TEAM_ID, "Lead", "personal")];
   members = [membership("dev_abcdefgh", "owner")];
   removed = false;
+  activity: Record<string, unknown>[] = [];
+  readonly activityQueries: URLSearchParams[] = [];
 
   async install(page: Page) {
     await page.route("**/v1/**", (route) => void this.handle(route));
@@ -187,6 +226,13 @@ class TeamApi {
         route,
         this.teams.find((item) => item.id === TEAM_ID) ?? team(TEAM_ID, "Website team", "team"),
       );
+    } else if (path === `/v1/teams/${TEAM_ID}/activity` && method === "GET") {
+      this.activityQueries.push(url.searchParams);
+      await json(route, {
+        items: this.activity,
+        nextCursor: null,
+        retention: { retainedFrom: NOW, observedAt: NOW, retentionSeconds: 7_776_000 },
+      });
     } else if (path === `/v1/teams/${TEAM_ID}/members` && method === "GET") {
       await json(route, { items: this.members });
     } else if (path === `/v1/teams/${TEAM_ID}/invitations` && method === "POST") {
@@ -236,6 +282,22 @@ class TeamApi {
 
 function team(id: string, name: string, kind: "team" | "personal") {
   return { id, name, kind, state: "active", createdAt: NOW, updatedAt: NOW };
+}
+
+function audit(timestamp: string, actorId: string, action: string, target: string) {
+  return {
+    timestamp,
+    payload: {
+      kind: "audit",
+      teamId: TEAM_ID,
+      actorId,
+      action,
+      target: "control_resource/res_e2e",
+      outcome: "allowed",
+      requestId: `req_${action}`,
+      details: `target=${target}`,
+    },
+  };
 }
 
 function membership(developerIdentityId: string, role: string) {

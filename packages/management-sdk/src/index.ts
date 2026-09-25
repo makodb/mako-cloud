@@ -34,6 +34,7 @@ export const MANAGEMENT_OPERATIONS = [
   "createTeamInvitation",
   "acceptTeamInvitation",
   "listTeamMembers",
+  "listTeamActivity",
   "updateTeamMember",
   "removeTeamMember",
   "listAutomationTokens",
@@ -414,6 +415,11 @@ export interface ObservabilityQuery {
   readonly limit?: number;
   /** `newest` reads a feed: the latest records first, older ones on each next page. */
   readonly order?: "newest" | "oldest";
+}
+
+export interface TeamActivityQuery extends ObservabilityQuery {
+  /** Leave out events that only read something. */
+  readonly changes?: boolean;
 }
 
 export type ManagementCredential =
@@ -2437,6 +2443,21 @@ export class MakoManagementClient {
         "/v1/projects/{projectId}/environments/{environmentId}/observability/index-states",
         { params: { path: { projectId, environmentId }, query } },
       ),
+    );
+  }
+
+  /**
+   * A team's own audit trail: its invitations, membership and role changes,
+   * automation tokens, and project-level actions.
+   */
+  async listTeamActivity(
+    teamId: string,
+    query: TeamActivityQuery = {},
+  ): Promise<ObservabilityPage> {
+    return unwrap(
+      await this.#client.GET("/v1/teams/{teamId}/activity", {
+        params: { path: { teamId }, query },
+      }),
     );
   }
 

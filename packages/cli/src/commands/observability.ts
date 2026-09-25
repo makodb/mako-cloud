@@ -467,7 +467,45 @@ function usageCommand(path: readonly string[]): Command {
   });
 }
 
+/**
+ * `teams activity`: a team's own audit trail, which no environment's audit
+ * holds -- invitations, member and role changes, automation tokens, and
+ * project-level actions -- newest first.
+ */
+const teamActivityCommand: Command = {
+  path: ["teams", "activity"],
+  summary:
+    "A team's own audit trail: invitations, member and role changes, automation tokens (newest first)",
+  operations: ["listTeamActivity"],
+  positionals: [{ name: "team-id", description: "Team id", required: true }],
+  options: {
+    ...QUERY_OPTIONS,
+    changes: { type: "boolean", description: "Leave out events that only read something" },
+  },
+  run: async (context, args) => {
+    const teamId = args.requirePositional(0, "team-id");
+    const window = windowFrom(args);
+    const start = args.string("cursor");
+    const changes = args.boolean("changes");
+    const client = await context.management();
+    let retention: Retention | undefined;
+    const page = await context.collect(async (cursor) => {
+      const next = cursor ?? start;
+      const result = await client.listTeamActivity(teamId, {
+        ...window,
+        order: "newest",
+        ...(next !== undefined ? { cursor: next } : {}),
+        ...(changes ? { changes: true } : {}),
+      });
+      if (retention === undefined) retention = result.retention;
+      return result;
+    });
+    emit(context, page, retention, auditView, undefined);
+  },
+};
+
 export const observabilityCommands: readonly Command[] = [
+  teamActivityCommand,
   logsCommand(["logs"]),
   auditCommand(["activity"], "Audited actions in this environment, newest first"),
   usageCommand(["usage"]),

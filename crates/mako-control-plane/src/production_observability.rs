@@ -12,8 +12,8 @@ use async_trait::async_trait;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use mako_api::TenantScope;
 use mako_audit::{
-    ActorIdentity, AuditFilter, AuditOutcome, AuditRecord, AuditStore, AuditStoreError,
-    SignalScope, TelemetryRedactor,
+    ActorIdentity, AttributeValue, AuditFilter, AuditOutcome, AuditRecord, AuditStore,
+    AuditStoreError, SafeAttributes, SignalScope, TelemetryRedactor,
 };
 use mako_storage::{HealthStatus as StorageHealthStatus, KvAdapter};
 use rand_core::{OsRng, RngCore};
@@ -363,6 +363,23 @@ fn decode_audit_cursor(value: &str) -> Option<AuditCursor> {
     (cursor.version == 1 && cursor.from_unix_milliseconds > 0).then_some(cursor)
 }
 
+/// An event's details as `name=value` pairs. They were answered as JSON, which
+/// the page's redaction took for a structured payload and masked whole, so no
+/// audit event's details were ever readable; plain pairs are still scanned for
+/// secrets and email addresses like any other text.
+fn details_text(details: &SafeAttributes) -> String {
+    details
+        .iter()
+        .map(|(name, value)| match value {
+            AttributeValue::Text(text) => format!("{name}={text}"),
+            AttributeValue::Integer(number) => format!("{name}={number}"),
+            AttributeValue::Unsigned(number) => format!("{name}={number}"),
+            AttributeValue::Boolean(flag) => format!("{name}={flag}"),
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 fn audit_record(
     tenant: &TenantScope,
     record: AuditRecord,
@@ -378,10 +395,7 @@ fn audit_record(
         return Err(ObservabilityBackendError::Unavailable);
     }
     let actor_id = actor_id(record.event.context.actor());
-    let details = (!record.event.details.is_empty())
-        .then(|| serde_json::to_string(&record.event.details))
-        .transpose()
-        .map_err(|_| ObservabilityBackendError::Unavailable)?;
+    let details = (!record.event.details.is_empty()).then(|| details_text(&record.event.details));
     Ok(ObservabilityRecord {
         tenant: tenant.clone(),
         timestamp_unix_milliseconds: record.event.occurred_at_unix_milliseconds,
@@ -765,6 +779,28 @@ mod tests {
     use tempfile::tempdir;
 
     use super::*;
+
+    #[test]
+    fn audit_details_are_answered_as_pairs_that_survive_redaction() {
+        let details = SafeAttributes::try_from_iter([(
+            "target".to_owned(),
+            AttributeValue::Text("dev_jordanteam".to_owned()),
+        )])
+        .expect("details");
+        let redactor =
+            TelemetryRedactor::new(["an internal secret at least thirty-two bytes long"])
+                .expect("redactor");
+        let mut text = details_text(&details);
+        assert_eq!(text, "target=dev_jordanteam");
+        redact(&mut text, &redactor);
+        assert_eq!(text, "target=dev_jordanteam", "plain pairs stay readable");
+        let mut json = serde_json::to_string(&details).expect("json");
+        redact(&mut json, &redactor);
+        assert!(
+            !json.contains("dev_jordanteam"),
+            "the JSON the page used to answer was masked whole"
+        );
+    }
 
     const AUTHORIZATION: &str = "telemetry-authorization-that-is-long-enough";
     const SENSITIVE_VALUE: &str = "never-return-this-secret";

@@ -1115,6 +1115,11 @@ impl ControlPlaneGraph {
         &self.components.automation_tokens
     }
 
+    /// The control-plane audit sink, for handlers whose service records none.
+    pub(crate) fn control_audit(&self) -> &dyn ControlAuditSink {
+        self.components.audit.as_ref()
+    }
+
     #[must_use]
     pub fn collection_service(&self) -> &CollectionAdminService {
         &self.components.collections

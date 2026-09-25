@@ -318,6 +318,12 @@ class ManagementApiHarness {
       await json(route, this.personalSpace);
     } else if (path === `/v1/teams/${PERSONAL_TEAM_ID}/bill` && method === "GET") {
       await json(route, billFixture(PERSONAL_TEAM_ID));
+    } else if (path.endsWith("/activity") && path.startsWith("/v1/teams/") && method === "GET") {
+      await json(route, {
+        items: [],
+        nextCursor: null,
+        retention: { retainedFrom: NOW, observedAt: NOW, retentionSeconds: 7_776_000 },
+      });
     } else if (path === `/v1/teams/${TEAM_ID}/members` && method === "GET") {
       await json(route, { items: this.members });
     } else if (path === `/v1/teams/${TEAM_ID}/members/dev_member01` && method === "PATCH") {

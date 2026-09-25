@@ -203,6 +203,35 @@ test("activity renders audited actions newest first, one line each", async (t) =
   assert.equal(api.find(`${OBSERVABILITY}/audit-events`).length, 2);
 });
 
+test("teams activity reads the team's own audit trail, newest first, with --changes on the wire", async (t) => {
+  const events = [
+    audit("2026-08-06T11:00:00.000Z", "invitation_create", "allowed", "target=inv_abcdefgh"),
+    audit("2026-08-06T11:30:00.000Z", "membership_delete", "allowed", "target=dev_member01"),
+  ];
+  const seen = [];
+  const api = await startMockApi(
+    authHandler({
+      fallback: (request) => {
+        if (request.method === "GET" && request.path === "/v1/teams/org_abcdefgh/activity") {
+          seen.push(request.query);
+          return { status: 200, json: page(events) };
+        }
+        return undefined;
+      },
+    }),
+  );
+  t.after(() => api.close());
+  const directory = await signedIn(t, api);
+  const result = await runCli(["teams", "activity", "org_abcdefgh", "--changes"], { configDir: directory });
+  assert.equal(result.code, 0, result.stderr);
+  assert.deepEqual(result.stdout.trimEnd().split("\n"), [
+    `2026-08-06T11:30:00.000Z  dev_owner  membership_delete  project:${PROJECT_ID}  allowed  target=dev_member01 (request req_audit)`,
+    `2026-08-06T11:00:00.000Z  dev_owner  invitation_create  project:${PROJECT_ID}  allowed  target=inv_abcdefgh (request req_audit)`,
+  ]);
+  assert.equal(seen[0].changes, "true");
+  assert.equal(seen[0].order, "newest");
+});
+
 test("each observability kind reaches its endpoint and renders the console's columns", async (t) => {
   const cases = [
     [

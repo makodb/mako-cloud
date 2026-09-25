@@ -6,14 +6,15 @@ use std::sync::{
 use futures::executor::block_on;
 use mako_api::{EnvironmentId, ProjectId, TenantScope};
 use mako_audit::{
-    ActorIdentity, AuditCategory, AuditEvent, AuditOutcome, AuditStore, CorrelationId, RequestId,
-    ResourceReference, SafeAttributes, SignalContext, SignalScope, TelemetryRedactor,
+    ActorIdentity, AttributeValue, AuditCategory, AuditEvent, AuditOutcome, AuditStore,
+    CorrelationId, RequestId, ResourceReference, SafeAttributes, SignalContext, SignalScope,
+    TelemetryRedactor,
 };
 use mako_control_plane::{
     ActivityRecord, ControlAuditEvent, ControlAuditOutcome, ControlAuditSink, ControlKeyspace,
     OperatorAuditEvent, OperatorAuditOutcome, OperatorAuditSink, OperatorAuthenticationAuditAction,
     OperatorAuthenticationAuditEvent, OperatorAuthenticationAuditOutcome,
-    OperatorAuthenticationAuditSink,
+    OperatorAuthenticationAuditSink, team_audit_tenant,
 };
 use mako_storage::{
     AtomicWrite, CompareAndWriteResult, Durability, KeyCondition, KvAdapter, WriteBatch,
@@ -137,12 +138,12 @@ impl ControlAuditSink for PersistentControlAudit {
             &event.at_unix_seconds.to_string(),
         ]);
         let Some(tenant) = tenant_from_control_target(&event.target)
-            .or_else(|| synthetic_tenant(event.organization_id.as_str(), "controlaudit"))
+            .or_else(|| team_audit_tenant(&event.organization_id))
         else {
             self.healthy.store(false, Ordering::Release);
             return;
         };
-        let Some(audit) = build_event(
+        let Some(mut audit) = build_event(
             &tenant,
             event.organization_id.as_str(),
             ActorIdentity::Developer {
@@ -160,6 +161,10 @@ impl ControlAuditSink for PersistentControlAudit {
             self.healthy.store(false, Ordering::Release);
             return;
         };
+        // The stored resource is a digest; the target itself (the member,
+        // invitation, or token acted on) is kept alongside when it is a plain
+        // identifier, so the team's activity can say what was changed.
+        audit.details = target_details(&event.target);
         let source_event_id = audit.event_id.clone();
         if self.append(&tenant, AuditCategory::Control, audit) {
             self.project_activity(
@@ -354,6 +359,20 @@ fn project_audit_tenant(project: ProjectId, environment: &str) -> Option<TenantS
     ))
 }
 
+/// `{"target": ...}` for an identifier-shaped target; nothing for anything
+/// else, an email address above all, which a refused invitation records.
+fn target_details(target: &str) -> SafeAttributes {
+    let plain = (1..=200).contains(&target.len())
+        && target
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'/' | b'.'));
+    if !plain {
+        return SafeAttributes::default();
+    }
+    SafeAttributes::try_from_iter([("target".to_owned(), AttributeValue::Text(target.to_owned()))])
+        .unwrap_or_default()
+}
+
 fn event_digest(parts: &[&str]) -> String {
     let mut hasher = blake3::Hasher::new_derive_key("mako/control-plane/audit-event-id/v1");
     for part in parts {
@@ -377,6 +396,34 @@ pub(crate) type SharedControlAudit = Arc<PersistentControlAudit>;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn team_events_stay_under_the_tenant_they_were_always_stored_under() {
+        // Events written before the tenant had a shared definition must stay
+        // readable as the team's activity.
+        let team = mako_control_plane::OrganizationId::parse("org_websiteteam").expect("team");
+        assert_eq!(
+            team_audit_tenant(&team),
+            synthetic_tenant(team.as_str(), "controlaudit")
+        );
+    }
+
+    #[test]
+    fn identifier_targets_are_kept_and_email_addresses_are_not() {
+        let kept = target_details("dev_jordanteam");
+        assert_eq!(
+            kept.get("target"),
+            Some(&AttributeValue::Text("dev_jordanteam".to_owned()))
+        );
+        assert!(
+            target_details("prj_example/env_example/Audit")
+                .get("target")
+                .is_some()
+        );
+        assert!(target_details("jordan@example.test").is_empty());
+        assert!(target_details("").is_empty());
+        assert!(target_details(&"a".repeat(201)).is_empty());
+    }
 
     #[test]
     fn tenant_scoped_control_targets_retain_the_real_project_environment() {

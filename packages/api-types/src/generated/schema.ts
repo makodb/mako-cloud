@@ -132,6 +132,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/teams/{teamId}/activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read a team's own audit trail
+         * @description The audit events no environment holds: changes to the team, its invitations, membership and role changes, automation tokens, and project-level actions. Any member of the team may read it. With `changes=true` reads are left out, and further records are read to fill the page; paging on with `nextCursor` never skips an event.
+         */
+        get: operations["listTeamActivity"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/teams/{teamId}/members": {
         parameters: {
             query?: never;
@@ -6140,6 +6160,31 @@ export interface operations {
                     "application/json": components["schemas"]["TeamMembership"];
                 };
             };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    listTeamActivity: {
+        parameters: {
+            query?: {
+                /** @description Opaque cursor that expires with the signal retention window. */
+                cursor?: components["parameters"]["ObservabilityCursor"];
+                from?: components["parameters"]["ObservabilityFrom"];
+                until?: components["parameters"]["ObservabilityUntil"];
+                limit?: components["parameters"]["ObservabilityLimit"];
+                /** @description `newest` pages from the latest record back, each cursor continuing towards older ones, as a feed of recent activity reads; `oldest`, the default, pages forward from the start of the window. */
+                order?: components["parameters"]["ObservabilityOrder"];
+                /** @description Leave out events that only read something. */
+                changes?: boolean;
+            };
+            header?: never;
+            path: {
+                teamId: components["parameters"]["TeamId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: components["responses"]["ObservabilityPage"];
             default: components["responses"]["ApiError"];
         };
     };

@@ -1,6 +1,7 @@
 import {
   type InvitationIssue,
   ManagementApiError,
+  type ObservabilityRecord,
   type Team,
   type TeamMembership,
   type TeamRole,
@@ -14,6 +15,7 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
+  Checkbox,
   Eyebrow,
   Field,
   Input,
@@ -238,6 +240,7 @@ export function TeamScreen({
               onChanged={reload}
             />
             <InvitationPanel teamId={teamId} canManage={canManage} onChanged={reload} />
+            <TeamActivityPanel teamId={teamId} selfId={developerId} />
             {canManage ? (
               <RenameTeamPanel
                 team={team}
@@ -672,5 +675,164 @@ export function CreateTeamForm({ onCreated }: { readonly onCreated: (team: Team)
         </Button>
       </div>
     </form>
+  );
+}
+
+/** What each audited team action did, as a sentence fragment. */
+const ACTIVITY_LABELS: Readonly<Record<string, string>> = {
+  organization_create: "created the team",
+  organization_update: "renamed the team",
+  organization_restore: "restored the team",
+  organization_delete_request: "requested the team's deletion",
+  invitation_create: "created an invitation",
+  invitation_accept: "accepted an invitation",
+  membership_update: "changed the role of",
+  membership_delete: "removed",
+  automation_token_create: "issued automation token",
+  automation_token_rotate: "rotated automation token",
+  automation_token_revoke: "revoked automation token",
+  project_create: "created a project",
+  project_rename: "renamed a project",
+  project_transfer: "transferred a project",
+  project_suspend: "suspended a project",
+  project_restore: "restored a project",
+  project_delete_request: "requested a project's deletion",
+};
+
+type AuditPayload = Extract<ObservabilityRecord["payload"], { kind: "audit" }>;
+
+/** The member, invitation, or token acted on, when the event records it. */
+function activityTarget(payload: AuditPayload): string | null {
+  // Details read as `name=value` pairs, `target=dev_...` among them.
+  const pair = (payload.details ?? "").split(", ").find((part) => part.startsWith("target="));
+  if (pair === undefined) return null;
+  const target = pair.slice("target=".length);
+  return target.split("/").pop() ?? target;
+}
+
+/**
+ * The team's own audit trail, newest first: invitations, membership and role
+ * changes, automation tokens, and project-level actions. Reads are left out
+ * unless asked for; every visit to a team records one.
+ */
+function TeamActivityPanel({
+  teamId,
+  selfId,
+}: {
+  readonly teamId: string;
+  readonly selfId: string;
+}) {
+  const client = useManagementClient();
+  const [records, setRecords] = useState<ObservabilityRecord[] | null>(null);
+  const [cursor, setCursor] = useState<string | null>(null);
+  const [includeReads, setIncludeReads] = useState(false);
+  const [failure, setFailure] = useState<ConsoleApiFailure | null>(null);
+  const [pending, setPending] = useState(false);
+  const readsId = useId();
+  const load = useCallback(
+    async (from: string | null) => {
+      setPending(true);
+      try {
+        const page = await client.listTeamActivity(teamId, {
+          order: "newest",
+          limit: 25,
+          ...(includeReads ? {} : { changes: true }),
+          ...(from === null ? {} : { cursor: from }),
+        });
+        setRecords((current) => (from === null ? page.items : [...(current ?? []), ...page.items]));
+        setCursor(page.nextCursor ?? null);
+        setFailure(null);
+      } catch (error) {
+        setFailure(toConsoleApiFailure(error));
+      } finally {
+        setPending(false);
+      }
+    },
+    [client, includeReads, teamId],
+  );
+  useEffect(() => {
+    void load(null);
+  }, [load]);
+  const rows = (records ?? []).flatMap((record) =>
+    record.payload.kind === "audit"
+      ? [{ timestamp: record.timestamp, payload: record.payload }]
+      : [],
+  );
+  return (
+    <Card aria-labelledby="team-activity-title" className="lg:col-span-2">
+      <CardHeader>
+        <CardTitle id="team-activity-title">Activity</CardTitle>
+        <CardDescription>
+          Invitations, member and role changes, automation tokens, and project changes, newest
+          first.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-4">
+        <div className="flex items-center gap-2">
+          <Checkbox
+            id={readsId}
+            checked={includeReads}
+            onCheckedChange={(checked) => setIncludeReads(checked === true)}
+          />
+          <Label htmlFor={readsId}>Include reads</Label>
+        </div>
+        <ApiFailureNotice failure={failure} />
+        {records === null ? (
+          <p className="m-0 text-sm text-muted-foreground">Loading activity…</p>
+        ) : rows.length === 0 ? (
+          <p className="m-0 text-sm text-muted-foreground">No activity yet.</p>
+        ) : (
+          <Table aria-label="Team activity">
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead scope="col">When</TableHead>
+                <TableHead scope="col">Who</TableHead>
+                <TableHead scope="col">What</TableHead>
+                <TableHead scope="col">Outcome</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map(({ timestamp, payload }) => {
+                const target = activityTarget(payload);
+                return (
+                  <TableRow key={`${payload.requestId}-${timestamp}`}>
+                    <TableCell className="whitespace-nowrap text-xs">
+                      {new Date(timestamp).toLocaleString()}
+                    </TableCell>
+                    <TableCell>
+                      <code className="font-mono text-xs">{payload.actorId}</code>
+                      {payload.actorId === selfId ? (
+                        <span className="ml-2 text-xs text-muted-foreground">(you)</span>
+                      ) : null}
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {ACTIVITY_LABELS[payload.action] ?? payload.action.replaceAll("_", " ")}
+                      {target === null ? null : (
+                        <>
+                          {" "}
+                          <code className="font-mono text-xs">{target}</code>
+                        </>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-xs">{payload.outcome}</TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        )}
+        {cursor === null ? null : (
+          <Button
+            variant="outline"
+            size="sm"
+            className="justify-self-start"
+            disabled={pending}
+            onClick={() => void load(cursor)}
+          >
+            {pending ? "Loading…" : "Load more"}
+          </Button>
+        )}
+      </CardContent>
+    </Card>
   );
 }

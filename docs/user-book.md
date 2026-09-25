@@ -649,6 +649,7 @@ Generated from the command registry; every command also answers `--help` with it
 | command | does |
 | ------- | ---- |
 | `mako-cloud projects bill <project-id>` | Show one project's current usage and allocated costs |
+| `mako-cloud teams activity <team-id>` | A team's own audit trail: invitations, member and role changes, automation tokens (newest first) |
 | `mako-cloud teams bill <team-id>` | Show a team's bill for the current month or a closed period |
 | `mako-cloud teams create <name>` | Create a team |
 | `mako-cloud teams delete <team-id>` | Start a team's deletion grace period; its projects lose access immediately *(confirmed)* |
@@ -723,6 +724,16 @@ mako-cloud teams invitations accept inv_… <token>                             
 mako-cloud teams members list org_…
 mako-cloud teams members update org_… dev_… --role administrator
 mako-cloud teams members remove org_… dev_… --yes
+```
+
+In the console, Home's Teams section has **New team**. An invitation is handed out as a link, `/invitations/{id}#token=…`, shown once: the token rides in the fragment, which never reaches a server, and the teammate opens the link, signs in if they need to, and accepts. The member list marks your own row "(you)"; only an owner may change or remove an owner.
+
+### Team activity
+
+A team's own audit trail -- changes to the team, invitations, membership and role changes, automation tokens issued, rotated, and revoked, and project-level actions -- is kept apart from any environment's audit events. Any member may read it: the team page's **Activity** panel shows it newest first, `GET /v1/teams/{teamId}/activity` (`listTeamActivity`) answers it, and `mako-cloud teams activity <team-id>` prints it. With `changes=true` (`--changes`, the panel's default) events that only read something are left out; every visit to a team records a membership read. Each event's `details` names what was acted on, such as `target=dev_…`, when that is a plain identifier.
+
+```bash
+mako-cloud teams activity org_… --changes --since 7d
 ```
 
 Roles: `owner`, `administrator`, `developer`, `viewer`. Deleting a team starts a grace period (`mako-cloud teams delete`, restorable with `mako-cloud teams restore`); its projects lose access immediately. Your personal space (`kind: personal`) appears in `mako-cloud teams list` and refuses invitations, membership changes, and deletion.

@@ -333,6 +333,36 @@ paths:
                 $ref: "#/components/schemas/TeamMembership"
         default:
           $ref: "#/components/responses/ApiError"
+  /v1/teams/{teamId}/activity:
+    get:
+      tags: [Management]
+      operationId: listTeamActivity
+      summary: Read a team's own audit trail
+      description: >-
+        The audit events no environment holds: changes to the team, its
+        invitations, membership and role changes, automation tokens, and
+        project-level actions. Any member of the team may read it. With
+        `changes=true` reads are left out, and further records are read to
+        fill the page; paging on with `nextCursor` never skips an event.
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+        - $ref: "#/components/parameters/ObservabilityCursor"
+        - $ref: "#/components/parameters/ObservabilityFrom"
+        - $ref: "#/components/parameters/ObservabilityUntil"
+        - $ref: "#/components/parameters/ObservabilityLimit"
+        - $ref: "#/components/parameters/ObservabilityOrder"
+        - name: changes
+          in: query
+          required: false
+          description: Leave out events that only read something.
+          schema:
+            type: boolean
+            default: false
+      responses:
+        "200":
+          $ref: "#/components/responses/ObservabilityPage"
+        default:
+          $ref: "#/components/responses/ApiError"
   /v1/teams/{teamId}/members:
     get:
       tags: [Management]

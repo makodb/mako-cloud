@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
 use mako_api::ObservabilityPage;
-use mako_control_plane::{ObservabilityError, ObservabilityQuery, ObservabilitySignal};
+use mako_control_plane::{
+    ObservabilityError, ObservabilityQuery, ObservabilitySignal, OrganizationId,
+};
 use mako_service_runtime::{
     HttpApiError, HttpMethod, HttpRequest, HttpResponse, HttpRouter, RouteRegistrationError,
 };
@@ -61,18 +63,56 @@ pub(crate) fn add_observability_routes(
             handle_observability(&graph, &request, signal)
         })?;
     }
+    let team_graph = Arc::clone(&graph);
+    router.add_route(
+        HttpMethod::Get,
+        "/v1/teams/{teamId}/activity",
+        move |request| handle_team_activity(&team_graph, &request),
+    )?;
     Ok(())
 }
 
-fn handle_observability(
+/// A team's own audit trail, which no environment's holds: invitations,
+/// membership and role changes, automation tokens, project-level actions.
+/// `changes=true` leaves reads out.
+fn handle_team_activity(
     graph: &Arc<ControlPlaneGraph>,
     request: &HttpRequest,
-    signal: ObservabilitySignal,
 ) -> Result<HttpResponse, HttpApiError> {
     if !request.body().is_empty() {
         return Err(invalid(request, "request body is not supported"));
     }
-    reject_unknown_query(request, &["cursor", "from", "until", "limit", "order"])?;
+    reject_unknown_query(
+        request,
+        &["cursor", "from", "until", "limit", "order", "changes"],
+    )?;
+    let query = observability_query(request)?;
+    let changes_only = match query_value(request, "changes")? {
+        None | Some("false") => false,
+        Some("true") => true,
+        Some(_) => return Err(invalid(request, "changes must be true or false")),
+    };
+    let team = OrganizationId::parse(request.path_parameter("teamId").unwrap_or_default())
+        .map_err(|_| invalid(request, "team path is invalid"))?;
+    with_developer(graph, request, |actor, now| async move {
+        let page = graph
+            .observability_service()
+            .query_team_activity(
+                &actor,
+                &team,
+                &query,
+                changes_only,
+                now.saturating_mul(1_000),
+            )
+            .await
+            .map_err(|error| observability_error(request, error))?;
+        let page =
+            public_page(&page).map_err(|_| internal(request, "response serialization failed"))?;
+        public_value(request, 200, page)
+    })
+}
+
+fn observability_query(request: &HttpRequest) -> Result<ObservabilityQuery, HttpApiError> {
     // `order=newest` pages from the latest record back; the default, oldest
     // first, is what these routes have always answered.
     let newest_first = match query_value(request, "order")? {
@@ -99,6 +139,19 @@ fn handle_observability(
     {
         return Err(invalid(request, "observability query is invalid"));
     }
+    Ok(query)
+}
+
+fn handle_observability(
+    graph: &Arc<ControlPlaneGraph>,
+    request: &HttpRequest,
+    signal: ObservabilitySignal,
+) -> Result<HttpResponse, HttpApiError> {
+    if !request.body().is_empty() {
+        return Err(invalid(request, "request body is not supported"));
+    }
+    reject_unknown_query(request, &["cursor", "from", "until", "limit", "order"])?;
+    let query = observability_query(request)?;
     let tenant = tenant(request)?;
     with_developer(graph, request, |actor, now| async move {
         let now_milliseconds = now.saturating_mul(1_000);

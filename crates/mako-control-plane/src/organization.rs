@@ -1,6 +1,7 @@
 use std::{error::Error, fmt, num::NonZeroUsize, sync::Arc};
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use mako_api::{EnvironmentId, ProjectId, TenantScope};
 use mako_storage::{
     AtomicWrite, CompareAndWriteResult, Durability, KeyCondition, KvAdapter, ScanDirection,
     ScanRequest, StorageError, WriteBatch,
@@ -587,6 +588,9 @@ pub enum ControlAuditAction {
     CustomDomainCreate,
     CustomDomainDelete,
     CustomDomainVerify,
+    AutomationTokenCreate,
+    AutomationTokenRotate,
+    AutomationTokenRevoke,
 }
 
 impl ControlAuditAction {
@@ -678,8 +682,33 @@ impl ControlAuditAction {
             Self::CustomDomainCreate => "custom_domain_create",
             Self::CustomDomainDelete => "custom_domain_delete",
             Self::CustomDomainVerify => "custom_domain_verify",
+            Self::AutomationTokenCreate => "automation_token_create",
+            Self::AutomationTokenRotate => "automation_token_rotate",
+            Self::AutomationTokenRevoke => "automation_token_revoke",
         }
     }
+}
+
+/// The tenant a team's own audit events are kept under. An event whose target
+/// names no environment -- a change to the team, an invitation, a membership,
+/// an automation token, a project-level action -- is stored here, under a
+/// project id derived from the team's id, rather than in any environment.
+#[must_use]
+pub fn team_audit_tenant(organization_id: &OrganizationId) -> Option<TenantScope> {
+    let digest = blake3::hash(organization_id.as_str().as_bytes())
+        .to_hex()
+        .to_string();
+    Some(TenantScope::new(
+        ProjectId::parse(format!("prj_{}", &digest[..16])).ok()?,
+        EnvironmentId::parse("env_controlaudit".to_owned()).ok()?,
+    ))
+}
+
+/// Whether an audit action only read something. A team's activity leaves these
+/// out on request: every visit to a team records a membership read.
+#[must_use]
+pub fn is_read_action(action: &str) -> bool {
+    action.ends_with("_read") || action.ends_with("_list")
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

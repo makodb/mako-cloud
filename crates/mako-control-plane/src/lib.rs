@@ -155,7 +155,7 @@ pub use operator_control_center::{
 pub use organization::{
     ControlAuditAction, ControlAuditEvent, ControlAuditOutcome, ControlAuditSink, InvitationToken,
     InvoiceRecord, IssuedInvitation, NewInvitation, OrganizationService, OrganizationServiceError,
-    OrganizationStore, OrganizationStoreError,
+    OrganizationStore, OrganizationStoreError, is_read_action, team_audit_tenant,
 };
 pub use policy::{
     ActivePolicyView, NewPolicyDraft, PolicyAdminError, PolicyAdminService, PolicyExampleResult,

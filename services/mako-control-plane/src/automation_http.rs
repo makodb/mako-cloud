@@ -13,9 +13,10 @@ use std::{collections::BTreeSet, num::NonZeroUsize, sync::Arc};
 use mako_api::{EnvironmentId, ProjectId};
 use mako_control_plane::{
     AutomationPermission, AutomationScope, AutomationTokenId, AutomationTokenIssue,
-    AutomationTokenRecord, AutomationTokenSecret, AutomationTokenStatus, DeveloperPrincipal,
-    ManagementAccessError, ManagementAction, ManagementActor, ManagementAuthorizer,
-    ManagementResourceScope, OrganizationId, TokenServiceError,
+    AutomationTokenRecord, AutomationTokenSecret, AutomationTokenStatus, ControlAuditAction,
+    ControlAuditEvent, ControlAuditOutcome, DeveloperPrincipal, ManagementAccessError,
+    ManagementAction, ManagementActor, ManagementAuthorizer, ManagementResourceScope,
+    OrganizationId, TokenServiceError,
 };
 use mako_service_runtime::{
     HttpApiError, HttpMethod, HttpRequest, HttpResponse, HttpRouter, RouteRegistrationError,
@@ -142,8 +143,36 @@ fn handle_create(
             )
             .await
             .map_err(|error| token_error(request, error))?;
+        audit_token(
+            graph,
+            &actor,
+            &team,
+            ControlAuditAction::AutomationTokenCreate,
+            issued.record.id().as_str(),
+            now,
+        );
         issue_response(request, &issued, now)
     })
+}
+
+/// Token changes are audited to the team, so its activity shows who issued,
+/// rotated, or revoked a credential that acts for the team.
+fn audit_token(
+    graph: &ControlPlaneGraph,
+    actor: &DeveloperPrincipal,
+    team: &OrganizationId,
+    action: ControlAuditAction,
+    token: &str,
+    now: u64,
+) {
+    graph.control_audit().record(ControlAuditEvent {
+        organization_id: team.clone(),
+        actor_id: actor.identity_id().clone(),
+        action,
+        target: format!("{}/automation-tokens/{token}", team.as_str()),
+        outcome: ControlAuditOutcome::Allowed,
+        at_unix_seconds: now,
+    });
 }
 
 fn handle_revoke(
@@ -161,6 +190,14 @@ fn handle_revoke(
             .revoke(&token, now)
             .await
             .map_err(|error| token_error(request, error))?;
+        audit_token(
+            graph,
+            &actor,
+            &team,
+            ControlAuditAction::AutomationTokenRevoke,
+            token.as_str(),
+            now,
+        );
         Ok(HttpResponse::empty(204))
     })
 }
@@ -186,6 +223,14 @@ fn handle_rotate(
             .rotate(&token, replacement, now, expires_at)
             .await
             .map_err(|error| token_error(request, error))?;
+        audit_token(
+            graph,
+            &actor,
+            &team,
+            ControlAuditAction::AutomationTokenRotate,
+            token.as_str(),
+            now,
+        );
         issue_response(request, &issued, now)
     })
 }
@@ -519,6 +564,10 @@ fn classify(method: HttpMethod, path: &str) -> Option<(ManagementAction, Request
     match segments.as_slice() {
         ["teams", team, rest @ ..] => {
             let team = OrganizationId::parse(*team).ok()?;
+            // A team's activity is its audit trail, read as an environment's is.
+            if read && rest == ["activity"] {
+                return Some((ManagementAction::AuditRead, RequestResource::Team(team)));
+            }
             let delegated = !matches!(
                 rest.first(),
                 Some(&("automation-tokens" | "members" | "invitations"))
@@ -638,6 +687,13 @@ mod tests {
             classify(HttpMethod::Get, "/v1/teams/org_abcdefgh"),
             Some((
                 ManagementAction::OrganizationRead,
+                RequestResource::Team(OrganizationId::parse("org_abcdefgh").unwrap())
+            ))
+        );
+        assert_eq!(
+            classify(HttpMethod::Get, "/v1/teams/org_abcdefgh/activity"),
+            Some((
+                ManagementAction::AuditRead,
                 RequestResource::Team(OrganizationId::parse("org_abcdefgh").unwrap())
             ))
         );
