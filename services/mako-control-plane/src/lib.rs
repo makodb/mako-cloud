@@ -5,6 +5,7 @@
 mod allowed_origins_http;
 mod audit;
 mod auth_settings_http;
+mod automation_http;
 mod collection_http;
 mod credential_http;
 mod custom_domain_http;
@@ -71,6 +72,7 @@ pub fn control_plane_router(
     operator_auth_http::add_operator_auth_routes(&mut router, Arc::clone(&graph))?;
     developer_metrics_http::add_developer_metrics_route(&mut router, Arc::clone(&graph))?;
     management_http::add_management_routes(&mut router, Arc::clone(&graph))?;
+    automation_http::add_automation_routes(&mut router, Arc::clone(&graph))?;
     explorer_http::add_explorer_routes(&mut router, Arc::clone(&graph))?;
     data_job_http::add_data_job_routes(&mut router, Arc::clone(&graph))?;
     workspace_http::add_workspace_routes(&mut router, Arc::clone(&graph))?;

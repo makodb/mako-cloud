@@ -586,6 +586,10 @@ impl ControlKeyspace {
         system_key(AUTOMATION_TOKENS, id.as_str())
     }
 
+    pub fn automation_tokens_range() -> Result<KeyRange, ControlKeyspaceError> {
+        TenantKeyspace::system_domain_range(AUTOMATION_TOKENS).map_err(ControlKeyspaceError)
+    }
+
     pub fn signing_key_ring_key(
         project_id: &ProjectId,
         environment_id: &EnvironmentId,

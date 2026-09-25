@@ -1,10 +1,10 @@
-use std::{collections::BTreeSet, error::Error, fmt, sync::Arc};
+use std::{collections::BTreeSet, error::Error, fmt, num::NonZeroUsize, sync::Arc};
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use mako_api::{EnvironmentId, ProjectId};
 use mako_storage::{
-    AtomicWrite, CompareAndWriteResult, Durability, KeyCondition, KvAdapter, StorageError,
-    WriteBatch,
+    AtomicWrite, CompareAndWriteResult, Durability, KeyCondition, KvAdapter, ScanDirection,
+    ScanRequest, StorageError, WriteBatch,
 };
 use rand_core::{OsRng, RngCore};
 use serde::{Deserialize, Deserializer, Serialize, de};
@@ -94,6 +94,21 @@ impl AutomationScope {
     }
 
     #[must_use]
+    pub const fn project_id(&self) -> Option<&ProjectId> {
+        self.project_id.as_ref()
+    }
+
+    #[must_use]
+    pub const fn environment_id(&self) -> Option<&EnvironmentId> {
+        self.environment_id.as_ref()
+    }
+
+    #[must_use]
+    pub const fn permissions(&self) -> &BTreeSet<AutomationPermission> {
+        &self.permissions
+    }
+
+    #[must_use]
     pub fn allows(
         &self,
         permission: AutomationPermission,
@@ -155,6 +170,31 @@ impl AutomationTokenRecord {
     #[must_use]
     pub const fn status(&self) -> AutomationTokenStatus {
         self.status
+    }
+
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    #[must_use]
+    pub const fn created_by(&self) -> &DeveloperIdentityId {
+        &self.created_by
+    }
+
+    #[must_use]
+    pub const fn created_at_unix_seconds(&self) -> u64 {
+        self.created_at_unix_seconds
+    }
+
+    #[must_use]
+    pub const fn expires_at_unix_seconds(&self) -> u64 {
+        self.expires_at_unix_seconds
+    }
+
+    #[must_use]
+    pub const fn revoked_at_unix_seconds(&self) -> Option<u64> {
+        self.revoked_at_unix_seconds
     }
 
     fn revoke(&mut self, now_unix_seconds: u64) -> Result<(), TokenServiceError> {
@@ -234,17 +274,29 @@ pub struct AutomationTokenIssue {
 pub struct AutomationPrincipal {
     token_id: AutomationTokenId,
     scope: AutomationScope,
+    created_by: DeveloperIdentityId,
 }
 
 impl AutomationPrincipal {
     #[cfg(test)]
     pub(crate) fn for_test(token_id: AutomationTokenId, scope: AutomationScope) -> Self {
-        Self { token_id, scope }
+        Self {
+            token_id,
+            scope,
+            created_by: DeveloperIdentityId::parse("dev_automation00").expect("developer id"),
+        }
     }
 
     #[must_use]
     pub fn token_id(&self) -> &AutomationTokenId {
         &self.token_id
+    }
+
+    /// The developer who issued the token. A request made with it acts as
+    /// that developer, so it never reaches past their current role.
+    #[must_use]
+    pub const fn created_by(&self) -> &DeveloperIdentityId {
+        &self.created_by
     }
 
     #[must_use]
@@ -346,7 +398,42 @@ impl AutomationTokenService {
         Ok(AutomationPrincipal {
             token_id: id,
             scope: record.scope,
+            created_by: record.created_by,
         })
+    }
+
+    /// Every token issued for a team, newest last by id; secrets are never
+    /// stored, only their digests, and a record carries neither out.
+    pub async fn list(
+        &self,
+        organization_id: &OrganizationId,
+        limit: NonZeroUsize,
+    ) -> Result<Vec<AutomationTokenRecord>, TokenServiceError> {
+        let entries = self
+            .adapter
+            .scan(ScanRequest::new(
+                ControlKeyspace::automation_tokens_range()?,
+                ScanDirection::Forward,
+                limit,
+            ))
+            .await?;
+        entries
+            .into_iter()
+            .map(|entry| {
+                serde_json::from_slice::<AutomationTokenRecord>(&entry.value)
+                    .map_err(TokenServiceError::from)
+            })
+            .filter(|record| {
+                !matches!(record, Ok(record) if record.scope.organization_id != *organization_id)
+            })
+            .collect()
+    }
+
+    pub async fn get_token(
+        &self,
+        id: &AutomationTokenId,
+    ) -> Result<Option<AutomationTokenRecord>, TokenServiceError> {
+        self.get(id).await
     }
 
     pub async fn revoke(

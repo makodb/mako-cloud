@@ -260,6 +260,43 @@ impl ControlPlaneAuthenticator {
     }
 }
 
+impl ControlPlaneAuthenticator {
+    /// The principal a request made with an automation token acts as: the
+    /// developer who issued it, as their account stands now. A disabled,
+    /// locked, or unverified account authorizes nothing through its tokens,
+    /// as it would not through a session. The session id names the token,
+    /// so the audit trail shows which one acted.
+    pub async fn authenticate_automation(
+        &self,
+        created_by: &DeveloperIdentityId,
+        token_id: &str,
+        now_unix_seconds: u64,
+    ) -> Result<DeveloperPrincipal, DeveloperAuthenticationError> {
+        let store = self
+            .current_state
+            .as_ref()
+            .ok_or(DeveloperAuthenticationError::CurrentStateUnavailable)?;
+        let current = store
+            .get_account(created_by)
+            .await
+            .map_err(|_| DeveloperAuthenticationError::CurrentStateUnavailable)?
+            .ok_or(DeveloperAuthenticationError::StaleAuthority)?;
+        if current.status() != DeveloperIdentityStatus::Active
+            || current.authentication_security_status() != AuthenticationSecurityStatus::Active
+            || current.email_verified_at_unix_seconds().is_none()
+        {
+            return Err(DeveloperAuthenticationError::StaleAuthority);
+        }
+        Ok(DeveloperPrincipal {
+            identity_id: created_by.clone(),
+            normalized_email: current.normalized_email().as_str().to_owned(),
+            display_name: current.display_name().to_owned(),
+            session_id: format!("automation:{token_id}"),
+            authenticated_at_unix_seconds: now_unix_seconds,
+        })
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum IdentityProviderError {
     InvalidSession,

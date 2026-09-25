@@ -1767,12 +1767,20 @@ where
     Fut: Future<Output = Result<HttpResponse, HttpApiError>>,
 {
     let now = now_unix_seconds(request)?;
-    let actor = block_on(
-        graph
-            .developer_authenticator()
-            .authenticate(request.header(AUTHORIZATION_HEADER), now),
-    )
-    .map_err(|error| authentication_error(request, error))?;
+    // An automation token acts as the developer who issued it, within the
+    // token's scope and permissions; see automation_http.
+    let actor = if crate::automation_http::is_automation_token(request) {
+        block_on(crate::automation_http::automation_actor(
+            graph, request, now,
+        ))?
+    } else {
+        block_on(
+            graph
+                .developer_authenticator()
+                .authenticate(request.header(AUTHORIZATION_HEADER), now),
+        )
+        .map_err(|error| authentication_error(request, error))?
+    };
     block_on(operation(actor, now))
 }
 
