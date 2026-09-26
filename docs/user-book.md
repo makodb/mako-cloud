@@ -188,7 +188,8 @@ cat > todos-policy.json <<'JSON'
   "rules": [
     { "id": "owner-reads",  "effect": "allow", "operations": ["read"],   "expression": "old.ownerId == identity.user_id" },
     { "id": "owner-writes", "effect": "allow", "operations": ["create"], "expression": "new.ownerId == identity.user_id" },
-    { "id": "owner-edits",  "effect": "allow", "operations": ["update", "delete"], "expression": "old.ownerId == identity.user_id && new.ownerId == identity.user_id" }
+    { "id": "owner-edits",  "effect": "allow", "operations": ["update"], "expression": "old.ownerId == identity.user_id && new.ownerId == identity.user_id" },
+    { "id": "owner-deletes", "effect": "allow", "operations": ["delete"], "expression": "old.ownerId == identity.user_id" }
   ]
 }
 JSON
@@ -197,7 +198,7 @@ mako-cloud policies validate todos 1
 mako-cloud policies activate todos 1 --yes
 ```
 
-A draft is immutable; validation compiles it against the collection's active schema; activation is atomic and advances the environment's authorization epoch exactly once. [Document policies](#document-policies) has the full expression language.
+A draft is immutable; validation compiles it against the collection's active schema; activation is atomic and advances the environment's authorization epoch exactly once. A rule can only name the document states its operations have: `new` exists for create and update, `old` for read, update and delete, so a delete is its own rule over `old` (a rule covering both update and delete that reads `new` fails validation with `state_unavailable`). [Document policies](#document-policies) has the full expression language.
 
 ### 6. Issue keys
 
