@@ -125,3 +125,14 @@ Declarations MUST be validated fail-closed at deployment time: an IP literal, a 
 - **WHEN** a developer inspects a function whose deployment declares egress hosts
 - **THEN** the declared hosts appear in the configuration the API and CLI return, and no outbound request or response body, header, or secret value appears in any log
 
+
+### Requirement: Preserve caller replay and conditional request headers
+The public function gateway SHALL forward `Idempotency-Key`, `If-Match`, and
+`If-None-Match` to the selected worker without changing their values. These
+caller conditions SHALL NOT permit forwarding platform-reserved schedule or
+runtime provenance headers from a public request.
+
+#### Scenario: Retrying a browser write
+- **WHEN** an authenticated browser retries a function request with the same `Idempotency-Key`
+- **THEN** both invocations receive that same key so the function can recover its durable command result
+- **AND** caller-supplied `x-mako-schedule-*` and `x-mako-runtime-*` headers remain stripped

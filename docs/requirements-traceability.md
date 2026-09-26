@@ -144,6 +144,7 @@ Run `npm run validate:traceability` whenever a scenario or row changes. The vali
 | ER-19 | An invalid declaration is refused before deployment | `crates/mako-control-plane/src/function.rs::allowed_hosts_accept_public_dns_names_and_refuse_everything_else` | Automated |
 | ER-20 | Local serving honours the same declaration | `packages/cli/test/serve.test.mjs::an allowed host must be a DNS name a hosted deployment would accept` | Automated |
 | ER-21 | The declaration is reviewable and bodies are not logged | `packages/cli/test/functions.test.mjs::functions deploy --allow-host sends a sorted declaration, and omits the field entirely when absent` | Automated |
+| ER-22 | Retrying a browser write | `services/mako-edge-gateway/src/http.rs::public_function_headers_preserve_replay_conditions_without_platform_provenance`, `services/mako-edge-gateway/src/http.rs::forwarding_keeps_duplicate_condition_values_for_function_validation` | Automated |
 
 ## Identity / project auth
 
