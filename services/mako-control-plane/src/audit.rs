@@ -20,6 +20,31 @@ use mako_storage::{
     AtomicWrite, CompareAndWriteResult, Durability, KeyCondition, KvAdapter, WriteBatch,
 };
 
+thread_local! {
+    static ACTING_TOKEN: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Runs a request made with an automation token so that everything it audits
+/// names the token as well as the developer it acts for. A request is handled
+/// start to finish on one thread (`with_developer` blocks on it), so the
+/// marker covers exactly that request and is cleared when it ends.
+pub(crate) fn acting_as_token<T>(token_id: &str, run: impl FnOnce() -> T) -> T {
+    struct Reset(Option<String>);
+    impl Drop for Reset {
+        fn drop(&mut self) {
+            let previous = self.0.take();
+            ACTING_TOKEN.with(|cell| *cell.borrow_mut() = previous);
+        }
+    }
+    let previous = ACTING_TOKEN.with(|cell| cell.replace(Some(token_id.to_owned())));
+    let _reset = Reset(previous);
+    run()
+}
+
+fn acting_token() -> Option<String> {
+    ACTING_TOKEN.with(|cell| cell.borrow().clone())
+}
+
 /// Synchronous domain audit facade backed by the append-only control-plane store.
 /// Domain APIs cannot accidentally proceed while an asynchronous audit write is
 /// still outstanding, and readiness fails closed after any persistence failure.
@@ -164,7 +189,7 @@ impl ControlAuditSink for PersistentControlAudit {
         // The stored resource is a digest; the target itself (the member,
         // invitation, or token acted on) is kept alongside when it is a plain
         // identifier, so the team's activity can say what was changed.
-        audit.details = target_details(&event.target);
+        audit.details = event_details(&event.target, acting_token().as_deref());
         let source_event_id = audit.event_id.clone();
         if self.append(&tenant, AuditCategory::Control, audit) {
             self.project_activity(
@@ -361,16 +386,25 @@ fn project_audit_tenant(project: ProjectId, environment: &str) -> Option<TenantS
 
 /// `{"target": ...}` for an identifier-shaped target; nothing for anything
 /// else, an email address above all, which a refused invitation records.
-fn target_details(target: &str) -> SafeAttributes {
-    let plain = (1..=200).contains(&target.len())
-        && target
+fn plain_identifier(value: &str) -> bool {
+    (1..=200).contains(&value.len())
+        && value
             .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'/' | b'.'));
-    if !plain {
-        return SafeAttributes::default();
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'/' | b'.'))
+}
+
+/// `target=` names what was acted on when it is a plain identifier, and
+/// `via=` the automation token a request was made with: without it a CI
+/// deploy read as the token's creator acting in person.
+fn event_details(target: &str, via: Option<&str>) -> SafeAttributes {
+    let mut pairs = Vec::with_capacity(2);
+    if plain_identifier(target) {
+        pairs.push(("target".to_owned(), AttributeValue::Text(target.to_owned())));
     }
-    SafeAttributes::try_from_iter([("target".to_owned(), AttributeValue::Text(target.to_owned()))])
-        .unwrap_or_default()
+    if let Some(token) = via.filter(|token| plain_identifier(token)) {
+        pairs.push(("via".to_owned(), AttributeValue::Text(token.to_owned())));
+    }
+    SafeAttributes::try_from_iter(pairs).unwrap_or_default()
 }
 
 fn event_digest(parts: &[&str]) -> String {
@@ -410,6 +444,7 @@ mod tests {
 
     #[test]
     fn identifier_targets_are_kept_and_email_addresses_are_not() {
+        let target_details = |target: &str| event_details(target, None);
         let kept = target_details("dev_jordanteam");
         assert_eq!(
             kept.get("target"),
@@ -423,6 +458,29 @@ mod tests {
         assert!(target_details("jordan@example.test").is_empty());
         assert!(target_details("").is_empty());
         assert!(target_details(&"a".repeat(201)).is_empty());
+    }
+
+    #[test]
+    fn a_request_made_with_a_token_names_it_in_what_it_audits() {
+        assert_eq!(acting_token(), None);
+        let seen = acting_as_token("atm_ci000001", || {
+            event_details(
+                "prj_example/env_example/todo-stats",
+                acting_token().as_deref(),
+            )
+        });
+        assert_eq!(
+            seen.get("via"),
+            Some(&AttributeValue::Text("atm_ci000001".to_owned()))
+        );
+        assert!(seen.get("target").is_some());
+        // The marker ends with the request, even one that panics.
+        assert_eq!(acting_token(), None);
+        let _ = std::panic::catch_unwind(|| {
+            acting_as_token("atm_ci000002", || panic!("request failed"))
+        });
+        assert_eq!(acting_token(), None);
+        assert!(event_details("dev_jordanteam", None).get("via").is_none());
     }
 
     #[test]

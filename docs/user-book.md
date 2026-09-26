@@ -789,7 +789,7 @@ A missing collection is created at the source's schema version; an older one get
 
 ### Audit
 
-Every management mutation is recorded in the control audit log with actor, target, reason where one was given, result, request id, and correlation — never a password hash, a token, or a document body. Read it with `mako-cloud activity` / `mako-cloud observability audit` or in the console's **Activity**.
+Every management mutation is recorded in the control audit log with actor, target, reason where one was given, result, request id, and correlation — never a password hash, a token, or a document body. That includes the changes the data plane carries out for the control plane -- project keys, signing keys, buckets and their objects, sign-in settings, application users -- and every such change refused for the caller's role, recorded as `denied`. An action made with an automation token keeps the issuing developer as its actor and names the token in its details as `via=atm_…`, so a CI deploy is never mistaken for the person acting directly. Read it with `mako-cloud activity` / `mako-cloud observability audit` or in the console's **Activity**.
 
 ---
 

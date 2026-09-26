@@ -1,7 +1,10 @@
 use std::{collections::BTreeSet, sync::Arc};
 
 use mako_api::TenantScope;
-use mako_control_plane::{DeveloperPrincipal, OrganizationRole};
+use mako_control_plane::{
+    ControlAuditAction, ControlAuditEvent, ControlAuditOutcome, DeveloperPrincipal,
+    OrganizationRole,
+};
 use mako_internal_rpc::{
     IdentityAdminCommand, IdentityAdminOperation, IdentityAdminPermission, InternalClientError,
 };
@@ -15,8 +18,8 @@ use crate::{
     ControlPlaneGraph,
     http_support::{public_value, query_value, reject_unknown_query, tenant},
     management_http::{
-        conflict, forbidden, invalid, no_payload, no_query, not_found, parse_json,
-        require_idempotency, require_json, unavailable, with_developer,
+        conflict, forbidden, invalid, no_payload, no_query, not_found, now_unix_seconds,
+        parse_json, require_idempotency, require_json, unavailable, with_developer,
     },
 };
 
@@ -533,15 +536,123 @@ pub(crate) async fn administer(
         request.request_id()
     };
     let key = internal_key(caller_key, &command);
-    graph
-        .data_plane_identity_admin()
-        .administer(
-            tenant,
-            &internal_request_id(request.request_id(), &command),
-            &key,
-            &command,
-        )
-        .map_err(|error| rpc_error(request, error))
+    let result = graph.data_plane_identity_admin().administer(
+        tenant,
+        &internal_request_id(request.request_id(), &command),
+        &key,
+        &command,
+    );
+    audit_command(
+        graph,
+        request,
+        actor,
+        tenant,
+        &command,
+        result.as_ref().map(|_| ()),
+    )
+    .await;
+    result.map_err(|error| rpc_error(request, error))
+}
+
+/// The audit action for a change the control plane hands to the data plane,
+/// and whether its success is audited here. Collections, indexes and policies
+/// are audited by their own services when they are recorded, so only their
+/// refusal at install is added; everything else the data plane carries out --
+/// keys, signing keys, buckets, sign-in settings, application users -- used to
+/// leave no trace in the environment's activity at all.
+fn command_action(
+    operation: IdentityAdminOperation,
+    method: HttpMethod,
+) -> Option<(ControlAuditAction, bool)> {
+    use ControlAuditAction as A;
+    use IdentityAdminOperation as Op;
+    Some(match operation {
+        Op::CreateProjectCredential => (A::CredentialCreate, true),
+        Op::RotateProjectCredential => (A::CredentialRotate, true),
+        Op::RetireProjectCredential => (A::CredentialRetire, true),
+        Op::InitializeSigningKey => (A::SigningKeyInitialize, true),
+        Op::RotateSigningKey => (A::SigningKeyRotate, true),
+        Op::InstallAuthProviders => (A::AuthSettingsUpdate, true),
+        Op::InstallBucket if method == HttpMethod::Post => (A::StorageBucketCreate, true),
+        Op::InstallBucket => (A::StorageBucketUpdate, true),
+        Op::RemoveBucket => (A::StorageBucketDelete, true),
+        Op::DeleteBucketObject => (A::StorageObjectDelete, true),
+        Op::CreateUser => (A::ApplicationUserCreate, true),
+        Op::InviteUser => (A::ApplicationUserInvite, true),
+        Op::UpdateUserMetadata => (A::ApplicationUserUpdate, true),
+        Op::DisableUser => (A::ApplicationUserDisable, true),
+        Op::RestoreUser => (A::ApplicationUserRestore, true),
+        Op::RevokeSession | Op::RevokeAllSessions => (A::ApplicationUserRevokeSessions, true),
+        Op::DeleteUser => (A::ApplicationUserDelete, true),
+        Op::InstallCollection => (A::CollectionCreate, false),
+        Op::InstallIndex => (A::CollectionIndexCreate, false),
+        Op::InstallPolicy => (A::PolicyActivate, false),
+        _ => return None,
+    })
+}
+
+/// What a command acted on, from its input, for the audit target.
+fn command_target(command: &IdentityAdminCommand) -> String {
+    let field = |name: &str| command.input.get(name).and_then(Value::as_str);
+    match command.operation {
+        IdentityAdminOperation::InstallAuthProviders => "auth-settings".to_owned(),
+        IdentityAdminOperation::InitializeSigningKey | IdentityAdminOperation::RotateSigningKey => {
+            "signing-keys".to_owned()
+        }
+        IdentityAdminOperation::InstallIndex => match (field("collectionId"), field("name")) {
+            (Some(collection), Some(name)) => format!("{collection}/{name}"),
+            _ => "indexes".to_owned(),
+        },
+        // A bucket's settings travel whole, under "bucket".
+        IdentityAdminOperation::InstallBucket => command
+            .input
+            .get("bucket")
+            .and_then(|bucket| bucket.get("id"))
+            .and_then(Value::as_str)
+            .unwrap_or("buckets")
+            .to_owned(),
+        _ => ["bucketId", "credentialId", "id", "userId", "collectionId"]
+            .into_iter()
+            .find_map(field)
+            .unwrap_or("identity")
+            .to_owned(),
+    }
+}
+
+/// Audits a change the data plane carried out, or refused for the caller's
+/// role, into the control audit the environment's activity is read from.
+pub(crate) async fn audit_command(
+    graph: &ControlPlaneGraph,
+    request: &HttpRequest,
+    actor: &DeveloperPrincipal,
+    tenant: &TenantScope,
+    command: &IdentityAdminCommand,
+    result: Result<(), &InternalClientError>,
+) {
+    let Some((action, audit_success)) = command_action(command.operation, request.method()) else {
+        return;
+    };
+    let outcome = match result {
+        Ok(()) if audit_success => ControlAuditOutcome::Allowed,
+        Err(InternalClientError::Remote { status: 403, .. }) => ControlAuditOutcome::Denied,
+        _ => return,
+    };
+    let Ok(Some(project)) = graph.project_store().get_project(tenant.project_id()).await else {
+        return;
+    };
+    graph.control_audit().record(ControlAuditEvent {
+        organization_id: project.organization_id().clone(),
+        actor_id: actor.identity_id().clone(),
+        action,
+        target: format!(
+            "{}/{}/{}",
+            tenant.project_id().as_str(),
+            tenant.environment_id().as_str(),
+            command_target(command)
+        ),
+        outcome,
+        at_unix_seconds: now_unix_seconds(request).unwrap_or_default(),
+    });
 }
 
 /// The idempotency key one identity-admin command travels under.
@@ -718,7 +829,62 @@ mod tests {
     use mako_control_plane::OrganizationRole;
     use mako_internal_rpc::IdentityAdminPermission as P;
 
-    use super::role_permissions;
+    use mako_control_plane::ControlAuditAction as A;
+    use mako_internal_rpc::IdentityAdminOperation as Op;
+    use mako_service_runtime::HttpMethod;
+
+    use mako_internal_rpc::IdentityAdminCommand;
+
+    use super::{command_action, command_target, role_permissions};
+
+    #[test]
+    fn changes_the_data_plane_makes_are_audited_and_reads_are_not() {
+        assert_eq!(
+            command_action(Op::InstallBucket, HttpMethod::Post),
+            Some((A::StorageBucketCreate, true))
+        );
+        assert_eq!(
+            command_action(Op::InstallBucket, HttpMethod::Patch),
+            Some((A::StorageBucketUpdate, true))
+        );
+        assert_eq!(
+            command_action(Op::InstallAuthProviders, HttpMethod::Put),
+            Some((A::AuthSettingsUpdate, true))
+        );
+        assert_eq!(
+            command_action(Op::InitializeSigningKey, HttpMethod::Post),
+            Some((A::SigningKeyInitialize, true))
+        );
+        assert_eq!(
+            command_action(Op::DisableUser, HttpMethod::Post),
+            Some((A::ApplicationUserDisable, true))
+        );
+        // Their own services audit these when recorded; only a refusal is added.
+        assert_eq!(
+            command_action(Op::InstallCollection, HttpMethod::Post),
+            Some((A::CollectionCreate, false))
+        );
+        let install = |input: serde_json::Value| IdentityAdminCommand {
+            operation: Op::InstallBucket,
+            actor_id: "dev_abcdefgh".to_owned(),
+            permissions: Default::default(),
+            input,
+        };
+        assert_eq!(
+            command_target(&install(
+                serde_json::json!({"bucket": {"id": "attachments"}})
+            )),
+            "attachments"
+        );
+        for read in [
+            Op::SearchUsers,
+            Op::ListBuckets,
+            Op::InspectIndex,
+            Op::ListSigningKeys,
+        ] {
+            assert_eq!(command_action(read, HttpMethod::Get), None, "{read:?}");
+        }
+    }
 
     #[test]
     fn a_role_that_may_change_the_data_model_may_install_it() {

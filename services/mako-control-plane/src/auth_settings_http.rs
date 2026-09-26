@@ -133,10 +133,22 @@ async fn administer<T: DeserializeOwned>(
     } else {
         request.request_id()
     };
-    let value: Value = graph
-        .data_plane_identity_admin()
-        .administer(tenant, request.request_id(), idempotency, &command)
-        .map_err(|error| settings_error(request, error))?;
+    let result = graph.data_plane_identity_admin().administer::<Value>(
+        tenant,
+        request.request_id(),
+        idempotency,
+        &command,
+    );
+    identity_admin_http::audit_command(
+        graph,
+        request,
+        actor,
+        tenant,
+        &command,
+        result.as_ref().map(|_| ()),
+    )
+    .await;
+    let value = result.map_err(|error| settings_error(request, error))?;
     serde_json::from_value(value).map_err(|_| {
         unavailable(
             request,

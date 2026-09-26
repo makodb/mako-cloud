@@ -1770,18 +1770,24 @@ where
     let now = now_unix_seconds(request)?;
     // An automation token acts as the developer who issued it, within the
     // token's scope and permissions; see automation_http.
-    let actor = if crate::automation_http::is_automation_token(request) {
-        block_on(crate::automation_http::automation_actor(
+    if crate::automation_http::is_automation_token(request) {
+        let actor = block_on(crate::automation_http::automation_actor(
             graph, request, now,
-        ))?
-    } else {
-        block_on(
-            graph
-                .developer_authenticator()
-                .authenticate(request.header(AUTHORIZATION_HEADER), now),
-        )
-        .map_err(|error| authentication_error(request, error))?
-    };
+        ))?;
+        // What the request audits names the token, not only its creator.
+        let token = actor
+            .session_id()
+            .strip_prefix("automation:")
+            .unwrap_or_default()
+            .to_owned();
+        return crate::audit::acting_as_token(&token, || block_on(operation(actor, now)));
+    }
+    let actor = block_on(
+        graph
+            .developer_authenticator()
+            .authenticate(request.header(AUTHORIZATION_HEADER), now),
+    )
+    .map_err(|error| authentication_error(request, error))?;
     block_on(operation(actor, now))
 }
 
@@ -1911,7 +1917,7 @@ pub(crate) fn format_timestamp(request: &HttpRequest, value: u64) -> Result<Stri
         .ok_or_else(|| internal(request, "stored timestamp is invalid"))
 }
 
-fn now_unix_seconds(request: &HttpRequest) -> Result<u64, HttpApiError> {
+pub(crate) fn now_unix_seconds(request: &HttpRequest) -> Result<u64, HttpApiError> {
     SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
         .map(|duration| duration.as_secs())
