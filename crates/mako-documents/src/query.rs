@@ -641,6 +641,22 @@ impl PlannedIndexQuery {
     }
 }
 
+/// The sort terms that can change an order. A field an equality predicate
+/// fixes holds one value in every result, so ordering by it is a no-op
+/// wherever it appears: `ownerId == u` sorted by `ownerId` is still served by
+/// an index on `(ownerId, updatedAt)`. Such terms used to disqualify every
+/// index, including one whose fields the sort named exactly.
+fn effective_sort<'a>(
+    query: &'a IndexedQuery,
+    equality: &BTreeMap<&str, IndexValue>,
+) -> Vec<&'a QuerySort> {
+    query
+        .sort()
+        .iter()
+        .filter(|term| !equality.contains_key(term.field()))
+        .collect()
+}
+
 fn plan_index_query(
     definitions: &[IndexDefinition],
     query: &IndexedQuery,
@@ -690,9 +706,9 @@ fn plan_index_query(
             None => None,
         };
         let sort_start = ordered_equality.len();
-        if query.sort().len() > definition.fields().len().saturating_sub(sort_start)
-            || !query
-                .sort()
+        let sort = effective_sort(query, &equality);
+        if sort.len() > definition.fields().len().saturating_sub(sort_start)
+            || !sort
                 .iter()
                 .zip(&definition.fields()[sort_start..])
                 .all(|(requested, indexed)| {
@@ -758,10 +774,16 @@ fn required_shape(query: &IndexedQuery) -> Result<RequiredIndexShape, TrustedQue
         }
     }
     equality_fields.sort();
+    let sort = query
+        .sort()
+        .iter()
+        .filter(|term| !equality_fields.iter().any(|field| field == term.field()))
+        .cloned()
+        .collect();
     Ok(RequiredIndexShape {
         equality_fields,
         range_field,
-        sort: query.sort().to_vec(),
+        sort,
     })
 }
 
@@ -1133,6 +1155,85 @@ mod tests {
                     .expect("upper-only query")),
                 ["blue-2", "blue-2b", "blue-1"]
             );
+        });
+    }
+
+    #[test]
+    fn sorting_by_a_field_an_equality_fixes_does_not_disqualify_the_index() {
+        block_on(async {
+            let (scoped, _, _) = setup();
+            let name = IndexName::parse("by-team-score").expect("name");
+            let version = IndexVersion::new(1).expect("version");
+            scoped
+                .create_index(
+                    IndexDefinition::new_building(
+                        CollectionId::parse("todos").expect("collection"),
+                        name.clone(),
+                        version,
+                        IndexKind::NonUnique,
+                        [
+                            IndexField::ascending("team").expect("field"),
+                            IndexField::descending("score").expect("field"),
+                        ],
+                    )
+                    .expect("index"),
+                    Durability::Memory,
+                )
+                .await
+                .expect("create index");
+            scoped
+                .update_index_catalog(&name, version, Durability::Memory, |definition| {
+                    definition.activate()
+                })
+                .await
+                .expect("activate");
+            let query = |sort: Vec<QuerySort>| {
+                TrustedQuery::indexed(
+                    IndexedQuery::new(
+                        [
+                            QueryPredicate::equal("team", IndexValue::String("blue".to_owned()))
+                                .expect("equality"),
+                        ],
+                        sort,
+                        NonZeroUsize::new(10).expect("non-zero"),
+                    )
+                    .expect("query"),
+                )
+            };
+            for sort in [
+                vec![QuerySort::ascending("team").expect("sort")],
+                vec![QuerySort::descending("team").expect("sort")],
+                vec![
+                    QuerySort::ascending("team").expect("sort"),
+                    QuerySort::descending("score").expect("sort"),
+                ],
+                vec![QuerySort::descending("score").expect("sort")],
+                Vec::new(),
+            ] {
+                let described = format!("{sort:?}");
+                assert!(
+                    matches!(
+                        scoped.plan_trusted_query(&query(sort)).await,
+                        Ok(QueryPlan::Index { .. })
+                    ),
+                    "{described}"
+                );
+            }
+            // A sort the index cannot give is still refused, naming only what matters.
+            match scoped
+                .plan_trusted_query(&query(vec![
+                    QuerySort::ascending("team").expect("sort"),
+                    QuerySort::ascending("score").expect("sort"),
+                ]))
+                .await
+            {
+                Err(TrustedQueryError::RequiredIndex { shape }) => {
+                    assert_eq!(shape.equality_fields(), ["team".to_owned()]);
+                    assert_eq!(shape.sort().len(), 1);
+                    assert_eq!(shape.sort()[0].field(), "score");
+                }
+                other => panic!("expected a required-index error, got {other:?}"),
+            }
         });
     }
 

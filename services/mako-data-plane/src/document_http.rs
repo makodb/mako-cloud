@@ -972,14 +972,49 @@ fn map_mutation_error(request: &HttpRequest, error: &MutationError) -> HttpApiEr
     }
 }
 
+/// Says which index would answer a query no active index serves, in the
+/// order its fields would need: the equality fields (in any order), then the
+/// range field, then each sort field with its direction. "Requires an active
+/// index" alone left a function author guessing which one.
+fn required_index_message(shape: &mako_documents::RequiredIndexShape) -> String {
+    let mut fields = Vec::new();
+    match shape.equality_fields() {
+        [] => {}
+        [only] => fields.push(only.clone()),
+        several => fields.push(format!("{} (in any order)", several.join(", "))),
+    }
+    if let Some(range) = shape.range_field() {
+        fields.push(range.to_owned());
+    }
+    for term in shape.sort() {
+        let direction = match term.direction() {
+            mako_documents::IndexDirection::Ascending => "ascending",
+            mako_documents::IndexDirection::Descending => "descending",
+        };
+        fields.push(format!("{} {direction}", term.field()));
+    }
+    if shape.equality_fields().is_empty() && shape.range_field().is_none() {
+        return "document query requires a predicate on the first field of an active index"
+            .to_owned();
+    }
+    format!(
+        "document query requires an active index whose fields begin {}",
+        fields.join(", then ")
+    )
+}
+
 fn map_query_error(
     request: &HttpRequest,
     error: &mako_documents::TrustedQueryError,
 ) -> HttpApiError {
     match error {
-        mako_documents::TrustedQueryError::RequiredIndex { .. } => {
-            conflict(request, "document query requires an active index")
-        }
+        mako_documents::TrustedQueryError::RequiredIndex { shape } => HttpApiError::new(
+            409,
+            ErrorCode::Conflict,
+            required_index_message(shape),
+            request.request_id(),
+            RetryAdvice::Never,
+        ),
         mako_documents::TrustedQueryError::Storage(_)
         | mako_documents::TrustedQueryError::Document(_)
         | mako_documents::TrustedQueryError::CorruptIndexEntry => {
