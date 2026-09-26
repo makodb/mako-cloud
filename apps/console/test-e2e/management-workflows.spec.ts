@@ -191,6 +191,9 @@ test("policy and application-user administration enforce full management workflo
   await expect(page.getByText("Default deny is active.")).toBeVisible();
   await page.getByRole("button", { name: "Create draft" }).click();
   await expect(page.getByText("Policy v1", { exact: true })).toBeVisible();
+  // The starter rules are written in the expression language, not the
+  // example-context names, so they validate as they stand.
+  expect(api.policyDrafts[0]?.rules[0]?.expression).toBe("old.ownerId == identity.user_id");
   await page.getByRole("button", { name: "Validate against schema" }).click();
   await expect(page.getByText("Schema-aware validation passed.")).toBeVisible();
   await page.getByRole("button", { name: "Activate" }).click();
@@ -344,6 +347,7 @@ class ManagementApiHarness {
   readonly schemaPublications: Record<string, unknown>[] = [];
   readonly tokenCreates: Record<string, unknown>[] = [];
   readonly tokens: Record<string, unknown>[] = [];
+  readonly policyDrafts: { rules: { expression: string }[] }[] = [];
   schemaVersion = 1;
 
   async install(page: Page) {
@@ -506,6 +510,7 @@ class ManagementApiHarness {
     } else if (path.endsWith("/collections/todos/policies") && method === "GET") {
       await json(route, this.activePolicy);
     } else if (path.endsWith("/collections/todos/policies") && method === "POST") {
+      this.policyDrafts.push(request.postDataJSON() as { rules: { expression: string }[] });
       this.policy = policyFixture("draft");
       await json(route, this.policy, 201);
     } else if (path.endsWith("/policies/1/actions/validate") && method === "POST") {
@@ -729,7 +734,7 @@ function policyFixture(state: string) {
         id: "owner-read",
         effect: "allow",
         operations: ["read"],
-        expression: "oldDocument.ownerId == identity.userId",
+        expression: "old.ownerId == identity.user_id",
       },
     ],
     diagnostics: [],

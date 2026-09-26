@@ -37,7 +37,10 @@ const DEFAULT_RULES = JSON.stringify(
       id: "owner-read",
       effect: "allow",
       operations: ["read"],
-      expression: "oldDocument.ownerId == identity.userId",
+      // Expressions name the documents old/new and the caller identity.user_id;
+      // oldDocument and userId are the example-context JSON's names, and a
+      // starter written with them failed validation (unknown_identifier).
+      expression: "old.ownerId == identity.user_id",
     },
   ],
   null,
