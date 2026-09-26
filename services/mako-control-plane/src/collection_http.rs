@@ -485,9 +485,12 @@ fn handle_list_indexes(
         // the single-index read about whether a query can use an index.
         let mut items = Vec::with_capacity(records.len());
         for record in &records {
-            let state =
-                inspect_index(graph, request, &actor, &tenant, &collection_id, record).await?;
-            items.push(index_wire_with_state(record, state));
+            let inspected =
+                inspect_index(graph, request, &actor, &tenant, &collection_id, record).await;
+            items.push(index_wire_with_state(
+                record,
+                listed_state(record, inspected),
+            ));
         }
         json(request, 200, &ItemsWire { items })
     })
@@ -566,8 +569,13 @@ fn handle_get_index(
             .get_index(&actor, &tenant, &collection_id, &name, version, now)
             .await
             .map_err(|error| collection_error(request, error))?;
-        let state = inspect_index(graph, request, &actor, &tenant, &collection_id, &record).await?;
-        json(request, 200, &index_wire_with_state(&record, state))
+        let inspected =
+            inspect_index(graph, request, &actor, &tenant, &collection_id, &record).await;
+        json(
+            request,
+            200,
+            &index_wire_with_state(&record, listed_state(&record, inspected)),
+        )
     })
 }
 
@@ -835,6 +843,20 @@ async fn inspect_index(
     Ok(reported_index_state(&reported, definition.state()))
 }
 
+/// The state a read reports for one index. The data plane's report is
+/// preferred; when it cannot give one -- the index was recorded but its
+/// install was refused or never arrived, the reader's role may not inspect,
+/// or the data plane is briefly unreachable -- the control plane's own record
+/// stands in. One such index used to fail the whole listing (409 for owners,
+/// 403 for everyone else), hiding every other index of the collection.
+/// Resubmitting the same index definition completes its install.
+fn listed_state(
+    record: &IndexBuildStatus,
+    inspected: Result<IndexState, HttpApiError>,
+) -> IndexState {
+    inspected.unwrap_or_else(|_| record.definition.state())
+}
+
 fn reported_index_state(reported: &Value, fallback: IndexState) -> IndexState {
     match reported["state"].as_str() {
         Some("active") => IndexState::Active,
@@ -1017,6 +1039,34 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+
+    #[test]
+    fn an_index_the_data_plane_cannot_report_keeps_its_recorded_state() {
+        let record = IndexBuildStatus {
+            definition: IndexDefinition::new_building(
+                CollectionId::parse("todos").expect("collection"),
+                IndexName::parse("by_owner").expect("index name"),
+                IndexVersion::new(1).expect("index version"),
+                IndexKind::NonUnique,
+                [IndexField::ascending("ownerId").expect("index field")],
+            )
+            .expect("index definition"),
+            progress: None,
+        };
+        let request = HttpRequest::for_test(HttpMethod::Get, "/", Vec::new(), Vec::new(), None);
+        // The data plane has never heard of it (install refused), or the
+        // reader may not inspect: the listing still answers.
+        for refused in [
+            conflict(&request, "identity operation conflicts with current state"),
+            forbidden(&request, "your team role does not allow this change"),
+        ] {
+            assert_eq!(listed_state(&record, Err(refused)), IndexState::Building);
+        }
+        assert_eq!(
+            listed_state(&record, Ok(IndexState::Active)),
+            IndexState::Active
+        );
+    }
 
     #[test]
     fn collection_and_index_wires_match_the_public_contract() {
