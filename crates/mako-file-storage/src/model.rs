@@ -218,6 +218,7 @@ impl ObjectRecord {
     pub fn policy_document(&self) -> Value {
         json!({
             "path": self.path,
+            "folder": object_folder(&self.path),
             "bucket": self.bucket_id,
             "owner_id": self.owner_id.clone().unwrap_or_default(),
             "content_type": self.content_type,
@@ -229,6 +230,13 @@ impl ObjectRecord {
     }
 }
 
+/// The first segment of an object path: `usr_1/receipt.png` is in folder
+/// `usr_1`; an object at the top level has none (`""`).
+#[must_use]
+pub fn object_folder(path: &str) -> &str {
+    path.split_once('/').map_or("", |(folder, _)| folder)
+}
+
 /// The schema of the object document, so policy expressions resolve
 /// `new.owner_id`, `old.size_bytes`, and the rest exactly as for a collection.
 #[must_use]
@@ -237,6 +245,10 @@ pub fn object_schema() -> Value {
         "type": "object",
         "properties": {
             "path": { "type": "string" },
+            // The path's first segment, so a rule can bind a path to its
+            // owner (`new.folder == identity.user_id`): the language has no
+            // string functions to take a prefix itself.
+            "folder": { "type": "string" },
             "bucket": { "type": "string" },
             "owner_id": { "type": "string" },
             "content_type": { "type": "string" },
@@ -248,7 +260,7 @@ pub fn object_schema() -> Value {
             // than the compiler calling it an unknown field.
             "attributes": { "type": "object", "additionalProperties": true },
         },
-        "required": ["path", "bucket", "owner_id", "content_type", "size_bytes", "created_at", "updated_at", "attributes"],
+        "required": ["path", "folder", "bucket", "owner_id", "content_type", "size_bytes", "created_at", "updated_at", "attributes"],
         "additionalProperties": false,
     })
 }

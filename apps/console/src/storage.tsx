@@ -61,10 +61,12 @@ const DANGER_OUTLINE =
 /** The owner-only policy the User Book's file-storage chapter describes, as a starting point. */
 export const STARTER_RULES: readonly StorageBucketRule[] = [
   {
+    // The uploader owns what they upload, so owner_id alone let anyone take a
+    // name inside someone else's folder; folder is the path's first segment.
     id: "owner-creates",
     effect: "allow",
     operations: ["create"],
-    expression: "new.owner_id == identity.user_id",
+    expression: "new.owner_id == identity.user_id && new.folder == identity.user_id",
   },
   {
     id: "owner-changes",

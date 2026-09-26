@@ -1615,7 +1615,8 @@ A bucket declares:
 - `access`: `policy` (every request is evaluated against the bucket's rules) or `public` (reads need no credential at all; writes are still evaluated).
 - `maxObjectBytes`: the largest object it accepts, up to the platform ceiling of 16 MiB.
 - `allowedContentTypes`: patterns such as `image/*` or `text/plain`; empty means any.
-- `rules`: the document-policy language over the **object document** — `path`, `bucket`, `owner_id`, `content_type`, `size_bytes`, `created_at`, `updated_at`, `attributes` — with `new.*` on `create`/`update`, `old.*` on `read`, `update`, `delete`, and `identity.*`, `claims.*`, `request.*` as for collections. A bucket with no rules refuses every policy-governed request; rules that do not compile are refused at configuration time.
+- `rules`: the document-policy language over the **object document** — `path`, `folder` (the path's first segment: `usr_1` for `usr_1/receipt.png`, empty at the top level), `bucket`, `owner_id`, `content_type`, `size_bytes`, `created_at`, `updated_at`, `attributes` — with `new.*` on `create`/`update`, `old.*` on `read`, `update`, `delete`, and `identity.*`, `claims.*`, `request.*` as for collections. A bucket with no rules refuses every policy-governed request; rules that do not compile are refused at configuration time.
+- A per-user layout needs the path bound to its owner as well: the uploader is always the owner of what they upload, so `new.owner_id == identity.user_id` alone lets anyone create any path, including inside another user's folder. `new.owner_id == identity.user_id && new.folder == identity.user_id` keeps each user to paths under their own id; the console's starter rules do this.
 
 ```bash
 mako-cloud storage buckets create receipts --access policy --max-object-bytes 8388608 \

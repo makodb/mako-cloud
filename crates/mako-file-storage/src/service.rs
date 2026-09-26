@@ -886,6 +886,76 @@ mod tests {
         });
     }
 
+    /// Owner rules alone let anyone create any path, since the uploader is
+    /// the owner of what they upload: another user could take names inside
+    /// someone else's folder. `folder` binds the path to its owner.
+    #[test]
+    fn a_folder_rule_keeps_each_user_to_their_own_folder() {
+        futures::executor::block_on(async {
+            let adapter: Arc<dyn KvAdapter> = Arc::new(MemoryAdapter::new());
+            let objects = Arc::new(MemoryObjectStore::default());
+            let service = service_on(adapter.clone(), objects.clone(), tenant());
+            let mut config = owner_bucket("attachments", BucketAccess::Policy);
+            config.rules[0].expression =
+                "new.owner_id == identity.user_id && new.folder == identity.user_id".to_owned();
+            service.install_bucket(config, 500).await.expect("bucket");
+
+            let alice = user("user_alice");
+            let bob = user("user_bob");
+            service
+                .put_object(
+                    "attachments",
+                    "user_alice/receipt.png",
+                    "image/png",
+                    b"A",
+                    &alice,
+                )
+                .await
+                .expect("alice writes in her own folder");
+            assert!(matches!(
+                service
+                    .put_object(
+                        "attachments",
+                        "user_alice/sneaky.png",
+                        "image/png",
+                        b"B",
+                        &bob
+                    )
+                    .await,
+                Err(FileStorageError::Denied(_))
+            ));
+            assert!(
+                matches!(
+                    service
+                        .put_object("attachments", "loose.png", "image/png", b"C", &bob)
+                        .await,
+                    Err(FileStorageError::Denied(_))
+                ),
+                "an object outside any folder is in nobody's"
+            );
+            service
+                .put_object(
+                    "attachments",
+                    "user_bob/receipt.png",
+                    "image/png",
+                    b"D",
+                    &bob,
+                )
+                .await
+                .expect("bob writes in his");
+        });
+    }
+
+    #[test]
+    fn a_path_names_its_folder_by_its_first_segment() {
+        assert_eq!(crate::model::object_folder("usr_1/receipt.png"), "usr_1");
+        assert_eq!(
+            crate::model::object_folder("usr_1/2026/receipt.png"),
+            "usr_1"
+        );
+        assert_eq!(crate::model::object_folder("receipt.png"), "");
+    }
+
     #[test]
     fn objects_are_stored_encrypted_served_to_their_owner_and_refused_to_others() {
         futures::executor::block_on(async {

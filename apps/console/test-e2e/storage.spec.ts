@@ -15,7 +15,7 @@ const OWNER_RULES = [
     id: "owner-creates",
     effect: "allow",
     operations: ["create"],
-    expression: "new.owner_id == identity.user_id",
+    expression: "new.owner_id == identity.user_id && new.folder == identity.user_id",
   },
   {
     id: "owner-changes",
