@@ -61,10 +61,17 @@ test("a lead creates a team from Home and hands out an invitation link", async (
   expect(api.created).toEqual([{ name: "Website team" }]);
   // The lead's own row says so; members are otherwise listed by identity id.
   await expect(page.getByLabel("Role for dev_abcdefgh (you)")).toHaveValue("owner");
+  // The team's only owner cannot demote or remove themselves; it is not offered.
+  await expect(page.getByLabel("Role for dev_abcdefgh (you)")).toBeDisabled();
 
   await page.getByLabel("Email", { exact: true }).fill("teammate@example.test");
-  await page.getByLabel("Role", { exact: true }).selectOption("developer");
-  await page.getByRole("button", { name: "Create invitation" }).click();
+  // The button says what the invitation will grant, and follows the choice.
+  await expect(page.getByRole("button", { name: "Invite as viewer" })).toBeVisible();
+  await page.getByLabel("Role for the new member").selectOption("developer");
+  await page.getByRole("button", { name: "Invite as developer" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Invitation for" })).toHaveText(
+    "Invitation for teammate@example.test as developer.",
+  );
   await expect(page.getByText("Copy this invitation link now.")).toBeVisible();
   await page.getByRole("button", { name: "Reveal value" }).click();
   const origin = new URL(page.url()).origin;

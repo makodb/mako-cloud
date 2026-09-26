@@ -354,9 +354,13 @@ function MembersPanel({
   // own role.
   const selfId = state.status === "authenticated" ? state.session.profile.id : null;
   const [failure, setFailure] = useState<ConsoleApiFailure | null>(null);
-  // Managers change members; only an owner may change or remove an owner.
+  // Managers change members; only an owner may change or remove an owner,
+  // and the team's only owner is never offered a change the service refuses.
+  const owners = members?.filter((member) => member.role === "owner").length ?? 0;
   const editable = (member: TeamMembership) =>
-    canManage && (currentRole === "owner" || member.role !== "owner");
+    canManage &&
+    (currentRole === "owner" || member.role !== "owner") &&
+    !(member.role === "owner" && owners <= 1);
   const updateRole = async (developerIdentityId: string, role: TeamRole) => {
     const previousRole = members?.find(
       (member) => member.developerIdentityId === developerIdentityId,
@@ -485,6 +489,10 @@ function InvitationPanel({
   const client = useManagementClient();
   const [failure, setFailure] = useState<ConsoleApiFailure | null>(null);
   const [issue, setIssue] = useState<InvitationIssue | null>(null);
+  // The role is stated on the button and after the invitation is made: left
+  // at its default, invitations went out as viewer where a developer was
+  // meant, and nothing on the page said so.
+  const [role, setRole] = useState<TeamRole>("viewer");
   const id = useId();
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -492,7 +500,6 @@ function InvitationPanel({
     setFailure(null);
     const data = new FormData(form);
     const email = String(data.get("email") ?? "").trim();
-    const role = String(data.get("role") ?? "viewer") as TeamRole;
     try {
       const invitation = await client.createInvitation(teamId, {
         email,
@@ -501,6 +508,7 @@ function InvitationPanel({
       });
       setIssue(invitation);
       form.reset();
+      setRole("viewer");
       await onChanged();
     } catch (error) {
       setFailure(toConsoleApiFailure(error));
@@ -524,8 +532,14 @@ function InvitationPanel({
               disabled={!canManage}
             />
           </Field>
-          <Field label="Role" htmlFor={`${id}-role`}>
-            <NativeSelect id={`${id}-role`} name="role" defaultValue="viewer" disabled={!canManage}>
+          <Field label="Role for the new member" htmlFor={`${id}-role`}>
+            <NativeSelect
+              id={`${id}-role`}
+              name="role"
+              value={role}
+              onChange={(event) => setRole(event.currentTarget.value as TeamRole)}
+              disabled={!canManage}
+            >
               {ROLES.filter((role) => role !== "owner").map((role) => (
                 <option key={role} value={role}>
                   {role}
@@ -534,17 +548,23 @@ function InvitationPanel({
             </NativeSelect>
           </Field>
           <Button type="submit" disabled={!canManage} className="justify-self-start">
-            Create invitation
+            Invite as {role}
           </Button>
         </form>
         {issue === null ? null : (
           // The invitee needs the invitation's own page as well as its token;
           // a bare token gave them nowhere to use it. The link carries both.
-          <OneTimeSecretValue
-            label="invitation link"
-            value={`${window.location.origin}/invitations/${issue.invitation.id}#token=${encodeURIComponent(issue.token)}`}
-            onDismiss={() => setIssue(null)}
-          />
+          <>
+            <p className="m-0 text-sm" role="status">
+              Invitation for <strong>{issue.invitation.email}</strong> as{" "}
+              <strong>{issue.invitation.role}</strong>.
+            </p>
+            <OneTimeSecretValue
+              label="invitation link"
+              value={`${window.location.origin}/invitations/${issue.invitation.id}#token=${encodeURIComponent(issue.token)}`}
+              onDismiss={() => setIssue(null)}
+            />
+          </>
         )}
       </CardContent>
     </Card>
