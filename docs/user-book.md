@@ -1702,6 +1702,8 @@ mako-cloud functions deployments list households
 mako-cloud functions deployments rollback households 3 --yes
 ```
 
+A function's logs hold what it prints -- `console.log`, `info`, `warn`, `error` and `debug`, whether it serves with `Deno.serve(...)` or `export default { fetch }` -- plus a line at error level for every response with a 5xx status and lifecycle lines such as `deployment_loaded`. They are scrubbed like every log line and retained under the source `function:<name>` on the environment's Logs page.
+
 A function's **configuration** is `{ verifyJwt, regions (1–16), secretNames (≤64), limits, allowedHosts? (≤8) }`. `limits` are `cpuMilliseconds`, `wallMilliseconds`, `memoryBytes`, `requestBytes`, `responseBytes`, and `concurrency`; the CLI's defaults are 1 000 ms CPU, 10 000 ms wall, 128 MiB, 1 MiB request and response, concurrency 4. JWT verification is on by default; `--no-verify-jwt` makes a function public (routing, payload limits, quotas, and audit context still apply). Rollback selects a previously healthy immutable version and does not modify its bundle; a failed deployment never replaces the active version, and a version that later fails its health check becomes ineligible for promotion.
 
 ### Data access and secrets

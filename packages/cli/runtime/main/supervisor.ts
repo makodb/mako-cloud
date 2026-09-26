@@ -526,6 +526,18 @@ export class RuntimeSupervisor {
         appendLog(record, line.level, line.message, requestId, this.#region);
       }
       appendLog(record, "info", "invocation_completed", requestId, this.#region);
+      // A failing response is worth a retained line of its own: the lifecycle
+      // echo above is not kept, so a function that answered 500 on every call
+      // used to leave nothing in its logs to say so.
+      if (response.status >= 500) {
+        appendLog(
+          record,
+          "error",
+          `function responded with status ${response.status}`,
+          requestId,
+          this.#region,
+        );
+      }
       await this.#persist(record);
       const responseHeaders = new Headers(response.headers);
       responseHeaders.delete(WORKER_LOG_HEADER);
@@ -637,21 +649,28 @@ async function materializeWorker(
     }
     // Console output never leaves a worker isolate on its own: the shim
     // captures it during a request and ships it back on a response header
-    // the supervisor strips and retains. Only an entry module that exports
-    // default can be wrapped -- a Deno.serve-style function registers its
-    // own handler as an import side effect, and importing it from a shim
-    // that then serves nothing is a hard boot error. A bundle that carries
-    // a module by the shim's name keeps its own file and goes uncaptured.
+    // the supervisor strips and retains. An entry module that exports default
+    // is wrapped by a shim that exports default in turn; a Deno.serve-style
+    // module registers its handler as an import side effect, so its shim
+    // exports nothing, wraps Deno.serve, and imports the module after (a shim
+    // that exported default around it would serve nothing, a boot error). A
+    // bundle that carries a module by the shim's name goes uncaptured.
     const entrySource = entrypointSources.get(load.manifest.entrypoint);
-    if (
-      archive.modules[SHIM_MODULE] === undefined &&
-      entrySource !== undefined &&
-      /(^|\n)\s*export\s+default\b/u.test(entrySource)
-    ) {
-      await Deno.writeTextFile(
-        `${directory}/${SHIM_MODULE}`,
-        consoleShimSource(load.manifest.entrypoint),
-      );
+    if (archive.modules[SHIM_MODULE] === undefined && entrySource !== undefined) {
+      if (/(^|\n)\s*export\s+default\b/u.test(entrySource)) {
+        await Deno.writeTextFile(
+          `${directory}/${SHIM_MODULE}`,
+          consoleShimSource(load.manifest.entrypoint),
+        );
+      } else if (/\bDeno\.serve\s*\(/u.test(entrySource)) {
+        // The style the user book teaches: the module registers its handler
+        // with Deno.serve as it loads. The shim wraps Deno.serve before the
+        // module is imported, so the handler it registers ships its lines too.
+        await Deno.writeTextFile(
+          `${directory}/${SHIM_MODULE}`,
+          serveShimSource(load.manifest.entrypoint),
+        );
+      }
     }
   } else {
     const entrypoint = load.manifest.entrypoint;
@@ -1187,20 +1206,14 @@ function shippedWorkerLogs(headers: Headers): { level: DeploymentLog["level"]; m
   return lines;
 }
 
-/// The module written next to a user bundle's own files. It patches console
-/// to remember what a request printed, forwards every line to the real
-/// console so container logs stay whole, and ships the captured lines back
-/// on the internal header the supervisor strips. Capture must never break
-/// the function: every failure path returns the user's response untouched.
-function consoleShimSource(entrypoint: string): string {
-  return `// Written by the Mako runtime supervisor. Captures this function's console
-// output per request so the platform can retain it; the header it ships on
-// never leaves the runtime.
-import user from "./${entrypoint}";
-type CapturedLine = { level: string; message: string };
+/// The capture shared by both shims: console patched to remember what a
+/// request printed, and a function that ships the lines on a response.
+function captureSource(): string {
+  return `type CapturedLine = { level: string; message: string };
 const captured: CapturedLine[] = [];
 const render = (value: unknown): string => {
   if (typeof value === "string") return value;
+  if (value instanceof Error) return \`\${value.name}: \${value.message}\`;
   try {
     return JSON.stringify(value) ?? String(value);
   } catch {
@@ -1220,29 +1233,71 @@ console.info = patch("info", console.info.bind(console));
 console.warn = patch("warn", console.warn.bind(console));
 console.error = patch("error", console.error.bind(console));
 console.debug = patch("debug", console.debug.bind(console));
+// No reset per request: concurrent requests in this isolate share the array,
+// and a reset would wipe a neighbour's captured lines. Draining at ship time
+// means a line lands on whichever response ships next -- same function, same
+// tenant, at worst blurred attribution.
+const ship = (response: Response): Response => {
+  if (captured.length === 0) return response;
+  try {
+    const bytes = new TextEncoder().encode(JSON.stringify(captured.splice(0)));
+    if (bytes.length > ${MAX_SHIPPED_LOG_BYTES}) return response;
+    let binary = "";
+    for (const byte of bytes) binary += String.fromCharCode(byte);
+    const headers = new Headers(response.headers);
+    headers.set("${WORKER_LOG_HEADER}", btoa(binary));
+    return new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers,
+    });
+  } catch {
+    return response;
+  }
+};
+`;
+}
+
+/// The shim for a module that registers its handler with Deno.serve as it
+/// loads: Deno.serve is wrapped first, then the module is imported, so the
+/// handler it passes -- in any of Deno.serve's call shapes -- ships its lines.
+function serveShimSource(entrypoint: string): string {
+  return `// Written by the Mako runtime supervisor. Captures this function's console
+// output per request so the platform can retain it; the header it ships on
+// never leaves the runtime.
+${captureSource()}
+type Handler = (request: Request, info: unknown) => Response | Promise<Response>;
+const wrap = (handler: Handler): Handler => async (request, info) => ship(await handler(request, info));
+const serve = Deno.serve.bind(Deno) as (...args: unknown[]) => unknown;
+// deno-lint-ignore no-explicit-any
+(Deno as any).serve = (...args: unknown[]) => {
+  const [first, second] = args;
+  if (typeof first === "function") return serve(wrap(first as Handler), ...args.slice(1));
+  if (typeof second === "function") return serve(first, wrap(second as Handler), ...args.slice(2));
+  if (first !== null && typeof first === "object" && typeof (first as { handler?: unknown }).handler === "function") {
+    const options = first as { handler: Handler };
+    return serve({ ...options, handler: wrap(options.handler) }, ...args.slice(1));
+  }
+  return serve(...args);
+};
+await import("./${entrypoint}");
+`;
+}
+
+/// The module written next to a user bundle's own files. It patches console
+/// to remember what a request printed, forwards every line to the real
+/// console so container logs stay whole, and ships the captured lines back
+/// on the internal header the supervisor strips. Capture must never break
+/// the function: every failure path returns the user's response untouched.
+function consoleShimSource(entrypoint: string): string {
+  return `// Written by the Mako runtime supervisor. Captures this function's console
+// output per request so the platform can retain it; the header it ships on
+// never leaves the runtime.
+import user from "./${entrypoint}";
+${captureSource()}
 export default {
   async fetch(request: Request): Promise<Response> {
-    // No reset here: concurrent requests in this isolate share the array,
-    // and a reset would wipe a neighbour's captured lines. Draining at ship
-    // time means a line lands on whichever response ships next -- same
-    // function, same tenant, at worst blurred attribution.
-    const response = await user.fetch(request);
-    if (captured.length === 0) return response;
-    try {
-      const bytes = new TextEncoder().encode(JSON.stringify(captured.splice(0)));
-      if (bytes.length > ${MAX_SHIPPED_LOG_BYTES}) return response;
-      let binary = "";
-      for (const byte of bytes) binary += String.fromCharCode(byte);
-      const headers = new Headers(response.headers);
-      headers.set("${WORKER_LOG_HEADER}", btoa(binary));
-      return new Response(response.body, {
-        status: response.status,
-        statusText: response.statusText,
-        headers,
-      });
-    } catch {
-      return response;
-    }
+    return ship(await user.fetch(request));
   },
 };
 `;
