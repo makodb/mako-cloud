@@ -60,6 +60,24 @@ pub enum AutomationPermission {
     AuditRead,
 }
 
+impl AutomationPermission {
+    /// The name a token's permission list and a refusal use.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::OrganizationRead => "organization_read",
+            Self::ProjectRead => "project_read",
+            Self::ProjectWrite => "project_write",
+            Self::EnvironmentRead => "environment_read",
+            Self::EnvironmentWrite => "environment_write",
+            Self::CollectionWrite => "collection_write",
+            Self::PolicyWrite => "policy_write",
+            Self::FunctionDeploy => "function_deploy",
+            Self::AuditRead => "audit_read",
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct AutomationScope {
@@ -297,6 +315,12 @@ impl AutomationPrincipal {
     #[must_use]
     pub const fn created_by(&self) -> &DeveloperIdentityId {
         &self.created_by
+    }
+
+    /// Whether the token carries this permission at all, whatever its scope.
+    #[must_use]
+    pub fn holds(&self, permission: AutomationPermission) -> bool {
+        self.scope.permissions.contains(&permission)
     }
 
     #[must_use]

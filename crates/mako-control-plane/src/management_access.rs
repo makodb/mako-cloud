@@ -19,7 +19,9 @@ pub enum ManagementAction {
 }
 
 impl ManagementAction {
-    const fn automation_permission(self) -> AutomationPermission {
+    /// The token permission this action needs.
+    #[must_use]
+    pub const fn automation_permission(self) -> AutomationPermission {
         match self {
             Self::OrganizationRead => AutomationPermission::OrganizationRead,
             Self::ProjectRead => AutomationPermission::ProjectRead,

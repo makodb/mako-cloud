@@ -546,10 +546,9 @@ pub(crate) async fn automation_actor(
     .await
     .map_err(|error| match error {
         ManagementAccessError::NotFound => not_found(request, "resource was not found"),
-        ManagementAccessError::Forbidden | ManagementAccessError::ScopeMismatch => forbidden(
-            request,
-            "automation token scope does not allow this request",
-        ),
+        ManagementAccessError::Forbidden | ManagementAccessError::ScopeMismatch => {
+            scope_refusal(request, &principal, action)
+        }
         _ => unavailable(request, "management authorization is unavailable"),
     })?;
     graph
@@ -557,6 +556,35 @@ pub(crate) async fn automation_actor(
         .authenticate_automation(principal.created_by(), principal.token_id().as_str(), now)
         .await
         .map_err(|_| unauthenticated(request))
+}
+
+/// Says what a token lacks: the permission the request needs, by name, or,
+/// when it has that permission, that the request is outside the project or
+/// environment it is scoped to. "Scope does not allow this request" alone
+/// left CI authors guessing, e.g. that a deploy also reads the function and
+/// so needs environment_read.
+fn scope_refusal(
+    request: &HttpRequest,
+    principal: &mako_control_plane::AutomationPrincipal,
+    action: ManagementAction,
+) -> HttpApiError {
+    let needed = action.automation_permission();
+    let message = if principal.holds(needed) {
+        "automation token is scoped to a different project or environment than this request"
+            .to_owned()
+    } else {
+        format!(
+            "automation token lacks the {} permission this request needs",
+            needed.as_str()
+        )
+    };
+    HttpApiError::new(
+        403,
+        mako_api::ErrorCode::PermissionDenied,
+        message,
+        request.request_id(),
+        mako_api::RetryAdvice::Never,
+    )
 }
 
 fn unauthenticated(request: &HttpRequest) -> HttpApiError {
@@ -652,6 +680,67 @@ mod tests {
             ProjectId::parse("prj_abcdefgh").unwrap(),
             Some(EnvironmentId::parse("env_abcdefgh").unwrap()),
         )
+    }
+
+    #[test]
+    fn a_refusal_names_the_permission_a_token_lacks() {
+        use std::sync::Arc;
+
+        use mako_control_plane::{
+            AutomationPermission, AutomationScope, AutomationTokenId, AutomationTokenService,
+            DeveloperIdentityId,
+        };
+        use mako_service_runtime::HttpRequest;
+        use mako_storage::{Durability, MemoryAdapter};
+
+        use super::scope_refusal;
+
+        futures::executor::block_on(async {
+            let service =
+                AutomationTokenService::new(Arc::new(MemoryAdapter::new()), Durability::Memory)
+                    .unwrap();
+            let team = OrganizationId::parse("org_abcdefgh").unwrap();
+            let scope = AutomationScope::new(
+                team,
+                None,
+                None,
+                [
+                    AutomationPermission::ProjectRead,
+                    AutomationPermission::FunctionDeploy,
+                ],
+            )
+            .unwrap();
+            let issued = service
+                .issue(
+                    AutomationTokenId::parse("atm_scope0001").unwrap(),
+                    "ci",
+                    scope,
+                    DeveloperIdentityId::parse("dev_abcdefgh").unwrap(),
+                    10,
+                    1_000,
+                )
+                .await
+                .unwrap();
+            let principal = service.authenticate(&issued.secret, 20).await.unwrap();
+            let request = HttpRequest::for_test(HttpMethod::Get, "/", Vec::new(), Vec::new(), None);
+            let missing = scope_refusal(&request, &principal, ManagementAction::EnvironmentRead);
+            assert_eq!(
+                missing.envelope().error.code,
+                mako_api::ErrorCode::PermissionDenied
+            );
+            assert_eq!(
+                missing.envelope().error.message,
+                "automation token lacks the environment_read permission this request needs"
+            );
+            let elsewhere = scope_refusal(&request, &principal, ManagementAction::FunctionDeploy);
+            assert!(
+                elsewhere
+                    .envelope()
+                    .error
+                    .message
+                    .contains("scoped to a different project or environment")
+            );
+        });
     }
 
     #[test]
