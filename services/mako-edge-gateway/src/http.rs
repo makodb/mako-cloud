@@ -353,6 +353,11 @@ fn forwarded_request_headers(request: &HttpRequest) -> Vec<(String, String)> {
         "authorization",
         "accept",
         "content-type",
+        // These are accepted by the browser CORS contract and carry the
+        // caller's replay/concurrency conditions, not platform provenance.
+        "idempotency-key",
+        "if-match",
+        "if-none-match",
         "user-agent",
         "traceparent",
         "tracestate",
@@ -456,6 +461,67 @@ mod tests {
     use mako_edge_gateway::RegionalDeploymentHealth;
 
     use super::*;
+
+    #[test]
+    fn public_function_headers_preserve_replay_conditions_without_platform_provenance() {
+        let request = HttpRequest::for_test(
+            HttpMethod::Post,
+            "/prj_example00--env_example00/functions/v1/hello",
+            [
+                ("Idempotency-Key", "command_original_0001"),
+                ("If-Match", "revision_42"),
+                ("If-None-Match", "*"),
+                ("Authorization", "Bearer application-session"),
+                ("X-Mako-Schedule-Id", "forged-schedule"),
+                ("X-Mako-Schedule-Run-Id", "forged-run"),
+                ("X-Mako-Schedule-Due-At", "2026-09-26T00:00:00Z"),
+                ("X-Mako-Runtime-Caller-Authorization", "forged-caller"),
+                ("X-Mako-Runtime-Deployment-Version", "999"),
+                ("X-Mako-Key", "public-project-key"),
+                ("Host", "untrusted.example"),
+            ]
+            .map(|(name, value)| (name.to_owned(), value.to_owned())),
+            Vec::new(),
+            None,
+        );
+        let forwarded = forwarded_request_headers(&request);
+        assert_eq!(
+            forwarded,
+            vec![
+                (
+                    "authorization".to_owned(),
+                    "Bearer application-session".to_owned()
+                ),
+                (
+                    "idempotency-key".to_owned(),
+                    "command_original_0001".to_owned()
+                ),
+                ("if-match".to_owned(), "revision_42".to_owned()),
+                ("if-none-match".to_owned(), "*".to_owned()),
+            ]
+        );
+    }
+
+    #[test]
+    fn forwarding_keeps_duplicate_condition_values_for_function_validation() {
+        let request = HttpRequest::for_test(
+            HttpMethod::Post,
+            "/prj_example00--env_example00/functions/v1/hello",
+            [
+                ("idempotency-key".to_owned(), "first".to_owned()),
+                ("Idempotency-Key".to_owned(), "second".to_owned()),
+            ],
+            Vec::new(),
+            None,
+        );
+        assert_eq!(
+            forwarded_request_headers(&request),
+            vec![
+                ("idempotency-key".to_owned(), "first".to_owned()),
+                ("idempotency-key".to_owned(), "second".to_owned()),
+            ]
+        );
+    }
 
     fn tenant(project: &str, environment: &str) -> TenantScope {
         TenantScope::new(
