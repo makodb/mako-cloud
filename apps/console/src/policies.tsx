@@ -92,9 +92,24 @@ export function PolicyScreen({
   const [validation, setValidation] = useState<PolicyValidation | null>(null);
   const [testResults, setTestResults] = useState<EvaluationResultView[] | null>(null);
   const [failure, setFailure] = useState<ConsoleApiFailure | null>(null);
+  // The highest version that exists, drafts included. Only the active version
+  // is listed, so the versions after it are probed until one is free.
+  const [highestVersion, setHighestVersion] = useState(0);
   const reloadActive = useCallback(async () => {
     try {
       const next = await client.getActiveCollectionPolicy(projectId, environmentId, collectionId);
+      let highest = next.policy?.version ?? 0;
+      for (let probe = highest + 1; probe <= highest + 50; probe += 1) {
+        const found = await client
+          .getCollectionPolicy(projectId, environmentId, collectionId, probe)
+          .then(
+            () => true,
+            () => false,
+          );
+        if (!found) break;
+        highest = probe;
+      }
+      setHighestVersion(highest);
       setActive(next);
       if (selected === null && next.policy !== undefined) {
         setSelected(next.policy);
@@ -108,6 +123,12 @@ export function PolicyScreen({
     void reloadActive();
   }, [reloadActive]);
 
+  // The next version to offer: above every version that exists and any draft made here.
+  // It is keyed into the input below, whose default was otherwise fixed at
+  // first render -- before the active policy loaded -- and offered version 1
+  // on a collection that already had it.
+  const nextVersion =
+    Math.max(highestVersion, active?.policy?.version ?? 0, selected?.version ?? 0) + 1;
   const createDraft = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
@@ -268,11 +289,12 @@ export function PolicyScreen({
             <form className="grid gap-4" onSubmit={(event) => void createDraft(event)}>
               <Field label="Policy version" htmlFor="draft-version">
                 <Input
+                  key={nextVersion}
                   id="draft-version"
                   name="version"
                   type="number"
                   min="1"
-                  defaultValue={(active?.policy?.version ?? 0) + 1}
+                  defaultValue={nextVersion}
                   required
                   className="max-w-40"
                 />
@@ -305,6 +327,7 @@ export function PolicyScreen({
             >
               <Field label="Inspect version" htmlFor="inspect-version">
                 <Input
+                  key={active?.policy?.version ?? 0}
                   id="inspect-version"
                   name="version"
                   type="number"

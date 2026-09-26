@@ -221,6 +221,28 @@ test("policy and application-user administration enforce full management workflo
   expect(api.unhandled).toEqual([]);
 });
 
+test("the draft form offers the first free version once the policy has loaded", async ({
+  page,
+}) => {
+  const api = new ManagementApiHarness();
+  api.activePolicy = {
+    defaultDeny: false,
+    authorizationEpoch: 2,
+    policy: policyFixture("active"),
+  };
+  // Version 1 is active and drafts 2 and 3 were made in an earlier session.
+  api.storedPolicyVersions = 3;
+  await api.install(page);
+
+  await page.goto(
+    `/projects/${PROJECT_ID}/environments/${ENVIRONMENT_ID}/collections/todos/policies`,
+  );
+  await expect(page.getByText("An active policy is installed.")).toBeVisible();
+  await expect(page.locator("#draft-version")).toHaveValue("4");
+  await expect(page.locator("#inspect-version")).toHaveValue("1");
+  expect(api.unhandled).toEqual([]);
+});
+
 test("publishing a schema version says what it means for apps on the current one", async ({
   page,
 }) => {
@@ -348,6 +370,8 @@ class ManagementApiHarness {
   readonly tokenCreates: Record<string, unknown>[] = [];
   readonly tokens: Record<string, unknown>[] = [];
   readonly policyDrafts: { rules: { expression: string }[] }[] = [];
+  /** Versions that exist beyond what the harness's other routes return. */
+  storedPolicyVersions = 0;
   schemaVersion = 1;
 
   async install(page: Page) {
@@ -507,6 +531,13 @@ class ManagementApiHarness {
       this.schemaPublications.push(body);
       this.schemaVersion = body.schemaVersion;
       await json(route, { status: "published", collection: { id: "todos" } });
+    } else if (/\/collections\/todos\/policies\/\d+$/u.test(path) && method === "GET") {
+      const version = Number(path.split("/").at(-1));
+      if (version <= this.storedPolicyVersions) {
+        await json(route, { ...policyFixture(version === 1 ? "active" : "draft"), version });
+      } else {
+        await json(route, apiError("not_found", "policy version was not found"), 404);
+      }
     } else if (path.endsWith("/collections/todos/policies") && method === "GET") {
       await json(route, this.activePolicy);
     } else if (path.endsWith("/collections/todos/policies") && method === "POST") {
