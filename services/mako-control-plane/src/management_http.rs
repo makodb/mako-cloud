@@ -378,10 +378,19 @@ fn handle_list_members(
             .list_memberships(&actor, &organization_id, limit(), now)
             .await
             .map_err(|error| organization_error(request, error))?;
-        let items = records
-            .iter()
-            .map(|record| membership_wire(request, record))
-            .collect::<Result<Vec<_>, _>>()?;
+        let mut items = Vec::with_capacity(records.len());
+        for record in &records {
+            let mut item = membership_wire(request, record)?;
+            // Only the members of a team the caller belongs to reach here.
+            item.email = graph
+                .developer_registration_store()
+                .get_account(record.developer_identity_id())
+                .await
+                .ok()
+                .flatten()
+                .map(|account| account.normalized_email().as_str().to_owned());
+            items.push(item);
+        }
         json(request, 200, &ItemsWire { items })
     })
 }
@@ -2108,6 +2117,7 @@ fn membership_wire(
     Ok(MembershipWire {
         organization_id: record.organization_id().as_str().to_owned(),
         developer_identity_id: record.developer_identity_id().as_str().to_owned(),
+        email: None,
         role: record.role(),
         created_at: format_timestamp(request, record.created_at_unix_seconds())?,
         updated_at: format_timestamp(request, record.updated_at_unix_seconds())?,
@@ -2246,6 +2256,10 @@ struct MembershipWire {
     #[serde(rename = "teamId")]
     organization_id: String,
     developer_identity_id: String,
+    /// Who the member is, for the team's own list: an identity id alone left
+    /// a lead unable to tell members apart. Absent outside that list.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    email: Option<String>,
     role: OrganizationRole,
     created_at: String,
     updated_at: String,

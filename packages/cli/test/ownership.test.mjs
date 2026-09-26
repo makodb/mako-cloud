@@ -175,7 +175,14 @@ test("teams bill prints the notice before any figure and passes the period throu
 
 test("team members are listed, updated with a valid role, and removed with confirmation", async (t) => {
   const members = [
-    { teamId: TEAM_ID, developerIdentityId: "dev_owner000", role: "owner", createdAt: NOW, updatedAt: NOW },
+    {
+      teamId: TEAM_ID,
+      developerIdentityId: "dev_owner000",
+      email: "owner@example.test",
+      role: "owner",
+      createdAt: NOW,
+      updatedAt: NOW,
+    },
     { teamId: TEAM_ID, developerIdentityId: "dev_develop00", role: "developer", createdAt: NOW, updatedAt: NOW },
   ];
   const memberPath = `/v1/teams/${TEAM_ID}/members/dev_develop00`;
@@ -198,9 +205,9 @@ test("team members are listed, updated with a valid role, and removed with confi
 
   const list = await runCli(["teams", "members", "list", TEAM_ID], { configDir: directory });
   assert.equal(list.code, 0, list.stderr);
-  assert.match(list.stdout, /^developerIdentityId\s+role\s+createdAt\s+updatedAt\n/u);
-  assert.match(list.stdout, /dev_owner000\s+owner/u);
-  assert.match(list.stdout, /dev_develop00\s+developer/u);
+  assert.match(list.stdout, /^developerIdentityId\s+email\s+role\s+createdAt\s+updatedAt\n/u);
+  assert.match(list.stdout, /dev_owner000\s+owner@example\.test\s+owner/u);
+  assert.match(list.stdout, /dev_develop00\s+—\s+developer/u);
   const listJson = await runCli(["teams", "members", "list", TEAM_ID, "--json"], { configDir: directory });
   assert.deepEqual(JSON.parse(listJson.stdout), members);
 

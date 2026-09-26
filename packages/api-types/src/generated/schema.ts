@@ -4231,6 +4231,11 @@ export interface components {
         TeamMembership: {
             teamId: components["schemas"]["TeamId"];
             developerIdentityId: components["schemas"]["DeveloperIdentityId"];
+            /**
+             * Format: email
+             * @description The member's developer email, in a team's member list, so members can tell each other apart
+             */
+            email?: string;
             role: components["schemas"]["TeamRole"];
             /** Format: date-time */
             createdAt: string;

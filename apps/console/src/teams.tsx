@@ -361,6 +361,11 @@ function MembersPanel({
     canManage &&
     (currentRole === "owner" || member.role !== "owner") &&
     !(member.role === "owner" && owners <= 1);
+  // Who a member is to the people on the team: their email when the list
+  // carries one, otherwise the identity id.
+  const nameOf = (developerIdentityId: string) =>
+    members?.find((member) => member.developerIdentityId === developerIdentityId)?.email ??
+    developerIdentityId;
   const updateRole = async (developerIdentityId: string, role: TeamRole) => {
     const previousRole = members?.find(
       (member) => member.developerIdentityId === developerIdentityId,
@@ -369,7 +374,7 @@ function MembersPanel({
       previousRole !== role &&
       !confirmDestructiveAction({
         action: "Change",
-        target: `${developerIdentityId}'s role from ${previousRole ?? "unknown"} to ${role}`,
+        target: `${nameOf(developerIdentityId)}'s role from ${previousRole ?? "unknown"} to ${role}`,
         consequence: "Their team and project permissions will change immediately.",
       })
     ) {
@@ -386,7 +391,7 @@ function MembersPanel({
     if (
       !confirmDestructiveAction({
         action: "Remove",
-        target: `team member ${developerIdentityId}`,
+        target: `team member ${nameOf(developerIdentityId)}`,
         consequence: "The member will lose team and project access.",
       })
     ) {
@@ -424,6 +429,9 @@ function MembersPanel({
               {members.map((member) => (
                 <TableRow key={member.developerIdentityId}>
                   <TableCell>
+                    {member.email === undefined ? null : (
+                      <span className="block text-sm">{member.email}</span>
+                    )}
                     <code className="font-mono text-xs">{member.developerIdentityId}</code>
                     {member.developerIdentityId === selfId ? (
                       <span className="ml-2 text-xs text-muted-foreground">(you)</span>
@@ -431,7 +439,7 @@ function MembersPanel({
                   </TableCell>
                   <TableCell>
                     <NativeSelect
-                      aria-label={`Role for ${member.developerIdentityId}${member.developerIdentityId === selfId ? " (you)" : ""}`}
+                      aria-label={`Role for ${member.email ?? member.developerIdentityId}${member.developerIdentityId === selfId ? " (you)" : ""}`}
                       size="sm"
                       wrapperClassName="w-auto min-w-36"
                       value={member.role}
@@ -461,7 +469,7 @@ function MembersPanel({
                       size="sm"
                       className="text-destructive hover:text-destructive"
                       disabled={!editable(member)}
-                      aria-label={`Remove ${member.developerIdentityId}`}
+                      aria-label={`Remove ${member.email ?? member.developerIdentityId}`}
                       onClick={() => void remove(member.developerIdentityId)}
                     >
                       Remove

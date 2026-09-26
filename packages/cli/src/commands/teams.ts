@@ -52,6 +52,7 @@ const TEAM_COLUMNS: readonly TableColumn[] = [
 
 const MEMBER_COLUMNS: readonly TableColumn[] = [
   { key: "developerIdentityId" },
+  { key: "email" },
   { key: "role" },
   { key: "createdAt" },
   { key: "updatedAt" },

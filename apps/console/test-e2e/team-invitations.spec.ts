@@ -123,6 +123,28 @@ test("a teammate sees the owner as owner, and an administrator cannot edit the o
   expect(api.unhandled).toEqual([]);
 });
 
+test("members are shown by email, so a lead can tell who is who", async ({ page }) => {
+  const api = new TeamApi();
+  api.teams = [...api.teams, team(TEAM_ID, "Website team", "team")];
+  api.members = [
+    membership("dev_abcdefgh", "owner", "lead@example.test"),
+    membership("dev_member001", "developer", "jordan@example.test"),
+  ];
+  await api.install(page);
+  const dialogs: string[] = [];
+  page.on("dialog", (dialog) => {
+    dialogs.push(dialog.message());
+    void dialog.dismiss();
+  });
+  await page.goto(`/teams/${TEAM_ID}`);
+  await expect(page.getByText("jordan@example.test")).toBeVisible();
+  await expect(page.getByLabel("Role for lead@example.test (you)")).toHaveValue("owner");
+  await page.getByLabel("Role for jordan@example.test").selectOption("administrator");
+  await expect.poll(() => dialogs.length).toBe(1);
+  expect(dialogs[0]).toContain("jordan@example.test's role from developer to administrator");
+  expect(api.unhandled).toEqual([]);
+});
+
 test("a removed member opening the team is told plainly, not left on Loading", async ({ page }) => {
   const api = new TeamApi();
   api.removed = true;
@@ -307,8 +329,15 @@ function audit(timestamp: string, actorId: string, action: string, target: strin
   };
 }
 
-function membership(developerIdentityId: string, role: string) {
-  return { teamId: TEAM_ID, developerIdentityId, role, createdAt: NOW, updatedAt: NOW };
+function membership(developerIdentityId: string, role: string, email?: string) {
+  return {
+    teamId: TEAM_ID,
+    developerIdentityId,
+    ...(email === undefined ? {} : { email }),
+    role,
+    createdAt: NOW,
+    updatedAt: NOW,
+  };
 }
 
 async function json(route: Route, body: unknown, status = 200) {
