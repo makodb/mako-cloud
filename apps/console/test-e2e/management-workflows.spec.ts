@@ -280,7 +280,7 @@ test("credentials, functions, logs, metrics, and audit export use the management
   page.on("dialog", (dialog) => void dialog.accept());
 
   await page.goto(`/projects/${PROJECT_ID}/environments/${ENVIRONMENT_ID}/credentials`);
-  await page.getByLabel("Credential ID", { exact: true }).first().fill("pk_browser01");
+  await page.getByLabel("Credential ID", { exact: true }).fill("pk_browser01");
   await page.getByRole("button", { name: "Create credential" }).click();
   await expect(page.getByText("••••••••••••••••")).toBeVisible();
   await page.getByRole("button", { name: "Reveal value" }).click();

@@ -506,7 +506,11 @@ function ProjectCredentialsPanel({
         </form>
         <Separator />
         <form className="flex flex-wrap items-end gap-3" onSubmit={onInspect}>
-          <Field label="Credential ID" htmlFor="inspect-credential-id" className="min-w-48 flex-1">
+          <Field
+            label="Credential ID to inspect"
+            htmlFor="inspect-credential-id"
+            className="min-w-48 flex-1"
+          >
             <Input
               id="inspect-credential-id"
               name="credentialId"
@@ -516,7 +520,7 @@ function ProjectCredentialsPanel({
             />
           </Field>
           <Button type="submit" variant="secondary">
-            Inspect
+            Inspect credential
           </Button>
         </form>
         {credential === null ? null : (
@@ -684,11 +688,11 @@ function FunctionSecretsPanel({
               className="font-mono"
             />
           </Field>
-          <Button type="submit">Create</Button>
+          <Button type="submit">Create function secret</Button>
         </form>
         <form className="flex flex-wrap items-end gap-3" onSubmit={onInspect}>
           <Field
-            label="Inspect by name"
+            label="Function secret to inspect"
             htmlFor="function-secret-inspect-name"
             className="min-w-48 flex-1"
           >
@@ -701,7 +705,7 @@ function FunctionSecretsPanel({
             />
           </Field>
           <Button type="submit" variant="secondary">
-            Inspect
+            Inspect secret
           </Button>
         </form>
         {secret === null ? null : (
