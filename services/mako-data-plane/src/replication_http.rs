@@ -132,7 +132,18 @@ fn handle_pull(
         let response = service
             .pull_authorized(authorized.sync_context(), &body, &authorizer)
             .await
-            .map_err(|error| map_pull_error(request, error))?;
+            .map_err(|error| {
+                let refused = map_pull_error(request, error);
+                report_replication_error(
+                    graph,
+                    &tenant,
+                    scope.collection_id().as_str(),
+                    request,
+                    refused.envelope(),
+                    now,
+                );
+                refused
+            })?;
         append_replication_audit(
             graph,
             &tenant,
@@ -193,7 +204,40 @@ fn handle_push(
                 &read_authorizer,
             )
             .await
-            .map_err(|error| map_push_error(request, error))?;
+            .map_err(|error| {
+                let refused = map_push_error(request, error);
+                report_replication_error(
+                    graph,
+                    &tenant,
+                    scope.collection_id().as_str(),
+                    request,
+                    refused.envelope(),
+                    now,
+                );
+                refused
+            })?;
+        // Rows a push answers with conflict or denied are the collisions and
+        // policy refusals a developer debugging sync looks for.
+        for outcome in &response.outcomes {
+            let category = match outcome.status {
+                mako_sync::PushOutcomeStatus::Conflict => "conflict",
+                mako_sync::PushOutcomeStatus::Denied => "policy_denied",
+                mako_sync::PushOutcomeStatus::Accepted => continue,
+            };
+            record_replication_error(
+                graph,
+                &tenant,
+                scope.collection_id().as_str(),
+                request,
+                category,
+                false,
+                outcome
+                    .error
+                    .as_ref()
+                    .map_or(category, |error| error.error.message.as_str()),
+                now,
+            );
+        }
         append_replication_audit(
             graph,
             &tenant,
@@ -782,17 +826,14 @@ async fn authorize(
                 // A refused replication request is what a developer debugging a
                 // client that cannot sync needs to see, so it is reported as
                 // well as returned.
-                graph.telemetry().record(mako_api::ObservabilityRecord {
-                    tenant: tenant.clone(),
-                    timestamp_unix_milliseconds: now.saturating_mul(1_000),
-                    payload: mako_api::ObservabilityPayload::ReplicationError {
-                        collection_id: collection_id.as_str().to_owned(),
-                        category: format!("{:?}", envelope.error.code),
-                        retryable: !matches!(envelope.error.retry, mako_api::RetryAdvice::Never),
-                        message: envelope.error.message.clone(),
-                        correlation_id: request.request_id().to_owned(),
-                    },
-                });
+                report_replication_error(
+                    graph,
+                    tenant,
+                    collection_id.as_str(),
+                    request,
+                    &envelope,
+                    now,
+                );
                 HttpApiError::from_envelope(status_for(envelope.error.code), envelope)
             }
         })?;
@@ -1003,6 +1044,69 @@ async fn append_replication_audit(
     .await
 }
 
+/// The sync-diagnostics category an error is counted under. The summary
+/// counts these names; recording the code's debug form ("SchemaMismatch",
+/// "RateLimited") meant nothing reported was ever counted.
+fn replication_category(code: ErrorCode) -> &'static str {
+    match code {
+        ErrorCode::Conflict | ErrorCode::PreconditionFailed => "conflict",
+        ErrorCode::PermissionDenied => "policy_denied",
+        ErrorCode::RateLimited | ErrorCode::QuotaExceeded => "throttled",
+        ErrorCode::CheckpointExpired => "checkpoint_expired",
+        ErrorCode::SchemaMismatch => "schema_mismatch",
+        ErrorCode::Unauthenticated => "unauthenticated",
+        ErrorCode::InvalidRequest => "invalid_request",
+        ErrorCode::NotFound => "not_found",
+        ErrorCode::OperatorStepUpRequired => "step_up_required",
+        ErrorCode::Unavailable | ErrorCode::Internal => "unavailable",
+    }
+}
+
+/// Reports a refused pull, push, or authorization as a replication error.
+fn report_replication_error(
+    graph: &DataPlaneGraph,
+    tenant: &mako_api::TenantScope,
+    collection_id: &str,
+    request: &HttpRequest,
+    envelope: &mako_api::ApiErrorEnvelope,
+    now: u64,
+) {
+    record_replication_error(
+        graph,
+        tenant,
+        collection_id,
+        request,
+        replication_category(envelope.error.code),
+        !matches!(envelope.error.retry, mako_api::RetryAdvice::Never),
+        &envelope.error.message,
+        now,
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+fn record_replication_error(
+    graph: &DataPlaneGraph,
+    tenant: &mako_api::TenantScope,
+    collection_id: &str,
+    request: &HttpRequest,
+    category: &str,
+    retryable: bool,
+    message: &str,
+    now: u64,
+) {
+    graph.telemetry().record(mako_api::ObservabilityRecord {
+        tenant: tenant.clone(),
+        timestamp_unix_milliseconds: now.saturating_mul(1_000),
+        payload: mako_api::ObservabilityPayload::ReplicationError {
+            collection_id: collection_id.to_owned(),
+            category: category.to_owned(),
+            retryable,
+            message: message.to_owned(),
+            correlation_id: request.request_id().to_owned(),
+        },
+    });
+}
+
 fn map_pull_error(request: &HttpRequest, error: PullError) -> HttpApiError {
     match error {
         PullError::Contract(_)
@@ -1110,5 +1214,30 @@ const fn status_for(code: ErrorCode) -> u16 {
         ErrorCode::RateLimited | ErrorCode::QuotaExceeded => 429,
         ErrorCode::Unavailable => 503,
         ErrorCode::Internal => 500,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use mako_api::ErrorCode;
+
+    use super::replication_category;
+
+    #[test]
+    fn replication_errors_are_counted_under_the_summary_categories() {
+        assert_eq!(
+            replication_category(ErrorCode::SchemaMismatch),
+            "schema_mismatch"
+        );
+        assert_eq!(replication_category(ErrorCode::RateLimited), "throttled");
+        assert_eq!(
+            replication_category(ErrorCode::PermissionDenied),
+            "policy_denied"
+        );
+        assert_eq!(
+            replication_category(ErrorCode::CheckpointExpired),
+            "checkpoint_expired"
+        );
+        assert_eq!(replication_category(ErrorCode::Conflict), "conflict");
     }
 }
