@@ -28,10 +28,10 @@ use serde_json::{Value, json};
 use crate::{
     ControlPlaneGraph,
     http_support::tenant,
-    identity_admin_http::identity_permissions,
+    identity_admin_http::{self, identity_permissions},
     management_http::{
-        json, no_payload, no_query, parse_json, require_idempotency, require_json, unavailable,
-        with_developer,
+        forbidden, json, no_payload, no_query, parse_json, require_idempotency, require_json,
+        unavailable, with_developer,
     },
 };
 
@@ -153,6 +153,10 @@ async fn administer<T: DeserializeOwned>(
 /// every other one.
 fn settings_error(request: &HttpRequest, error: InternalClientError) -> HttpApiError {
     match error {
+        // The only 403 the data plane sends is a permission this role lacks.
+        InternalClientError::Remote { status: 403, .. } => {
+            forbidden(request, identity_admin_http::ROLE_REFUSED)
+        }
         InternalClientError::Remote { status, envelope }
             if (400..500).contains(&status) && status != 401 =>
         {

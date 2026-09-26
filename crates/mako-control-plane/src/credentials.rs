@@ -524,7 +524,9 @@ impl CredentialAdminService {
         value: &FunctionSecretValue,
         now_unix_seconds: u64,
     ) -> Result<FunctionSecretMetadata, CredentialAdminError> {
-        let organization = self.authorize(actor, tenant, now_unix_seconds).await?;
+        let organization = self
+            .authorize_function_secrets(actor, tenant, now_unix_seconds)
+            .await?;
         let metadata = FunctionSecretMetadata {
             tenant: tenant.clone(),
             name,
@@ -567,7 +569,9 @@ impl CredentialAdminService {
         name: &FunctionSecretName,
         now_unix_seconds: u64,
     ) -> Result<FunctionSecretMetadata, CredentialAdminError> {
-        let organization = self.authorize(actor, tenant, now_unix_seconds).await?;
+        let organization = self
+            .authorize_function_secrets(actor, tenant, now_unix_seconds)
+            .await?;
         let stored = self.stored_secret(tenant, name).await?;
         self.audit(
             actor,
@@ -615,7 +619,9 @@ impl CredentialAdminService {
         value: &FunctionSecretValue,
         now_unix_seconds: u64,
     ) -> Result<FunctionSecretMetadata, CredentialAdminError> {
-        let organization = self.authorize(actor, tenant, now_unix_seconds).await?;
+        let organization = self
+            .authorize_function_secrets(actor, tenant, now_unix_seconds)
+            .await?;
         let previous = self.stored_secret(tenant, name).await?;
         // A retired secret may be rotated back into service. Retiring stops the
         // *value* it held from authorizing anything, which a new version does
@@ -651,7 +657,9 @@ impl CredentialAdminService {
         name: &FunctionSecretName,
         now_unix_seconds: u64,
     ) -> Result<FunctionSecretMetadata, CredentialAdminError> {
-        let organization = self.authorize(actor, tenant, now_unix_seconds).await?;
+        let organization = self
+            .authorize_function_secrets(actor, tenant, now_unix_seconds)
+            .await?;
         let previous = self.stored_secret(tenant, name).await?;
         let mut next = previous.clone();
         next.metadata.state = FunctionSecretState::Retired;
@@ -895,11 +903,46 @@ impl CredentialAdminService {
         }
     }
 
+    /// Project credentials and signing keys: administrators and owners.
     async fn authorize(
         &self,
         actor: &DeveloperPrincipal,
         tenant: &TenantScope,
         now_unix_seconds: u64,
+    ) -> Result<OrganizationId, CredentialAdminError> {
+        self.authorize_role(actor, tenant, now_unix_seconds, |role| {
+            matches!(
+                role,
+                OrganizationRole::Owner | OrganizationRole::Administrator
+            )
+        })
+        .await
+    }
+
+    /// Function secrets: whoever may deploy functions (developers too), since
+    /// a function names the secrets it needs and cannot run without them. An
+    /// automation token with `function_deploy` already reaches these routes.
+    async fn authorize_function_secrets(
+        &self,
+        actor: &DeveloperPrincipal,
+        tenant: &TenantScope,
+        now_unix_seconds: u64,
+    ) -> Result<OrganizationId, CredentialAdminError> {
+        self.authorize_role(
+            actor,
+            tenant,
+            now_unix_seconds,
+            OrganizationRole::can_mutate_projects,
+        )
+        .await
+    }
+
+    async fn authorize_role(
+        &self,
+        actor: &DeveloperPrincipal,
+        tenant: &TenantScope,
+        now_unix_seconds: u64,
+        allowed: fn(OrganizationRole) -> bool,
     ) -> Result<OrganizationId, CredentialAdminError> {
         let project = self
             .projects
@@ -914,12 +957,7 @@ impl CredentialAdminService {
             .organizations
             .get_membership(project.organization_id(), actor.identity_id())
             .await?;
-        if membership.is_none_or(|membership| {
-            !matches!(
-                membership.role(),
-                OrganizationRole::Owner | OrganizationRole::Administrator
-            )
-        }) {
+        if membership.is_none_or(|membership| !allowed(membership.role())) {
             self.audit(
                 actor,
                 project.organization_id(),
@@ -1103,24 +1141,41 @@ mod tests {
     }
 
     async fn fixture() -> (CredentialAdminService, DeveloperPrincipal, TenantScope) {
+        fixture_as(OrganizationRole::Owner).await
+    }
+
+    async fn fixture_as(
+        role: OrganizationRole,
+    ) -> (CredentialAdminService, DeveloperPrincipal, TenantScope) {
         let adapter: Arc<dyn KvAdapter> = Arc::new(MemoryAdapter::new());
         let organizations =
             OrganizationStore::new(adapter.clone(), Durability::Memory).expect("organizations");
         let projects = ProjectStore::new(adapter.clone(), Durability::Memory).expect("projects");
         let organization = OrganizationId::parse("org_example00").expect("organization");
         let developer = crate::DeveloperIdentityId::parse("dev_example00").expect("developer");
+        // A team is created with its owner; the role under test replaces that.
+        let owner = MembershipRecord::new(
+            organization.clone(),
+            developer.clone(),
+            OrganizationRole::Owner,
+            1,
+        );
         organizations
             .create_organization(
                 &OrganizationRecord::new(organization.clone(), "Example", 1).expect("organization"),
-                &MembershipRecord::new(
-                    organization.clone(),
-                    developer.clone(),
-                    OrganizationRole::Owner,
-                    1,
-                ),
+                &owner,
             )
             .await
             .expect("organization");
+        if role != OrganizationRole::Owner {
+            organizations
+                .replace_membership(
+                    &owner,
+                    &MembershipRecord::new(organization.clone(), developer.clone(), role, 1),
+                )
+                .await
+                .expect("role");
+        }
         let project = ProjectId::parse("prj_example00").expect("project");
         let environment = EnvironmentId::parse("env_example00").expect("environment");
         projects
@@ -1152,6 +1207,46 @@ mod tests {
             DeveloperPrincipal::for_test(developer, "owner@example.test"),
             TenantScope::new(project, environment),
         )
+    }
+
+    #[test]
+    fn developers_manage_function_secrets_but_not_keys() {
+        futures::executor::block_on(async {
+            let (service, actor, tenant) = fixture_as(OrganizationRole::Developer).await;
+            let name = FunctionSecretName::parse("STATS_SALT").expect("name");
+            let issue = service
+                .create_function_secret(&actor, &tenant, name.clone(), 2)
+                .await
+                .expect("a developer deploys functions, so may give them their secrets");
+            assert_eq!(issue.metadata.name(), &name);
+            service
+                .function_secret_metadata(&actor, &tenant, &name, 3)
+                .await
+                .expect("read back");
+            assert!(matches!(
+                service
+                    .create_public_key(
+                        &actor,
+                        &tenant,
+                        ProjectCredentialId::parse("key_developer").expect("id"),
+                        4,
+                    )
+                    .await,
+                Err(CredentialAdminError::Forbidden)
+            ));
+            assert!(matches!(
+                service.initialize_signing_key(&actor, &tenant, 5).await,
+                Err(CredentialAdminError::Forbidden)
+            ));
+
+            let (service, viewer, tenant) = fixture_as(OrganizationRole::Viewer).await;
+            assert!(matches!(
+                service
+                    .create_function_secret(&viewer, &tenant, name, 6)
+                    .await,
+                Err(CredentialAdminError::Forbidden)
+            ));
+        });
     }
 
     #[test]

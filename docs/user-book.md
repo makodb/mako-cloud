@@ -71,7 +71,7 @@ Two further credentials belong to an environment rather than to a person:
 
 Projects belong to **teams**. Every developer also has a **personal space**: an implicit one-member team, created the first time you create a project without naming a `teamId` and reused afterwards. It is listed among your teams with `kind: personal`, is billed and limited like any team, and refuses invitations, membership changes, and deletion.
 
-Team roles are `owner`, `administrator`, `developer`, and `viewer`. As a rule of thumb: any member may read; a role that can change projects (`developer`, `administrator`, `owner`) may write; owners and administrators manage membership, credentials, and sign-in settings.
+Team roles are `owner`, `administrator`, `developer`, and `viewer`. As a rule of thumb: any member may read; a role that can change projects (`developer`, `administrator`, `owner`) may write; owners and administrators manage membership, credentials, and sign-in settings. Function secrets go with functions: a role that may deploy a function may also create and rotate the secrets it names. A developer may read, but not create or rotate, project keys and signing keys.
 
 ### Projects, environments, and regions
 

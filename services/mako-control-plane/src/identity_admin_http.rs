@@ -579,6 +579,47 @@ fn digest(caller: &str, command: &IdentityAdminCommand) -> String {
     hasher.finalize().to_hex().to_string()
 }
 
+/// What a refusal from the data plane means to the person who asked: their
+/// team role does not cover the change, and who can make it instead.
+pub(crate) const ROLE_REFUSED: &str =
+    "your team role does not allow this change; a team administrator or owner can make it";
+const NOT_A_MEMBER: &str = "you are not a member of the team that owns this project";
+
+/// What each team role may do in an environment's data plane. It follows the
+/// control plane's own role rules: whoever may change a project's data model
+/// (`OrganizationRole::can_mutate_projects`, which includes developers) may
+/// also install what that change needs -- collections, their indexes and
+/// policies, and buckets -- or the control plane would record work the data
+/// plane then refuses. Credentials, signing keys and application users stay
+/// with administrators and owners; a developer may read, not change, the
+/// first two.
+pub(crate) fn role_permissions(role: OrganizationRole) -> BTreeSet<IdentityAdminPermission> {
+    match role {
+        OrganizationRole::Owner | OrganizationRole::Administrator => BTreeSet::from([
+            IdentityAdminPermission::ReadApplicationUsers,
+            IdentityAdminPermission::ManageApplicationUsers,
+            IdentityAdminPermission::ReadProjectCredentials,
+            IdentityAdminPermission::ManageProjectCredentials,
+            IdentityAdminPermission::ReadSigningKeys,
+            IdentityAdminPermission::ManageSigningKeys,
+            IdentityAdminPermission::ManageCollections,
+            IdentityAdminPermission::ManagePolicies,
+            IdentityAdminPermission::ReadBuckets,
+            IdentityAdminPermission::ManageBuckets,
+        ]),
+        OrganizationRole::Developer => BTreeSet::from([
+            IdentityAdminPermission::ReadApplicationUsers,
+            IdentityAdminPermission::ReadProjectCredentials,
+            IdentityAdminPermission::ReadSigningKeys,
+            IdentityAdminPermission::ManageCollections,
+            IdentityAdminPermission::ManagePolicies,
+            IdentityAdminPermission::ReadBuckets,
+            IdentityAdminPermission::ManageBuckets,
+        ]),
+        OrganizationRole::Viewer => BTreeSet::new(),
+    }
+}
+
 pub(crate) async fn identity_permissions(
     graph: &ControlPlaneGraph,
     request: &HttpRequest,
@@ -602,27 +643,8 @@ pub(crate) async fn identity_permissions(
         .get_membership(project.organization_id(), actor.identity_id())
         .await
         .map_err(|_| unavailable(request, "organization authorization is unavailable"))?
-        .ok_or_else(|| forbidden(request, "identity administration is forbidden"))?;
-    let permissions = match membership.role() {
-        OrganizationRole::Owner | OrganizationRole::Administrator => BTreeSet::from([
-            IdentityAdminPermission::ReadApplicationUsers,
-            IdentityAdminPermission::ManageApplicationUsers,
-            IdentityAdminPermission::ReadProjectCredentials,
-            IdentityAdminPermission::ManageProjectCredentials,
-            IdentityAdminPermission::ReadSigningKeys,
-            IdentityAdminPermission::ManageSigningKeys,
-            IdentityAdminPermission::ManageCollections,
-            IdentityAdminPermission::ManagePolicies,
-            IdentityAdminPermission::ReadBuckets,
-            IdentityAdminPermission::ManageBuckets,
-        ]),
-        OrganizationRole::Developer => BTreeSet::from([
-            IdentityAdminPermission::ReadApplicationUsers,
-            IdentityAdminPermission::ReadBuckets,
-        ]),
-        OrganizationRole::Viewer => BTreeSet::new(),
-    };
-    Ok(permissions)
+        .ok_or_else(|| forbidden(request, NOT_A_MEMBER))?;
+    Ok(role_permissions(membership.role()))
 }
 
 pub(crate) fn rpc_error(request: &HttpRequest, error: InternalClientError) -> HttpApiError {
@@ -630,9 +652,7 @@ pub(crate) fn rpc_error(request: &HttpRequest, error: InternalClientError) -> Ht
         InternalClientError::Remote { status: 400, .. } => {
             invalid(request, "identity administration request is invalid")
         }
-        InternalClientError::Remote { status: 403, .. } => {
-            forbidden(request, "identity administration is forbidden")
-        }
+        InternalClientError::Remote { status: 403, .. } => forbidden(request, ROLE_REFUSED),
         InternalClientError::Remote { status: 404, .. } => {
             not_found(request, "identity resource was not found")
         }
@@ -691,4 +711,41 @@ struct RotateCredentialWire {
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct RotateSigningKeyWire {
     overlap_seconds: u64,
+}
+
+#[cfg(test)]
+mod tests {
+    use mako_control_plane::OrganizationRole;
+    use mako_internal_rpc::IdentityAdminPermission as P;
+
+    use super::role_permissions;
+
+    #[test]
+    fn a_role_that_may_change_the_data_model_may_install_it() {
+        for role in [
+            OrganizationRole::Owner,
+            OrganizationRole::Administrator,
+            OrganizationRole::Developer,
+        ] {
+            assert!(role.can_mutate_projects());
+            let granted = role_permissions(role);
+            for needed in [P::ManageCollections, P::ManagePolicies, P::ManageBuckets] {
+                assert!(granted.contains(&needed), "{role:?} lacks {needed:?}");
+            }
+        }
+        let developer = role_permissions(OrganizationRole::Developer);
+        for withheld in [
+            P::ManageProjectCredentials,
+            P::ManageSigningKeys,
+            P::ManageApplicationUsers,
+        ] {
+            assert!(
+                !developer.contains(&withheld),
+                "developer holds {withheld:?}"
+            );
+        }
+        assert!(developer.contains(&P::ReadProjectCredentials));
+        assert!(developer.contains(&P::ReadSigningKeys));
+        assert!(role_permissions(OrganizationRole::Viewer).is_empty());
+    }
 }

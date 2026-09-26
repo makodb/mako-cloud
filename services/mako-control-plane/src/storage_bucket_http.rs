@@ -23,9 +23,9 @@ use serde_json::{Value, json};
 use crate::{
     ControlPlaneGraph,
     http_support::{query_value, reject_unknown_query, tenant},
-    identity_admin_http::identity_permissions,
+    identity_admin_http::{self, identity_permissions},
     management_http::{
-        conflict, format_timestamp, invalid, json, no_payload, no_query, parse_json,
+        conflict, forbidden, format_timestamp, invalid, json, no_payload, no_query, parse_json,
         require_confirmation, require_idempotency, require_json, unavailable, with_developer,
     },
 };
@@ -448,6 +448,10 @@ async fn inspect_bucket(
 /// the developer's, and reads as unavailability like every other one.
 fn bucket_error(request: &HttpRequest, error: InternalClientError) -> HttpApiError {
     match error {
+        // The only 403 the data plane sends is a permission this role lacks.
+        InternalClientError::Remote { status: 403, .. } => {
+            forbidden(request, identity_admin_http::ROLE_REFUSED)
+        }
         InternalClientError::Remote { status, envelope }
             if (400..500).contains(&status) && status != 401 =>
         {

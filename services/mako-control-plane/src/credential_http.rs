@@ -213,9 +213,10 @@ fn secret_name(request: &HttpRequest) -> Result<FunctionSecretName, HttpApiError
 fn credential_error(request: &HttpRequest, error: CredentialAdminError) -> HttpApiError {
     match error {
         CredentialAdminError::NotFound => not_found(request, "function secret was not found"),
-        CredentialAdminError::Forbidden => {
-            forbidden(request, "function secret operation is forbidden")
-        }
+        CredentialAdminError::Forbidden => forbidden(
+            request,
+            "your team role does not allow managing function secrets",
+        ),
         CredentialAdminError::Conflict
         | CredentialAdminError::InvalidSecretState
         | CredentialAdminError::VersionExhausted => {
