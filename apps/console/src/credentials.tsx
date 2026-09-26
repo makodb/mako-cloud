@@ -7,6 +7,7 @@ import type {
   ProjectCredential,
   ServiceCredentialScope,
 } from "@mako-cloud/management-sdk";
+import { ManagementApiError } from "@mako-cloud/management-sdk";
 import {
   Alert,
   AlertDescription,
@@ -88,6 +89,9 @@ export function CredentialsScreen({
   const [initializedKey, setInitializedKey] = useState<JwtSigningKey | null>(null);
   const [failure, setFailure] = useState<ConsoleApiFailure | null>(null);
   const [tokensFailure, setTokensFailure] = useState<ConsoleApiFailure | null>(null);
+  // Only administrators and owners manage a team's tokens; a developer is
+  // told so instead of being shown a refusal and a form they cannot use.
+  const [tokensRestricted, setTokensRestricted] = useState(false);
   const reload = useCallback(async () => {
     try {
       const project = await client.getProject(projectId);
@@ -105,6 +109,13 @@ export function CredentialsScreen({
             ? null
             : (nextTokens.value.find((token) => token.id === current.id) ?? null),
         );
+        setTokensFailure(null);
+        setTokensRestricted(false);
+      } else if (
+        nextTokens.reason instanceof ManagementApiError &&
+        nextTokens.reason.status === 403
+      ) {
+        setTokensRestricted(true);
         setTokensFailure(null);
       } else {
         setTokensFailure(failureFrom(nextTokens.reason));
@@ -416,6 +427,7 @@ export function CredentialsScreen({
         />
         <AutomationTokensPanel
           tokens={tokens}
+          restricted={tokensRestricted}
           failure={tokensFailure}
           selected={selectedToken}
           onSelect={setSelectedToken}
@@ -712,6 +724,7 @@ function FunctionSecretsPanel({
 
 function AutomationTokensPanel({
   tokens,
+  restricted,
   failure,
   selected,
   onSelect,
@@ -720,6 +733,7 @@ function AutomationTokensPanel({
   onRevoke,
 }: {
   readonly tokens: AutomationToken[] | null;
+  readonly restricted: boolean;
   readonly failure: ConsoleApiFailure | null;
   readonly selected: AutomationToken | null;
   readonly onSelect: (token: AutomationToken) => void;
@@ -733,35 +747,42 @@ function AutomationTokensPanel({
         <CardTitle id="automation-title">Automation tokens</CardTitle>
       </CardHeader>
       <CardContent className="grid gap-5">
-        <form className="grid gap-4" onSubmit={onCreate}>
-          <Field label="Token name" htmlFor="automation-token-name">
-            <Input id="automation-token-name" name="name" required maxLength={100} />
-          </Field>
-          <Field label="Expires at" htmlFor="automation-token-expires-at">
-            <Input
-              id="automation-token-expires-at"
-              name="expiresAt"
-              type="datetime-local"
-              required
-            />
-          </Field>
-          <CheckboxGroup legend="Permissions">
-            {AUTOMATION_PERMISSIONS.map((permission) => (
-              <CheckboxOption
-                key={permission}
-                id={`automation-permission-${permission}`}
-                name="permission"
-                value={permission}
-              >
-                {permission.replaceAll("_", " ")}
-              </CheckboxOption>
-            ))}
-          </CheckboxGroup>
-          <Button type="submit" className="justify-self-start">
-            Create scoped token
-          </Button>
-        </form>
-        {tokens === null && failure !== null ? (
+        {restricted ? (
+          <p className="m-0 text-sm text-muted-foreground">
+            Team administrators and owners issue and manage automation tokens. Ask one of them for a
+            token scoped to what your automation needs.
+          </p>
+        ) : (
+          <form className="grid gap-4" onSubmit={onCreate}>
+            <Field label="Token name" htmlFor="automation-token-name">
+              <Input id="automation-token-name" name="name" required maxLength={100} />
+            </Field>
+            <Field label="Expires at" htmlFor="automation-token-expires-at">
+              <Input
+                id="automation-token-expires-at"
+                name="expiresAt"
+                type="datetime-local"
+                required
+              />
+            </Field>
+            <CheckboxGroup legend="Permissions">
+              {AUTOMATION_PERMISSIONS.map((permission) => (
+                <CheckboxOption
+                  key={permission}
+                  id={`automation-permission-${permission}`}
+                  name="permission"
+                  value={permission}
+                >
+                  {permission.replaceAll("_", " ")}
+                </CheckboxOption>
+              ))}
+            </CheckboxGroup>
+            <Button type="submit" className="justify-self-start">
+              Create scoped token
+            </Button>
+          </form>
+        )}
+        {restricted ? null : tokens === null && failure !== null ? (
           <ApiFailureNotice failure={failure} />
         ) : tokens === null ? (
           <p className="m-0 text-sm text-muted-foreground">Loading automation tokens…</p>

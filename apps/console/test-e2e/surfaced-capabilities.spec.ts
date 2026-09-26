@@ -206,6 +206,26 @@ test("signing-key initialization is offered only without a key and calls the end
   expect(api.unhandled).toEqual([]);
 });
 
+test("a developer is told who manages automation tokens instead of shown a refusal", async ({
+  page,
+}) => {
+  const api = new SurfacedApiHarness();
+  api.tokensForbidden = true;
+  await api.install(page);
+
+  await page.goto(`${ENVIRONMENT_PATH}/credentials`);
+  await expect(page.getByRole("heading", { name: "Automation tokens" })).toBeVisible();
+  await expect(
+    page.getByText("Team administrators and owners issue and manage automation tokens."),
+  ).toBeVisible();
+  await expect(page.getByText("only team administrators and owners manage")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Create scoped token" })).toHaveCount(0);
+  await expect(page.getByLabel("Token name")).toHaveCount(0);
+  // The rest of the page still works for them.
+  await expect(page.getByRole("heading", { name: "JWT signing keys" })).toBeVisible();
+  expect(api.unhandled).toEqual([]);
+});
+
 test("a team administrator renames the team and the name follows everywhere", async ({ page }) => {
   const api = new SurfacedApiHarness();
   await api.install(page);
@@ -241,6 +261,7 @@ class SurfacedApiHarness {
   readonly team = teamFixture();
   readonly signingKeys: Record<string, unknown>[] = [];
   logsAvailable = true;
+  tokensForbidden = false;
 
   async install(page: Page) {
     await page.route("**/v1/**", (route) => void this.handle(route));
@@ -277,7 +298,12 @@ class SurfacedApiHarness {
     } else if (path === `/v1/teams/${TEAM_ID}/bill` && method === "GET") {
       await json(route, billFixture());
     } else if (path === `/v1/teams/${TEAM_ID}/automation-tokens` && method === "GET") {
-      await json(route, { items: [] });
+      if (this.tokensForbidden) {
+        const refusal = "only team administrators and owners manage automation tokens";
+        await json(route, apiError("permission_denied", refusal), 403);
+      } else {
+        await json(route, { items: [] });
+      }
     } else if (path === "/v1/projects" && method === "GET") {
       await json(route, { items: [projectFixture()] });
     } else if (path === `/v1/projects/${PROJECT_ID}` && method === "GET") {
