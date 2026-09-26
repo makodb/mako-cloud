@@ -249,7 +249,7 @@ export function OperatorConsoleScreen({ onExit }: { readonly onExit: () => void 
                       id="operator-tenant-lookup-project"
                       name="projectId"
                       required
-                      pattern="prj_[A-Za-z0-9_-]{8,64}"
+                      pattern="prj_[A-Za-z0-9_\-]{8,64}"
                       className="font-mono"
                     />
                   </Field>
@@ -495,7 +495,7 @@ export function QuotaOverridePanel({
               id={`${id}-id`}
               name="id"
               required
-              pattern="qov_[A-Za-z0-9_-]{8,96}"
+              pattern="qov_[A-Za-z0-9_\-]{8,96}"
               defaultValue={newId("qov")}
               className="font-mono"
             />
@@ -580,7 +580,7 @@ export function AbuseResponsePanel({
               id={`${id}-id`}
               name="id"
               required
-              pattern="abr_[A-Za-z0-9_-]{8,96}"
+              pattern="abr_[A-Za-z0-9_\-]{8,96}"
               defaultValue={newId("abr")}
               className="font-mono"
             />
@@ -703,7 +703,7 @@ export function SupportSessionPanel({
               id={`${id}-id`}
               name="id"
               required
-              pattern="sup_[A-Za-z0-9_-]{8,96}"
+              pattern="sup_[A-Za-z0-9_\-]{8,96}"
               defaultValue={newId("sup")}
               className="font-mono"
             />

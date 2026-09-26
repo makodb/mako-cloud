@@ -846,7 +846,7 @@ function AutomationTokensPanel({
                   id="automation-replacement-id"
                   name="replacementId"
                   required
-                  pattern="atm_[A-Za-z0-9_-]{8,64}"
+                  pattern="atm_[A-Za-z0-9_\-]{8,64}"
                   className="font-mono"
                 />
               </Field>

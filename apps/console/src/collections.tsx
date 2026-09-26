@@ -166,7 +166,7 @@ export function CollectionsScreen({
                   id="create-collection-id"
                   name="id"
                   required
-                  pattern="[a-z][a-z0-9_-]{0,62}"
+                  pattern="[a-z][a-z0-9_\-]{0,62}"
                   className="font-mono"
                 />
               </Field>
@@ -598,7 +598,7 @@ function MigrationPanel({
                   id="migration-lookup-id"
                   name="migrationId"
                   required
-                  pattern="mig_[A-Za-z0-9_-]{8,64}"
+                  pattern="mig_[A-Za-z0-9_\-]{8,64}"
                   className="font-mono"
                 />
               </Field>
@@ -774,7 +774,7 @@ function IndexesPanel({
                 id="create-index-name"
                 name="name"
                 required
-                pattern="[A-Za-z0-9_-]{1,128}"
+                pattern="[A-Za-z0-9_\-]{1,128}"
                 className="font-mono"
               />
             </Field>

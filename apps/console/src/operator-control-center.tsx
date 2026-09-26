@@ -621,7 +621,7 @@ function InventoryPage({
           <Input
             id={`${id}-scope`}
             value={projectId}
-            pattern="prj_[A-Za-z0-9_-]{8,64}"
+            pattern="prj_[A-Za-z0-9_\-]{8,64}"
             placeholder="prj_…"
             className="font-mono"
             onChange={(event) => setProjectId(event.currentTarget.value)}
@@ -1141,7 +1141,7 @@ function CreateIncidentPanel({
           <Input
             id={`${id}-project`}
             name="projectId"
-            pattern="prj_[A-Za-z0-9_-]{8,64}"
+            pattern="prj_[A-Za-z0-9_\-]{8,64}"
             className="font-mono"
           />
         </Field>
@@ -1368,7 +1368,7 @@ function RecoveryRequestPanel() {
             id={`${id}-project`}
             name="projectId"
             required
-            pattern="prj_[A-Za-z0-9_-]{8,64}"
+            pattern="prj_[A-Za-z0-9_\-]{8,64}"
             className="font-mono"
           />
         </Field>

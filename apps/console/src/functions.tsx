@@ -171,7 +171,7 @@ export function FunctionsScreen({
                   id={nameId}
                   name="name"
                   required
-                  pattern="[a-z][a-z0-9-]{0,62}"
+                  pattern="[a-z][a-z0-9\-]{0,62}"
                   className="font-mono"
                   spellCheck={false}
                 />

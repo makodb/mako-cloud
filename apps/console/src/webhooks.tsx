@@ -43,7 +43,7 @@ import { confirmDestructiveAction, OneTimeSecretValue } from "./safety.js";
 const EVENTS: readonly WebhookEvent[] = ["insert", "update", "delete"];
 const DELIVERY_STATES: readonly WebhookDeliveryState[] = ["pending", "delivered", "failed"];
 const DELIVERY_PAGE_SIZE = 50;
-const COLLECTION_ID_PATTERN = "[a-z][a-z0-9_-]{0,62}";
+const COLLECTION_ID_PATTERN = "[a-z][a-z0-9_\\-]{0,62}";
 const COLLECTION_ID = new RegExp(`^${COLLECTION_ID_PATTERN}$`, "u");
 
 /** A code snippet inline in prose or a cell: an identifier, a URL, an error. */

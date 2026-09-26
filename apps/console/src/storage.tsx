@@ -44,7 +44,7 @@ import { confirmDestructiveAction } from "./safety.js";
 export const MAX_OBJECT_BYTES_CEILING = 16 * 1024 * 1024;
 const DEFAULT_MAX_OBJECT_BYTES = 1024 * 1024;
 const OBJECT_PAGE_SIZE = 100;
-const BUCKET_ID_PATTERN = "[a-z][a-z0-9-]{1,62}";
+const BUCKET_ID_PATTERN = "[a-z][a-z0-9\\-]{1,62}";
 const RULE_OPERATIONS = ["create", "read", "update", "delete"] as const;
 type RuleOperation = (typeof RULE_OPERATIONS)[number];
 

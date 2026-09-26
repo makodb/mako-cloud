@@ -33,7 +33,7 @@ import { type FormEvent, useCallback, useEffect, useState } from "react";
 import { ApiFailureNotice, type ConsoleApiFailure, toConsoleApiFailure } from "./api-error.js";
 import { useManagementClient } from "./management.js";
 
-const PROVIDER_NAME_PATTERN = "[a-z][a-z0-9-]{1,63}";
+const PROVIDER_NAME_PATTERN = "[a-z][a-z0-9\\-]{1,63}";
 const DEFAULT_LINK_TTL_SECONDS = 900;
 
 /** An identifier the developer will copy: a name, a client id, a URL. */
