@@ -249,6 +249,29 @@ test("publishing a schema version says what it means for apps on the current one
   expect(api.unhandled).toEqual([]);
 });
 
+test("a created automation token clears the form, so a second click issues nothing", async ({
+  page,
+}) => {
+  const api = new ManagementApiHarness();
+  await api.install(page);
+
+  await page.goto(`/projects/${PROJECT_ID}/environments/${ENVIRONMENT_ID}/credentials`);
+  await page.getByLabel("Token name").fill("ci-deploy");
+  await page.getByLabel("Expires at").fill("2026-12-01T12:00");
+  await page.getByLabel("project read").check();
+  await page.getByRole("button", { name: "Create scoped token" }).click();
+  await expect(
+    page.getByText("automation token ci-deploy", { exact: false }).first(),
+  ).toBeVisible();
+  expect(api.tokenCreates).toHaveLength(1);
+
+  await expect(page.getByLabel("Token name")).toHaveValue("");
+  await page.getByRole("button", { name: "Create scoped token" }).click();
+  await page.waitForTimeout(300);
+  expect(api.tokenCreates).toHaveLength(1);
+  expect(api.unhandled).toEqual([]);
+});
+
 test("credentials, functions, logs, metrics, and audit export use the management contract", async ({
   page,
 }) => {
@@ -319,6 +342,8 @@ class ManagementApiHarness {
   edgeFunction: Record<string, unknown> | null = null;
   deployments: Record<string, unknown>[] = [];
   readonly schemaPublications: Record<string, unknown>[] = [];
+  readonly tokenCreates: Record<string, unknown>[] = [];
+  readonly tokens: Record<string, unknown>[] = [];
   schemaVersion = 1;
 
   async install(page: Page) {
@@ -516,8 +541,23 @@ class ManagementApiHarness {
       await json(route, this.user);
     } else if (path === `/v1/projects/${PROJECT_ID}/environments/${ENVIRONMENT_ID}/signing-keys`) {
       await json(route, { items: [signingKeyFixture()] });
+    } else if (path === `/v1/teams/${TEAM_ID}/automation-tokens` && method === "POST") {
+      const body = request.postDataJSON() as { name: string; expiresAt: string };
+      this.tokenCreates.push(body);
+      const token = {
+        id: `atm_token${String(this.tokenCreates.length).padStart(4, "0")}`,
+        teamId: TEAM_ID,
+        name: body.name,
+        scope: { permissions: ["project_read"] },
+        status: "active",
+        createdAt: NOW,
+        expiresAt: body.expiresAt,
+        revokedAt: null,
+      };
+      this.tokens.push(token);
+      await json(route, { token, secret: `mako_at.${token.id}.secret` }, 201);
     } else if (path === `/v1/teams/${TEAM_ID}/automation-tokens`) {
-      await json(route, { items: [] });
+      await json(route, { items: this.tokens });
     } else if (path.endsWith("/credentials/public") && method === "POST") {
       const body = request.postDataJSON() as { id: string };
       this.credential = credentialFixture(body.id);

@@ -92,6 +92,7 @@ export function CredentialsScreen({
   // Only administrators and owners manage a team's tokens; a developer is
   // told so instead of being shown a refusal and a form they cannot use.
   const [tokensRestricted, setTokensRestricted] = useState(false);
+  const [creatingToken, setCreatingToken] = useState(false);
   const reload = useCallback(async () => {
     try {
       const project = await client.getProject(projectId);
@@ -324,21 +325,29 @@ export function CredentialsScreen({
 
   const createToken = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (teamId === null) {
+    if (teamId === null || creatingToken) {
       return;
     }
-    const data = new FormData(event.currentTarget);
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    setCreatingToken(true);
     try {
       const issue = await client.createAutomationToken(teamId, {
         name: requiredText(data, "name"),
         scope: automationScope(data, projectId, environmentId),
         expiresAt: dateTime(data, "expiresAt"),
       });
+      // Cleared once issued: a second click on a still-filled form used to
+      // issue another live token and replace this one's secret on screen.
+      form.reset();
       setSelectedToken(issue.token);
       setOneTime({ label: `automation token ${issue.token.name}`, value: issue.secret });
+      setFailure(null);
       await reload();
     } catch (error) {
       setFailure(failureFrom(error));
+    } finally {
+      setCreatingToken(false);
     }
   };
   const rotateToken = async (event: FormEvent<HTMLFormElement>) => {
@@ -428,6 +437,7 @@ export function CredentialsScreen({
         <AutomationTokensPanel
           tokens={tokens}
           restricted={tokensRestricted}
+          creating={creatingToken}
           failure={tokensFailure}
           selected={selectedToken}
           onSelect={setSelectedToken}
@@ -725,6 +735,7 @@ function FunctionSecretsPanel({
 function AutomationTokensPanel({
   tokens,
   restricted,
+  creating,
   failure,
   selected,
   onSelect,
@@ -734,6 +745,7 @@ function AutomationTokensPanel({
 }: {
   readonly tokens: AutomationToken[] | null;
   readonly restricted: boolean;
+  readonly creating: boolean;
   readonly failure: ConsoleApiFailure | null;
   readonly selected: AutomationToken | null;
   readonly onSelect: (token: AutomationToken) => void;
@@ -777,8 +789,8 @@ function AutomationTokensPanel({
                 </CheckboxOption>
               ))}
             </CheckboxGroup>
-            <Button type="submit" className="justify-self-start">
-              Create scoped token
+            <Button type="submit" className="justify-self-start" disabled={creating}>
+              {creating ? "Creating…" : "Create scoped token"}
             </Button>
           </form>
         )}

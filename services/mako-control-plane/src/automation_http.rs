@@ -131,6 +131,14 @@ fn handle_create(
         let scope = scope_from(request, &team, body.scope)?;
         validate_scope_resource(graph, request, &scope).await?;
         let expires_at = expiry(request, &body.expires_at, now)?;
+        let existing = graph
+            .automation_token_service()
+            .list(&team, NonZeroUsize::new(LIST_LIMIT).expect("list limit"))
+            .await
+            .map_err(|error| token_error(request, error))?;
+        if name_in_use(&existing, &body.name, now) {
+            return Err(crate::management_http::conflict(request, NAME_IN_USE));
+        }
         let issued = graph
             .automation_token_service()
             .issue(
@@ -152,6 +160,21 @@ fn handle_create(
             now,
         );
         issue_response(request, &issued, now)
+    })
+}
+
+const NAME_IN_USE: &str =
+    "an active automation token already has this name; rotate or revoke it, or choose another name";
+
+/// Whether a live token in the team already carries this name. Names are how
+/// people tell tokens apart in the console and the CLI; a create repeated by a
+/// second click used to mint another live token under the same name, whose
+/// one-time secret was replaced on screen before anyone could keep it.
+fn name_in_use(tokens: &[AutomationTokenRecord], name: &str, now: u64) -> bool {
+    tokens.iter().any(|token| {
+        token.name() == name
+            && token.status() == AutomationTokenStatus::Active
+            && now < token.expires_at_unix_seconds()
     })
 }
 
@@ -629,6 +652,61 @@ mod tests {
             ProjectId::parse("prj_abcdefgh").unwrap(),
             Some(EnvironmentId::parse("env_abcdefgh").unwrap()),
         )
+    }
+
+    #[test]
+    fn a_live_token_name_cannot_be_issued_twice() {
+        use std::{num::NonZeroUsize, sync::Arc};
+
+        use mako_control_plane::{
+            AutomationPermission, AutomationScope, AutomationTokenId, AutomationTokenService,
+            DeveloperIdentityId,
+        };
+        use mako_storage::{Durability, MemoryAdapter};
+
+        use super::name_in_use;
+
+        futures::executor::block_on(async {
+            let service =
+                AutomationTokenService::new(Arc::new(MemoryAdapter::new()), Durability::Memory)
+                    .unwrap();
+            let team = OrganizationId::parse("org_abcdefgh").unwrap();
+            let scope = AutomationScope::new(
+                team.clone(),
+                None,
+                None,
+                [AutomationPermission::ProjectRead],
+            )
+            .unwrap();
+            let issue = |id: &str, expires| {
+                service.issue(
+                    AutomationTokenId::parse(id).unwrap(),
+                    "ci-deploy",
+                    scope.clone(),
+                    DeveloperIdentityId::parse("dev_abcdefgh").unwrap(),
+                    10,
+                    expires,
+                )
+            };
+            let listed = || service.list(&team, NonZeroUsize::new(50).unwrap());
+            assert!(!name_in_use(&listed().await.unwrap(), "ci-deploy", 20));
+            let first = issue("atm_first0001", 1_000).await.unwrap();
+            let tokens = listed().await.unwrap();
+            assert!(name_in_use(&tokens, "ci-deploy", 20));
+            assert!(
+                !name_in_use(&tokens, "ci-deploy-2", 20),
+                "another name is free"
+            );
+            assert!(
+                !name_in_use(&tokens, "ci-deploy", 1_000),
+                "an expired token frees its name"
+            );
+            service.revoke(first.record.id(), 30).await.unwrap();
+            assert!(
+                !name_in_use(&listed().await.unwrap(), "ci-deploy", 40),
+                "so does revoking it"
+            );
+        });
     }
 
     #[test]
