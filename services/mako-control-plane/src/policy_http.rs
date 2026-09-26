@@ -125,7 +125,17 @@ fn handle_create_draft(
                 if existing.rules() == rules {
                     existing
                 } else {
-                    return Err(conflict(request, "policy idempotency conflict"));
+                    // Drafts are immutable, so the version is simply taken.
+                    return Err(HttpApiError::new(
+                        409,
+                        mako_api::ErrorCode::Conflict,
+                        format!(
+                            "policy version {} already exists with different rules; draft the next version instead",
+                            body.version
+                        ),
+                        request.request_id(),
+                        mako_api::RetryAdvice::Never,
+                    ));
                 }
             }
             Err(error) => return Err(policy_error(request, error)),

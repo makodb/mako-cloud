@@ -551,7 +551,42 @@ pub(crate) async fn administer(
         result.as_ref().map(|_| ()),
     )
     .await;
-    result.map_err(|error| rpc_error(request, error))
+    result.map_err(|error| match existing_resource(command.operation, &error) {
+        Some(message) => conflict(request, message),
+        None => rpc_error(request, error),
+    })
+}
+
+/// A create refused because what it names is taken, said in the words of
+/// that resource. The generic "identity operation conflicts with current
+/// state" read like a server fault, and the forms stayed filled, so people
+/// kept retrying the same ID.
+fn existing_resource(
+    operation: IdentityAdminOperation,
+    error: &InternalClientError,
+) -> Option<&'static str> {
+    let InternalClientError::Remote {
+        status: 409,
+        envelope,
+    } = error
+    else {
+        return None;
+    };
+    if envelope.error.message != "identity resource already exists" {
+        return None;
+    }
+    match operation {
+        IdentityAdminOperation::CreateProjectCredential => {
+            Some("a credential with this ID already exists; choose another ID")
+        }
+        IdentityAdminOperation::RotateProjectCredential => {
+            Some("the replacement credential ID is already in use; choose another ID")
+        }
+        IdentityAdminOperation::CreateUser | IdentityAdminOperation::InviteUser => {
+            Some("an application user with this email already exists")
+        }
+        _ => None,
+    }
 }
 
 /// The audit action for a change the control plane hands to the data plane,
@@ -835,7 +870,40 @@ mod tests {
 
     use mako_internal_rpc::IdentityAdminCommand;
 
-    use super::{command_action, command_target, role_permissions};
+    use super::{command_action, command_target, existing_resource, role_permissions};
+
+    #[test]
+    fn a_taken_id_or_email_is_named_as_such() {
+        use mako_api::{ApiError, ApiErrorEnvelope, ErrorCode, RetryAdvice};
+        use mako_internal_rpc::InternalClientError;
+
+        let refused = |message: &str| InternalClientError::Remote {
+            status: 409,
+            envelope: Box::new(ApiErrorEnvelope::new(ApiError::new(
+                ErrorCode::Conflict,
+                message,
+                "req_test",
+                RetryAdvice::Never,
+            ))),
+        };
+        let taken = refused("identity resource already exists");
+        assert_eq!(
+            existing_resource(Op::CreateProjectCredential, &taken),
+            Some("a credential with this ID already exists; choose another ID")
+        );
+        assert_eq!(
+            existing_resource(Op::CreateUser, &taken),
+            Some("an application user with this email already exists")
+        );
+        assert_eq!(existing_resource(Op::DisableUser, &taken), None);
+        assert_eq!(
+            existing_resource(
+                Op::CreateProjectCredential,
+                &refused("idempotency key conflicts")
+            ),
+            None
+        );
+    }
 
     #[test]
     fn changes_the_data_plane_makes_are_audited_and_reads_are_not() {
