@@ -50,6 +50,30 @@ export interface EnvironmentShape {
   readonly policies: ReadonlyMap<string, PolicyShape | null>;
   readonly buckets: readonly StorageBucket[];
   readonly functions: readonly FunctionShape[];
+  /** What promotion does not copy but a release usually needs; compared only when read. */
+  readonly settings?: SettingsShape;
+}
+
+/**
+ * Environment settings promotion leaves alone. They are environment-specific
+ * (redirect URLs, origins, endpoints) or cannot be read back (secret
+ * values), and copying sign-in settings could weaken a target. A target that
+ * lacks what the source has is reported, never changed.
+ */
+export interface SettingsShape {
+  readonly emailVerificationRequired: boolean;
+  readonly magicLinksEnabled: boolean;
+  readonly redirectUrls: readonly string[];
+  readonly providers: readonly string[];
+  readonly allowedOrigins: readonly string[];
+  readonly signingKey: boolean;
+  /** Customized templates only: kind to their subject and body. */
+  readonly templates: ReadonlyMap<string, string>;
+  readonly webhooks: readonly string[];
+  /** The secrets the source's functions attach that exist here. */
+  readonly secrets: ReadonlySet<string>;
+  /** Schedule names per function. */
+  readonly schedules: ReadonlyMap<string, readonly string[]>;
 }
 
 export interface PolicyShape {
@@ -104,6 +128,103 @@ export function selectShape(
     buckets: shape.buckets.filter((item) => wantedBuckets.has(item.id)),
     functions: [],
   };
+}
+
+const count = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
+
+/** The attention rows for settings the target lacks or has differently. */
+export function planSettings(
+  source: SettingsShape,
+  target: SettingsShape,
+  functions: readonly FunctionShape[],
+): readonly PromotionStep[] {
+  const steps: PromotionStep[] = [];
+  const attention = (resource: string, detail: string) =>
+    steps.push({ kind: "attention", resource, detail });
+  const signIn: string[] = [];
+  if (source.emailVerificationRequired !== target.emailVerificationRequired) {
+    signIn.push(
+      `email verification is ${source.emailVerificationRequired ? "required" : "off"} in the source and ${target.emailVerificationRequired ? "required" : "off"} in the target`,
+    );
+  }
+  if (source.magicLinksEnabled !== target.magicLinksEnabled) {
+    signIn.push(
+      `magic links are ${source.magicLinksEnabled ? "on" : "off"} in the source and ${target.magicLinksEnabled ? "on" : "off"} in the target`,
+    );
+  }
+  if (source.redirectUrls.length > 0 && target.redirectUrls.length === 0) {
+    signIn.push(
+      `the target allows no redirect URLs (the source allows ${source.redirectUrls.length})`,
+    );
+  }
+  const missingProviders = source.providers.filter((name) => !target.providers.includes(name));
+  if (missingProviders.length > 0) {
+    signIn.push(`providers missing in the target: ${missingProviders.join(", ")}`);
+  }
+  if (signIn.length > 0) {
+    attention(
+      "sign-in settings",
+      `${signIn.join("; ")}; review with ${CLI_NAME} auth-settings get and set them with ${CLI_NAME} auth-settings set --env <target>`,
+    );
+  }
+  if (source.signingKey && !target.signingKey) {
+    attention(
+      "signing key",
+      `the target has no JWT signing key, so application users cannot sign in there; create one with ${CLI_NAME} keys signing init --env <target>`,
+    );
+  }
+  if (
+    source.allowedOrigins.length > 0 &&
+    canonical([...source.allowedOrigins].sort()) !== canonical([...target.allowedOrigins].sort())
+  ) {
+    attention(
+      "allowed origins",
+      `the source allows ${count(source.allowedOrigins.length, "origin")} and the target ${target.allowedOrigins.length === 0 ? "none" : count(target.allowedOrigins.length, "origin")}; set the target's own with ${CLI_NAME} allowed-origins set --origin <url> --env <target>`,
+    );
+  }
+  const templates = [...source.templates].filter(
+    ([kind, body]) => target.templates.get(kind) !== body,
+  );
+  if (templates.length > 0) {
+    attention(
+      "email templates",
+      `customized in the source and not the same in the target: ${templates.map(([kind]) => kind).join(", ")}; copy them with ${CLI_NAME} email-templates get <kind> and email-templates set <kind> --env <target>`,
+    );
+  }
+  const webhooks = source.webhooks.filter((hook) => !target.webhooks.includes(hook));
+  if (webhooks.length > 0) {
+    attention(
+      "webhooks",
+      `${count(webhooks.length, "webhook endpoint")} of the source ${webhooks.length === 1 ? "is" : "are"} not registered in the target; register the target's own with ${CLI_NAME} webhooks create --env <target>`,
+    );
+  }
+  for (const item of functions) {
+    if (item.state === "deleted") continue;
+    const names = secretNamesOf(item);
+    const missing = names.filter((name) => !target.secrets.has(name));
+    if (missing.length > 0) {
+      attention(
+        `function ${item.name}`,
+        `attaches ${missing.join(", ")}, missing in the target; create ${missing.length === 1 ? "it" : "them"} with ${CLI_NAME} functions secrets create <name> --env <target>`,
+      );
+    }
+    const wanted = source.schedules.get(item.name) ?? [];
+    const present = target.schedules.get(item.name) ?? [];
+    const unscheduled = wanted.filter((name) => !present.includes(name));
+    if (unscheduled.length > 0) {
+      attention(
+        `function ${item.name}`,
+        `schedules missing in the target: ${unscheduled.join(", ")}; add them with ${CLI_NAME} schedules create --function ${item.name} --env <target>`,
+      );
+    }
+  }
+  return steps;
+}
+
+/** The secret names a function's configuration attaches. */
+export function secretNamesOf(item: FunctionShape): readonly string[] {
+  const configuration = item.configuration as { readonly secretNames?: readonly string[] } | null;
+  return configuration?.secretNames ?? [];
 }
 
 /** What promoting `source` onto `target` would change, in the order to change it. */
@@ -195,13 +316,73 @@ export function planPromotion(
       });
     }
   }
+  if (source.settings !== undefined && target.settings !== undefined) {
+    steps.push(...planSettings(source.settings, target.settings, source.functions));
+  }
   return steps;
+}
+
+async function readSettings(
+  client: MakoManagementClient,
+  projectId: string,
+  environmentId: string,
+  functions: readonly FunctionShape[],
+  secretNames: readonly string[],
+): Promise<SettingsShape> {
+  const [auth, origins, keys, templates, webhooks] = await Promise.all([
+    client.getAuthSettings(projectId, environmentId),
+    client.getAllowedOrigins(projectId, environmentId),
+    client.listJwtSigningKeys(projectId, environmentId),
+    client.listEmailTemplates(projectId, environmentId),
+    client.listWebhookEndpoints(projectId, environmentId),
+  ]);
+  const secrets = new Set<string>();
+  for (const name of new Set(secretNames)) {
+    const found = await client.getFunctionSecret(projectId, environmentId, name).then(
+      (secret) => secret.state !== "retired",
+      () => false,
+    );
+    if (found) secrets.add(name);
+  }
+  const schedules = new Map<string, readonly string[]>();
+  for (const item of functions) {
+    if (item.state === "deleted") continue;
+    const list = await client
+      .listFunctionSchedules(projectId, environmentId, item.name)
+      .catch(() => []);
+    schedules.set(
+      item.name,
+      list.map((schedule) => schedule.name),
+    );
+  }
+  return {
+    emailVerificationRequired: auth.emailVerification.required,
+    magicLinksEnabled: auth.magicLinks.enabled,
+    redirectUrls: auth.redirectUrls,
+    providers: auth.providers.map((provider) => provider.name),
+    allowedOrigins: origins.allowedOrigins,
+    signingKey: keys.some((key) => key.state === "active"),
+    templates: new Map(
+      templates
+        .filter((template) => !template.isDefault)
+        .map((template) => [
+          template.kind,
+          canonical({ subject: template.subject, body: template.textBody }),
+        ]),
+    ),
+    webhooks: webhooks.map((hook) =>
+      canonical({ url: hook.url, subscriptions: hook.subscriptions }),
+    ),
+    secrets,
+    schedules,
+  };
 }
 
 async function readShape(
   client: MakoManagementClient,
   projectId: string,
   environmentId: string,
+  secretNames?: readonly string[],
 ): Promise<EnvironmentShape> {
   const collections = await client.listCollections(projectId, environmentId);
   const indexes = new Map<string, readonly CollectionIndex[]>();
@@ -227,7 +408,14 @@ async function readShape(
     activeVersion: item.activeVersion ?? null,
     configuration: item.configuration,
   }));
-  return { collections, indexes, policies, buckets, functions };
+  const settings = await readSettings(
+    client,
+    projectId,
+    environmentId,
+    functions,
+    secretNames ?? functions.flatMap(secretNamesOf),
+  );
+  return { collections, indexes, policies, buckets, functions, settings };
 }
 
 /** A collection is created asynchronously; indexes and policies need it active. */
@@ -472,10 +660,14 @@ export const promoteCommands: readonly Command[] = [
       const client = await context.management();
       await client.getEnvironment(projectId, from);
       await client.getEnvironment(projectId, to);
-      const [everything, target] = await Promise.all([
-        readShape(client, projectId, from),
-        readShape(client, projectId, to),
-      ]);
+      const everything = await readShape(client, projectId, from);
+      // The target is asked about the secrets the source's functions need.
+      const target = await readShape(
+        client,
+        projectId,
+        to,
+        everything.functions.flatMap(secretNamesOf),
+      );
       const named = args.strings("collection");
       const missing = named.filter((id) => !everything.collections.some((item) => item.id === id));
       if (missing.length > 0) {

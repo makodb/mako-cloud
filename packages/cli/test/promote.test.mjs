@@ -47,8 +47,33 @@ const index = {
   activationFenced: false,
 };
 
+/** An environment's settings as the routes answer them; `quiet()` matches on both sides. */
+const quiet = () => ({
+  auth: {
+    providers: [],
+    redirectUrls: [],
+    magicLinks: { enabled: false, linkTtlSeconds: 900 },
+    emailVerification: { required: false },
+    version: 0,
+  },
+  origins: [],
+  keys: [],
+  templates: [],
+  webhooks: [],
+});
+
+function settingsRoutes(env, value) {
+  return {
+    [`GET ${base(env)}/auth-settings`]: () => ({ status: 200, json: value.auth }),
+    [`GET ${base(env)}/allowed-origins`]: () => ({ status: 200, json: { allowedOrigins: value.origins } }),
+    [`GET ${base(env)}/signing-keys`]: () => ({ status: 200, json: { items: value.keys } }),
+    [`GET ${base(env)}/email-templates`]: () => ({ status: 200, json: { items: value.templates } }),
+    [`GET ${base(env)}/webhooks`]: () => ({ status: 200, json: { items: value.webhooks } }),
+  };
+}
+
 /** Development is a version ahead with an index, a policy, and a bucket; Production has none of them. */
-function routes() {
+function routes(settings = { source: quiet(), target: quiet(), functions: [], schedules: [] }) {
   const target = { schemaVersion: 1, jsonSchema: schema({}), policy: null, indexes: [], buckets: [] };
   const table = {
     [`GET /v1/projects/${PROJECT_ID}/environments/${DEV}`]: () => ({ status: 200, json: environment({ id: DEV }) }),
@@ -76,8 +101,18 @@ function routes() {
     }),
     [`GET ${base(DEV)}/storage-buckets`]: () => ({ status: 200, json: { items: [bucket] } }),
     [`GET ${base(PROD)}/storage-buckets`]: () => ({ status: 200, json: { items: target.buckets } }),
-    [`GET ${base(DEV)}/functions`]: () => ({ status: 200, json: { items: [] } }),
+    [`GET ${base(DEV)}/functions`]: () => ({ status: 200, json: { items: settings.functions } }),
     [`GET ${base(PROD)}/functions`]: () => ({ status: 200, json: { items: [] } }),
+    ...settingsRoutes(DEV, settings.source),
+    ...settingsRoutes(PROD, settings.target),
+    [`GET ${base(DEV)}/functions/stats/schedules`]: () => ({
+      status: 200,
+      json: { items: settings.schedules },
+    }),
+    [`GET ${base(PROD)}/function-secrets/STATS_SALT`]: () => ({
+      status: 404,
+      json: { error: { code: "not_found", message: "function secret was not found", requestId: "req_1", retry: { kind: "never" } } },
+    }),
     [`POST ${base(PROD)}/collections/todos/schemas`]: (request) => {
       target.schemaVersion = request.body.schemaVersion;
       target.jsonSchema = request.body.jsonSchema;
@@ -107,8 +142,8 @@ function routes() {
   return (request) => table[`${request.method} ${request.path}`]?.(request);
 }
 
-async function promoteCli(t) {
-  const api = await startMockApi(authHandler({ fallback: routes() }));
+async function promoteCli(t, settings) {
+  const api = await startMockApi(authHandler({ fallback: routes(settings) }));
   t.after(() => api.close());
   const directory = await signedIn(t, api);
   const cli = (extra) =>
@@ -186,4 +221,52 @@ test("envs promote --collection limits the plan to the named collections", async
   const unknown = await cli(["--collection", "nothing-here"]);
   assert.equal(unknown.code, 2);
   assert.match(unknown.stderr, /has no collection nothing-here/u);
+});
+
+test("envs promote reports the settings it leaves alone", async (t) => {
+  const source = {
+    auth: {
+      providers: [{ name: "github", kind: "oauth2" }],
+      redirectUrls: ["http://localhost:5174/app.html"],
+      magicLinks: { enabled: true, linkTtlSeconds: 900 },
+      emailVerification: { required: true },
+      version: 3,
+    },
+    origins: ["http://localhost:5174"],
+    keys: [{ keyId: "sig_1", state: "active", createdAt: NOW, retireAt: null }],
+    templates: [
+      { kind: "verification", isDefault: false, subject: "Confirm your account", textBody: "{{link}}", version: 1, updatedAt: NOW },
+    ],
+    webhooks: [{ id: "whk_1", url: "https://hooks.example.test/todos", subscriptions: [{ collectionId: "todos", events: ["insert"] }] }],
+  };
+  const functions = [
+    {
+      name: "stats",
+      state: "active",
+      activeVersion: 1,
+      configuration: { verifyJwt: true, regions: ["local"], secretNames: ["STATS_SALT"], limits: {} },
+    },
+  ];
+  const { cli } = await promoteCli(t, { source, target: quiet(), functions, schedules: [{ id: "sch_1", name: "nightly" }] });
+  const result = await cli(["--json"]);
+  assert.equal(result.code, 0, result.stderr);
+  const rows = JSON.parse(result.stdout).filter((step) => step.kind === "attention");
+  const about = (resource) => rows.filter((step) => step.resource === resource).map((step) => step.detail);
+  const signIn = about("sign-in settings").join(" ");
+  assert.match(signIn, /email verification is required in the source and off in the target/u);
+  assert.match(signIn, /magic links are on in the source and off in the target/u);
+  assert.match(signIn, /the target allows no redirect URLs/u);
+  assert.match(signIn, /providers missing in the target: github/u);
+  assert.match(about("signing key").join(" "), /keys signing init --env <target>/u);
+  assert.match(about("allowed origins").join(" "), /the source allows 1 origin and the target none/u);
+  assert.match(about("email templates").join(" "), /verification/u);
+  assert.match(about("webhooks").join(" "), /1 webhook endpoint of the source is not registered/u);
+  const fn = about("function stats").join(" ");
+  assert.match(fn, /attaches STATS_SALT, missing in the target/u);
+  assert.match(fn, /schedules missing in the target: nightly/u);
+
+  // With matching settings on both sides, none of these rows appear.
+  const { cli: same } = await promoteCli(t);
+  const quietRows = JSON.parse((await same(["--json"])).stdout).filter((step) => step.kind === "attention");
+  assert.deepEqual(quietRows, []);
 });
