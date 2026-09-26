@@ -218,6 +218,37 @@ test("policy and application-user administration enforce full management workflo
   expect(api.unhandled).toEqual([]);
 });
 
+test("publishing a schema version says what it means for apps on the current one", async ({
+  page,
+}) => {
+  const api = new ManagementApiHarness();
+  await api.install(page);
+  const dialogs: string[] = [];
+  let accept = false;
+  page.on("dialog", (dialog) => {
+    dialogs.push(dialog.message());
+    void (accept ? dialog.accept() : dialog.dismiss());
+  });
+
+  await page.goto(`/projects/${PROJECT_ID}/environments/${ENVIRONMENT_ID}/collections/todos`);
+  await expect(
+    page.getByText("Apps replicating this collection are bound to version 1"),
+  ).toBeVisible();
+
+  // Declining the confirmation publishes nothing.
+  await page.getByRole("button", { name: "Check and publish" }).click();
+  await expect.poll(() => dialogs.length).toBe(1);
+  expect(dialogs[0]).toContain("Apps replicating todos at version 1 are then refused");
+  expect(dialogs[0]).toContain("their unsynced changes stay on the device");
+  expect(api.schemaPublications).toEqual([]);
+
+  accept = true;
+  await page.getByRole("button", { name: "Check and publish" }).click();
+  await expect.poll(() => api.schemaPublications.length).toBe(1);
+  expect(api.schemaPublications[0]).toMatchObject({ schemaVersion: 2 });
+  expect(api.unhandled).toEqual([]);
+});
+
 test("credentials, functions, logs, metrics, and audit export use the management contract", async ({
   page,
 }) => {
@@ -287,6 +318,8 @@ class ManagementApiHarness {
   credential: Record<string, unknown> | null = null;
   edgeFunction: Record<string, unknown> | null = null;
   deployments: Record<string, unknown>[] = [];
+  readonly schemaPublications: Record<string, unknown>[] = [];
+  schemaVersion = 1;
 
   async install(page: Page) {
     await page.route("**/v1/**", (route) => void this.handle(route));
@@ -428,6 +461,23 @@ class ManagementApiHarness {
         rxdbClientRange: ">=17 <18",
         templateVersion: 1,
       });
+    } else if (path.endsWith("/collections/todos") && method === "GET") {
+      await json(route, {
+        id: "todos",
+        metadataVersion: this.schemaVersion,
+        schemaVersion: this.schemaVersion,
+        jsonSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
+        primaryKey: { kind: "field", field: "id" },
+        compatibility: "compatible",
+        state: "active",
+      });
+    } else if (path.endsWith("/collections/todos/indexes") && method === "GET") {
+      await json(route, { items: [] });
+    } else if (path.endsWith("/collections/todos/schemas") && method === "POST") {
+      const body = request.postDataJSON() as { schemaVersion: number };
+      this.schemaPublications.push(body);
+      this.schemaVersion = body.schemaVersion;
+      await json(route, { status: "published", collection: { id: "todos" } });
     } else if (path.endsWith("/collections/todos/policies") && method === "GET") {
       await json(route, this.activePolicy);
     } else if (path.endsWith("/collections/todos/policies") && method === "POST") {

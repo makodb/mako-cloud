@@ -247,6 +247,19 @@ export function CollectionScreen({
         jsonSchema: parseJsonObject(requiredText(data, "jsonSchema"), "JSON schema"),
         primaryKey: parsePrimaryKey(requiredText(data, "primaryKey")),
       };
+      // Even an additive change is a new version every replicating app must
+      // move to, which a compatibility check alone did not make clear.
+      const current = collection?.schemaVersion;
+      if (
+        current !== undefined &&
+        !confirmDestructiveAction({
+          action: "Publish",
+          target: `schema version ${draft.schemaVersion} of ${collectionId}`,
+          consequence: `If it is compatible it becomes active at once. Apps replicating ${collectionId} at version ${current} are then refused until they update to version ${draft.schemaVersion}; their unsynced changes stay on the device and are sent after the update.`,
+        })
+      ) {
+        return;
+      }
       const result = await client.publishCollectionSchema(
         projectId,
         environmentId,
@@ -298,7 +311,10 @@ export function CollectionScreen({
               <CardHeader>
                 <CardTitle id="publish-schema-title">Publish schema version</CardTitle>
                 <CardDescription>
-                  Compatibility is checked before the active schema changes.
+                  Compatibility is checked before the active schema changes. Apps replicating this
+                  collection are bound to version {collection.schemaVersion}: once a newer version
+                  is active they must update to it before they can sync again. Changes they have not
+                  synced yet stay on the device until then.
                 </CardDescription>
               </CardHeader>
               <CardContent className="grid gap-4">
