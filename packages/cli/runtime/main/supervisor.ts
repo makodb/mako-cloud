@@ -1427,10 +1427,16 @@ async function boundedBody(request: Request, maximum: number): Promise<Uint8Arra
   return body;
 }
 
-function decodeBase64(value: string, maximum: number): Uint8Array {
+export function decodeBase64(value: string, maximum: number): Uint8Array {
+  // A quantified four-character group exhausts V8's regexp stack on valid
+  // multi-MiB bundles. Check the alphabet and bounded tail separately so
+  // validation uses constant stack space throughout the supported size range.
+  const padding = value.indexOf("=");
   if (
     value.length > Math.ceil(maximum / 3) * 4 + 4 ||
-    !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u.test(value)
+    value.length % 4 !== 0 ||
+    /[^A-Za-z0-9+/=]/u.test(value) ||
+    (padding !== -1 && value.slice(padding) !== "=" && value.slice(padding) !== "==")
   )
     throw new Error("invalid base64");
   const decoded = atob(value);
