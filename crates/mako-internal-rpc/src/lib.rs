@@ -34,8 +34,8 @@ pub use contract::{
     MAX_INTERNAL_BODY_BYTES, MAXIMUM_ALLOWED_ORIGINS, MAXIMUM_ORIGIN_BYTES,
     OPERATOR_ADMIN_ENVIRONMENT_ID, OPERATOR_ADMIN_PROJECT_ID, OperatorEntitlementApplyResponse,
     OperatorEntitlementCommand, OperatorEntitlementOperation, OperatorEntitlementPlanResponse,
-    ReadChangeFeedInput, ReadChangeFeedOutput, RemoveBucketInput, ResolvedFunctionSecret,
-    is_allowed_origin, is_exact_origin,
+    ReadChangeFeedInput, ReadChangeFeedOutput, RemoveBucketInput, RemoveIndexInput,
+    ResolvedFunctionSecret, is_allowed_origin, is_exact_origin,
 };
 pub use guard::{
     GuardDecision, InternalReplayGuard, NoopReplayGuard, RocksInternalReplayGuard,

@@ -955,6 +955,31 @@ impl CollectionAdminService {
         Ok(())
     }
 
+    /// Drops a deleted index's record once the data plane has removed the
+    /// index, so it leaves the collection's listing instead of staying
+    /// "deleting" for good. The deletion itself was audited by `delete_index`.
+    pub async fn forget_index(
+        &self,
+        actor: &DeveloperPrincipal,
+        tenant: &TenantScope,
+        collection_id: &CollectionId,
+        name: &IndexName,
+        version: IndexVersion,
+        now_unix_seconds: u64,
+    ) -> Result<(), CollectionAdminError> {
+        self.authorize(
+            actor,
+            tenant,
+            true,
+            ControlAuditAction::CollectionIndexDelete,
+            now_unix_seconds,
+        )
+        .await?;
+        let scoped = self.scoped(tenant, collection_id.clone())?;
+        scoped.forget_index(name, version, self.durability).await?;
+        Ok(())
+    }
+
     async fn compatibility_report(
         &self,
         tenant: &TenantScope,

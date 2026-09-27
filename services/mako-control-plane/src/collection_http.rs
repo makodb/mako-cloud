@@ -598,6 +598,29 @@ fn handle_delete_index(
             .get_index(&actor, &tenant, &collection_id, &name, version, now)
             .await
             .map_err(|error| collection_error(request, error))?;
+        // The data plane is what answers queries and enforces uniqueness, so
+        // the deletion has to reach it: recorded here alone, a deleted unique
+        // index went on refusing duplicates and listed as active. Should this
+        // fail, the index stays "deleting" and deleting it again finishes.
+        let _: Value = administer(
+            graph,
+            request,
+            &actor,
+            &tenant,
+            IdentityAdminOperation::RemoveIndex,
+            json!({
+                "collectionId": collection_id.as_str(),
+                "name": name.as_str(),
+                "version": version.get(),
+            }),
+            false,
+        )
+        .await?;
+        graph
+            .collection_service()
+            .forget_index(&actor, &tenant, &collection_id, &name, version, now)
+            .await
+            .map_err(|error| collection_error(request, error))?;
         explorer_invalidation::advance_tenant(
             graph,
             request,

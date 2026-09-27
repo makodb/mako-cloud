@@ -869,6 +869,7 @@ function IndexCard({
             className="-ml-2 text-destructive hover:bg-destructive/10 hover:text-destructive"
             disabled={index.state === "deleting"}
             onClick={onDelete}
+            aria-label={`Remove index ${index.name} version ${index.version}`}
           >
             Remove index
           </Button>

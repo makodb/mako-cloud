@@ -260,6 +260,12 @@ pub enum IdentityAdminOperation {
     /// records the definition it was asked for; the state that decides whether
     /// a query is answerable lives here.
     InspectIndex,
+    /// Remove a collection index from the data plane: queries and writes stop
+    /// using it, its entries and uniqueness claims are deleted, and its
+    /// definition is forgotten. Deleting an index used to be recorded only in
+    /// the control plane, so the data plane went on enforcing it -- a deleted
+    /// unique index kept refusing duplicates.
+    RemoveIndex,
     /// Install collection metadata in the data plane that serves the
     /// environment. The control plane owns the collection record, but document
     /// traffic cannot resolve a collection until its metadata exists in the
@@ -558,6 +564,14 @@ pub struct IndexFieldInput {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct InspectIndexInput {
+    pub collection_id: String,
+    pub name: String,
+    pub version: u64,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct RemoveIndexInput {
     pub collection_id: String,
     pub name: String,
     pub version: u64,

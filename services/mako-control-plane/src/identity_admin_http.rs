@@ -621,6 +621,7 @@ fn command_action(
         Op::DeleteUser => (A::ApplicationUserDelete, true),
         Op::InstallCollection => (A::CollectionCreate, false),
         Op::InstallIndex => (A::CollectionIndexCreate, false),
+        Op::RemoveIndex => (A::CollectionIndexDelete, false),
         Op::InstallPolicy => (A::PolicyActivate, false),
         _ => return None,
     })
@@ -634,10 +635,12 @@ fn command_target(command: &IdentityAdminCommand) -> String {
         IdentityAdminOperation::InitializeSigningKey | IdentityAdminOperation::RotateSigningKey => {
             "signing-keys".to_owned()
         }
-        IdentityAdminOperation::InstallIndex => match (field("collectionId"), field("name")) {
-            (Some(collection), Some(name)) => format!("{collection}/{name}"),
-            _ => "indexes".to_owned(),
-        },
+        IdentityAdminOperation::InstallIndex | IdentityAdminOperation::RemoveIndex => {
+            match (field("collectionId"), field("name")) {
+                (Some(collection), Some(name)) => format!("{collection}/{name}"),
+                _ => "indexes".to_owned(),
+            }
+        }
         // A bucket's settings travel whole, under "bucket".
         IdentityAdminOperation::InstallBucket => command
             .input

@@ -514,6 +514,9 @@ async fn execute_operation(
         IdentityAdminOperation::InspectIndex => {
             execute_index_inspect(graph, request, tenant, command, now).await
         }
+        IdentityAdminOperation::RemoveIndex => {
+            execute_index_remove(graph, request, tenant, command, now).await
+        }
         IdentityAdminOperation::InstallAuthProviders
         | IdentityAdminOperation::InspectAuthProviders => {
             crate::auth_provider_http::execute_auth_provider_operation(
@@ -970,6 +973,59 @@ async fn execute_index_inspect(
         now,
     );
     index_response(request, &input.name, input.version, state)
+}
+
+/// Removes an index for good: queries and writes stop using it, its entries
+/// and uniqueness claims are deleted, and then its definition goes. A retry
+/// after either step converges, since both accept an index already removed.
+async fn execute_index_remove(
+    graph: &Arc<DataPlaneGraph>,
+    request: &HttpRequest,
+    tenant: &mako_api::TenantScope,
+    command: &IdentityAdminCommand,
+    now: u64,
+) -> Result<Vec<u8>, HttpApiError> {
+    require_permission(
+        graph,
+        request,
+        tenant,
+        command,
+        IdentityAdminPermission::ManageCollections,
+        "index_remove",
+        "indexes",
+        now,
+    )
+    .await?;
+    let input: mako_internal_rpc::RemoveIndexInput = parse_input(request, &command.input)?;
+    let (scoped, name, version) = index_target(
+        graph,
+        request,
+        tenant,
+        &input.collection_id,
+        &input.name,
+        input.version,
+    )?;
+    match scoped.remove_index(&name, version, Durability::Sync).await {
+        Ok(_)
+        | Err(mako_documents::IndexBuildError::Index(
+            mako_documents::IndexError::DefinitionNotFound,
+        )) => {}
+        Err(_) => return Err(auth_http::unavailable(request, "index removal failed")),
+    }
+    scoped
+        .forget_index(&name, version, Durability::Sync)
+        .await
+        .map_err(|_| auth_http::unavailable(request, "index removal failed"))?;
+    report_index_state(
+        graph,
+        tenant,
+        &input.collection_id,
+        &input.name,
+        input.version,
+        "deleted",
+        now,
+    );
+    index_response(request, &input.name, input.version, "deleted")
 }
 
 /// An index's state deciding whether queries are answerable is exactly what
@@ -2489,6 +2545,7 @@ const fn operation_name(operation: IdentityAdminOperation) -> &'static str {
         IdentityAdminOperation::InstallCustomDomains => "install_custom_domains",
         IdentityAdminOperation::InstallAllowedOrigins => "install_allowed_origins",
         IdentityAdminOperation::InspectIndex => "inspect_index",
+        IdentityAdminOperation::RemoveIndex => "remove_index",
         IdentityAdminOperation::SearchUsers => "search_users",
         IdentityAdminOperation::InspectUser => "inspect_user",
         IdentityAdminOperation::CreateUser => "create_user",

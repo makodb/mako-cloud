@@ -664,6 +664,56 @@ impl ScopedCollectionEngine {
         .await
     }
 
+    /// Drops a deleted index's definition from the catalog, once
+    /// `remove_index` has taken its entries away. Until then the definition
+    /// stays as `Deleting`, which is what keeps queries and writes off it; a
+    /// write racing the removal is conditioned on the catalog and retries
+    /// against the final one. Forgetting a definition that is not deleting is
+    /// refused, and forgetting one that is already gone succeeds, so a
+    /// retried removal converges.
+    pub async fn forget_index(
+        &self,
+        name: &IndexName,
+        version: IndexVersion,
+        durability: Durability,
+    ) -> Result<(), IndexError> {
+        self.ensure_index_durability(durability)?;
+        let key = self.index_catalog_key()?;
+        loop {
+            let stored = self.adapter.get(&key).await?;
+            let mut catalog = decode_catalog(stored.as_deref())?;
+            let Some(position) = catalog
+                .definitions
+                .iter()
+                .position(|definition| definition.name == *name && definition.version == version)
+            else {
+                return Ok(());
+            };
+            let state = catalog.definitions[position].state;
+            if state != IndexState::Deleting {
+                return Err(IndexError::InvalidStateTransition {
+                    from: state,
+                    to: IndexState::Deleting,
+                });
+            }
+            catalog.definitions.remove(position);
+            let mut batch = WriteBatch::new();
+            batch.put(&key, catalog.encode()?);
+            if self
+                .adapter
+                .compare_and_write(AtomicWrite {
+                    conditions: vec![catalog_condition(&key, stored)],
+                    batch,
+                    durability,
+                })
+                .await?
+                == CompareAndWriteResult::Applied
+            {
+                return Ok(());
+            }
+        }
+    }
+
     pub(crate) fn index_catalog_key(&self) -> Result<Vec<u8>, IndexError> {
         self.keyspace
             .index_catalog_key(self.scope().collection_id().as_str())

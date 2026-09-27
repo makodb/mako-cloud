@@ -1429,6 +1429,13 @@ mod tests {
             create(&scoped, &validator, &mut lease, "todo-1", "first").await;
             create(&scoped, &validator, &mut lease, "todo-2", "second").await;
 
+            // A live index is never forgotten: only one removal has emptied.
+            assert!(matches!(
+                scoped
+                    .forget_index(&name, version, Durability::Memory)
+                    .await,
+                Err(IndexError::InvalidStateTransition { .. })
+            ));
             let report = scoped
                 .remove_index(&name, version, Durability::Memory)
                 .await
@@ -1458,6 +1465,30 @@ mod tests {
                 .expect("owner range");
             assert!(!state.keys().any(|key| entry_range.contains(key)));
             assert!(!state.keys().any(|key| owner_range.contains(key)));
+
+            // Once its entries are gone the definition itself can go, and
+            // writes keep working against the catalog without it. Forgetting
+            // again is a no-op, so a retried removal converges.
+            scoped
+                .forget_index(&name, version, Durability::Memory)
+                .await
+                .expect("forget index");
+            assert!(
+                scoped
+                    .index_definition(&name, version)
+                    .await
+                    .expect("definition")
+                    .is_none()
+            );
+            scoped
+                .forget_index(&name, version, Durability::Memory)
+                .await
+                .expect("forget again");
+            let mut lease = sequencer
+                .lease(NonZeroU64::new(1).expect("non-zero"))
+                .await
+                .expect("lease");
+            create(&scoped, &validator, &mut lease, "todo-4", "first").await;
         });
     }
 
