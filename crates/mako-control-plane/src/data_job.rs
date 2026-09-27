@@ -500,10 +500,30 @@ impl DataJobService {
             .await?
             .ok_or(DataJobError::InvalidArtifact)?;
         let (rows, byte_count) = validate_json_lines(&bytes)?;
+        // The dry run is where a developer learns what the import will do, so
+        // it checks every row against the schema the import will apply. It
+        // used to check only that each line was a JSON object: "3 rows,
+        // failed 0" for a file whose third row the import then refused.
+        let metadata = self
+            .collections
+            .get_collection(actor, tenant, &record.view.collection_id, now_unix_seconds)
+            .await?;
+        let active = metadata.schema_version().get();
+        if active != schema_version {
+            return Err(DataJobError::SchemaVersionMismatch {
+                requested: schema_version,
+                active,
+            });
+        }
+        let validator = mako_documents::DocumentValidator::compile(&metadata)
+            .map_err(|_| DataJobError::InvalidState)?;
+        let (failed, errors) = rows_failing_schema(&bytes, &validator);
         let record = self
             .update_record(tenant, job_id, |record| {
                 record.view.state = DataJobState::AwaitingConfirmation;
                 record.view.progress.processed = rows;
+                record.view.progress.failed = failed;
+                record.view.errors.clone_from(&errors);
                 record.view.manifest = Some(DataJobManifest {
                     format_version: 1,
                     tenant: tenant.clone(),
@@ -557,7 +577,9 @@ impl DataJobService {
                 }
                 record.view.state = DataJobState::Queued;
                 if record.view.kind == DataJobKind::Import {
+                    // The run reports its own outcome; the dry run's goes.
                     record.view.progress = empty_progress();
+                    record.view.errors.clear();
                 }
                 record.view.updated_at_unix_seconds = now_unix_seconds;
                 Ok(())
@@ -1415,6 +1437,30 @@ fn validate_json_lines(bytes: &[u8]) -> Result<(u64, u64), DataJobError> {
     Ok((rows, bytes.len() as u64))
 }
 
+/// The rows of an upload the collection's schema refuses, counted and named
+/// the way the import itself names them (`row_<index>:schema_invalid`, at
+/// most 100). The upload is already known to be JSON Lines of objects.
+fn rows_failing_schema(
+    bytes: &[u8],
+    validator: &mako_documents::DocumentValidator,
+) -> (u64, Vec<String>) {
+    let mut failed = 0_u64;
+    let mut errors = Vec::new();
+    let text = std::str::from_utf8(bytes).unwrap_or_default();
+    for (row, line) in text.lines().enumerate() {
+        let valid = serde_json::from_str::<Value>(line)
+            .ok()
+            .is_some_and(|value| validator.validate_create(value).is_ok());
+        if !valid {
+            failed = failed.saturating_add(1);
+            if errors.len() < 100 {
+                errors.push(format!("row_{row}:schema_invalid"));
+            }
+        }
+    }
+    (failed, errors)
+}
+
 fn sha256_digest(bytes: &[u8]) -> String {
     format!("sha256:{:x}", Sha256::digest(bytes))
 }
@@ -1476,6 +1522,11 @@ pub enum DataJobError {
     Forbidden,
     QuotaExceeded,
     Conflict,
+    /// The rows target a schema version the collection is not at.
+    SchemaVersionMismatch {
+        requested: u64,
+        active: u64,
+    },
     Project(ProjectStoreError),
     Organization(OrganizationStoreError),
     Collection(CollectionAdminError),
@@ -1488,6 +1539,12 @@ pub enum DataJobError {
 
 impl fmt::Display for DataJobError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Self::SchemaVersionMismatch { requested, active } = self {
+            return write!(
+                formatter,
+                "the rows target schema version {requested}, but the collection's active schema is version {active}"
+            );
+        }
         formatter.write_str(match self {
             Self::InvalidRequest | Self::InvalidArtifact => "data-job input is invalid",
             Self::InvalidState => "data-job state does not permit this action",
@@ -1622,6 +1679,37 @@ mod tests {
             .write(batch, Durability::Memory)
             .await
             .expect("store jobs");
+    }
+
+    /// A dry run names the rows the schema refuses, as the import would.
+    #[test]
+    fn a_dry_run_names_the_rows_the_schema_refuses() {
+        let metadata = mako_documents::CollectionMetadata::new(
+            mako_api::CollectionId::parse("tasks").expect("collection"),
+            mako_documents::CollectionMetadataVersion::new(1).expect("version"),
+            mako_documents::SchemaVersion::new(1).expect("schema"),
+            serde_json::json!({
+                "type": "object",
+                "required": ["id", "ownerId"],
+                "properties": {"id": {"type": "string"}, "ownerId": {"type": "string"}},
+            }),
+            mako_documents::PrimaryKeyDefinition::field("id").expect("primary key"),
+            mako_documents::SchemaCompatibility::Compatible,
+            mako_documents::CollectionLifecycle::Active,
+        )
+        .expect("metadata");
+        let validator = mako_documents::DocumentValidator::compile(&metadata).expect("validator");
+        let upload = b"{\"id\":\"a\",\"ownerId\":\"u\"}\n{\"id\":\"b\"}\n{\"id\":\"c\",\"ownerId\":\"u\"}\n{\"ownerId\":\"u\"}";
+        assert_eq!(
+            rows_failing_schema(upload, &validator),
+            (
+                2,
+                vec![
+                    "row_1:schema_invalid".to_owned(),
+                    "row_3:schema_invalid".to_owned()
+                ]
+            )
+        );
     }
 
     #[test]

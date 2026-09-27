@@ -1,6 +1,9 @@
 use std::{num::NonZeroUsize, sync::Arc};
 
-use mako_api::{DataJobConfirmationRequest, DataJobCreateRequest, DataJobDryRunRequest};
+use mako_api::{
+    DataJobConfirmationRequest, DataJobCreateRequest, DataJobDryRunRequest,
+    EXPLORER_MAX_ACTIVE_JOBS_PER_TENANT, ErrorCode, RetryAdvice,
+};
 use mako_control_plane::{ArtifactMethod, DataJobError};
 use mako_service_runtime::{
     HttpApiError, HttpMethod, HttpRequest, HttpResponse, HttpRouter, RouteRegistrationError,
@@ -315,7 +318,24 @@ fn data_job_error(request: &HttpRequest, error: DataJobError) -> HttpApiError {
         ),
         DataJobError::NotFound => not_found(request, "data job was not found"),
         DataJobError::Forbidden => forbidden(request, "data-job action is forbidden"),
-        DataJobError::QuotaExceeded => conflict(request, "data-job quota is exhausted"),
+        // Jobs waiting for an upload or a confirmation count too, so say
+        // what to clear rather than only that a limit was reached.
+        DataJobError::QuotaExceeded => HttpApiError::new(
+            409,
+            ErrorCode::Conflict,
+            format!(
+                "this environment already has {EXPLORER_MAX_ACTIVE_JOBS_PER_TENANT} unfinished data jobs; finish or cancel one first (mako-cloud data jobs list)"
+            ),
+            request.request_id(),
+            RetryAdvice::Never,
+        ),
+        ref mismatch @ DataJobError::SchemaVersionMismatch { .. } => HttpApiError::new(
+            409,
+            ErrorCode::Conflict,
+            mismatch.to_string(),
+            request.request_id(),
+            RetryAdvice::Never,
+        ),
         _ => unavailable(request, "data-job service is unavailable"),
     }
 }

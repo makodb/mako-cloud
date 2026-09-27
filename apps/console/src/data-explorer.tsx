@@ -1339,10 +1339,13 @@ function DataJobs({
         body: file,
       });
       if (!response.ok) throw new Error("The import upload was not accepted.");
-      await client.dryRunDataJobImport(projectId, environmentId, job.jobId, {
+      const dryRun = await client.dryRunDataJobImport(projectId, environmentId, job.jobId, {
         uploadDigest: `sha256:${digest}`,
         schemaVersion: positiveInteger(data, "schemaVersion"),
       });
+      // What the dry run found is what the person uploaded to see: open its
+      // review at once rather than leave it behind a button in the job list.
+      if (dryRun.state === "awaiting_confirmation") setPendingConfirmation(dryRun);
       await reload();
     } catch (error) {
       setFailure(consoleFailure(error));
@@ -1503,6 +1506,13 @@ function DataJobs({
                   <strong>{pendingConfirmation.conflictStrategy}</strong>. Manifest{" "}
                   <code className={CODE}>{manifestDigest(pendingConfirmation)}</code>.
                 </p>
+                {pendingConfirmation.progress.failed > 0 ? (
+                  <p className="m-0">
+                    The dry run found {pendingConfirmation.progress.failed} of them the collection's
+                    schema refuses: {pendingConfirmation.progress.failed === 1 ? "it" : "they"} will
+                    fail, and the rest will be applied.
+                  </p>
+                ) : null}
                 <form
                   className="grid w-full gap-3"
                   onSubmit={(event) => void confirm(event, pendingConfirmation)}
@@ -1707,7 +1717,11 @@ function DataJobDetail({
         {diagnostics.length > 0 ? (
           <Alert variant="destructive" role="status">
             <AlertTriangle aria-hidden="true" />
-            <AlertTitle>Failure diagnostic</AlertTitle>
+            <AlertTitle>
+              {job.state === "awaiting_confirmation"
+                ? "Rows the dry run found the schema refuses"
+                : "Failure diagnostic"}
+            </AlertTitle>
             <AlertDescription>
               <ul className="m-0 list-disc pl-4">
                 {diagnostics.map((diagnostic) => (

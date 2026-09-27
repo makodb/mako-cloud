@@ -415,6 +415,23 @@ async function importData(context: CommandContext, args: CommandArgs): Promise<v
   } else {
     const collectionId = args.requireString("collection");
     const conflictStrategy = strategyFrom(args);
+    // What the upload and the dry run need is checked before a job exists: a
+    // job created and then refused for a missing flag was left behind,
+    // awaiting an upload that never came.
+    await requireInputFile(args);
+    const schemaVersion = schemaVersionFrom(args);
+    // Rows for another schema version are refused at the dry run, after the
+    // upload; checked here, nothing is created for them.
+    const collection = await client.getCollection(
+      tenant.projectId,
+      tenant.environmentId,
+      collectionId,
+    );
+    if (collection.schemaVersion !== schemaVersion) {
+      throw usageError(
+        `collection ${collectionId} is at schema version ${collection.schemaVersion}; --schema-version ${schemaVersion} does not match it`,
+      );
+    }
     job = await client.createDataJob(
       tenant.projectId,
       tenant.environmentId,

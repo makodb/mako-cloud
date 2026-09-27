@@ -483,6 +483,9 @@ function importHandler() {
   const job = (overrides = {}) =>
     dataJob({ kind: "import", state: state.current, conflictStrategy: "upsert", manifest: state.manifest, ...overrides });
   return (request) => {
+    if (request.method === "GET" && request.path === `${BASE}/collections/${COLLECTION_ID}`) {
+      return { status: 200, json: { id: COLLECTION_ID, schemaVersion: 3 } };
+    }
     if (request.method === "POST" && request.path === JOBS) {
       state.current = "awaiting_upload";
       state.manifest = null;
@@ -591,5 +594,19 @@ test("data import needs a real input file and a known strategy before anything i
   );
   assert.equal(badStrategy.code, 2);
   assert.match(badStrategy.stderr, /--strategy must be one of/u);
-  assert.equal(api.find(JOBS, "POST").length, 1, "the job is created before the input is checked only once the strategy is valid");
+  const input = join(directory, "rows.jsonl");
+  await writeFile(input, '{"id":"a"}\n');
+  const noSchemaVersion = await runCli(
+    ["data", "import", "--collection", COLLECTION_ID, "--input", input, "--strategy", "upsert", ...TENANT],
+    { configDir: directory },
+  );
+  assert.equal(noSchemaVersion.code, 2);
+  assert.match(noSchemaVersion.stderr, /--schema-version <n>/u);
+  const otherVersion = await runCli(
+    ["data", "import", "--collection", COLLECTION_ID, "--input", input, "--strategy", "upsert", "--schema-version", "2", ...TENANT],
+    { configDir: directory },
+  );
+  assert.equal(otherVersion.code, 2);
+  assert.match(otherVersion.stderr, /is at schema version 3; --schema-version 2 does not match it/u);
+  assert.equal(api.find(JOBS, "POST").length, 0, "no job is left behind by a refused command");
 });
