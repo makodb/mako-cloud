@@ -2563,7 +2563,11 @@ The six scenarios verify that a write remains queryable offline and is pushed af
 
 ### Rational
 
-[`examples/rational`](../examples/rational/README.md) is a Monarch-style household money manager built on nothing but what Mako Cloud offers a developer: an ordinary project, its ordinary API URL, document policies, RxDB replication, file storage, and three edge functions. It is published from a repository of its own (<https://github.com/shuaimu/rational>), and the site GitHub Pages serves from it talks to a real project on the public beta. How close it comes to Monarch is measured feature by feature in [`MONARCH-PARITY.md`](../examples/rational/MONARCH-PARITY.md), which `npm run validate:rational-parity` refuses under ninety percent.
+[`examples/rational`](../examples/rational/README.md) is a Monarch-style household money manager built on nothing but what Mako Cloud offers a developer: an ordinary project, its ordinary API URL, document policies, RxDB replication, file storage, and three edge functions.
+
+Rational and Rational Investment are maintained independently in <https://github.com/shuaimu/rational>; use that repository for application development and deployment. The platform-owned example remains available for platform qualification. The old `scripts/export-rational-app.mjs` command is retired and refuses to change or publish application files.
+
+How close the platform example comes to Monarch is measured feature by feature in [`MONARCH-PARITY.md`](../examples/rational/MONARCH-PARITY.md), which `npm run validate:rational-parity` refuses under ninety percent.
 
 It exists for two reasons, and the second is the important one: to show the platform is enough to build a product on, and to find out where it is not. Every gap Rational hits is recorded in [`PLATFORM-FINDINGS.md`](../examples/rational/PLATFORM-FINDINGS.md) as symptom → platform change → regression test and fixed **in the platform**, never worked around in the application — forty-nine findings so far, all closed. Several were things no test could have found without a real application asking: a project's ordinary API URL emitted no CORS (#9); a deployed function could not import the SDK (#10), could not learn who called it (#26), and on the beta could not reach the platform API (#28); `allow_net: []` meant *any host* (#18); a collection could not be walked at all (#33); the scheduler's headers identified a run but authenticated nothing (#32).
 

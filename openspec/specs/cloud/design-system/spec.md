@@ -38,9 +38,10 @@ Every chart on a web surface SHALL be drawn by the kit with the palette's series
 - **WHEN** the screen around a chart renders again and hands it a fresh array of the same values, as a screen driven by a live query does
 - **THEN** the drawing settles rather than starting over, and what stays on screen is the finished shape
 
-### Requirement: A standalone application carries the kit
-An application exported from the workspace to stand alone SHALL carry the kit with it — its sources and every dependency the kit needs spelled out — so the exported repository builds and its tests run without the workspace.
+### Requirement: Independent applications own their sources
+Rational and Rational Investment SHALL be maintained in `shuaimu/rational`. The platform-owned example SHALL remain available for platform qualification. The retired `scripts/export-rational-app.mjs` entry point MUST exit unsuccessfully with a retirement message before inspecting or changing any destination files or invoking Git, regardless of destination, dry-run, or no-push arguments. Platform automation MUST NOT regenerate or publish the independently maintained application.
 
-#### Scenario: The exported application builds alone
-- **WHEN** Rational is exported to its own repository
-- **THEN** the export contains the kit's sources and declares its dependencies, and the exported repository's build and browser suite pass with no reference to the workspace
+#### Scenario: Independent application sources are protected from retired exports
+- **WHEN** existing automation invokes the retired exporter with a local or remote destination, including dry-run or no-push options
+- **THEN** it exits unsuccessfully and identifies the independently maintained application repository
+- **AND** existing application files remain untouched, no destination directory is created, and no Git command runs
