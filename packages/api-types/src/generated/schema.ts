@@ -5519,6 +5519,11 @@ export interface components {
             /** @enum {string} */
             state: "active" | "deleting" | "deleted";
             activeVersion: number | null;
+            /**
+             * Format: int64
+             * @description The version number the next deployment must use. Version numbers are never reused, deleted versions included; absent until the first deployment is recorded.
+             */
+            nextVersion?: number;
             configuration: components["schemas"]["FunctionConfiguration"];
             /** Format: date-time */
             createdAt: string;

@@ -492,6 +492,19 @@ test("functions deploy uploads, creates the version, checks health, and promotes
   assert.match(result.stderr, new RegExp(`resume: mako-cloud functions deployments promote hello 2 --project ${PROJECT_ID} --env ${ENVIRONMENT_ID} --yes`, "u"));
 });
 
+test("functions deploy takes the number the function names next, not one a deleted version used", async (t) => {
+  const state = freshState();
+  // Versions 2 and 3 were deleted: only 1 is listed, but the function has spent 3.
+  state.functions = [edgeFunction({ nextVersion: 4 })];
+  const { api, cli } = await setup(t, state);
+  const directory = await functionDirectory(t);
+
+  const result = await cli(["functions", "deploy", directory, "--name", "hello", ...TENANT, "--no-promote"]);
+  assert.equal(result.code, 0, result.stderr);
+  assert.equal(api.find(`${BASE}/functions/hello/versions`, "POST")[0].body.version, 4);
+  assert.match(result.stdout, /\nversion 4\n/u);
+});
+
 test("functions deploy promotes only with --yes; without it the version stands ready", async (t) => {
   const { state, cli } = await setup(t);
   const directory = await functionDirectory(t);

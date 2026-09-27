@@ -207,11 +207,28 @@ pub struct FunctionRecord {
     /// nothing when false, so a round-trip reproduces their stored bytes.
     #[serde(default, skip_serializing_if = "is_false")]
     runtime_untouched: bool,
+    /// The highest version number any deployment of this function has used,
+    /// deleted ones included. A number is never handed out twice: logs,
+    /// metrics, and audit that say "version 2" must mean one bundle. Records
+    /// written before it read as 0, and their next deploy raises it from the
+    /// versions still stored; like `runtime_untouched` it serializes to
+    /// nothing at 0, so a round-trip reproduces their stored bytes.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    highest_version: u64,
 }
 
 #[allow(clippy::trivially_copy_pass_by_ref)] // serde passes a reference
 const fn is_false(value: &bool) -> bool {
     !*value
+}
+
+/// How many stored deployments a legacy record's first deploy reads to find
+/// the highest version it has used.
+const MAXIMUM_VERSION_SCAN: usize = 10_000;
+
+#[allow(clippy::trivially_copy_pass_by_ref)] // serde passes a reference
+const fn is_zero(value: &u64) -> bool {
+    *value == 0
 }
 
 impl FunctionRecord {
@@ -233,6 +250,17 @@ impl FunctionRecord {
     #[must_use]
     pub const fn active_version(&self) -> Option<u64> {
         self.active_version
+    }
+
+    /// The version number the next deployment must use, once one has been
+    /// recorded; `None` before the first deploy of a record that predates it.
+    #[must_use]
+    pub const fn next_version(&self) -> Option<u64> {
+        if self.highest_version == 0 {
+            None
+        } else {
+            Some(self.highest_version.saturating_add(1))
+        }
     }
 
     #[must_use]
@@ -554,6 +582,7 @@ impl FunctionAdminService {
             created_at_unix_seconds: input.now_unix_seconds,
             updated_at_unix_seconds: input.now_unix_seconds,
             runtime_untouched: true,
+            highest_version: 0,
         };
         let key = function_key(&record)?;
         let mut batch = WriteBatch::new();
@@ -713,6 +742,18 @@ impl FunctionAdminService {
         if bundle.entrypoint() != input.entrypoint {
             return Err(FunctionAdminError::InvalidDeployment);
         }
+        let highest = if function.highest_version > 0 {
+            function.highest_version
+        } else {
+            self.highest_stored_version(&input.tenant, &input.function_name)
+                .await?
+        };
+        if input.version <= highest {
+            return Err(FunctionAdminError::VersionAlreadyUsed {
+                version: input.version,
+                next: highest.saturating_add(1),
+            });
+        }
         let key = ControlKeyspace::function_version_key(
             input.tenant.project_id(),
             input.tenant.environment_id(),
@@ -744,11 +785,12 @@ impl FunctionAdminService {
         // Record that the runtime may hold a deployment before asking it to
         // take one: a delete that races this deploy, or follows one the
         // runtime accepted but this service never recorded, must retire it.
-        if function.runtime_untouched {
-            let mut handed_over = function.clone();
-            handed_over.runtime_untouched = false;
-            self.replace_function(&function, &handed_over).await?;
-        }
+        // The version number is spent here too, so a deploy that then fails
+        // still never hands its number out again.
+        let mut handed_over = function.clone();
+        handed_over.runtime_untouched = false;
+        handed_over.highest_version = input.version;
+        self.replace_function(&function, &handed_over).await?;
         let result = self.backend.deploy(&spec).await?;
         validate_deployment_result(&result)?;
         let record = FunctionVersionRecord {
@@ -1341,6 +1383,31 @@ impl FunctionAdminService {
         Ok(())
     }
 
+    /// The highest version among the deployments still stored, for a record
+    /// written before `highest_version` existed.
+    async fn highest_stored_version(
+        &self,
+        tenant: &TenantScope,
+        name: &FunctionName,
+    ) -> Result<u64, FunctionAdminError> {
+        let entries = self
+            .adapter
+            .scan(ScanRequest::new(
+                ControlKeyspace::function_versions_range(
+                    tenant.project_id(),
+                    tenant.environment_id(),
+                    name,
+                )?,
+                ScanDirection::Forward,
+                NonZeroUsize::new(MAXIMUM_VERSION_SCAN).expect("constant is positive"),
+            ))
+            .await?;
+        entries.into_iter().try_fold(0, |highest, entry| {
+            let record: FunctionVersionRecord = serde_json::from_slice(&entry.value)?;
+            Ok(highest.max(record.version))
+        })
+    }
+
     async fn replace_function(
         &self,
         previous: &FunctionRecord,
@@ -1594,6 +1661,11 @@ pub enum FunctionAdminError {
     DeploymentUnhealthy,
     NoActiveVersion,
     ActiveVersionCannotBeDeleted,
+    /// A deployment asked for a version number the function has used before.
+    VersionAlreadyUsed {
+        version: u64,
+        next: u64,
+    },
     Backend(FunctionBackendError),
     Credential(CredentialAdminError),
     Project(ProjectStoreError),
@@ -1608,6 +1680,12 @@ impl fmt::Display for FunctionAdminError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         if let Self::InvalidAllowedHost(detail) = self {
             return write!(formatter, "function allowed host is invalid: {detail}");
+        }
+        if let Self::VersionAlreadyUsed { version, next } = self {
+            return write!(
+                formatter,
+                "version {version} of this function was used before and versions are never reused; deploy it as version {next}"
+            );
         }
         formatter.write_str(match self {
             Self::UnsupportedDurability => "function durability is unsupported",
@@ -1629,6 +1707,7 @@ impl fmt::Display for FunctionAdminError {
             Self::DeploymentUnhealthy => "function deployment is not healthy",
             Self::NoActiveVersion => "function has no active version",
             Self::ActiveVersionCannotBeDeleted => "active function version cannot be deleted",
+            Self::VersionAlreadyUsed { .. } => "function version was used before",
             Self::Backend(_) => "function backend operation failed",
             Self::Credential(_) => "function secret resolution failed",
             Self::Project(_) => "function project lookup failed",
@@ -2126,6 +2205,39 @@ mod tests {
                 .delete_version(&actor, &tenant, &name, 2, 12)
                 .await
                 .expect("delete version");
+            // A deleted version's number is spent: deploying it again would
+            // make "version 2" in logs and audit mean two bundles.
+            let reused = service
+                .deploy_version(
+                    &actor,
+                    NewFunctionVersion {
+                        tenant: tenant.clone(),
+                        function_name: name.clone(),
+                        version: 2,
+                        bundle_digest: bundle.digest().to_owned(),
+                        entrypoint: "index.ts".to_owned(),
+                        runtime_version: "deno-test".to_owned(),
+                        now_unix_seconds: 12,
+                    },
+                )
+                .await
+                .expect_err("a spent version number");
+            assert!(matches!(
+                reused,
+                FunctionAdminError::VersionAlreadyUsed {
+                    version: 2,
+                    next: 4
+                }
+            ));
+            assert!(reused.to_string().contains("deploy it as version 4"));
+            assert_eq!(
+                service
+                    .get_function(&actor, &tenant, &name, 12)
+                    .await
+                    .expect("function")
+                    .next_version(),
+                Some(4)
+            );
             assert_eq!(
                 service
                     .delete_function(&actor, &tenant, &name, 13)

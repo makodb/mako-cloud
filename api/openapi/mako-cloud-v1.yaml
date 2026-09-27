@@ -10812,6 +10812,11 @@ components:
               format: int64
               minimum: 1
             - type: "null"
+        nextVersion:
+          type: integer
+          format: int64
+          minimum: 2
+          description: The version number the next deployment must use. Version numbers are never reused, deleted versions included; absent until the first deployment is recorded.
         configuration:
           $ref: "#/components/schemas/FunctionConfiguration"
         createdAt:

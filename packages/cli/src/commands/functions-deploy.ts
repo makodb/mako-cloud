@@ -2,6 +2,7 @@ import { readdir, readFile, stat } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import {
+  type Function as EdgeFunction,
   type FunctionBundleArtifact,
   type FunctionBundleUploadRequest,
   type FunctionBundleUploadResult,
@@ -166,8 +167,9 @@ async function deploy(context: CommandContext, args: CommandArgs): Promise<void>
   const report: DeployReport = { functionName, created: false, promoted: false };
   const client = await context.management();
 
+  let existing: EdgeFunction | undefined;
   try {
-    await client.getFunction(projectId, environmentId, functionName);
+    existing = await client.getFunction(projectId, environmentId, functionName);
   } catch (error) {
     if (!(error instanceof ManagementApiError && error.status === 404)) throw error;
     if (!create) {
@@ -211,7 +213,14 @@ async function deploy(context: CommandContext, args: CommandArgs): Promise<void>
     `resume: ${CLI_NAME} functions deployments create ${functionName} --bundle ${artifact.digest} --entrypoint ${artifact.entrypoint} --runtime ${runtimeVersion} ${tenant}`,
   );
 
-  const version = await chooseVersion(client, projectId, environmentId, functionName, args);
+  const version = await chooseVersion(
+    client,
+    projectId,
+    environmentId,
+    functionName,
+    args,
+    existing,
+  );
   const deployment = await client.createFunctionDeployment(
     projectId,
     environmentId,

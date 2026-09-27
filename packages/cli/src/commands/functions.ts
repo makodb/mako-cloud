@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 
 import {
   type CreateFunctionRequest,
+  type Function as EdgeFunction,
   type FunctionConfiguration,
   type FunctionDeployment,
   type FunctionLogPage,
@@ -186,14 +187,20 @@ export async function chooseVersion(
   environmentId: string,
   functionName: string,
   args: CommandArgs,
+  known?: EdgeFunction,
 ): Promise<number> {
   const explicit = args.integer("version");
   if (explicit !== undefined) {
     if (explicit < 1) throw usageError("--version must be a positive integer");
     return explicit;
   }
+  // A deleted version's number is never handed out again, so the listed
+  // versions alone can suggest one the platform refuses; the function says
+  // which number its next deployment takes.
+  const item = known ?? (await client.getFunction(projectId, environmentId, functionName));
   const deployments = await client.listFunctionDeployments(projectId, environmentId, functionName);
-  return deployments.reduce((highest, item) => Math.max(highest, item.version), 0) + 1;
+  const listed = deployments.reduce((highest, entry) => Math.max(highest, entry.version), 0) + 1;
+  return Math.max(listed, item.nextVersion ?? 0);
 }
 
 const FUNCTION_COLUMNS = [

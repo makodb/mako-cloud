@@ -156,9 +156,20 @@ fn public_function(
 ) -> Result<HttpResponse, HttpApiError> {
     let mut value = serde_json::to_value(value)
         .map_err(|_| internal(request, "response serialization failed"))?;
+    // The highest version used is stored; what a client needs is the number
+    // its next deployment must take.
     let strip = |value: &mut Value| {
         if let Value::Object(object) = value {
             object.remove("runtimeUntouched");
+            if let Some(highest) = object
+                .remove("highestVersion")
+                .and_then(|value| value.as_u64())
+            {
+                object.insert(
+                    "nextVersion".to_owned(),
+                    Value::from(highest.saturating_add(1)),
+                );
+            }
         }
     };
     if let Some(Value::Array(items)) = value.get_mut("items") {
@@ -431,12 +442,7 @@ fn handle_test(
     no_query(request)?;
     require_json(request)?;
     let body: FunctionTestWire = parse_json(request)?;
-    let bytes = decode_bounded(
-        request,
-        &body.body,
-        MAX_BUNDLE_BYTES,
-        "function test body is invalid",
-    )?;
+    let bytes = test_body(request, &body.body)?;
     let test = FunctionTestRequest {
         method: body.method,
         path: body.path,
@@ -568,6 +574,21 @@ fn bundle_upload(
     }
 }
 
+/// A test request's body. Unlike a bundle's contents it may be empty: a GET
+/// sends none, and refusing an empty one failed every `functions test`
+/// without `--body` -- the CLI's default, a GET of `/`.
+fn test_body(request: &HttpRequest, encoded: &str) -> Result<Vec<u8>, HttpApiError> {
+    if encoded.is_empty() {
+        return Ok(Vec::new());
+    }
+    decode_bounded(
+        request,
+        encoded,
+        MAX_BUNDLE_BYTES,
+        "function test body is invalid",
+    )
+}
+
 fn decode_bounded(
     request: &HttpRequest,
     value: &str,
@@ -636,13 +657,31 @@ fn function_error(request: &HttpRequest, error: FunctionAdminError) -> HttpApiEr
             not_found(request, "function resource was not found")
         }
         FunctionAdminError::Forbidden => forbidden(request, "function operation is forbidden"),
-        FunctionAdminError::Conflict
-        | FunctionAdminError::InvalidState
-        | FunctionAdminError::DeploymentUnhealthy
-        | FunctionAdminError::NoActiveVersion
-        | FunctionAdminError::ActiveVersionCannotBeDeleted => {
+        FunctionAdminError::Conflict | FunctionAdminError::InvalidState => {
             conflict(request, "function operation conflicts with current state")
         }
+        // Each of these is a refusal a developer acts on differently, so each
+        // says what stands in the way instead of one "conflicts with current
+        // state" for all of them.
+        FunctionAdminError::DeploymentUnhealthy => conflict(
+            request,
+            "that version did not pass its health check; only a healthy version can be promoted, rolled back to, or tested",
+        ),
+        FunctionAdminError::NoActiveVersion => conflict(
+            request,
+            "the function has no active version yet; deploy and promote one first",
+        ),
+        FunctionAdminError::ActiveVersionCannotBeDeleted => conflict(
+            request,
+            "that version is the active one and cannot be deleted; promote or roll back to another version first",
+        ),
+        ref used @ FunctionAdminError::VersionAlreadyUsed { .. } => HttpApiError::new(
+            409,
+            ErrorCode::Conflict,
+            used.to_string(),
+            request.request_id(),
+            RetryAdvice::Never,
+        ),
         FunctionAdminError::InvalidFunction
         | FunctionAdminError::InvalidConfiguration
         | FunctionAdminError::InvalidDeployment

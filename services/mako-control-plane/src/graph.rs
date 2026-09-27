@@ -2241,6 +2241,44 @@ mod tests {
         }
     }
 
+    /// A function test with no body -- a GET, the CLI's default -- has to
+    /// get past its body checks. Sent unauthenticated, it must stop at
+    /// authentication, not be refused as an invalid body.
+    #[test]
+    fn a_function_test_may_send_no_body() {
+        let directory = local_tempdir("control-plane-function-test");
+        let config = config_for(directory.path(), DeploymentEnvironment::Local);
+        let unavailable = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("unused listener");
+        let endpoint = unavailable.local_addr().expect("unused endpoint");
+        drop(unavailable);
+        let graph = Arc::new(
+            ControlPlaneGraph::open_with_data_plane_endpoint(&config, endpoint)
+                .expect("control-plane graph"),
+        );
+        let router = crate::control_plane_router(Arc::clone(&graph)).expect("router");
+        let path = "/v1/projects/prj_example0001/environments/env_example0001/functions/greet/actions/test";
+        let empty = br#"{"method":"GET","path":"/","headers":{},"body":""}"#;
+        let response = router.respond_for_test(request(
+            HttpMethod::Post,
+            path,
+            None,
+            None,
+            empty,
+            "127.0.0.9:1000",
+        ));
+        assert_eq!(response.status_for_test(), 401);
+        let garbled = br#"{"method":"POST","path":"/","headers":{},"body":"not base64!"}"#;
+        let response = router.respond_for_test(request(
+            HttpMethod::Post,
+            path,
+            None,
+            None,
+            garbled,
+            "127.0.0.9:1000",
+        ));
+        assert_eq!(response.status_for_test(), 400);
+    }
+
     #[test]
     fn the_management_api_never_answers_cross_origin() {
         let directory = local_tempdir("control-plane-cors");

@@ -449,7 +449,10 @@ export function FunctionScreen({
                       name="version"
                       type="number"
                       min="1"
-                      defaultValue={(deployments?.at(-1)?.version ?? 0) + 1}
+                      defaultValue={Math.max(
+                        (deployments?.at(-1)?.version ?? 0) + 1,
+                        item?.nextVersion ?? 0,
+                      )}
                       required
                     />
                   </Field>
@@ -878,9 +881,9 @@ function FunctionMetricsPanel({
           </p>
         ) : (
           <ul className="m-0 grid list-none gap-3 p-0 text-sm">
-            {metrics.map(({ timestamp, metric }) => (
+            {metrics.map(({ timestamp, metric }, position) => (
               <li
-                key={`${timestamp}:${metric.version}:${metric.region}`}
+                key={`${timestamp}:${metric.version}:${metric.region}:${position}`}
                 className="grid gap-0.5 border-b pb-3 last:border-0 last:pb-0"
               >
                 <strong className="font-mono text-xs font-semibold">
@@ -930,8 +933,13 @@ function FunctionLogsPanel({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {logs.items.map((entry) => (
-                <TableRow key={`${entry.timestamp}:${entry.correlationId}:${entry.version}`}>
+              {/* One invocation writes several lines with the same time,
+                  correlation id, and version, so only the position tells
+                  them apart. */}
+              {logs.items.map((entry, position) => (
+                <TableRow
+                  key={`${entry.timestamp}:${entry.correlationId}:${entry.version}:${position}`}
+                >
                   <TableCell className="align-top text-muted-foreground tabular-nums">
                     {new Date(entry.timestamp).toLocaleString()}
                   </TableCell>
