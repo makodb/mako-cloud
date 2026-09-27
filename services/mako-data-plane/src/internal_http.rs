@@ -1453,12 +1453,12 @@ async fn execute_import_batch(
             .await
             .map_err(|_| auth_http::unavailable(request, "data-job storage is unavailable"))?;
         let (validated, expected) = match (input.conflict_strategy, current.as_ref()) {
-            (mako_api::ImportConflictStrategy::CreateOnly, None) => (create_validated, None),
-            (mako_api::ImportConflictStrategy::CreateOnly, Some(_)) => {
-                output.failed = output.failed.saturating_add(1);
-                push_row_error(&mut output, row_number, "already_exists");
-                continue;
-            }
+            // Let the document engine check the durable mutation receipt before
+            // testing existence. A prior attempt may have committed this row
+            // before the batch response/progress was persisted. The deterministic
+            // job/row mutation ID replays that receipt; another job still hits
+            // the create precondition and cannot overwrite an existing record.
+            (mako_api::ImportConflictStrategy::CreateOnly, _) => (create_validated, None),
             (mako_api::ImportConflictStrategy::UpdateExisting, None) => {
                 output.skipped = output.skipped.saturating_add(1);
                 continue;
@@ -1518,7 +1518,13 @@ async fn execute_import_batch(
                     auth_http::unavailable(request, "data-job sequencer is unavailable")
                 })?;
                 output.failed = output.failed.saturating_add(1);
-                push_row_error(&mut output, row_number, "concurrent_change");
+                let code =
+                    if input.conflict_strategy == mako_api::ImportConflictStrategy::CreateOnly {
+                        "already_exists"
+                    } else {
+                        "concurrent_change"
+                    };
+                push_row_error(&mut output, row_number, code);
             }
             Err(_) => {
                 let _ = sequencer.mark_aborted(position).await;
@@ -2893,6 +2899,125 @@ mod change_feed_tests {
                 read_change_feed(&scoped, 0, 10).await.expect_err("missing"),
                 ChangeFeedFailure::CollectionNotFound
             );
+        });
+    }
+}
+
+#[cfg(test)]
+mod import_replay_tests {
+    use super::*;
+    use crate::graph::test_support::{DeploymentEnvironment, config_for, local_tempdir, tenant};
+    use mako_api::{CollectionId, CollectionScope, ImportConflictStrategy};
+    use mako_documents::{
+        CollectionLifecycle, CollectionMetadataVersion, PrimaryKeyDefinition, SchemaCompatibility,
+        SchemaVersion,
+    };
+    use serde_json::json;
+
+    #[test]
+    fn create_only_retry_replays_committed_rows_without_accepting_unrelated_existing_rows() {
+        let directory = local_tempdir("data-job-import-replay");
+        let config = config_for(directory.path(), DeploymentEnvironment::Local);
+        let graph = Arc::new(DataPlaneGraph::open(&config).expect("graph"));
+        let own = tenant();
+        let collection = CollectionId::parse("import_replay").expect("collection");
+        let scoped = graph
+            .document_engine()
+            .scope_collection(&own, CollectionScope::new(own.clone(), collection.clone()))
+            .expect("scope");
+        let metadata = CollectionMetadata::new(collection,
+            CollectionMetadataVersion::new(1).unwrap(), SchemaVersion::new(1).unwrap(),
+            json!({"type":"object","properties":{"id":{"type":"string"},"title":{"type":"string"}},"required":["id","title"],"additionalProperties":false}),
+            PrimaryKeyDefinition::field("id").unwrap(), SchemaCompatibility::Compatible,
+            CollectionLifecycle::Active).unwrap();
+        let request = HttpRequest::for_test(
+            HttpMethod::Post,
+            "/internal/identity/admin",
+            [],
+            Vec::new(),
+            None,
+        );
+        let command = |job: &str, rows: Vec<Value>| IdentityAdminCommand {
+            operation: IdentityAdminOperation::ImportDataJobBatch,
+            actor_id: "data-job-worker".into(),
+            permissions: Default::default(),
+            input: serde_json::to_value(DataJobImportBatchInput {
+                job_id: job.into(),
+                collection_id: "import_replay".into(),
+                schema_version: 1,
+                conflict_strategy: ImportConflictStrategy::CreateOnly,
+                start_row: 0,
+                rows,
+            })
+            .unwrap(),
+        };
+        let first = json!({"id":"a","title":"original"});
+        let second = json!({"id":"b","title":"second"});
+        let job = "djob_00000000000000000000000000000001";
+        block_on(async {
+            scoped
+                .install_collection_metadata(&metadata, Durability::Sync)
+                .await
+                .unwrap();
+            // Simulate a batch interrupted after its first row's durable commit,
+            // before the outer RPC response journal/progress could be recorded.
+            let initial =
+                execute_import_batch(&graph, &request, &own, &command(job, vec![first.clone()]))
+                    .await
+                    .unwrap();
+            let initial: DataJobImportBatchOutput = serde_json::from_slice(&initial).unwrap();
+            assert_eq!(initial.committed, 1);
+            let original = scoped
+                .get_document(&DocumentId::parse("a").unwrap())
+                .await
+                .unwrap()
+                .unwrap();
+            let retried = execute_import_batch(
+                &graph,
+                &request,
+                &own,
+                &command(job, vec![first.clone(), second.clone()]),
+            )
+            .await
+            .unwrap();
+            let retried: DataJobImportBatchOutput = serde_json::from_slice(&retried).unwrap();
+            assert_eq!(
+                (retried.processed, retried.committed, retried.failed),
+                (2, 2, 0)
+            );
+            assert!(retried.errors.is_empty());
+            let replayed = scoped
+                .get_document(&DocumentId::parse("a").unwrap())
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(original.revision(), replayed.revision());
+            assert!(
+                scoped
+                    .get_document(&DocumentId::parse("b").unwrap())
+                    .await
+                    .unwrap()
+                    .is_some()
+            );
+            for row in [first, json!({"id":"a","title":"must not overwrite"})] {
+                let other = execute_import_batch(
+                    &graph,
+                    &request,
+                    &own,
+                    &command("djob_00000000000000000000000000000002", vec![row]),
+                )
+                .await
+                .unwrap();
+                let other: DataJobImportBatchOutput = serde_json::from_slice(&other).unwrap();
+                assert_eq!((other.committed, other.failed), (0, 1));
+                assert_eq!(other.errors[0].code, "already_exists");
+            }
+            let unchanged = scoped
+                .get_document(&DocumentId::parse("a").unwrap())
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(original.revision(), unchanged.revision());
         });
     }
 }
