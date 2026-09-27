@@ -159,6 +159,18 @@ impl EmailTemplateText {
         validate_body_text(&self.text_body)?;
         validate_placeholders("subject", &self.subject, kind)?;
         validate_placeholders("textBody", &self.text_body, kind)?;
+        // Every kind of mail exists to deliver its link: a verification,
+        // recovery, invitation, or sign-in mail without one reaches its
+        // reader with nothing to act on, and a verification that can never
+        // complete locks the account out.
+        if !parse_segments("textBody", &self.text_body)?
+            .iter()
+            .any(|segment| matches!(segment, Segment::Variable(name) if *name == "link"))
+        {
+            return Err(EmailTemplateError::InvalidTemplate(
+                "textBody: must include {{link}}, the link this mail exists to deliver".to_owned(),
+            ));
+        }
         Ok(())
     }
 }
@@ -1211,6 +1223,15 @@ pub(crate) mod tests {
             refused("Hi", &"x".repeat(MAXIMUM_TEXT_BODY_BYTES + 1)),
             EmailTemplateError::InvalidTemplate(_)
         ));
+        // A mail without its link is refused: the reader could act on nothing.
+        assert!(matches!(
+            refused("Welcome", "Welcome aboard. See you soon."),
+            EmailTemplateError::InvalidTemplate(message) if message.contains("must include {{link}}")
+        ));
+        assert!(matches!(
+            refused("Your {{link}}", "The link is in the subject only."),
+            EmailTemplateError::InvalidTemplate(message) if message.contains("must include {{link}}")
+        ));
         // The inviter is only an invitation variable.
         EmailTemplateText {
             subject: "{{inviter}} invited you".to_owned(),
@@ -1256,11 +1277,14 @@ pub(crate) mod tests {
         let render = render_template(
             EmailTemplateKind::Invitation,
             "{{inviter}}",
-            "Invited by: {{inviter}}.",
+            "Invited by: {{inviter}}. {{link}}",
             &missing,
         )
         .expect("renders");
-        assert_eq!(render.text_body, "Invited by: .");
+        assert_eq!(
+            render.text_body,
+            "Invited by: . https://notes.example.com/auth?token=abc123"
+        );
         // ... and an empty subject falls back to the default rather than sending a blank line.
         assert_eq!(render.subject, "You are invited to Field Notes");
         // Rendering never accepts what validation refuses.

@@ -1861,7 +1861,8 @@ paths:
       summary: Customize an email template
       description: >-
         Replaces the subject and plain-text body the environment sends for
-        this kind. Templates are validated before they are stored: only the
+        this kind. Templates are validated before they are stored: the body must
+        include `{{link}}`, which is what each kind of mail delivers; only the
         kind's allowed `{{variables}}` may appear, every brace must belong to
         a placeholder, the subject is one line of at most 200 bytes, and the
         body is at most 32 KiB. Templates are plain text; markup is never

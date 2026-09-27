@@ -2157,7 +2157,7 @@ Some intents can never become mail: the environment no longer exists, the recipi
 
 Every environment has four templates, one per kind: `verification`, `recovery`, `invitation`, and `magic_link`. Each is **plain text**: a one-line subject (1–200 bytes) and a text body (1 byte–32 KiB) with `{{variable}}` placeholders. The renderer never interprets markup, and mail is delivered as `text/plain` exactly as rendered, so a template cannot carry script or remote content.
 
-Templates are validated when they are saved or previewed, never at delivery: only the kind's allowed variables may appear (an unknown `{{name}}` is refused with a message listing what is allowed); every brace must belong to a well-formed placeholder; placeholder names are lowercase letters and underscores, with whitespace inside the braces tolerated (`{{ link }}`).
+Templates are validated when they are saved or previewed, never at delivery: the body must include `{{link}}`, since delivering it is what each kind of mail is for; only the kind's allowed variables may appear (an unknown `{{name}}` is refused with a message listing what is allowed); every brace must belong to a well-formed placeholder; placeholder names are lowercase letters and underscores, with whitespace inside the braces tolerated (`{{ link }}`).
 
 Rendering substitutes only allowlisted variables. A variable the data plane did not send renders as empty text. Values are sanitized for where they land: control characters never reach the subject line, and only line breaks and tabs survive in the body, so a recipient-controlled value cannot inject headers. A subject that renders blank falls back to the default; one past 200 bytes is cut at a character boundary.
 

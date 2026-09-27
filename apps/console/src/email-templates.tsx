@@ -174,7 +174,9 @@ export function EmailTemplatesScreen({
         <p className="m-0 text-sm text-muted-foreground">
           The emails this environment sends its users. Plain text with{" "}
           <code className={VARIABLE}>{"{{variable}}"}</code> placeholders; no HTML, scripts, or
-          remote content. Each kind has a built-in default until you save your own.
+          remote content. Every body must include <code className={VARIABLE}>{"{{link}}"}</code>,
+          the link the email exists to deliver. Each kind has a built-in default until you save your
+          own.
         </p>
       </div>
       {failure === null ? null : <ApiFailureNotice failure={failure} />}

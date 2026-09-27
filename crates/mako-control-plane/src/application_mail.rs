@@ -36,7 +36,7 @@ use crate::{
     DeveloperMailFailureKind, DeveloperMailOutboxState, DeveloperMailTransport,
     DeveloperMailTransportError, DeveloperRegistrationConfig, DeveloperWorkflowError,
     EmailTemplateError, EmailTemplateKind, EmailTemplateService, EncryptedDeveloperMail,
-    developer_workflow::outbox_backoff,
+    developer_workflow::outbox_backoff, render_template,
 };
 
 /// Intent ids are `aml_` followed by 32 lowercase hex digits.
@@ -849,8 +849,23 @@ impl ApplicationMailWorker {
             .collect();
         variables.insert("project_name".to_owned(), project_name);
         variables.insert("environment_name".to_owned(), environment_name);
+        // A customized template saved before a rule it now breaks -- a body
+        // without {{link}}, say -- is sent as the built-in default instead:
+        // refused, the mail would never go, and the reader would still have
+        // nothing to act on.
         let rendered = match template.render(&variables) {
             Ok(rendered) => rendered,
+            Err(EmailTemplateError::InvalidTemplate(_)) if !template.is_default => {
+                match render_template(
+                    kind,
+                    kind.default_subject(),
+                    kind.default_text_body(),
+                    &variables,
+                ) {
+                    Ok(rendered) => rendered,
+                    Err(_) => return Err(RenderFailure::Refused("invalid_template")),
+                }
+            }
             Err(EmailTemplateError::InvalidTemplate(_)) => {
                 return Err(RenderFailure::Refused("invalid_template"));
             }
@@ -1237,6 +1252,64 @@ mod tests {
             assert_eq!(second.drained, 0);
             assert_eq!(second.delivered, 0);
             assert_eq!(harness.transport.delivered.lock().expect("lock").len(), 1);
+        });
+    }
+
+    /// A template customized before bodies had to carry {{link}} is sent as
+    /// the default: its reader still gets the link the mail exists for.
+    #[test]
+    fn a_stored_template_without_its_link_is_sent_as_the_default() {
+        let harness = harness();
+        block_on(async {
+            harness
+                .fixture
+                .service
+                .update(
+                    &harness.fixture.owner,
+                    &harness.fixture.tenant,
+                    EmailTemplateKind::Verification,
+                    EmailTemplateText {
+                        subject: "Welcome".to_owned(),
+                        text_body: "Open {{link}}.".to_owned(),
+                    },
+                    NOW,
+                )
+                .await
+                .expect("custom template");
+            // Rewrite the stored body the way the old rules let it be saved.
+            let key = ControlKeyspace::email_template_key(
+                harness.fixture.tenant.project_id(),
+                harness.fixture.tenant.environment_id(),
+                EmailTemplateKind::Verification,
+            )
+            .expect("key");
+            let stored = harness
+                .fixture
+                .adapter
+                .get(&key)
+                .await
+                .expect("read")
+                .expect("stored");
+            let mut record: serde_json::Value = serde_json::from_slice(&stored).expect("json");
+            record["textBody"] = serde_json::Value::from("Welcome aboard. See you soon.");
+            let mut batch = mako_storage::WriteBatch::new();
+            batch.put(&key, serde_json::to_vec(&record).expect("json"));
+            harness
+                .fixture
+                .adapter
+                .write(batch, mako_storage::Durability::Memory)
+                .await
+                .expect("rewrite");
+            harness.source.intents.lock().expect("lock").push(intent(
+                &harness,
+                INTENT_ID,
+                "verification",
+            ));
+            let report = harness.worker.run_once(NOW).await.expect("pass");
+            assert_eq!(report.delivered, 1);
+            let (_, _, subject, body) = &harness.transport.delivered.lock().expect("lock")[0];
+            assert_eq!(subject, "Verify your email for Field Notes");
+            assert!(body.contains("https://notes.example.com/auth/magic?token=t0k3n"));
         });
     }
 
