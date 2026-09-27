@@ -530,7 +530,10 @@ impl ControlPlaneGraph {
         let deployment_key = DeploymentKey::derive(secret.expose_secret())
             .map_err(|_| ControlPlaneGraphError::Composition("internal authentication"))?;
         let internal_client = InternalHttpClient::new(
-            InternalHttpClientConfig::loopback(data_plane_endpoint),
+            InternalHttpClientConfig {
+                maximum_response_bytes: mako_internal_rpc::CONTROL_DATA_RESPONSE_BYTES,
+                ..InternalHttpClientConfig::loopback(data_plane_endpoint)
+            },
             deployment_key.clone(),
             InternalCaller::ControlPlane,
         )

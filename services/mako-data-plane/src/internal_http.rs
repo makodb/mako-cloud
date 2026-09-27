@@ -1682,7 +1682,8 @@ async fn execute_export_page(
         .browse_primary_keys(
             PrimaryKeyBrowseOptions::new(
                 NonZeroUsize::new(input.limit as usize).expect("validated export limit"),
-                NonZeroUsize::new(192 * 1024).expect("export byte limit"),
+                NonZeroUsize::new(mako_internal_rpc::DATA_JOB_EXPORT_PAGE_BYTES)
+                    .expect("export byte limit"),
                 scoped.storage_capabilities().maximum_scan_items,
                 false,
             ),
@@ -3012,6 +3013,95 @@ mod change_feed_tests {
                 read_change_feed(&scoped, 0, 10).await.expect_err("missing"),
                 ChangeFeedFailure::CollectionNotFound
             );
+        });
+    }
+}
+
+#[cfg(test)]
+mod export_size_tests {
+    use super::*;
+    use futures::executor::block_on;
+    use mako_api::{CollectionId, CollectionScope, EnvironmentId, ProjectId, TenantScope};
+    use mako_documents::{CanonicalDocument, DocumentEngine, RevisionToken, SchemaVersion};
+    use mako_storage::{Durability, KvAdapter, MemoryAdapter, WriteBatch};
+    use serde_json::json;
+
+    #[test]
+    fn exports_large_documents_without_omitting_or_duplicating_page_boundaries() {
+        block_on(async {
+            let adapter = Arc::new(MemoryAdapter::new());
+            let engine = DocumentEngine::new(adapter.clone());
+            let tenant = TenantScope::new(
+                ProjectId::parse("prj_abcdefgh").unwrap(),
+                EnvironmentId::parse("env_abcdefgh").unwrap(),
+            );
+            let scoped = engine
+                .scope_collection(
+                    &tenant,
+                    CollectionScope::new(tenant.clone(), CollectionId::parse("captures").unwrap()),
+                )
+                .unwrap();
+            let mut batch = WriteBatch::new();
+            for i in 0..5 {
+                let id = DocumentId::parse(format!("doc-{i}")).unwrap();
+                let document = CanonicalDocument::new(
+                    id.clone(),
+                    SchemaVersion::new(1).unwrap(),
+                    RevisionToken::parse(format!("rev-{i}")).unwrap(),
+                    CommitPosition::new(i + 1).unwrap(),
+                    false,
+                    json!({"id":id.as_str(),"payload":"x".repeat(1024*1024-1024)}),
+                )
+                .unwrap();
+                batch.put(
+                    scoped.document_key(&id).unwrap(),
+                    document.encode().unwrap(),
+                );
+            }
+            adapter.write(batch, Durability::Memory).await.unwrap();
+            let snapshot = scoped.snapshot().await.unwrap();
+            let mut after = None;
+            let mut ids = Vec::new();
+            loop {
+                let page = snapshot
+                    .browse_primary_keys(
+                        PrimaryKeyBrowseOptions::new(
+                            NonZeroUsize::new(64).unwrap(),
+                            NonZeroUsize::new(mako_internal_rpc::DATA_JOB_EXPORT_PAGE_BYTES)
+                                .unwrap(),
+                            scoped.storage_capabilities().maximum_scan_items,
+                            false,
+                        ),
+                        after.as_ref(),
+                        None,
+                    )
+                    .await
+                    .unwrap();
+                let output = DataJobExportPageOutput {
+                    rows: page
+                        .documents()
+                        .iter()
+                        .map(|d| Value::Object(d.body().clone()))
+                        .collect(),
+                    next_cursor: page.next_after().map(|id| id.as_str().to_owned()),
+                    snapshot: "test-snapshot".into(),
+                    schema_version: 1,
+                };
+                assert!(
+                    serde_json::to_vec(&output).unwrap().len()
+                        < mako_internal_rpc::CONTROL_DATA_RESPONSE_BYTES
+                );
+                ids.extend(
+                    page.documents()
+                        .iter()
+                        .map(|d| d.primary_key().as_str().to_owned()),
+                );
+                after = page.next_after().cloned();
+                if after.is_none() {
+                    break;
+                }
+            }
+            assert_eq!(ids, vec!["doc-0", "doc-1", "doc-2", "doc-3", "doc-4"]);
         });
     }
 }
