@@ -409,4 +409,4 @@ Run `npm run validate:traceability` whenever a scenario or row changes. The vali
 | DS-04 | A dialog is opened from the keyboard | `examples/rational/test/design-system.spec.ts::a dialog is opened from the keyboard, closes on Escape, and gives focus back` (mocked backend) | Automated |
 | DS-05 | A series is shown | `examples/rational/test/design-system.spec.ts::a chart names what it shows and explains the point under the pointer` (mocked backend) | Automated |
 | DS-06 | A chart comes to rest | `examples/rational/test/design-system.spec.ts::a chart settles instead of redrawing itself forever` (mocked backend) | Automated |
-| DS-07 | The exported application builds alone | `scripts/test/export-rational-app.test.js::the export vendors the kit and resolves its package name to the vendored copy` | Automated |
+| DS-07 | Independent application sources are protected from retired exports | `scripts/test/export-rational-app.test.js::local checkout contents remain untouched, including independently maintained files` | Automated |
