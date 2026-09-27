@@ -630,7 +630,42 @@ fn handle_simulate(
             .await
             .map_err(|_| unavailable(request, "document storage is unavailable"))?;
         let (validated, conflict) =
-            validate_simulation(request, &validator, &body, current.as_ref())?;
+            match validate_simulation(request, &validator, &body, current.as_ref())? {
+                Simulated::Valid(validated, conflict) => (validated, conflict),
+                // A simulation exists to say whether a change would be
+                // accepted, so a document the schema refuses is an answer --
+                // not allowed, not schema-valid, and why -- rather than the
+                // bare 400 it used to be, next to a `schemaValid` field that
+                // could only ever read true.
+                Simulated::SchemaRefused(diagnostics, conflict) => {
+                    audit_use(
+                        graph,
+                        request,
+                        &tenant,
+                        &scope,
+                        &claims,
+                        "explorer_simulate",
+                        &fingerprint_text(&body.document_id),
+                        None,
+                        now,
+                    )
+                    .await?;
+                    return json(
+                        request,
+                        200,
+                        &ExplorerSimulationResult {
+                            allowed: false,
+                            schema_valid: false,
+                            diagnostics: schema_diagnostics(
+                                &metadata,
+                                body.content.as_ref(),
+                                &diagnostics,
+                            ),
+                            would_conflict: conflict,
+                        },
+                    );
+                }
+            };
         let mutation_id = MutationId::parse(&body.idempotency_key)
             .map_err(|_| invalid(request, "idempotency key is invalid"))?;
         let proposed = CanonicalDocument::new(
@@ -759,7 +794,21 @@ fn handle_mutate(
             .get_document(&document_id)
             .await
             .map_err(|_| unavailable(request, "document storage is unavailable"))?;
-        let (validated, _) = validate_simulation(request, &validator, &body, current.as_ref())?;
+        let validated = match validate_simulation(request, &validator, &body, current.as_ref())? {
+            Simulated::Valid(validated, _) => validated,
+            Simulated::SchemaRefused(error, _) => {
+                return Err(HttpApiError::new(
+                    400,
+                    mako_api::ErrorCode::InvalidRequest,
+                    format!(
+                        "document does not match the active schema: {}",
+                        schema_diagnostics(&metadata, body.content.as_ref(), &error).join("; ")
+                    ),
+                    request.request_id(),
+                    mako_api::RetryAdvice::Never,
+                ));
+            }
+        };
         if validated.primary_key() != &document_id {
             return Err(invalid(
                 request,
@@ -1781,12 +1830,19 @@ fn required_index_fields(shape: &mako_documents::RequiredIndexShape) -> Vec<Expl
     fields
 }
 
+/// What a simulated change came to: a body the schema accepts, or the
+/// schema's refusal. Either way, whether the expected revision is stale.
+enum Simulated {
+    Valid(mako_documents::ValidatedDocumentBody, bool),
+    SchemaRefused(mako_documents::DocumentValidationError, bool),
+}
+
 fn validate_simulation(
     request: &HttpRequest,
     validator: &DocumentValidator,
     body: &ExplorerMutationRequest,
     current: Option<&CanonicalDocument>,
-) -> Result<(mako_documents::ValidatedDocumentBody, bool), HttpApiError> {
+) -> Result<Simulated, HttpApiError> {
     let expected_matches = match (&body.expected_revision, current) {
         (None, None) => true,
         (Some(expected), Some(current)) => expected == current.revision().as_str(),
@@ -1799,17 +1855,66 @@ fn validate_simulation(
         )
     })?;
     let validated = match body.kind {
-        ExplorerMutationKind::Create => validator
-            .validate_create(content)
-            .map_err(|_| invalid(request, "document does not match the active schema"))?,
-        ExplorerMutationKind::Update | ExplorerMutationKind::Delete => validator
-            .validate_update(
-                current.ok_or_else(|| invalid(request, "document does not exist"))?,
-                content,
-            )
-            .map_err(|_| invalid(request, "document does not match the active schema"))?,
+        ExplorerMutationKind::Create => validator.validate_create(content),
+        ExplorerMutationKind::Update | ExplorerMutationKind::Delete => validator.validate_update(
+            current.ok_or_else(|| invalid(request, "document does not exist"))?,
+            content,
+        ),
     };
-    Ok((validated, !expected_matches))
+    Ok(match validated {
+        Ok(validated) => Simulated::Valid(validated, !expected_matches),
+        Err(error) => Simulated::SchemaRefused(error, !expected_matches),
+    })
+}
+
+/// Says what a refused document breaks, in terms of the collection's own
+/// schema: which required fields are missing, and which rule fails where.
+fn schema_diagnostics(
+    metadata: &mako_documents::CollectionMetadata,
+    content: Option<&Value>,
+    error: &mako_documents::DocumentValidationError,
+) -> Vec<String> {
+    use mako_documents::DocumentValidationError as Refusal;
+    let mut diagnostics = Vec::new();
+    match error {
+        Refusal::SchemaViolation { issues } => {
+            let present = content.and_then(Value::as_object);
+            for issue in issues.iter().take(20) {
+                if issue.schema_path.ends_with("/required") {
+                    // The issue names the rule, not the field: read the
+                    // missing ones off the schema the rule belongs to.
+                    let required = metadata
+                        .json_schema()
+                        .get("required")
+                        .and_then(Value::as_array)
+                        .into_iter()
+                        .flatten()
+                        .filter_map(Value::as_str)
+                        .filter(|field| present.is_none_or(|object| !object.contains_key(*field)));
+                    for field in required {
+                        let line = format!("missing required field {field}");
+                        if !diagnostics.contains(&line) {
+                            diagnostics.push(line);
+                        }
+                    }
+                    if issue.instance_path.is_empty() {
+                        continue;
+                    }
+                }
+                let at = if issue.instance_path.is_empty() {
+                    "the document".to_owned()
+                } else {
+                    issue.instance_path.clone()
+                };
+                diagnostics.push(format!("{at} breaks the schema rule {}", issue.schema_path));
+            }
+        }
+        other => diagnostics.push(other.to_string()),
+    }
+    if diagnostics.is_empty() {
+        diagnostics.push("the document does not match the active schema".to_owned());
+    }
+    diagnostics
 }
 
 fn query_fingerprint(body: &ExplorerQueryRequest) -> Result<String, HttpApiError> {
@@ -1948,6 +2053,41 @@ fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
 
 #[cfg(test)]
 mod tests {
+    /// A refused simulation says which rule fails, naming missing fields.
+    #[test]
+    fn a_refused_simulation_names_what_the_schema_misses() {
+        let metadata = mako_documents::CollectionMetadata::new(
+            mako_api::CollectionId::parse("tasks").expect("collection"),
+            mako_documents::CollectionMetadataVersion::new(1).expect("version"),
+            mako_documents::SchemaVersion::new(1).expect("schema"),
+            serde_json::json!({
+                "type": "object",
+                "required": ["id", "ownerId", "title"],
+                "properties": {"id": {"type": "string"}, "ownerId": {"type": "string"}, "title": {"type": "string"}},
+            }),
+            mako_documents::PrimaryKeyDefinition::field("id").expect("primary key"),
+            mako_documents::SchemaCompatibility::Compatible,
+            mako_documents::CollectionLifecycle::Active,
+        )
+        .expect("metadata");
+        let validator = super::DocumentValidator::compile(&metadata).expect("validator");
+        let content = serde_json::json!({"id": "only-id", "title": 5});
+        let error = validator
+            .validate_create(content.clone())
+            .expect_err("refused");
+        let diagnostics = super::schema_diagnostics(&metadata, Some(&content), &error);
+        assert!(
+            diagnostics.contains(&"missing required field ownerId".to_owned()),
+            "{diagnostics:?}"
+        );
+        assert!(
+            diagnostics
+                .iter()
+                .any(|line| line.starts_with("/title breaks the schema rule")),
+            "{diagnostics:?}"
+        );
+    }
+
     use std::collections::BTreeSet;
 
     use mako_api::{EnvironmentId, ProjectId};

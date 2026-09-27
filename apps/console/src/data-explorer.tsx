@@ -585,7 +585,7 @@ export function DataExplorer({
                   onSubmit={(event) => void lookup(event)}
                 >
                   <Field
-                    label="Document ID"
+                    label="Find document ID"
                     htmlFor="lookup-document-id"
                     className="min-w-0 flex-1"
                   >
@@ -1184,6 +1184,9 @@ function MutationEditor({
             {accepted ? <CheckCircle2 aria-hidden="true" /> : <AlertTriangle aria-hidden="true" />}
             <AlertTitle>{accepted ? "Simulation allowed" : "Simulation rejected"}</AlertTitle>
             <AlertDescription>
+              {simulation.schemaValid ? null : (
+                <p className="m-0">The collection's schema refuses this document:</p>
+              )}
               <p className="m-0">
                 {simulation.wouldConflict
                   ? "The current revision would conflict."
