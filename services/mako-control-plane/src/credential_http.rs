@@ -73,7 +73,7 @@ fn handle_create_secret(
             .credential_service()
             .create_function_secret(&actor, &tenant, name, now)
             .await
-            .map_err(|error| credential_error(request, error))?;
+            .map_err(|error| create_secret_error(request, error))?;
         secret_issue(request, 201, issue)
     })
 }
@@ -101,7 +101,7 @@ fn handle_create_secret_value(
             .credential_service()
             .create_function_secret_with_value(&actor, &tenant, name, value, now)
             .await
-            .map_err(|error| credential_error(request, error))?;
+            .map_err(|error| create_secret_error(request, error))?;
         public_json(request, 201, &metadata)
     })
 }
@@ -208,6 +208,19 @@ fn secret_name(request: &HttpRequest) -> Result<FunctionSecretName, HttpApiError
             .to_owned(),
     )
     .map_err(|_| invalid(request, "function secret path is invalid"))
+}
+
+/// A secret's name is written once, so a create that conflicts is one for a
+/// name already in use; saying only "conflicts with current state" left the
+/// developer to guess that rotation is how a value is replaced.
+fn create_secret_error(request: &HttpRequest, error: CredentialAdminError) -> HttpApiError {
+    match error {
+        CredentialAdminError::Conflict => conflict(
+            request,
+            "a function secret with this name already exists; rotate it to replace its value",
+        ),
+        other => credential_error(request, other),
+    }
 }
 
 fn credential_error(request: &HttpRequest, error: CredentialAdminError) -> HttpApiError {

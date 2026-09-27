@@ -216,10 +216,13 @@ impl AutomationTokenRecord {
     }
 
     fn revoke(&mut self, now_unix_seconds: u64) -> Result<(), TokenServiceError> {
-        if self.status != AutomationTokenStatus::Active
-            || now_unix_seconds < self.created_at_unix_seconds
-        {
+        if now_unix_seconds < self.created_at_unix_seconds {
             return Err(TokenServiceError::InvalidToken);
+        }
+        // Rotating a token that is no longer active is a state conflict, not
+        // a malformed request.
+        if self.status != AutomationTokenStatus::Active {
+            return Err(TokenServiceError::Conflict);
         }
         self.status = AutomationTokenStatus::Revoked;
         self.revoked_at_unix_seconds = Some(now_unix_seconds);
@@ -466,6 +469,12 @@ impl AutomationTokenService {
         now_unix_seconds: u64,
     ) -> Result<AutomationTokenRecord, TokenServiceError> {
         let previous = self.get(id).await?.ok_or(TokenServiceError::NotFound)?;
+        // Revoking is idempotent: a token a rotation already revoked, or one
+        // that expired, is left as it is. The second revoke used to answer
+        // "automation token request is invalid".
+        if previous.status != AutomationTokenStatus::Active {
+            return Ok(previous);
+        }
         let mut next = previous.clone();
         next.revoke(now_unix_seconds)?;
         let key = ControlKeyspace::automation_token_key(id)?;

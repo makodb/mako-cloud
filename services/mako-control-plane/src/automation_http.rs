@@ -795,6 +795,10 @@ mod tests {
                 !name_in_use(&listed().await.unwrap(), "ci-deploy", 40),
                 "so does revoking it"
             );
+            // Revoking again -- as after a rotation revoked it -- changes
+            // nothing and is not an error.
+            let again = service.revoke(first.record.id(), 50).await.unwrap();
+            assert_eq!(again.revoked_at_unix_seconds(), Some(30));
         });
     }
 
