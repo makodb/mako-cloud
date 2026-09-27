@@ -1056,7 +1056,11 @@ POST /v1/projects/{p}/environments/{e}/auth/token        { refreshToken } → Au
 POST /v1/projects/{p}/environments/{e}/auth/signout      (bearer) → 204
 GET  /v1/projects/{p}/environments/{e}/auth/user         (bearer) → AuthUser
 GET  /v1/projects/{p}/environments/{e}/auth/jwks         → JsonWebKeySet
+POST /v1/projects/{p}/environments/{e}/auth/password-recovery        { email, redirectUrl } → 202 { accepted: true }
+POST /v1/projects/{p}/environments/{e}/auth/password-recovery/redeem { token, password } → AuthSession
 ```
+
+A **forgotten password** is recovered by mail. `password-recovery` answers the same whether or not the address has an account; for an active or invited user it mails the environment's `recovery` template with a single-use link to the registered `redirectUrl`, carrying `#password_reset_token=<token>` and valid for an hour. The app reads the token (`MakoAuthClient.passwordLinkFragment(location.hash)`), asks for the new password, and sends both to `password-recovery/redeem` (`redeemPasswordLink(token, password)`), which replaces the password, revokes every earlier session, and signs the user in. Opening the mailed link proves the address, so a user still pending verification becomes active.
 
 All take `X-Mako-Key`. An `AuthSession` is `{ accessToken, refreshToken, expiresIn, user }`; an `AuthUser` is `{ id, email, status, authorizationEpoch }` with `status` one of `unverified`/`pending_verification`, `active`, `disabled`, `deleted`. Provider and magic-link routes are in the [next chapter](#sign-in-providers-and-magic-links).
 
@@ -1307,6 +1311,21 @@ const session = await auth.redeemMagicLink(token);
 ```
 
 `requestMagicLink` resolves when the service answers `202` and rejects with `MakoAuthError` on any other status; it tells the application nothing about whether the address is registered, by design. `redeemMagicLink(token)` trades the single-use token for a persisted session; a spent or expired token is refused with `unauthenticated`.
+
+#### Recover a password, or finish an invitation
+
+```ts
+await auth.requestPasswordRecovery("person@example.com", "https://app.example.com/auth/callback");
+// ...the mailed link -- a recovery, or an invitation -- lands on the redirect
+// with `#password_reset_token=<token>`; ask for the new password, then:
+const token = MakoAuthClient.passwordLinkFragment(window.location.hash);
+if (token !== null) {
+  history.replaceState(null, "", window.location.pathname + window.location.search);
+  const session = await auth.redeemPasswordLink(token, newPassword);
+}
+```
+
+`requestPasswordRecovery` answers the same whether or not the address has an account. `redeemPasswordLink(token, password)` sets the password -- an invited user's first one -- revokes every earlier session, and returns a persisted session; a spent or expired link is refused with `unauthenticated`, and a password the policy refuses with `invalid_request`. Check for the token before resuming a stored session: the link is for whoever it was mailed to. The reference app in `examples/local-first` shows both: a **Forgot password?** button and a page that asks only for the new password when opened from a link.
 
 #### Handle the fragment on application load
 
@@ -2313,7 +2332,8 @@ mako-cloud users restore usr_…
 mako-cloud users delete usr_… --yes
 ```
 
-- A user's `status` is `pending_verification`, `active`, `disabled`, or `deleted`. Sign-up produces `pending_verification` when the environment requires email verification; an invitation mail (the `invitation` template) lets the invitee finish signing up.
+- A user's `status` is `pending_verification`, `active`, `disabled`, or `deleted`. Sign-up produces `pending_verification` when the environment requires email verification.
+- An invitation creates a pending user and mails the `invitation` template with a single-use link, valid for seven days, to the environment's **first registered redirect URL** with `#password_reset_token=<token>`. The invitee chooses their password through `password-recovery/redeem`, exactly as a recovery does, which activates them and signs them in; `{{inviter}}` is the inviting developer's email. An environment with no redirect URL refuses the invitation with `409` and creates no user, so register one under **Auth providers** first. A user with no password yet -- invited, or created with `users create` -- is refused at password sign-in like a wrong password.
 - `update-metadata` replaces **both** documents whole: `trustedMetadata` (what policies read as `identity.role` and `claims.*`) and `profileMetadata` (user-editable, never a policy input). A trusted-metadata change advances the user's authorization epoch, so the next token carries the new claims and replicating clients run their security reset. From an edge function, prefer the merge-patch [service route](#trusted-metadata-from-an-applications-function), which changes one key at a time and can be guarded with an expected epoch.
 - Revoking sessions, disabling, deleting, or a password recovery publishes an ordered invalidation to every gateway; a client holding a revoked session sees `unauthenticated` on its next request and must sign in again.
 - A user view lists at most 100 sessions (`sessionsTruncated` says whether there were more); a search returns at most 100 results.

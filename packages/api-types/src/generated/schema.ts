@@ -640,6 +640,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** @description Creates a pending user and mails them the environment's invitation template with a single-use link to choose their password. The link lands on the environment's first registered redirect URL with `#password_reset_token=<token>` (the app redeems it with `redeemPasswordLink`) and expires after seven days. An environment with no redirect URL answers 409 and creates no user. */
         post: operations["inviteApplicationUser"];
         delete?: never;
         options?: never;
@@ -1550,6 +1551,46 @@ export interface paths {
         put?: never;
         /** Redeem a magic link's token for a session */
         post: operations["redeemMagicLink"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/projects/{projectId}/environments/{environmentId}/auth/password-recovery": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ask for a link to choose a new password
+         * @description Accepted whether or not the address is registered, so nothing here reveals who has an account. For an active or invited user, a single-use link is mailed with the environment's recovery template; it lands on the registered redirect with `#password_reset_token=<token>` and expires after an hour. An invitation mails the same kind of link, so an invited user chooses their first password through it.
+         */
+        post: operations["requestPasswordRecovery"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/projects/{projectId}/environments/{environmentId}/auth/password-recovery/redeem": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Choose a password with a recovery or invitation link, and sign in
+         * @description Spends the link's token once. An existing password is replaced and every earlier session revoked; an invited user gets their first password. Opening the mailed link proves the address, so an unverified or invited user becomes active. A disabled user's link does nothing.
+         */
+        post: operations["redeemPasswordLink"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5043,6 +5084,10 @@ export interface components {
         };
         MagicLinkRedeemRequest: {
             token: string;
+        };
+        PasswordLinkRedeemRequest: {
+            token: string;
+            password: string;
         };
         AuthUser: {
             id: string;
@@ -9266,6 +9311,62 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["MagicLinkRedeemRequest"];
+            };
+        };
+        responses: {
+            /** @description Authenticated session, as password sign-in answers */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthSession"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    requestPasswordRecovery: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                environmentId: components["parameters"]["EnvironmentId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MagicLinkRequest"];
+            };
+        };
+        responses: {
+            /** @description Request accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MagicLinkAccepted"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    redeemPasswordLink: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                environmentId: components["parameters"]["EnvironmentId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordLinkRedeemRequest"];
             };
         };
         responses: {

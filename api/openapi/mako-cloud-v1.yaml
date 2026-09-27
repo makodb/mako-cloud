@@ -1318,6 +1318,13 @@ paths:
     post:
       tags: [Management]
       operationId: inviteApplicationUser
+      description: >-
+        Creates a pending user and mails them the environment's invitation
+        template with a single-use link to choose their password. The link
+        lands on the environment's first registered redirect URL with
+        `#password_reset_token=<token>` (the app redeems it with
+        `redeemPasswordLink`) and expires after seven days. An environment
+        with no redirect URL answers 409 and creates no user.
       parameters:
         - $ref: "#/components/parameters/ProjectId"
         - $ref: "#/components/parameters/EnvironmentId"
@@ -3068,6 +3075,68 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/MagicLinkRedeemRequest"
+      responses:
+        "200":
+          description: Authenticated session, as password sign-in answers
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthSession"
+        default:
+          $ref: "#/components/responses/ApiError"
+  /v1/projects/{projectId}/environments/{environmentId}/auth/password-recovery:
+    post:
+      tags: [Auth]
+      operationId: requestPasswordRecovery
+      summary: Ask for a link to choose a new password
+      description: >-
+        Accepted whether or not the address is registered, so nothing here
+        reveals who has an account. For an active or invited user, a single-use
+        link is mailed with the environment's recovery template; it lands on
+        the registered redirect with `#password_reset_token=<token>` and
+        expires after an hour. An invitation mails the same kind of link, so an
+        invited user chooses their first password through it.
+      security:
+        - publicProjectKey: []
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/EnvironmentId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MagicLinkRequest"
+      responses:
+        "202":
+          description: Request accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MagicLinkAccepted"
+        default:
+          $ref: "#/components/responses/ApiError"
+  /v1/projects/{projectId}/environments/{environmentId}/auth/password-recovery/redeem:
+    post:
+      tags: [Auth]
+      operationId: redeemPasswordLink
+      summary: Choose a password with a recovery or invitation link, and sign in
+      description: >-
+        Spends the link's token once. An existing password is replaced and
+        every earlier session revoked; an invited user gets their first
+        password. Opening the mailed link proves the address, so an unverified
+        or invited user becomes active. A disabled user's link does nothing.
+      security:
+        - publicProjectKey: []
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/EnvironmentId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasswordLinkRedeemRequest"
       responses:
         "200":
           description: Authenticated session, as password sign-in answers
@@ -9704,6 +9773,19 @@ components:
           type: string
           minLength: 1
           maxLength: 256
+    PasswordLinkRedeemRequest:
+      type: object
+      additionalProperties: false
+      required: [token, password]
+      properties:
+        token:
+          type: string
+          minLength: 1
+          maxLength: 256
+        password:
+          type: string
+          minLength: 8
+          maxLength: 1024
     AuthUser:
       type: object
       additionalProperties: false

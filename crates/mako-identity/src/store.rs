@@ -9,7 +9,8 @@ use mako_storage::{
 use crate::{
     AppUserId, AppUserRecord, AppUserStatus, CredentialDigest, IdentityProvider,
     IdentityRecordError, IdentityRevocationKind, NormalizedEmail, ProviderName, TrustedAppMetadata,
-    UserCredentialKind, UserCredentialRecord, UserIdentityRecord, UserProfileMetadata,
+    UserCredentialId, UserCredentialKind, UserCredentialRecord, UserIdentityRecord,
+    UserProfileMetadata,
 };
 
 #[derive(Clone)]
@@ -638,7 +639,7 @@ impl IdentityStore {
         let Some(user) = self.user_by_email(email).await? else {
             return Ok(None);
         };
-        self.password_login_for_user(user).await.map(Some)
+        self.password_login_for_user(user).await
     }
 
     pub(crate) async fn password_login_by_user_id(
@@ -655,13 +656,12 @@ impl IdentityStore {
         }
         self.password_login_for_user_loaded(user, user_key, user_bytes)
             .await
-            .map(Some)
     }
 
     async fn password_login_for_user(
         &self,
         user: AppUserRecord,
-    ) -> Result<PasswordLoginRecord, IdentityStoreError> {
+    ) -> Result<Option<PasswordLoginRecord>, IdentityStoreError> {
         let user_key = self.keyspace.application_user_key(user.id().as_str())?;
         let user_bytes = self
             .adapter
@@ -677,15 +677,17 @@ impl IdentityStore {
         user: AppUserRecord,
         user_key: Vec<u8>,
         user_bytes: Vec<u8>,
-    ) -> Result<PasswordLoginRecord, IdentityStoreError> {
+    ) -> Result<Option<PasswordLoginRecord>, IdentityStoreError> {
         let owner_key = self
             .keyspace
             .application_user_credential_owner_key(user.id().as_str(), "password")?;
-        let credential_id = self
-            .adapter
-            .get(&owner_key)
-            .await?
-            .ok_or(IdentityStoreError::CorruptCredentialOwner)?;
+        // A user who never set a password -- invited, created by an
+        // administrator, or signed up with a magic link or a provider -- has
+        // no owner key. That is not corruption: signing in as them used to
+        // answer 503, and so told anyone which addresses had accounts.
+        let Some(credential_id) = self.adapter.get(&owner_key).await? else {
+            return Ok(None);
+        };
         let credential_key = self.keyspace.application_credential_key(&credential_id)?;
         let credential_bytes = self
             .adapter
@@ -700,14 +702,14 @@ impl IdentityStore {
         {
             return Err(IdentityStoreError::CorruptCredentialOwner);
         }
-        Ok(PasswordLoginRecord {
+        Ok(Some(PasswordLoginRecord {
             user,
             credential,
             user_key,
             user_bytes,
             credential_key,
             credential_bytes,
-        })
+        }))
     }
 
     pub(crate) async fn upgrade_password_hash(
@@ -785,11 +787,80 @@ impl IdentityStore {
         password_digest: CredentialDigest,
         now_unix_seconds: u64,
     ) -> Result<PasswordResetOutcome, IdentityStoreError> {
+        let Some(recovery) = self.live_recovery(token_digest, now_unix_seconds).await? else {
+            return Ok(PasswordResetOutcome::InvalidOrExpired);
+        };
+        let Some(login) = self
+            .password_login_by_user_id(recovery.record.user_id())
+            .await?
+        else {
+            return Err(IdentityStoreError::CorruptCredentialOwner);
+        };
+        self.commit_password_replacement(&login, password_digest, Some(recovery), now_unix_seconds)
+            .await
+    }
+
+    /// Spends a password link -- a recovery a user asked for, or the link an
+    /// invitation mails -- and sets the password it was sent for. A user who
+    /// already has one has it replaced and every session revoked; an invited
+    /// user, who has none, gets a first one. Opening the mailed link proves
+    /// the address, so a pending user becomes active. A disabled or deleted
+    /// user's link does nothing.
+    pub async fn set_password_with_token(
+        &self,
+        token_digest: &[u8],
+        password_digest: CredentialDigest,
+        first_password_id: UserCredentialId,
+        now_unix_seconds: u64,
+    ) -> Result<PasswordLinkOutcome, IdentityStoreError> {
+        let Some(recovery) = self.live_recovery(token_digest, now_unix_seconds).await? else {
+            return Ok(PasswordLinkOutcome::InvalidOrExpired);
+        };
+        let user_id = recovery.record.user_id().clone();
+        let outcome = match self.password_login_by_user_id(&user_id).await? {
+            Some(login) => {
+                if !matches!(
+                    login.user.status(),
+                    AppUserStatus::Active | AppUserStatus::PendingVerification
+                ) {
+                    return Ok(PasswordLinkOutcome::InvalidOrExpired);
+                }
+                self.commit_password_replacement(
+                    &login,
+                    password_digest,
+                    Some(recovery),
+                    now_unix_seconds,
+                )
+                .await?
+            }
+            None => {
+                self.commit_first_password(
+                    &user_id,
+                    password_digest,
+                    first_password_id,
+                    recovery,
+                    now_unix_seconds,
+                )
+                .await?
+            }
+        };
+        Ok(match outcome {
+            PasswordResetOutcome::Changed => PasswordLinkOutcome::Set { user_id },
+            PasswordResetOutcome::InvalidOrExpired => PasswordLinkOutcome::InvalidOrExpired,
+        })
+    }
+
+    /// The unexpired, unused recovery credential a token names, if any.
+    async fn live_recovery(
+        &self,
+        token_digest: &[u8],
+        now_unix_seconds: u64,
+    ) -> Result<Option<PreparedRecoveryConsumption>, IdentityStoreError> {
         let digest_key = self
             .keyspace
             .identity_token_digest_owner_key(token_digest)?;
         let Some(recovery_id) = self.adapter.get(&digest_key).await? else {
-            return Ok(PasswordResetOutcome::InvalidOrExpired);
+            return Ok(None);
         };
         let recovery_key = self.keyspace.application_credential_key(&recovery_id)?;
         let recovery_bytes = self
@@ -805,24 +876,100 @@ impl IdentityStore {
                 .expires_at_unix_seconds()
                 .is_none_or(|expires| now_unix_seconds >= expires)
         {
-            return Ok(PasswordResetOutcome::InvalidOrExpired);
+            return Ok(None);
         }
-        let Some(login) = self.password_login_by_user_id(recovery.user_id()).await? else {
-            return Err(IdentityStoreError::CorruptCredentialOwner);
+        Ok(Some(PreparedRecoveryConsumption {
+            record: recovery,
+            key: recovery_key,
+            bytes: recovery_bytes,
+            digest_key,
+            owner: recovery_id,
+        }))
+    }
+
+    /// Gives a user who has no password their first one, from a password
+    /// link, in one atomic write that also spends the link.
+    async fn commit_first_password(
+        &self,
+        user_id: &AppUserId,
+        password_digest: CredentialDigest,
+        credential_id: UserCredentialId,
+        recovery: PreparedRecoveryConsumption,
+        now_unix_seconds: u64,
+    ) -> Result<PasswordResetOutcome, IdentityStoreError> {
+        let user_key = self.keyspace.application_user_key(user_id.as_str())?;
+        let user_bytes = self
+            .adapter
+            .get(&user_key)
+            .await?
+            .ok_or(IdentityStoreError::CorruptTokenOwner)?;
+        let user: AppUserRecord = serde_json::from_slice(&user_bytes)?;
+        if user.scope() != &self.tenant || user.id() != user_id {
+            return Err(IdentityStoreError::CorruptTokenOwner);
+        }
+        let activated = match user.status() {
+            AppUserStatus::Active => user,
+            AppUserStatus::PendingVerification => {
+                user.with_status(AppUserStatus::Active, now_unix_seconds)
+            }
+            AppUserStatus::Disabled | AppUserStatus::Deleted => {
+                return Ok(PasswordResetOutcome::InvalidOrExpired);
+            }
         };
-        self.commit_password_replacement(
-            &login,
+        let password = UserCredentialRecord::new(
+            self.tenant.clone(),
+            credential_id,
+            user_id.clone(),
+            UserCredentialKind::Password,
             password_digest,
-            Some(PreparedRecoveryConsumption {
-                record: recovery,
-                key: recovery_key,
-                bytes: recovery_bytes,
-                digest_key,
-                owner: recovery_id,
-            }),
             now_unix_seconds,
-        )
-        .await
+            None,
+        );
+        let credential_key = self
+            .keyspace
+            .application_credential_key(password.id().as_str())?;
+        let owner_key = self
+            .keyspace
+            .application_user_credential_owner_key(user_id.as_str(), "password")?;
+        let mut batch = WriteBatch::with_capacity(5);
+        batch.put(&user_key, serde_json::to_vec(&activated)?);
+        batch.put(&credential_key, serde_json::to_vec(&password)?);
+        batch.put(&owner_key, password.id().as_str());
+        batch.put(
+            &recovery.key,
+            serde_json::to_vec(&recovery.record.clone().invalidate(now_unix_seconds))?,
+        );
+        batch.delete(&recovery.digest_key);
+        let outcome = self
+            .adapter
+            .compare_and_write(AtomicWrite {
+                conditions: vec![
+                    KeyCondition::ValueEquals {
+                        key: user_key,
+                        value: user_bytes,
+                    },
+                    KeyCondition::Missing {
+                        key: credential_key,
+                    },
+                    KeyCondition::Missing { key: owner_key },
+                    KeyCondition::ValueEquals {
+                        key: recovery.key,
+                        value: recovery.bytes,
+                    },
+                    KeyCondition::ValueEquals {
+                        key: recovery.digest_key,
+                        value: recovery.owner,
+                    },
+                ],
+                batch,
+                durability: self.durability,
+            })
+            .await?;
+        Ok(if outcome == CompareAndWriteResult::Applied {
+            PasswordResetOutcome::Changed
+        } else {
+            PasswordResetOutcome::InvalidOrExpired
+        })
     }
 
     pub(crate) async fn replace_password_and_revoke_sessions(
@@ -842,7 +989,11 @@ impl IdentityStore {
         recovery: Option<PreparedRecoveryConsumption>,
         now_unix_seconds: u64,
     ) -> Result<PasswordResetOutcome, IdentityStoreError> {
-        let updated_user = login.user.clone().revoke_all_sessions(now_unix_seconds)?;
+        let mut updated_user = login.user.clone().revoke_all_sessions(now_unix_seconds)?;
+        // A mailed link that was opened proves the address.
+        if recovery.is_some() && updated_user.status() == AppUserStatus::PendingVerification {
+            updated_user = updated_user.with_status(AppUserStatus::Active, now_unix_seconds);
+        }
         let updated_password = login.credential.clone().with_digest(password_digest);
         for _ in 0..32 {
             let prepared = self.prepare_revocation().await?;
@@ -947,6 +1098,14 @@ struct PreparedRecoveryConsumption {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PasswordResetOutcome {
     Changed,
+    InvalidOrExpired,
+}
+
+/// The result of spending a password link. Only `Set` carries a user, and
+/// it is returned at most once per link.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PasswordLinkOutcome {
+    Set { user_id: AppUserId },
     InvalidOrExpired,
 }
 
@@ -1870,6 +2029,80 @@ mod tests {
             )
             .expect("decode");
             assert_eq!(stored.invalidated_at_unix_seconds(), Some(50));
+        });
+    }
+
+    /// An invited user has no password: signing in as them is an ordinary
+    /// refusal, not a corrupt record, and the link an invitation mails gives
+    /// them their first password -- once -- and activates them.
+    #[test]
+    fn a_password_link_sets_an_invited_users_first_password_once() {
+        futures::executor::block_on(async {
+            let scope = tenant("prj_abcdefgh");
+            let store = store(Arc::new(MemoryAdapter::new()), &scope);
+            let email = NormalizedEmail::parse("invited@example.com").expect("email");
+            let (user, identity) = records(&scope, "usr_invited", "idn_invited", &email);
+            let user = user.with_status(AppUserStatus::PendingVerification, 1);
+            store
+                .create_email_user(&user, &identity, &email)
+                .await
+                .expect("invited user");
+            assert!(
+                store
+                    .password_login_by_email(&email)
+                    .await
+                    .expect("no password is not corruption")
+                    .is_none()
+            );
+
+            let token_digest = blake3::hash(b"invitation-token");
+            let link = UserCredentialRecord::new(
+                scope.clone(),
+                UserCredentialId::parse("prc_invitation").expect("credential"),
+                user.id().clone(),
+                UserCredentialKind::PasswordRecovery,
+                CredentialDigest::new(token_digest.as_bytes().to_vec()).expect("digest"),
+                2,
+                Some(100),
+            );
+            store
+                .create_password_recovery(&user, &link, token_digest.as_bytes())
+                .await
+                .expect("link");
+            let set = store
+                .set_password_with_token(
+                    token_digest.as_bytes(),
+                    CredentialDigest::new(b"first-password-hash".to_vec()).expect("digest"),
+                    UserCredentialId::parse("pwd_first").expect("credential"),
+                    3,
+                )
+                .await
+                .expect("set");
+            assert_eq!(
+                set,
+                PasswordLinkOutcome::Set {
+                    user_id: user.id().clone()
+                }
+            );
+            let login = store
+                .password_login_by_email(&email)
+                .await
+                .expect("login")
+                .expect("a password now");
+            assert_eq!(login.user.status(), AppUserStatus::Active);
+            assert_eq!(login.credential.digest().as_bytes(), b"first-password-hash");
+            assert_eq!(
+                store
+                    .set_password_with_token(
+                        token_digest.as_bytes(),
+                        CredentialDigest::new(b"second-password-hash".to_vec()).expect("digest"),
+                        UserCredentialId::parse("pwd_second").expect("credential"),
+                        4,
+                    )
+                    .await
+                    .expect("replay"),
+                PasswordLinkOutcome::InvalidOrExpired
+            );
         });
     }
 

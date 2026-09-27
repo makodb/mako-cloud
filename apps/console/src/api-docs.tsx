@@ -1304,6 +1304,26 @@ function authExamples(context: DocsContext): ExampleRequest[] {
       body: { token: "<token from the emailed link>" },
       response: sessionResponse(),
     },
+    {
+      id: "auth-password-recovery",
+      title: "Request a password reset link",
+      method: "POST",
+      url: `${base}/password-recovery`,
+      headers: [key, JSON_HEADER],
+      body: { email: "user@example.com", redirectUrl: context.redirectUrl },
+      response: { accepted: true },
+      note: "Accepted whether or not the address is registered. The link lands on the redirect with #password_reset_token=<token> and works once, for an hour.",
+    },
+    {
+      id: "auth-password-recovery-redeem",
+      title: "Choose a password with a reset or invitation link",
+      method: "POST",
+      url: `${base}/password-recovery/redeem`,
+      headers: [key, JSON_HEADER],
+      body: { token: "<token from the emailed link>", password: "<the new password>" },
+      response: sessionResponse(),
+      note: "An invitation mails the same kind of link, so an invited user chooses their first password here. Earlier sessions are revoked.",
+    },
   ];
 }
 

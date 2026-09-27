@@ -200,6 +200,18 @@ export class MakoAuthClient {
     return token !== null && token.length > 0 ? token : null;
   }
 
+  /**
+   * The token a recovery or invitation link opened the page with, from its
+   * `#password_reset_token=` fragment, or `null`. Kept apart from
+   * `signInFragment` because redeeming it needs the password the user
+   * chooses; pass both to `redeemPasswordLink`.
+   */
+  static passwordLinkFragment(fragment: string): string | null {
+    const parameters = new URLSearchParams(fragment.startsWith("#") ? fragment.slice(1) : fragment);
+    const token = parameters.get("password_reset_token");
+    return token !== null && token.length > 0 ? token : null;
+  }
+
   async restoreSession(): Promise<MakoUserSession | null> {
     this.#session = await this.#persistence.load();
     this.#authenticationRequired = this.#session === null;
@@ -385,6 +397,39 @@ export class MakoAuthClient {
     const wire = await this.#request<MakoAuthSession>(
       "magic-link/redeem",
       { method: "POST", body: JSON.stringify({ token }) },
+      200,
+    );
+    return this.#persistWireSession(wire);
+  }
+
+  /**
+   * Ask for a link to choose a new password. Like `requestMagicLink`, the
+   * service accepts any well-formed address without revealing whether it is
+   * registered; the mailed link lands on `redirectUrl` with the token in its
+   * `#password_reset_token=` fragment.
+   */
+  async requestPasswordRecovery(email: string, redirectUrl: string): Promise<void> {
+    assertRedirectUrl(redirectUrl);
+    await this.#request<MakoMagicLinkAccepted>(
+      "password-recovery",
+      { method: "POST", body: JSON.stringify({ email, redirectUrl }) },
+      202,
+    );
+  }
+
+  /**
+   * Choose a password with the token a recovery or invitation link carried in
+   * its `#password_reset_token=` fragment, and sign in. An invited user sets
+   * their first password this way; anyone else has every earlier session
+   * revoked.
+   */
+  async redeemPasswordLink(token: string, password: string): Promise<MakoUserSession> {
+    if (token.length < 1 || token.length > 256) {
+      throw new MakoAuthError("password link token is invalid");
+    }
+    const wire = await this.#request<MakoAuthSession>(
+      "password-recovery/redeem",
+      { method: "POST", body: JSON.stringify({ token, password }) },
       200,
     );
     return this.#persistWireSession(wire);

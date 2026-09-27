@@ -253,6 +253,41 @@ test("redeems a magic link token into a persisted session", async () => {
   await assert.rejects(() => auth.redeemMagicLink(""), MakoAuthError);
 });
 
+test("asks for a password link and redeems it with the new password", async () => {
+  const requests = [];
+  const fetch = async (input, init) => {
+    requests.push({ url: String(input), init });
+    return String(input).endsWith("/auth/password-recovery")
+      ? Response.json({ accepted: true }, { status: 202 })
+      : Response.json({ accessToken: "reset-access", refreshToken: "reset-refresh", expiresIn: 300, user });
+  };
+  const persistence = new MemoryAuthSessionPersistence();
+  const auth = new MakoAuthClient(config(), { fetch, persistence, now: () => 0 });
+  await auth.requestPasswordRecovery("person@example.test", "https://app.example.test/reset");
+  assert.equal(
+    requests[0].url,
+    "https://api.example.test/v1/projects/prj_abcdefgh/environments/env_abcdefgh/auth/password-recovery",
+  );
+  assert.deepEqual(JSON.parse(requests[0].init.body), {
+    email: "person@example.test",
+    redirectUrl: "https://app.example.test/reset",
+  });
+  const token = MakoAuthClient.passwordLinkFragment("#password_reset_token=prt-token");
+  assert.equal(token, "prt-token");
+  assert.equal(MakoAuthClient.passwordLinkFragment("#magic_link_token=x"), null);
+  assert.equal(MakoAuthClient.signInFragment("#password_reset_token=prt-token").kind, "none");
+  const session = await auth.redeemPasswordLink(token, "a new long password");
+  assert.equal(session.accessToken, "reset-access");
+  assert.equal(
+    requests[1].url,
+    "https://api.example.test/v1/projects/prj_abcdefgh/environments/env_abcdefgh/auth/password-recovery/redeem",
+  );
+  assert.deepEqual(JSON.parse(requests[1].init.body), { token: "prt-token", password: "a new long password" });
+  assert.equal((await persistence.load()).refreshToken, "reset-refresh");
+  await assert.rejects(() => auth.redeemPasswordLink("", "a new long password"), MakoAuthError);
+  await assert.rejects(() => auth.requestPasswordRecovery("person@example.test", "not a url"), MakoAuthError);
+});
+
 test("signs up with a verification redirect and redeems the mailed token", async () => {
   const requests = [];
   const fetch = async (input, init) => {

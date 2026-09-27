@@ -1898,11 +1898,19 @@ async fn execute_user_operation(
     let audit = DataPlaneIdentityAudit {
         graph: Arc::clone(graph),
     };
+    let invitation_field = |name: &str| {
+        (command.operation == IdentityAdminOperation::InviteUser)
+            .then(|| command.input.get(name).and_then(Value::as_str))
+            .flatten()
+            .map(str::to_owned)
+    };
     let invitations = PersistentInvitationAudit::new(
         Arc::clone(graph),
         command.actor_id.clone(),
         request.request_id().to_owned(),
         now,
+        invitation_field("invitationRedirectUrl"),
+        invitation_field("inviter"),
     );
     let invalidations = DataPlaneMetadataInvalidation {
         graph: Arc::clone(graph),
@@ -2006,7 +2014,7 @@ async fn execute_user_operation(
     if !invitations.healthy() {
         return Err(auth_http::unavailable(
             request,
-            "invitation audit is unavailable",
+            "the invitation could not be audited or mailed",
         ));
     }
     if matches!(
@@ -2336,11 +2344,19 @@ impl AdminUserAuditSink for DataPlaneIdentityAudit {
     }
 }
 
+/// Audits an invitation and mails the invitee a link to choose their
+/// password. Invitations used to be audited as "pending delivery" and never
+/// delivered: the user existed, with no password and no link.
 struct PersistentInvitationAudit {
     graph: Arc<DataPlaneGraph>,
     actor_id: String,
     request_id: String,
     occurred_at_unix_seconds: u64,
+    /// Where the mailed link lands: a redirect the environment registered.
+    /// The control plane refuses an invitation before sending it here
+    /// without one.
+    redirect_url: Option<String>,
+    inviter: Option<String>,
     healthy: AtomicBool,
 }
 
@@ -2350,14 +2366,45 @@ impl PersistentInvitationAudit {
         actor_id: String,
         request_id: String,
         occurred_at_unix_seconds: u64,
+        redirect_url: Option<String>,
+        inviter: Option<String>,
     ) -> Self {
         Self {
             graph,
             actor_id,
             request_id,
             occurred_at_unix_seconds,
+            redirect_url,
+            inviter,
             healthy: AtomicBool::new(true),
         }
+    }
+
+    /// Mints the invitee's password link and queues the invitation mail.
+    async fn send(&self, invitation: &ApplicationUserInvitation) -> Result<(), ()> {
+        let Some(redirect_url) = &self.redirect_url else {
+            return Ok(());
+        };
+        let tenant = invitation.tenant();
+        let store = self.graph.identity_store(tenant, tenant).map_err(|_| ())?;
+        let user = store
+            .user_by_email(invitation.recipient())
+            .await
+            .map_err(|_| ())?
+            .ok_or(())?;
+        crate::auth_provider_http::send_password_link(
+            &self.graph,
+            tenant,
+            &store,
+            &user,
+            invitation.recipient(),
+            redirect_url,
+            crate::application_mail::KIND_INVITATION,
+            crate::auth_provider_http::INVITATION_LINK_TTL_SECONDS,
+            self.inviter.as_deref(),
+            self.occurred_at_unix_seconds,
+        )
+        .await
     }
 
     fn healthy(&self) -> bool {
@@ -2381,14 +2428,20 @@ impl ApplicationUserInvitationSink for PersistentInvitationAudit {
                         invitation.user_id().as_str(),
                         "application_user_invitation_queued",
                         AuditOutcome::Allowed,
-                        "pending_delivery",
+                        if self.redirect_url.is_some() {
+                            "invitation_mail_queued"
+                        } else {
+                            "pending_delivery"
+                        },
                         &self.request_id,
                         self.occurred_at_unix_seconds,
                     ))
+                    .map_err(|_| ())?;
+                    block_on(self.send(&invitation))
                 })
                 .join()
         });
-        if !matches!(result, Ok(Ok(_))) {
+        if !matches!(result, Ok(Ok(()))) {
             self.healthy.store(false, Ordering::Release);
         }
     }
@@ -2630,6 +2683,15 @@ struct CreateUserWire {
     email: String,
     trusted_metadata: Value,
     profile_metadata: Value,
+    /// Only on an invitation: where its link lands, and who sent it. The
+    /// invitation sink is built before the input is parsed and reads them from
+    /// the raw command; they are declared so `deny_unknown_fields` admits them.
+    #[serde(default)]
+    #[allow(dead_code)]
+    invitation_redirect_url: Option<String>,
+    #[serde(default)]
+    #[allow(dead_code)]
+    inviter: Option<String>,
 }
 
 #[derive(Deserialize)]

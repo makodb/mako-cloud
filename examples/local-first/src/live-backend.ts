@@ -72,6 +72,67 @@ export async function verifyEmail(config: ReferenceBackendConfig, token: string)
   throw new Error(`verification failed with status ${response.status}`);
 }
 
+/**
+ * Asks for a link to choose a new password, landing on this page. The service
+ * answers the same whether or not the address has an account.
+ */
+export async function requestPasswordRecovery(
+  config: ReferenceBackendConfig,
+  email: string,
+): Promise<void> {
+  const redirectUrl = pageRedirectUrl();
+  if (redirectUrl === undefined) throw new Error("this page has no address a link can land on");
+  const response = await globalThis.fetch(
+    `${config.endpoint.replace(/\/$/u, "")}/v1/projects/${config.projectId}/environments/${
+      config.environmentId
+    }/auth/password-recovery`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-mako-key": config.publicProjectKey },
+      body: JSON.stringify({ email, redirectUrl }),
+    },
+  );
+  if (response.status === 202) return;
+  const refusal = (await response.json().catch(() => null)) as {
+    error?: { message?: string };
+  } | null;
+  throw new Error(refusal?.error?.message ?? `the request failed with status ${response.status}`);
+}
+
+/**
+ * Chooses a password with the token a recovery or invitation link opened this
+ * page with. Resolves to the account's email so the page can sign in with the
+ * new password, or `null` for a spent or expired link; a password the
+ * environment's policy refuses is an error saying so.
+ */
+export async function setPasswordFromLink(
+  config: ReferenceBackendConfig,
+  token: string,
+  password: string,
+): Promise<string | null> {
+  const response = await globalThis.fetch(
+    `${config.endpoint.replace(/\/$/u, "")}/v1/projects/${config.projectId}/environments/${
+      config.environmentId
+    }/auth/password-recovery/redeem`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-mako-key": config.publicProjectKey },
+      body: JSON.stringify({ token, password }),
+    },
+  );
+  if (response.ok) {
+    const session = (await response.json()) as { user?: { email?: string } };
+    return session.user?.email ?? null;
+  }
+  if (response.status === 401) return null;
+  const refusal = (await response.json().catch(() => null)) as {
+    error?: { message?: string };
+  } | null;
+  throw new Error(
+    refusal?.error?.message ?? `setting the password failed with status ${response.status}`,
+  );
+}
+
 interface WireSession {
   accessToken: string;
   refreshToken: string;

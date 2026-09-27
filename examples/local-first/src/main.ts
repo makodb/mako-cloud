@@ -1,6 +1,8 @@
 import {
   type LiveBackendOptions,
   LiveMakoBackend,
+  requestPasswordRecovery,
+  setPasswordFromLink,
   VerificationPendingError,
   verifyEmail,
 } from "./live-backend.js";
@@ -35,6 +37,9 @@ if (form === null || title === null) {
 /** The environment's password policy: Mako's default asks for 12 characters.
  * Declared before the sign-in below awaits, which reads it. */
 const MINIMUM_PASSWORD_LENGTH = 12;
+/** Said once the app is showing, about how the person got in: set when they
+ * arrived through a password link, so the page confirms the password took. */
+let arrivalMessage: string | null = null;
 
 status.textContent = "starting";
 const { application, email } = await startApplication();
@@ -73,15 +78,30 @@ async function startApplication(): Promise<{
       email: live.email,
     };
   }
+  // A link pasted into a tab that already shows this page changes only the
+  // fragment, which does not load the page again; load it, so the link is
+  // acted on.
+  window.addEventListener("hashchange", () => {
+    const fragment = new URLSearchParams(window.location.hash.slice(1));
+    if (fragment.has("password_reset_token") || fragment.has("verification_token")) {
+      window.location.reload();
+    }
+  });
   // A session kept from an earlier visit signs the person straight back in;
-  // with none, or one the service no longer accepts, the form is shown.
+  // with none, or one the service no longer accepts, the form is shown. A
+  // password link is for whoever it was mailed to, so it signs out a session
+  // this browser remembers instead of being ignored behind it.
   const remembered = new LiveMakoBackend({ ...live, rememberSession: true });
-  status.textContent = "resuming session";
-  try {
-    const application = await createReferenceApplication(remembered);
-    return { application, email: remembered.signedInEmail };
-  } catch {
+  if (new URLSearchParams(window.location.hash.slice(1)).has("password_reset_token")) {
     await remembered.sessionPersistence?.clear();
+  } else {
+    status.textContent = "resuming session";
+    try {
+      const application = await createReferenceApplication(remembered);
+      return { application, email: remembered.signedInEmail };
+    } catch {
+      await remembered.sessionPersistence?.clear();
+    }
   }
   const panel = requiredElement("sign-in");
   const signInForm = panel.querySelector<HTMLFormElement>("form");
@@ -128,11 +148,82 @@ async function startApplication(): Promise<{
     }
     status.textContent = "signed out";
   }
+  // Opened from a password link -- a recovery the person asked for, or an
+  // invitation: the form asks only for the new password, and the person is
+  // signed in with it. The token leaves the address bar at once.
+  let resetToken = new URLSearchParams(window.location.hash.slice(1)).get("password_reset_token");
+  const emailField = signInForm.querySelector<HTMLElement>("#email");
+  const emailLabel = signInForm.querySelector<HTMLElement>('label[for="email"]');
+  const createButton = signInForm.querySelector<HTMLButtonElement>('button[value="create"]');
+  const signInButton = signInForm.querySelector<HTMLButtonElement>('button[value="sign-in"]');
+  const choosingPassword = (on: boolean) => {
+    for (const element of [emailField, emailLabel, createButton, forgot]) {
+      if (element !== null) element.hidden = on;
+    }
+    emailField?.toggleAttribute("required", !on);
+    if (signInButton !== null) signInButton.textContent = on ? "Set password" : "Sign in";
+  };
+  // Forgot the password: mail a link to choose a new one to the address typed.
+  const forgot = document.createElement("button");
+  forgot.type = "button";
+  forgot.className = "secondary";
+  forgot.textContent = "Forgot password?";
+  signInForm.querySelector(".auth-actions")?.append(forgot);
+  forgot.addEventListener("click", () => {
+    const address = String(new FormData(signInForm).get("email") ?? "").trim();
+    if (address === "") {
+      failure.textContent = "Type your email address first.";
+      return;
+    }
+    failure.textContent = "";
+    requestPasswordRecovery(live, address).then(
+      () => {
+        failure.textContent = `If ${address} has an account, a link to choose a new password is on its way.`;
+      },
+      (error: unknown) => {
+        failure.textContent = `Could not send the link: ${error instanceof Error ? error.message : String(error)}`;
+      },
+    );
+  });
+  if (resetToken !== null && resetToken !== "") {
+    window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
+    choosingPassword(true);
+    failure.textContent = "Choose a password for your account.";
+  } else {
+    resetToken = null;
+  }
   for (;;) {
     const attempt = await new Promise<SignInAttempt>((resolve) => {
       waiting = resolve;
     });
     failure.textContent = "";
+    if (resetToken !== null) {
+      if (Array.from(attempt.password).length < MINIMUM_PASSWORD_LENGTH) {
+        failure.textContent = `Use a password of at least ${MINIMUM_PASSWORD_LENGTH} characters.`;
+        continue;
+      }
+      status.textContent = "setting password";
+      try {
+        const email = await setPasswordFromLink(live, resetToken, attempt.password);
+        resetToken = null;
+        choosingPassword(false);
+        if (email === null) {
+          failure.textContent =
+            "That link has expired or was already used. Sign in, or ask for a new one.";
+          status.textContent = "signed out";
+          continue;
+        }
+        attempt.email = email;
+        attempt.createAccount = false;
+        arrivalMessage = `Your new password is set, and you are signed in as ${email}.`;
+      } catch (error) {
+        failure.textContent = `Could not set the password: ${
+          error instanceof Error ? error.message : String(error)
+        }`;
+        status.textContent = "signed out";
+        continue;
+      }
+    }
     if (attempt.createAccount && Array.from(attempt.password).length < MINIMUM_PASSWORD_LENGTH) {
       failure.textContent = `Use a password of at least ${MINIMUM_PASSWORD_LENGTH} characters.`;
       continue;
@@ -145,6 +236,7 @@ async function startApplication(): Promise<{
       panel.hidden = true;
       return { application, email: attempt.email };
     } catch (error) {
+      arrivalMessage = null;
       failure.textContent =
         error instanceof VerificationPendingError
           ? error.message
@@ -162,6 +254,15 @@ const notice = document.createElement("p");
 notice.id = "notice";
 notice.setAttribute("role", "alert");
 form.insertAdjacentElement("afterend", notice);
+// Its own line under the account, so a replication warning in the notice
+// cannot replace it.
+if (arrivalMessage !== null) {
+  const arrival = document.createElement("p");
+  arrival.id = "arrival";
+  arrival.setAttribute("role", "status");
+  arrival.textContent = arrivalMessage;
+  requiredElement("account").insertAdjacentElement("afterend", arrival);
+}
 
 function report(action: string, error: unknown): void {
   notice.textContent = `${action} failed: ${error instanceof Error ? error.message : String(error)}`;

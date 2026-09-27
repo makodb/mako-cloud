@@ -162,11 +162,60 @@ fn handle_create_user(
     user_create(graph, request, IdentityAdminOperation::CreateUser, 201)
 }
 
+/// Invites a user by mail. The invitation carries a link that lets them
+/// choose a password, and the link has to land in the app: on the first
+/// redirect URL the environment registered, where a magic link lands too. An
+/// environment with none is told so before any user is created -- inviting
+/// used to create the user and send nothing, leaving them no way in.
 fn handle_invite_user(
     graph: &Arc<ControlPlaneGraph>,
     request: &HttpRequest,
 ) -> Result<HttpResponse, HttpApiError> {
-    user_create(graph, request, IdentityAdminOperation::InviteUser, 202)
+    no_query(request)?;
+    require_json(request)?;
+    require_idempotency(request)?;
+    let body: CreateUserWire = parse_json(request)?;
+    let tenant = tenant(request)?;
+    with_developer(graph, request, |actor, _| async move {
+        let settings = administer(
+            graph,
+            request,
+            &actor,
+            &tenant,
+            IdentityAdminOperation::InspectAuthProviders,
+            json!({}),
+            false,
+        )
+        .await?;
+        let Some(redirect_url) = settings["redirectUrls"]
+            .as_array()
+            .and_then(|urls| urls.first())
+            .and_then(Value::as_str)
+            .map(str::to_owned)
+        else {
+            return Err(conflict(
+                request,
+                "register a redirect URL for this environment before inviting users (Auth providers, Redirect URLs): the invitation links to your app's sign-in page",
+            ));
+        };
+        let value = administer(
+            graph,
+            request,
+            &actor,
+            &tenant,
+            IdentityAdminOperation::InviteUser,
+            json!({
+                "email": body.email,
+                "trustedMetadata": body.trusted_metadata,
+                "profileMetadata": body.profile_metadata,
+                "invitationRedirectUrl": redirect_url,
+                "inviter": actor.normalized_email(),
+            }),
+            true,
+        )
+        .await?;
+        public_value(request, 202, value)
+    })
 }
 
 fn user_create(

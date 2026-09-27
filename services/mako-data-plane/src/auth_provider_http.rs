@@ -224,10 +224,22 @@ pub fn add_auth_provider_routes(
         &format!("{BASE}/auth/magic-link"),
         move |request| handle_magic_link_request(&magic_graph, &request),
     )?;
+    let redeem_graph = Arc::clone(&graph);
     router.add_route(
         HttpMethod::Post,
         &format!("{BASE}/auth/magic-link/redeem"),
-        move |request| handle_magic_link_redeem(&graph, &request),
+        move |request| handle_magic_link_redeem(&redeem_graph, &request),
+    )?;
+    let recovery_graph = Arc::clone(&graph);
+    router.add_route(
+        HttpMethod::Post,
+        &format!("{BASE}/auth/password-recovery"),
+        move |request| handle_password_recovery_request(&recovery_graph, &request),
+    )?;
+    router.add_route(
+        HttpMethod::Post,
+        &format!("{BASE}/auth/password-recovery/redeem"),
+        move |request| handle_password_link_redeem(&graph, &request),
     )
 }
 
@@ -255,6 +267,25 @@ struct MagicLinkRequestWire {
 struct MagicLinkRedeemWire {
     token: String,
 }
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct PasswordRecoveryWire {
+    email: String,
+    redirect_url: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct PasswordLinkRedeemWire {
+    token: String,
+    password: String,
+}
+
+/// How long a password-recovery link can be used.
+const RECOVERY_LINK_TTL_SECONDS: u64 = 60 * 60;
+/// How long the link an invitation mails can be used.
+pub(crate) const INVITATION_LINK_TTL_SECONDS: u64 = 7 * 24 * 60 * 60;
 
 pub(crate) async fn settings_for(
     graph: &DataPlaneGraph,
@@ -836,6 +867,207 @@ fn handle_magic_link_redeem(
             "application_magic_link_signin",
             AuditOutcome::Allowed,
             reason,
+            request.request_id(),
+            now,
+        )
+        .await?;
+        auth_http::json(request, 200, &auth_http::session_wire(request, grant)?)
+    })
+}
+
+/// Mails a user a single-use link that sets their password: a recovery for
+/// someone who forgot theirs, or an invited user's first one. The link lands
+/// on a redirect the environment registered, with the token in the fragment
+/// as a magic link carries its own; the app sends it to
+/// `auth/password-recovery/redeem` with the new password.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn send_password_link(
+    graph: &DataPlaneGraph,
+    tenant: &TenantScope,
+    store: &mako_identity::IdentityStore,
+    user: &AppUserRecord,
+    email: &NormalizedEmail,
+    redirect_url: &str,
+    kind: &str,
+    ttl_seconds: u64,
+    inviter: Option<&str>,
+    now: u64,
+) -> Result<(), ()> {
+    let mut token_bytes = [0u8; 32];
+    OsRng.fill_bytes(&mut token_bytes);
+    let token = URL_SAFE_NO_PAD.encode(token_bytes);
+    let digest = blake3::hash(token.as_bytes());
+    let expires_at = now.saturating_add(ttl_seconds);
+    let credential = UserCredentialRecord::new(
+        tenant.clone(),
+        UserCredentialId::parse(random_id("prc")).map_err(|_| ())?,
+        user.id().clone(),
+        UserCredentialKind::PasswordRecovery,
+        CredentialDigest::new(digest.as_bytes().to_vec()).map_err(|_| ())?,
+        now,
+        Some(expires_at),
+    );
+    store
+        .create_password_recovery(user, &credential, digest.as_bytes())
+        .await
+        .map_err(|_| ())?;
+    let mut variables = BTreeMap::from([
+        (
+            "link".to_owned(),
+            format!("{redirect_url}#password_reset_token={token}"),
+        ),
+        ("expires_at".to_owned(), rfc3339(expires_at)),
+        ("email".to_owned(), email.as_str().to_owned()),
+    ]);
+    if let Some(inviter) = inviter {
+        variables.insert("inviter".to_owned(), inviter.to_owned());
+    }
+    // One mail of a kind per address per minute.
+    let dedupe = format!("{kind}:{}:{}", email.as_str(), now / 60);
+    graph
+        .application_mail()
+        .enqueue(tenant, kind, email.as_str(), variables, &dedupe, now)
+        .await
+        .map(|_| ())
+        .map_err(|_| ())
+}
+
+/// Asks for a password-recovery link. The answer is the same whether or not
+/// the address has an account, and a disabled account is sent nothing.
+fn handle_password_recovery_request(
+    graph: &Arc<DataPlaneGraph>,
+    request: &HttpRequest,
+) -> Result<HttpResponse, HttpApiError> {
+    auth_http::require_json(request)?;
+    let tenant = auth_http::tenant_for(graph, request)?;
+    let now = auth_http::now_unix_seconds(request.request_id())?;
+    block_on(async {
+        auth_http::verify_public_key(graph, &tenant, request, now).await?;
+        auth_http::charge_auth(graph, &tenant, request, now).await?;
+        let body: PasswordRecoveryWire = auth_http::parse_json(request)?;
+        let registered = AuthProviderSettingsStore::new(Arc::clone(graph.storage_adapter()))
+            .load(&tenant)
+            .await
+            .map_err(|()| auth_http::unavailable(request, "sign-in settings are unavailable"))?
+            .is_some_and(|settings| settings.admits_redirect(&body.redirect_url));
+        if !registered {
+            return Err(auth_http::invalid(
+                request,
+                "redirect url is not registered for this environment",
+            ));
+        }
+        let accepted = json!({ "accepted": true });
+        let Ok(email) = NormalizedEmail::parse(&body.email) else {
+            return auth_http::json(request, 202, &accepted);
+        };
+        let store = graph
+            .identity_store(&tenant, &tenant)
+            .map_err(|_| auth_http::unavailable(request, "identity storage is unavailable"))?;
+        let Some(user) = store
+            .user_by_email(&email)
+            .await
+            .map_err(|_| auth_http::unavailable(request, "identity storage is unavailable"))?
+        else {
+            return auth_http::json(request, 202, &accepted);
+        };
+        if !matches!(
+            user.status(),
+            AppUserStatus::Active | AppUserStatus::PendingVerification
+        ) {
+            return auth_http::json(request, 202, &accepted);
+        }
+        send_password_link(
+            graph,
+            &tenant,
+            &store,
+            &user,
+            &email,
+            &body.redirect_url,
+            application_mail::KIND_RECOVERY,
+            RECOVERY_LINK_TTL_SECONDS,
+            None,
+            now,
+        )
+        .await
+        .map_err(|()| auth_http::unavailable(request, "recovery mail could not be queued"))?;
+        auth_http::append_audit(
+            graph,
+            &tenant,
+            AuditCategory::Authentication,
+            ActorIdentity::Anonymous,
+            "application_auth",
+            "password_recovery",
+            "application_password_recovery_requested",
+            AuditOutcome::Allowed,
+            "recovery_queued",
+            request.request_id(),
+            now,
+        )
+        .await?;
+        auth_http::json(request, 202, &accepted)
+    })
+}
+
+/// Spends a password link with the new password and signs the user in. An
+/// invited user gets their first password this way; anyone else has theirs
+/// replaced and every earlier session revoked.
+fn handle_password_link_redeem(
+    graph: &Arc<DataPlaneGraph>,
+    request: &HttpRequest,
+) -> Result<HttpResponse, HttpApiError> {
+    auth_http::require_json(request)?;
+    let tenant = auth_http::tenant_for(graph, request)?;
+    let now = auth_http::now_unix_seconds(request.request_id())?;
+    block_on(async {
+        auth_http::verify_public_key(graph, &tenant, request, now).await?;
+        auth_http::charge_auth(graph, &tenant, request, now).await?;
+        let body: PasswordLinkRedeemWire = auth_http::parse_json(request)?;
+        if body.token.is_empty() || body.token.len() > 256 {
+            return Err(auth_http::unauthenticated(
+                request,
+                "password link is invalid, expired, or already used",
+            ));
+        }
+        let hash = graph.password_service().hash(&body.password).map_err(|_| {
+            auth_http::invalid(request, "password does not meet the password policy")
+        })?;
+        let store = graph
+            .identity_store(&tenant, &tenant)
+            .map_err(|_| auth_http::unavailable(request, "identity storage is unavailable"))?;
+        let outcome = store
+            .set_password_with_token(
+                blake3::hash(body.token.as_bytes()).as_bytes(),
+                CredentialDigest::new(hash.encoded().as_bytes().to_vec())
+                    .map_err(|_| auth_http::unavailable(request, "password could not be stored"))?,
+                UserCredentialId::parse(random_id("pwd"))
+                    .map_err(|_| auth_http::unavailable(request, "password could not be stored"))?,
+                now,
+            )
+            .await
+            .map_err(|_| auth_http::unavailable(request, "identity storage is unavailable"))?;
+        let mako_identity::PasswordLinkOutcome::Set { user_id } = outcome else {
+            return Err(auth_http::unauthenticated(
+                request,
+                "password link is invalid, expired, or already used",
+            ));
+        };
+        let grant = graph
+            .create_application_session(&tenant, &user_id, now)
+            .await
+            .map_err(|_| auth_http::unauthenticated(request, "application user cannot sign in"))?;
+        auth_http::append_audit(
+            graph,
+            &tenant,
+            AuditCategory::Authentication,
+            ActorIdentity::ApplicationUser {
+                actor_id: user_id.as_str().to_owned(),
+                session_id: grant.session_id.as_str().to_owned(),
+            },
+            "application_auth",
+            "password_recovery",
+            "application_password_set",
+            AuditOutcome::Allowed,
+            "password_link_redeemed",
             request.request_id(),
             now,
         )

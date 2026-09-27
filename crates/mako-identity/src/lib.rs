@@ -82,7 +82,7 @@ pub use signup::{
 };
 pub use store::{
     AppUserMetadataUpdate, EmailVerificationOutcome, IdentityStore, IdentityStoreError,
-    MagicLinkOutcome, PasswordResetOutcome,
+    MagicLinkOutcome, PasswordLinkOutcome, PasswordResetOutcome,
 };
 
 /// Identifies this workspace component in diagnostics.

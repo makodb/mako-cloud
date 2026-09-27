@@ -108,6 +108,8 @@ test("the reference is generated from the environment's schema, policy, function
     "auth-provider-exchange",
     "auth-magic-link",
     "auth-magic-link-redeem",
+    "auth-password-recovery",
+    "auth-password-recovery-redeem",
   ]) {
     await expect(auth.locator(`[data-example-id="${id}"]`)).toBeVisible();
   }
