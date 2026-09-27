@@ -1124,6 +1124,13 @@ impl DeveloperRefreshSessionRecord {
         self.revoked_at_unix_seconds
     }
 
+    /// The session a refresh replaced this one with, if it was rotated rather
+    /// than signed out.
+    #[must_use]
+    pub const fn rotated_to(&self) -> Option<&DeveloperRefreshSessionId> {
+        self.rotated_to.as_ref()
+    }
+
     pub fn rotate_to(
         &mut self,
         next: DeveloperRefreshSessionId,

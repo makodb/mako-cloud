@@ -4,8 +4,42 @@ use async_trait::async_trait;
 
 use crate::{
     AuthenticationSecurityStatus, DeveloperIdentityId, DeveloperIdentityStatus,
-    DeveloperRegistrationStore,
+    DeveloperRefreshSessionId, DeveloperRegistrationStore,
 };
+
+/// How many refresh rotations an access token's session is followed through.
+/// A token lives fifteen minutes and a session rotates about as often, so a
+/// live token is at most a hop or two behind; the bound only stops a loop.
+const MAXIMUM_ROTATIONS_FOLLOWED: usize = 16;
+
+/// Whether the refresh session an access token was issued with was signed
+/// out. A token from before a refresh names the session that refresh
+/// rotated, so the chain is followed to the current one: only an explicit
+/// revocation -- a sign-out, or a replay ending the family -- ends the token
+/// early. A token that names no stored session is not one to end.
+async fn session_signed_out(
+    store: &DeveloperRegistrationStore,
+    session_id: &str,
+) -> Result<bool, DeveloperAuthenticationError> {
+    let Ok(mut id) = DeveloperRefreshSessionId::parse(session_id) else {
+        return Ok(false);
+    };
+    for _ in 0..MAXIMUM_ROTATIONS_FOLLOWED {
+        let Some(session) = store
+            .get_refresh_session(&id)
+            .await
+            .map_err(|_| DeveloperAuthenticationError::CurrentStateUnavailable)?
+        else {
+            return Ok(false);
+        };
+        match (session.revoked_at_unix_seconds(), session.rotated_to()) {
+            (None, _) => return Ok(false),
+            (Some(_), Some(next)) => id = next.clone(),
+            (Some(_), None) => return Ok(true),
+        }
+    }
+    Ok(false)
+}
 
 /// A control-plane bearer token. Its private bytes cannot be confused with project auth tokens.
 #[derive(Clone, Eq, PartialEq)]
@@ -243,6 +277,12 @@ impl ControlPlaneAuthenticator {
             {
                 return Err(DeveloperAuthenticationError::StaleAuthority);
             }
+            // Signing out revokes the refresh session; the access token it
+            // came with used to keep working for the rest of its fifteen
+            // minutes.
+            if session_signed_out(store, &claims.session_id).await? {
+                return Err(DeveloperAuthenticationError::StaleAuthority);
+            }
             (
                 current.normalized_email().as_str().to_owned(),
                 current.display_name().to_owned(),
@@ -468,6 +508,98 @@ mod tests {
                 Err(DeveloperAuthenticationError::Provider(
                     IdentityProviderError::InvalidSession
                 ))
+            );
+        });
+    }
+
+    /// An access token outlives a refresh of its session but not a sign-out.
+    #[test]
+    fn signing_out_ends_the_access_token_a_refresh_did_not() {
+        futures::executor::block_on(async {
+            let adapter = MemoryAdapter::new();
+            let identity_id = DeveloperIdentityId::parse("dev_abcdefgh").expect("identity");
+            let legacy = serde_json::json!({
+                "id": identity_id,
+                "issuer": "https://identity.example.test",
+                "subject": "persistent-subject",
+                "normalizedEmail": "developer@example.test",
+                "displayName": "Persistent Developer",
+                "status": "active",
+                "createdAtUnixSeconds": 10,
+                "lastAuthenticatedAtUnixSeconds": 10,
+            });
+            let mut batch = WriteBatch::new();
+            batch.put(
+                ControlKeyspace::developer_key(&identity_id).expect("key"),
+                serde_json::to_vec(&legacy).expect("legacy json"),
+            );
+            adapter
+                .write(batch, Durability::Memory)
+                .await
+                .expect("seed");
+            let store = DeveloperRegistrationStore::new(
+                Arc::new(adapter),
+                Durability::Memory,
+                DeveloperLookupKey::derive(b"persistent auth lookup key"),
+            )
+            .expect("store");
+            store.migrate_legacy_developers().await.expect("migration");
+            let session = |id: &str| {
+                crate::DeveloperRefreshSessionRecord::new(
+                    DeveloperRefreshSessionId::parse(id).expect("session id"),
+                    identity_id.clone(),
+                    "a".repeat(64),
+                    crate::DeveloperAccessAudience::Active,
+                    1,
+                    1,
+                    10,
+                    10_000,
+                )
+                .expect("session")
+            };
+            let first = session("drs_firstsession");
+            store.create_refresh_session(&first).await.expect("first");
+            let mut token_claims = claims("mako-control-plane");
+            token_claims.session_id = "drs_firstsession".to_owned();
+            let authenticator = ControlPlaneAuthenticator::new_persistent(
+                Arc::new(FakeProvider {
+                    claims: token_claims,
+                }),
+                "https://identity.example.test",
+                "mako-control-plane",
+                store.clone(),
+            )
+            .expect("authenticator");
+            let bearer = Some("Bearer developer-session-token");
+            authenticator
+                .authenticate(bearer, 100)
+                .await
+                .expect("a live session");
+
+            // A refresh rotates the session; the token from before it lives on.
+            let second = session("drs_secondsession");
+            store.create_refresh_session(&second).await.expect("second");
+            let mut rotated = first.clone();
+            rotated.rotate_to(second.id().clone(), 101).expect("rotate");
+            store
+                .replace_refresh_session(&first, &rotated)
+                .await
+                .expect("persist rotation");
+            authenticator
+                .authenticate(bearer, 102)
+                .await
+                .expect("a refreshed session");
+
+            // Signing out revokes the current session, and the token with it.
+            let mut signed_out = second.clone();
+            signed_out.revoke(103).expect("revoke");
+            store
+                .replace_refresh_session(&second, &signed_out)
+                .await
+                .expect("persist sign-out");
+            assert_eq!(
+                authenticator.authenticate(bearer, 104).await,
+                Err(DeveloperAuthenticationError::StaleAuthority)
             );
         });
     }
