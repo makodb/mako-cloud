@@ -626,10 +626,15 @@ impl<'a> AdminUserService<'a> {
         let normalized_query = query.map(str::trim).filter(|value| !value.is_empty());
         let mut users = Vec::new();
         if let Some(query) = normalized_query {
-            if let Ok(user_id) = AppUserId::parse(query) {
-                if let Some(user) = self.store.user_by_id(&user_id).await? {
-                    users.push(self.summary(user).await?);
-                }
+            // A query is tried as a user id first. Most words also parse as
+            // one -- "tour", "alice" -- so one that names no user falls
+            // through to the email match; it used to end the search empty.
+            let by_id = match AppUserId::parse(query) {
+                Ok(user_id) => self.store.user_by_id(&user_id).await?,
+                Err(_) => None,
+            };
+            if let Some(user) = by_id {
+                users.push(self.summary(user).await?);
             } else {
                 let range = self.store.keyspace.normalized_email_owners_range()?;
                 let scan_limit = self
@@ -1003,6 +1008,15 @@ mod tests {
                 .await
                 .expect("search");
             assert_eq!(page.users.len(), 1);
+            // A word that could be an id but names no user still searches
+            // the addresses; an exact id finds its user.
+            for query in ["person", "example", user_id.as_str()] {
+                let page = service
+                    .search(&admin, Some(query), 10)
+                    .await
+                    .expect("search");
+                assert_eq!(page.users.len(), 1, "{query}");
+            }
 
             let session = SessionRecord::new(
                 tenant.clone(),
