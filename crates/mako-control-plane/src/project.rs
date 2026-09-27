@@ -13,6 +13,10 @@ use crate::{
     OrganizationId, OrganizationStore, OrganizationStoreError, ProjectRecord,
 };
 
+/// How many of a project's environments a create reads to find a name
+/// clash; a project holds a handful.
+const MAXIMUM_ENVIRONMENT_NAME_SCAN: usize = 1_000;
+
 #[derive(Clone)]
 pub struct ProjectStore {
     adapter: std::sync::Arc<dyn KvAdapter>,
@@ -616,6 +620,27 @@ impl ProjectEnvironmentService {
             input.now_unix_seconds,
         )
         .await?;
+        // Environments are told apart by name everywhere a person picks one --
+        // the console's switcher, promotion targets, the activity feed -- so
+        // a project holds one of each. A retry of the same create is the same
+        // environment, and a deleted one frees its name.
+        let wanted = input.name.trim().to_lowercase();
+        let taken = self
+            .projects
+            .list_environments(
+                &input.project_id,
+                NonZeroUsize::new(MAXIMUM_ENVIRONMENT_NAME_SCAN).expect("constant is positive"),
+            )
+            .await?
+            .iter()
+            .any(|existing| {
+                existing.id() != &input.id
+                    && existing.lifecycle() != LifecycleState::Deleted
+                    && existing.name().trim().to_lowercase() == wanted
+            });
+        if taken {
+            return Err(ProjectStoreError::EnvironmentNameTaken);
+        }
         let environment = EnvironmentRecord::new(
             input.id,
             input.project_id,
@@ -928,6 +953,8 @@ pub enum ProjectStoreError {
     NotFound,
     Forbidden,
     Conflict,
+    /// Another environment of the project already has the name.
+    EnvironmentNameTaken,
     CorruptRecord,
     RecordScopeMismatch,
     Model(ControlModelError),
@@ -944,6 +971,7 @@ impl fmt::Display for ProjectStoreError {
             Self::NotFound => "project resource was not found",
             Self::Forbidden => "project action is forbidden",
             Self::Conflict => "project resource changed concurrently",
+            Self::EnvironmentNameTaken => "an environment with this name already exists",
             Self::CorruptRecord => "project resource is corrupt",
             Self::RecordScopeMismatch => "project resource scope does not match",
             Self::Model(_) => "project lifecycle is invalid",
@@ -1335,6 +1363,36 @@ mod tests {
                 )
                 .await
                 .expect("create environment");
+            // A second environment of that name, in any case or spacing, is
+            // refused; a retry of the same create is not a second one.
+            assert!(matches!(
+                service
+                    .create_environment(
+                        &owner,
+                        NewEnvironment {
+                            id: EnvironmentId::parse("env_example01").expect("environment"),
+                            project_id: project_id.clone(),
+                            name: " production ".to_owned(),
+                            now_unix_seconds: 24,
+                        },
+                    )
+                    .await,
+                Err(ProjectStoreError::EnvironmentNameTaken)
+            ));
+            assert!(matches!(
+                service
+                    .create_environment(
+                        &owner,
+                        NewEnvironment {
+                            id: environment_id.clone(),
+                            project_id: project_id.clone(),
+                            name: "Production".to_owned(),
+                            now_unix_seconds: 24,
+                        },
+                    )
+                    .await,
+                Err(ProjectStoreError::Conflict)
+            ));
             let mut active_environment = environment.clone();
             active_environment
                 .transition(crate::LifecycleState::Active, 25, None)

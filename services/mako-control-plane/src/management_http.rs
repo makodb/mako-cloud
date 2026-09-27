@@ -2010,6 +2010,10 @@ fn project_error(request: &HttpRequest, error: ProjectStoreError) -> HttpApiErro
         ProjectStoreError::NotFound => not_found(request, "project resource was not found"),
         ProjectStoreError::Forbidden => forbidden(request, "project action is forbidden"),
         ProjectStoreError::Conflict => conflict(request, "project resource changed concurrently"),
+        ProjectStoreError::EnvironmentNameTaken => conflict(
+            request,
+            "this project already has an environment with that name; choose another name",
+        ),
         ProjectStoreError::Model(_) => conflict(request, "project lifecycle or input is invalid"),
         ProjectStoreError::RecordScopeMismatch => invalid(request, "project scope does not match"),
         ProjectStoreError::UnsupportedDurability
