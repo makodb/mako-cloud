@@ -12,8 +12,8 @@ use mako_api::{
     WorkspaceDestination, WorkspaceSummary, WorkspaceSummarySection,
 };
 use mako_control_plane::{
-    DeveloperWorkspaceError, FunctionState, LifecycleState, ObservabilityPayload,
-    ObservabilityQuery, ProjectDataPermission,
+    DeveloperPrincipal, DeveloperWorkspaceError, FunctionState, LifecycleState, ObservabilityError,
+    ObservabilityPayload, ObservabilityQuery, ObservabilityRecord, ProjectDataPermission,
 };
 use mako_identity::{ProjectCredentialKind, ProjectCredentialMetadata, ProjectCredentialState};
 use mako_internal_rpc::{IdentityAdminCommand, IdentityAdminOperation, IdentityAdminPermission};
@@ -725,11 +725,15 @@ fn sync_summary(
             limit: 1_000,
             newest_first: false,
         };
-        let page = graph
-            .observability_service()
-            .query_replication_errors(&actor, &tenant, &query, now.saturating_mul(1_000))
+        let now_milliseconds = now.saturating_mul(1_000);
+        let (errors, retention) =
+            whole_window(graph, &actor, &tenant, &query, now_milliseconds, false)
+                .await
+                .map_err(|_| unavailable(request, "sync summary is unavailable"))?;
+        let (activity, _) = whole_window(graph, &actor, &tenant, &query, now_milliseconds, true)
             .await
             .map_err(|_| unavailable(request, "sync summary is unavailable"))?;
+        let counted = count_sync_activity(&activity, collection_id.as_ref());
         let mut conflicts = 0_u64;
         let mut policy_denials = 0_u64;
         let mut throttled = 0_u64;
@@ -737,7 +741,7 @@ fn sync_summary(
         let mut stream_gaps = 0_u64;
         let mut resyncs = 0_u64;
         let mut schema_mismatches = 0_u64;
-        for item in &page.items {
+        for item in &errors {
             let ObservabilityPayload::ReplicationError {
                 collection_id: record_collection,
                 category,
@@ -771,12 +775,12 @@ fn sync_summary(
                 collection_id,
                 window_start_unix_seconds: from,
                 window_end_unix_seconds: until,
-                observed_at_unix_seconds: page.retention.observed_at_unix_milliseconds / 1_000,
-                retained_since_unix_seconds: page.retention.retained_from_unix_milliseconds / 1_000,
-                pull_count: 0,
-                push_count: 0,
-                live_streams: 0,
-                lag_p95_milliseconds: 0,
+                observed_at_unix_seconds: retention.observed_at_unix_milliseconds / 1_000,
+                retained_since_unix_seconds: retention.retained_from_unix_milliseconds / 1_000,
+                pull_count: counted.pulls,
+                push_count: counted.pushes,
+                live_streams: counted.streams,
+                lag_p95_milliseconds: counted.lag_p95_milliseconds,
                 conflicts,
                 policy_denials,
                 throttled,
@@ -784,10 +788,110 @@ fn sync_summary(
                 stream_gaps,
                 resyncs,
                 schema_mismatches,
-                client_version_classes: BTreeMap::new(),
+                client_version_classes: counted.client_classes,
             },
         )
     })
+}
+
+/// How many pages of one signal a sync summary reads. The summary counts the
+/// whole window rather than its first page, and this bounds the work one
+/// view of the Sync page can ask for.
+const SYNC_SUMMARY_MAX_PAGES: usize = 20;
+
+/// Every replication record of one kind in the query's window: the pulls,
+/// pushes, and streams answered, or with `activity` false, the refusals.
+async fn whole_window(
+    graph: &ControlPlaneGraph,
+    actor: &DeveloperPrincipal,
+    tenant: &TenantScope,
+    query: &ObservabilityQuery,
+    now_milliseconds: u64,
+    activity: bool,
+) -> Result<(Vec<ObservabilityRecord>, mako_api::RetentionWindow), ObservabilityError> {
+    let service = graph.observability_service();
+    let read = async |query: &ObservabilityQuery| {
+        if activity {
+            service
+                .query_replication_activity(actor, tenant, query, now_milliseconds)
+                .await
+        } else {
+            service
+                .query_replication_errors(actor, tenant, query, now_milliseconds)
+                .await
+        }
+    };
+    let mut page = read(query).await?;
+    let mut records = std::mem::take(&mut page.items);
+    let mut query = query.clone();
+    for _ in 1..SYNC_SUMMARY_MAX_PAGES {
+        let Some(cursor) = page.next_cursor.take() else {
+            break;
+        };
+        query.cursor = Some(cursor);
+        page = read(&query).await?;
+        records.append(&mut page.items);
+    }
+    Ok((records, page.retention))
+}
+
+/// What a sync summary says about the pulls, pushes, and streams answered.
+#[derive(Debug, Default, Eq, PartialEq)]
+struct SyncActivity {
+    pulls: u64,
+    pushes: u64,
+    streams: u64,
+    /// Over pulls and pushes: a stream's latency is the time to open it,
+    /// which says nothing about how far behind its client is.
+    lag_p95_milliseconds: u64,
+    client_classes: BTreeMap<String, u64>,
+}
+
+fn count_sync_activity(
+    records: &[ObservabilityRecord],
+    collection_id: Option<&CollectionId>,
+) -> SyncActivity {
+    let mut counted = SyncActivity::default();
+    let mut latencies = Vec::new();
+    for item in records {
+        let ObservabilityPayload::ReplicationActivity {
+            collection_id: record_collection,
+            operation,
+            client_class,
+            latency_milliseconds,
+        } = &item.payload
+        else {
+            continue;
+        };
+        if collection_id.is_some_and(|selected| selected.as_str() != record_collection) {
+            continue;
+        }
+        match operation.as_str() {
+            "pull" => counted.pulls += 1,
+            "push" => counted.pushes += 1,
+            "stream" => counted.streams += 1,
+            _ => continue,
+        }
+        if operation != "stream" {
+            latencies.push(*latency_milliseconds);
+        }
+        *counted
+            .client_classes
+            .entry(client_class.clone())
+            .or_insert(0) += 1;
+    }
+    counted.lag_p95_milliseconds = p95(&mut latencies);
+    counted
+}
+
+/// The 95th percentile by nearest rank, or 0 with nothing to rank.
+fn p95(values: &mut [u64]) -> u64 {
+    if values.is_empty() {
+        return 0;
+    }
+    values.sort_unstable();
+    let rank = (values.len() * 95).div_ceil(100);
+    values[rank.saturating_sub(1)]
 }
 
 fn list_backups(
@@ -939,7 +1043,7 @@ fn workspace_error(request: &HttpRequest, error: DeveloperWorkspaceError) -> Htt
 
 #[cfg(test)]
 mod tests {
-    use super::{observability_summary, supported_rxdb_version};
+    use super::{count_sync_activity, observability_summary, p95, supported_rxdb_version};
     use mako_api::{
         EnvironmentId, EventOutcome, ObservabilityPage, ObservabilityPayload, ObservabilityRecord,
         ProjectId, QuotaResource, RetentionWindow, TenantScope,
@@ -967,6 +1071,46 @@ mod tests {
                 retention_seconds: 7_776_000,
             },
         }
+    }
+
+    #[test]
+    fn a_sync_summary_counts_the_pulls_pushes_and_streams_answered() {
+        let activity = |collection: &str, operation: &str, class: &str, latency: u64| {
+            (
+                1_000,
+                ObservabilityPayload::ReplicationActivity {
+                    collection_id: collection.to_owned(),
+                    operation: operation.to_owned(),
+                    client_class: class.to_owned(),
+                    latency_milliseconds: latency,
+                },
+            )
+        };
+        let mut records = vec![
+            activity("todos", "pull", "current_schema", 4),
+            activity("todos", "pull", "current_schema", 6),
+            activity("todos", "pull", "older_schema", 9),
+            activity("todos", "push", "current_schema", 30),
+            activity("todos", "stream", "current_schema", 900),
+            activity("notes", "push", "newer_schema", 2),
+        ];
+        records.extend((0..14).map(|_| activity("todos", "pull", "current_schema", 5)));
+        let records = page(records).items;
+
+        let todos = mako_api::CollectionId::parse("todos").unwrap();
+        let counted = count_sync_activity(&records, Some(&todos));
+        assert_eq!((counted.pulls, counted.pushes, counted.streams), (17, 1, 1));
+        // Eighteen pulls and pushes: the 95th percentile is the 18th fastest,
+        // and the stream's time to open is not among them.
+        assert_eq!(counted.lag_p95_milliseconds, 30);
+        assert_eq!(counted.client_classes.get("current_schema"), Some(&18));
+        assert_eq!(counted.client_classes.get("older_schema"), Some(&1));
+        assert_eq!(counted.client_classes.get("newer_schema"), None);
+
+        let everything = count_sync_activity(&records, None);
+        assert_eq!((everything.pulls, everything.pushes), (17, 2));
+        assert_eq!(everything.client_classes.get("newer_schema"), Some(&1));
+        assert_eq!(p95(&mut []), 0);
     }
 
     #[test]

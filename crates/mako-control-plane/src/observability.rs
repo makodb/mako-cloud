@@ -147,6 +147,25 @@ impl ObservabilityService {
         .await
     }
 
+    /// The pulls, pushes, and streams the data plane answered, which the sync
+    /// diagnostics count.
+    pub async fn query_replication_activity(
+        &self,
+        actor: &DeveloperPrincipal,
+        tenant: &TenantScope,
+        query: &ObservabilityQuery,
+        now_unix_milliseconds: u64,
+    ) -> Result<ObservabilityPage, ObservabilityError> {
+        self.query_signal(
+            actor,
+            tenant,
+            ObservabilitySignal::ReplicationActivity,
+            query,
+            now_unix_milliseconds,
+        )
+        .await
+    }
+
     pub async fn query_authentication_events(
         &self,
         actor: &DeveloperPrincipal,

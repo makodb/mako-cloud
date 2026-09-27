@@ -7105,10 +7105,22 @@ components:
           type: integer
         retainedSinceUnixSeconds:
           type: integer
-        pullCount: {type: integer, minimum: 0}
-        pushCount: {type: integer, minimum: 0}
-        liveStreams: {type: integer, minimum: 0}
-        lagP95Milliseconds: {type: integer, minimum: 0}
+        pullCount:
+          type: integer
+          minimum: 0
+          description: Pulls answered in the window, including those refused after authorization (a schema mismatch, an expired checkpoint).
+        pushCount:
+          type: integer
+          minimum: 0
+          description: Pushes answered in the window, counted per request rather than per row.
+        liveStreams:
+          type: integer
+          minimum: 0
+          description: Live streams opened in the window, one per collection on a multiplexed stream.
+        lagP95Milliseconds:
+          type: integer
+          minimum: 0
+          description: 95th percentile of the time the data plane took to answer a pull or a push in the window; 0 when there were none.
         conflicts: {type: integer, minimum: 0}
         policyDenials: {type: integer, minimum: 0}
         throttled: {type: integer, minimum: 0}
@@ -7118,6 +7130,7 @@ components:
         schemaMismatches: {type: integer, minimum: 0}
         clientVersionClasses:
           type: object
+          description: Pulls, pushes and streams by how the client's schema version compares with the collection's (`current_schema`, `older_schema`, `newer_schema`).
           additionalProperties:
             type: integer
             minimum: 0

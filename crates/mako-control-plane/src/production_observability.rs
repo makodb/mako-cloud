@@ -517,6 +517,9 @@ fn redact_page(page: &mut ObservabilityPage, redactor: &TelemetryRedactor) {
                     redact(value, redactor);
                 }
             }
+            ObservabilityPayload::ReplicationActivity { collection_id, .. } => {
+                redact(collection_id, redactor);
+            }
         }
     }
 }
@@ -579,6 +582,9 @@ fn payload_signal(payload: &ObservabilityPayload) -> ObservabilitySignal {
         ObservabilityPayload::ProjectLog { .. } => ObservabilitySignal::ProjectLog,
         ObservabilityPayload::IndexState { .. } => ObservabilitySignal::IndexState,
         ObservabilityPayload::Audit { .. } => ObservabilitySignal::Audit,
+        ObservabilityPayload::ReplicationActivity { .. } => {
+            ObservabilitySignal::ReplicationActivity
+        }
     }
 }
 

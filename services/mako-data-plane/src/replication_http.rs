@@ -106,6 +106,7 @@ fn handle_pull(
     body.validate()
         .map_err(|_| invalid(request, "replication pull request is invalid"))?;
     let now = now_unix_seconds(request.request_id())?;
+    let started = Instant::now();
     block_on(async {
         let authorized = authorize(
             graph,
@@ -122,6 +123,15 @@ fn handle_pull(
             .scope_collection(&tenant, scope.clone())
             .map_err(|_| invalid(request, "collection scope is invalid"))?;
         let metadata = active_collection_metadata(request, &scoped).await?;
+        let _activity = ReplicationActivity {
+            graph,
+            tenant: &tenant,
+            collection_id: scope.collection_id().as_str().to_owned(),
+            operation: "pull",
+            client_class: client_class(body.schema_version, metadata.schema_version()),
+            started,
+            now,
+        };
         let policy = active_policy(graph, request, &tenant, &scope, &scoped).await?;
         let authorizer = authorized.policy_read_authorizer(policy.as_ref());
         let service = PullService::new(
@@ -171,6 +181,7 @@ fn handle_push(
     body.validate()
         .map_err(|_| invalid(request, "replication push request is invalid"))?;
     let now = now_unix_seconds(request.request_id())?;
+    let started = Instant::now();
     block_on(async {
         let authorized = authorize(
             graph,
@@ -187,6 +198,15 @@ fn handle_push(
             .scope_collection(&tenant, scope.clone())
             .map_err(|_| invalid(request, "collection scope is invalid"))?;
         let metadata = active_collection_metadata(request, &scoped).await?;
+        let _activity = ReplicationActivity {
+            graph,
+            tenant: &tenant,
+            collection_id: scope.collection_id().as_str().to_owned(),
+            operation: "push",
+            client_class: client_class(body.schema_version, metadata.schema_version()),
+            started,
+            now,
+        };
         let policy = active_policy(graph, request, &tenant, &scope, &scoped).await?;
         let validator = mako_documents::DocumentValidator::compile(&metadata)
             .map_err(|_| unavailable(request, "collection schema is unavailable"))?;
@@ -264,6 +284,7 @@ fn handle_stream(
     let scope = collection_scope(request, &tenant)?;
     let live_request = live_request(request)?;
     let now = now_unix_seconds(request.request_id())?;
+    let started = Instant::now();
     block_on(async {
         let authorized = authorize(
             graph,
@@ -280,6 +301,15 @@ fn handle_stream(
             .scope_collection(&tenant, scope.clone())
             .map_err(|_| invalid(request, "collection scope is invalid"))?;
         let metadata = active_collection_metadata(request, &scoped).await?;
+        let _activity = ReplicationActivity {
+            graph,
+            tenant: &tenant,
+            collection_id: scope.collection_id().as_str().to_owned(),
+            operation: "stream",
+            client_class: client_class(live_request.schema_version, metadata.schema_version()),
+            started,
+            now,
+        };
         let policy = active_policy(graph, request, &tenant, &scope, &scoped).await?;
         let limits = live_limits();
         {
@@ -407,8 +437,10 @@ fn handle_multi_stream(
         requested.push((CollectionScope::new(tenant.clone(), collection_id), live));
     }
     let now = now_unix_seconds(request.request_id())?;
+    let started = Instant::now();
     block_on(async {
         let mut opened = Vec::with_capacity(requested.len());
+        let mut activity = Vec::with_capacity(requested.len());
         for (scope, live) in requested {
             // Every collection is authorized, metered, and audited on its
             // own: sharing a connection shares nothing else.
@@ -427,6 +459,15 @@ fn handle_multi_stream(
                 .scope_collection(&tenant, scope.clone())
                 .map_err(|_| invalid(request, "collection scope is invalid"))?;
             let metadata = active_collection_metadata(request, &scoped).await?;
+            activity.push(ReplicationActivity {
+                graph,
+                tenant: &tenant,
+                collection_id: scope.collection_id().as_str().to_owned(),
+                operation: "stream",
+                client_class: client_class(live.schema_version, metadata.schema_version()),
+                started,
+                now,
+            });
             let policy = active_policy(graph, request, &tenant, &scope, &scoped).await?;
             {
                 let authorizer = authorized.policy_read_authorizer(policy.as_ref());
@@ -1062,6 +1103,46 @@ fn replication_category(code: ErrorCode) -> &'static str {
     }
 }
 
+/// One pull, push, or stream for the sync diagnostics, recorded when it is
+/// dropped: a request that ends early in `?` is counted like one answered.
+struct ReplicationActivity<'a> {
+    graph: &'a DataPlaneGraph,
+    tenant: &'a TenantScope,
+    collection_id: String,
+    operation: &'static str,
+    client_class: &'static str,
+    started: Instant,
+    now: u64,
+}
+
+impl Drop for ReplicationActivity<'_> {
+    fn drop(&mut self) {
+        self.graph
+            .telemetry()
+            .record(mako_api::ObservabilityRecord {
+                tenant: self.tenant.clone(),
+                timestamp_unix_milliseconds: self.now.saturating_mul(1_000),
+                payload: mako_api::ObservabilityPayload::ReplicationActivity {
+                    collection_id: std::mem::take(&mut self.collection_id),
+                    operation: self.operation.to_owned(),
+                    client_class: self.client_class.to_owned(),
+                    latency_milliseconds: u64::try_from(self.started.elapsed().as_millis())
+                        .unwrap_or(u64::MAX),
+                },
+            });
+    }
+}
+
+/// How a client's schema compares with its collection's: the only thing the
+/// diagnostics know about a client.
+fn client_class(client_schema_version: u64, required: SchemaVersion) -> &'static str {
+    match client_schema_version.cmp(&required.get()) {
+        std::cmp::Ordering::Less => "older_schema",
+        std::cmp::Ordering::Equal => "current_schema",
+        std::cmp::Ordering::Greater => "newer_schema",
+    }
+}
+
 /// Reports a refused pull, push, or authorization as a replication error.
 fn report_replication_error(
     graph: &DataPlaneGraph,
@@ -1220,8 +1301,20 @@ const fn status_for(code: ErrorCode) -> u16 {
 #[cfg(test)]
 mod tests {
     use mako_api::ErrorCode;
+    use mako_documents::SchemaVersion;
 
-    use super::replication_category;
+    use super::{client_class, replication_category};
+
+    #[test]
+    fn clients_are_classed_by_their_schema_alone() {
+        let required = SchemaVersion::new(2).expect("schema version");
+        assert_eq!(client_class(1, required), "older_schema");
+        assert_eq!(client_class(2, required), "current_schema");
+        assert_eq!(client_class(3, required), "newer_schema");
+        for class in ["older_schema", "current_schema", "newer_schema"] {
+            assert!(mako_api::REPLICATION_CLIENT_CLASSES.contains(&class));
+        }
+    }
 
     #[test]
     fn replication_errors_are_counted_under_the_summary_categories() {

@@ -207,6 +207,12 @@ fn handle_observability(
                     .query_audit_events(&actor, &tenant, &query, changes_only, now_milliseconds)
                     .await
             }
+            // Counted by the sync summary rather than listed on a route of its own.
+            ObservabilitySignal::ReplicationActivity => {
+                service
+                    .query_replication_activity(&actor, &tenant, &query, now_milliseconds)
+                    .await
+            }
         }
         .map_err(|error| observability_error(request, error))?;
         let page =

@@ -21,10 +21,11 @@ pub use explorer_contract::*;
 pub use observability::{
     EventOutcome, HealthState, ObservabilityPage, ObservabilityPayload, ObservabilityQuery,
     ObservabilityQueryError, ObservabilityRecord, ObservabilitySignal,
-    QUOTA_CHECKPOINT_WINDOW_MILLISECONDS, QuotaResource, RetentionWindow,
-    TELEMETRY_AUTHORIZATION_HEADER, TELEMETRY_HEALTH_PATH, TELEMETRY_INGEST_PATH,
-    TELEMETRY_PROTOCOL_VERSION, TELEMETRY_QUERY_PATH, TELEMETRY_REQUEST_ID_HEADER,
-    TELEMETRY_VERSION_HEADER, TelemetryIngestRequest, TelemetryIngestResponse,
+    QUOTA_CHECKPOINT_WINDOW_MILLISECONDS, QuotaResource, REPLICATION_ACTIVITY_OPERATIONS,
+    REPLICATION_CLIENT_CLASSES, RetentionWindow, TELEMETRY_AUTHORIZATION_HEADER,
+    TELEMETRY_HEALTH_PATH, TELEMETRY_INGEST_PATH, TELEMETRY_PROTOCOL_VERSION, TELEMETRY_QUERY_PATH,
+    TELEMETRY_REQUEST_ID_HEADER, TELEMETRY_VERSION_HEADER, TelemetryIngestRequest,
+    TelemetryIngestResponse,
 };
 pub use scope::{CollectionId, CollectionScope, EnvironmentId, ProjectId, ScopeError, TenantScope};
 

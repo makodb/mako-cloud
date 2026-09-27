@@ -3740,9 +3740,13 @@ export interface components {
             windowEndUnixSeconds: number;
             observedAtUnixSeconds: number;
             retainedSinceUnixSeconds: number;
+            /** @description Pulls answered in the window, including those refused after authorization (a schema mismatch, an expired checkpoint). */
             pullCount?: number;
+            /** @description Pushes answered in the window, counted per request rather than per row. */
             pushCount?: number;
+            /** @description Live streams opened in the window, one per collection on a multiplexed stream. */
             liveStreams?: number;
+            /** @description 95th percentile of the time the data plane took to answer a pull or a push in the window; 0 when there were none. */
             lagP95Milliseconds?: number;
             conflicts?: number;
             policyDenials?: number;
@@ -3751,6 +3755,7 @@ export interface components {
             streamGaps?: number;
             resyncs?: number;
             schemaMismatches?: number;
+            /** @description Pulls, pushes and streams by how the client's schema version compares with the collection's (`current_schema`, `older_schema`, `newer_schema`). */
             clientVersionClasses?: {
                 [key: string]: number;
             };

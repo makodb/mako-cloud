@@ -859,6 +859,7 @@ fn redact_record(record: &mut ObservabilityRecord, redactor: &TelemetryRedactor)
                 redact(value);
             }
         }
+        ObservabilityPayload::ReplicationActivity { collection_id, .. } => redact(collection_id),
         ObservabilityPayload::Audit { .. } => {}
     }
 }
@@ -911,6 +912,7 @@ fn signal_code(signal: ObservabilitySignal) -> Result<u8, ServiceError> {
         ObservabilitySignal::FunctionMetric => 6,
         ObservabilitySignal::ProjectLog => 7,
         ObservabilitySignal::IndexState => 8,
+        ObservabilitySignal::ReplicationActivity => 9,
         ObservabilitySignal::Audit => return Err(ServiceError::InvalidRequest),
     })
 }

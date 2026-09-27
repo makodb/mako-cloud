@@ -70,6 +70,7 @@ pub enum ObservabilitySignal {
     ProjectLog,
     IndexState,
     Audit,
+    ReplicationActivity,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -193,7 +194,27 @@ pub enum ObservabilityPayload {
         request_id: String,
         details: Option<String>,
     },
+    /// One pull, push, or live stream the data plane answered, whether or
+    /// not it succeeded: what the sync diagnostics count. A client is known
+    /// only by how its schema version compares with the collection's, never
+    /// by user, device, or session.
+    ReplicationActivity {
+        collection_id: String,
+        /// `pull`, `push`, or `stream`.
+        operation: String,
+        /// `current_schema`, `older_schema`, or `newer_schema`.
+        client_class: String,
+        /// How long the data plane took to answer; for a stream, to open it.
+        latency_milliseconds: u64,
+    },
 }
+
+/// The operations a `ReplicationActivity` record may name.
+pub const REPLICATION_ACTIVITY_OPERATIONS: [&str; 3] = ["pull", "push", "stream"];
+
+/// The client classes a `ReplicationActivity` record may name.
+pub const REPLICATION_CLIENT_CLASSES: [&str; 3] =
+    ["current_schema", "older_schema", "newer_schema"];
 
 impl ObservabilityPayload {
     #[must_use]
@@ -208,6 +229,7 @@ impl ObservabilityPayload {
             Self::ProjectLog { .. } => ObservabilitySignal::ProjectLog,
             Self::IndexState { .. } => ObservabilitySignal::IndexState,
             Self::Audit { .. } => ObservabilitySignal::Audit,
+            Self::ReplicationActivity { .. } => ObservabilitySignal::ReplicationActivity,
         }
     }
 
@@ -302,6 +324,16 @@ impl ObservabilityPayload {
                     && safe_text(request_id, 128)
                     && details.as_ref().is_none_or(|value| safe_text(value, 2_048))
             }
+            Self::ReplicationActivity {
+                collection_id,
+                operation,
+                client_class,
+                ..
+            } => {
+                safe_text(collection_id, 128)
+                    && REPLICATION_ACTIVITY_OPERATIONS.contains(&operation.as_str())
+                    && REPLICATION_CLIENT_CLASSES.contains(&client_class.as_str())
+            }
         }
     }
 }
@@ -371,4 +403,24 @@ pub struct TelemetryIngestResponse {
     pub offset: u64,
     pub accepted_records: usize,
     pub replayed: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ObservabilityPayload;
+
+    #[test]
+    fn replication_activity_names_only_known_operations_and_classes() {
+        let activity = |operation: &str, class: &str| ObservabilityPayload::ReplicationActivity {
+            collection_id: "todos".to_owned(),
+            operation: operation.to_owned(),
+            client_class: class.to_owned(),
+            latency_milliseconds: 3,
+        };
+        assert!(activity("pull", "current_schema").is_safe());
+        assert!(activity("stream", "older_schema").is_safe());
+        assert!(!activity("delete", "current_schema").is_safe());
+        // A class is how the client's schema compares, never who the client is.
+        assert!(!activity("push", "usr_0123456789").is_safe());
+    }
 }
