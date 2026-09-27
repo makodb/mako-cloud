@@ -562,6 +562,7 @@ Generated from the command registry; every command also answers `--help` with it
 
 | command | does |
 | ------- | ---- |
+| `mako-cloud keys list` | List the environment's public keys and service credentials: id, kind, state (never a secret) |
 | `mako-cloud keys get <credential-id>` | Show a credential's kind, scope, and state (never its secret) |
 | `mako-cloud keys public create` | Issue a public key for client apps; the secret is shown once *(prints a secret once)* |
 | `mako-cloud keys retire <credential-id>` | Retire a credential; requests signed with it are refused from then on *(confirmed)* |

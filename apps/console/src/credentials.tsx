@@ -84,6 +84,9 @@ export function CredentialsScreen({
   const [selectedToken, setSelectedToken] = useState<AutomationToken | null>(null);
   const [signingKeys, setSigningKeys] = useState<JwtSigningKey[] | null>(null);
   const [credential, setCredential] = useState<ProjectCredential | null>(null);
+  // The environment's keys, so rotating or retiring one does not depend on
+  // remembering an id that was shown only when the key was issued.
+  const [credentials, setCredentials] = useState<ProjectCredential[] | null>(null);
   const [functionSecret, setFunctionSecret] = useState<FunctionSecret | null>(null);
   const [oneTime, setOneTime] = useState<OneTimeSecret | null>(null);
   const [initializedKey, setInitializedKey] = useState<JwtSigningKey | null>(null);
@@ -99,10 +102,16 @@ export function CredentialsScreen({
       setTeamId(project.teamId);
       // Each list stands on its own: when the team's tokens could not be read,
       // the environment's signing keys used to stay "Loading…" with them.
-      const [nextTokens, nextSigningKeys] = await Promise.allSettled([
+      const [nextTokens, nextSigningKeys, nextCredentials] = await Promise.allSettled([
         client.listAutomationTokens(project.teamId),
         client.listJwtSigningKeys(projectId, environmentId),
+        client.listProjectCredentials(projectId, environmentId),
       ]);
+      if (nextCredentials.status === "fulfilled") {
+        setCredentials(nextCredentials.value);
+      } else {
+        setFailure(failureFrom(nextCredentials.reason));
+      }
       if (nextTokens.status === "fulfilled") {
         setTokens(nextTokens.value);
         setSelectedToken((current) =>
@@ -157,6 +166,7 @@ export function CredentialsScreen({
         value: issue.value,
       });
       setFailure(null);
+      await reload();
     } catch (error) {
       setFailure(failureFrom(error));
     }
@@ -194,6 +204,7 @@ export function CredentialsScreen({
       setCredential(issue.credential);
       setOneTime({ label: `replacement credential ${issue.credential.id}`, value: issue.value });
       setFailure(null);
+      await reload();
     } catch (error) {
       setFailure(failureFrom(error));
     }
@@ -215,6 +226,7 @@ export function CredentialsScreen({
       await client.retireProjectCredential(projectId, environmentId, credential.id);
       setCredential({ ...credential, state: "retired", retiredAt: new Date().toISOString() });
       setFailure(null);
+      await reload();
     } catch (error) {
       setFailure(failureFrom(error));
     }
@@ -415,6 +427,8 @@ export function CredentialsScreen({
       <OneTimeValue secret={oneTime} onDismiss={() => setOneTime(null)} />
       <div className="grid items-start gap-6 xl:grid-cols-2">
         <ProjectCredentialsPanel
+          credentials={credentials}
+          onSelect={setCredential}
           credential={credential}
           onCreate={createCredential}
           onInspect={inspectCredential}
@@ -451,12 +465,16 @@ export function CredentialsScreen({
 }
 
 function ProjectCredentialsPanel({
+  credentials,
+  onSelect,
   credential,
   onCreate,
   onInspect,
   onRotate,
   onRetire,
 }: {
+  readonly credentials: readonly ProjectCredential[] | null;
+  readonly onSelect: (credential: ProjectCredential) => void;
   readonly credential: ProjectCredential | null;
   readonly onCreate: (event: FormEvent<HTMLFormElement>) => void;
   readonly onInspect: (event: FormEvent<HTMLFormElement>) => void;
@@ -469,6 +487,47 @@ function ProjectCredentialsPanel({
         <CardTitle id="project-credentials-title">Project credentials</CardTitle>
       </CardHeader>
       <CardContent className="grid gap-5">
+        {credentials === null ? (
+          <p className="m-0 text-sm text-muted-foreground">Loading credentials…</p>
+        ) : credentials.length === 0 ? (
+          <p className="m-0 text-sm text-muted-foreground">
+            No credentials yet. Issue a public key for your app below.
+          </p>
+        ) : (
+          <Table aria-label="Credentials in this environment">
+            <TableHeader>
+              <TableRow>
+                <TableHead scope="col">ID</TableHead>
+                <TableHead scope="col">Kind</TableHead>
+                <TableHead scope="col">State</TableHead>
+                <TableHead scope="col">
+                  <span className="sr-only">Actions</span>
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {credentials.map((item) => (
+                <TableRow key={item.id}>
+                  <TableCell className="font-mono text-xs">{item.id}</TableCell>
+                  <TableCell>{item.kind}</TableCell>
+                  <TableCell>
+                    <LifecycleBadge state={item.state} />
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => onSelect(item)}
+                      aria-label={`Manage credential ${item.id}`}
+                    >
+                      Manage
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
         <form className="grid gap-4" onSubmit={onCreate}>
           <Field label="Credential kind" htmlFor="credential-kind">
             <NativeSelect id="credential-kind" name="kind" defaultValue="public">

@@ -22,6 +22,14 @@ const SIGNING_KEY_COLUMNS: readonly TableColumn[] = [
   { key: "retireAt" },
 ];
 
+const CREDENTIAL_COLUMNS: readonly TableColumn[] = [
+  { key: "id" },
+  { key: "kind" },
+  { key: "state" },
+  { key: "createdAt" },
+  { key: "overlapEndsAt" },
+];
+
 const CREDENTIAL_ID: PositionalSpec = {
   name: "credential-id",
   description: "Credential id",
@@ -132,6 +140,14 @@ async function createService(context: CommandContext, args: CommandArgs): Promis
   await issued(context, args, "service credential", issue);
 }
 
+async function list(context: CommandContext, args: CommandArgs): Promise<void> {
+  const { projectId, environmentId } = tenantFrom(context, args);
+  const client = await context.management();
+  context.out(await client.listProjectCredentials(projectId, environmentId), {
+    columns: CREDENTIAL_COLUMNS,
+  });
+}
+
 async function get(context: CommandContext, args: CommandArgs): Promise<void> {
   const credentialId = credentialOf(args);
   const { projectId, environmentId } = tenantFrom(context, args);
@@ -237,6 +253,13 @@ export const keysCommands: readonly Command[] = [
       ...SECRET_FILE_OPTION,
     },
     run: createService,
+  },
+  {
+    path: ["keys", "list"],
+    summary: "List the environment's public keys and service credentials (never their secrets)",
+    operations: ["listProjectCredentials"],
+    options: { ...TENANT_OPTIONS },
+    run: list,
   },
   {
     path: ["keys", "get"],

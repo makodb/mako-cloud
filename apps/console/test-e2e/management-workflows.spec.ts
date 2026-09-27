@@ -311,6 +311,10 @@ test("credentials, functions, logs, metrics, and audit export use the management
   await page.getByRole("button", { name: "Reveal value" }).click();
   await expect(page.getByText("mako_public_browser_secret")).toBeVisible();
   await page.getByRole("button", { name: "I have stored it securely" }).click();
+  // The environment's keys are listed, so a key is found again without its id.
+  const listed = page.getByRole("table", { name: "Credentials in this environment" });
+  await expect(listed.getByText("pk_browser01")).toBeVisible();
+  await page.getByRole("button", { name: "Manage credential pk_browser01" }).click();
   await page.getByRole("button", { name: "Retire credential" }).click();
   await expect(page.getByText(/retired/u).first()).toBeVisible();
 
@@ -577,6 +581,11 @@ class ManagementApiHarness {
       await json(route, this.user);
     } else if (path === `/v1/projects/${PROJECT_ID}/environments/${ENVIRONMENT_ID}/signing-keys`) {
       await json(route, { items: [signingKeyFixture()] });
+    } else if (
+      path === `/v1/projects/${PROJECT_ID}/environments/${ENVIRONMENT_ID}/credentials` &&
+      method === "GET"
+    ) {
+      await json(route, { items: this.credential === null ? [] : [this.credential] });
     } else if (path === `/v1/teams/${TEAM_ID}/automation-tokens` && method === "POST") {
       const body = request.postDataJSON() as { name: string; expiresAt: string };
       this.tokenCreates.push(body);

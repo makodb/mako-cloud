@@ -1526,6 +1526,34 @@ paths:
                 $ref: "#/components/schemas/ProjectCredentialIssue"
         default:
           $ref: "#/components/responses/ApiError"
+  /v1/projects/{projectId}/environments/{environmentId}/credentials:
+    get:
+      tags: [Management]
+      operationId: listProjectCredentials
+      summary: List an environment's public keys and service credentials
+      description: >-
+        Metadata only -- id, kind, state, scope, and times; a key's secret is
+        shown once, when it is issued, and never again. The ids are what
+        rotation and retirement name.
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/EnvironmentId"
+      responses:
+        "200":
+          description: The environment's credentials
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ProjectCredential"
+        default:
+          $ref: "#/components/responses/ApiError"
   /v1/projects/{projectId}/environments/{environmentId}/credentials/{credentialId}:
     get:
       tags: [Management]

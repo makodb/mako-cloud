@@ -275,6 +275,22 @@ test("service credentials carry their scope and are shown once", async (t) => {
   assert.equal(api.find(`${BASE}/credentials/service`, "POST").length, 1);
 });
 
+test("keys list shows every credential's id, kind, and state, never a secret", async (t) => {
+  const { cli } = await tenantCli(t, {
+    [`GET ${BASE}/credentials`]: () => ({
+      status: 200,
+      json: { items: [credential(), credential({ id: "sk_worker", kind: "service", state: "overlap" })] },
+    }),
+  });
+  const listed = await cli(["keys", "list"]);
+  assert.equal(listed.code, 0, listed.stderr);
+  assert.match(listed.stdout, /^id\s+kind\s+state\s+createdAt\s+overlapEndsAt\n/u);
+  assert.match(listed.stdout, /pk_web\s+public\s+active/u);
+  assert.match(listed.stdout, /sk_worker\s+service\s+overlap/u);
+  const json = await cli(["keys", "list", "--json"]);
+  assert.deepEqual(JSON.parse(json.stdout).map((item) => item.id), ["pk_web", "sk_worker"]);
+});
+
 test("credentials are read, retired, and rotated with confirmation; the replacement secret prints once", async (t) => {
   const { api, cli, directory } = await tenantCli(t, {
     [`GET ${BASE}/credentials/pk_web`]: () => ({ status: 200, json: credential() }),

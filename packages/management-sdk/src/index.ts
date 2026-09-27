@@ -86,6 +86,7 @@ export const MANAGEMENT_OPERATIONS = [
   "revokeApplicationUserSession",
   "createPublicProjectKey",
   "createServiceCredential",
+  "listProjectCredentials",
   "getProjectCredential",
   "retireProjectCredential",
   "rotateProjectCredential",
@@ -1304,6 +1305,18 @@ export class MakoManagementClient {
         },
       ),
     );
+  }
+
+  /** An environment's keys, as metadata; a secret is shown only when issued. */
+  async listProjectCredentials(
+    projectId: string,
+    environmentId: string,
+  ): Promise<ProjectCredential[]> {
+    const result = await this.#client.GET(
+      "/v1/projects/{projectId}/environments/{environmentId}/credentials",
+      { params: { path: { projectId, environmentId } } },
+    );
+    return unwrap(result).items;
   }
 
   async getProjectCredential(

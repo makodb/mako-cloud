@@ -760,6 +760,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/projects/{projectId}/environments/{environmentId}/credentials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List an environment's public keys and service credentials
+         * @description Metadata only -- id, kind, state, scope, and times; a key's secret is shown once, when it is issued, and never again. The ids are what rotation and retirement name.
+         */
+        get: operations["listProjectCredentials"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/projects/{projectId}/environments/{environmentId}/credentials/{credentialId}": {
         parameters: {
             query?: never;
@@ -7655,6 +7675,32 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProjectCredentialIssue"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    listProjectCredentials: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                environmentId: components["parameters"]["EnvironmentId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The environment's credentials */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["ProjectCredential"][];
+                    };
                 };
             };
             default: components["responses"]["ApiError"];

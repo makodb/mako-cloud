@@ -324,6 +324,8 @@ class SurfacedApiHarness {
       await json(route, emptyPage());
     } else if (path === `${ENVIRONMENT_API}/signing-keys` && method === "GET") {
       await json(route, { items: this.signingKeys });
+    } else if (path === `${ENVIRONMENT_API}/credentials` && method === "GET") {
+      await json(route, { items: [] });
     } else if (path === `${ENVIRONMENT_API}/signing-keys/actions/initialize` && method === "POST") {
       this.initializeCalls.push(request.headers()["idempotency-key"] ?? "");
       const key = { keyId: "key_init01", state: "active", createdAt: NOW };

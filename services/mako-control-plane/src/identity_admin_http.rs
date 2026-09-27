@@ -90,6 +90,11 @@ pub(crate) fn add_identity_admin_routes(
         ),
         (
             HttpMethod::Get,
+            "/v1/projects/{projectId}/environments/{environmentId}/credentials",
+            handle_list_credentials,
+        ),
+        (
+            HttpMethod::Get,
             "/v1/projects/{projectId}/environments/{environmentId}/credentials/{credentialId}",
             handle_get_credential,
         ),
@@ -373,6 +378,30 @@ fn handle_create_service_credential(
         201,
         true,
     )
+}
+
+/// An environment's keys, as metadata: never a secret. Rotating or retiring a
+/// key needs its id, and without a listing the only place an id ever showed
+/// was the response that issued the key.
+fn handle_list_credentials(
+    graph: &Arc<ControlPlaneGraph>,
+    request: &HttpRequest,
+) -> Result<HttpResponse, HttpApiError> {
+    no_payload(request)?;
+    let tenant = tenant(request)?;
+    with_developer(graph, request, |actor, _| async move {
+        let items = administer(
+            graph,
+            request,
+            &actor,
+            &tenant,
+            IdentityAdminOperation::ListProjectCredentials,
+            json!({}),
+            false,
+        )
+        .await?;
+        public_value(request, 200, json!({ "items": items }))
+    })
 }
 
 fn handle_get_credential(
