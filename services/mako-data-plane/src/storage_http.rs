@@ -732,11 +732,11 @@ async fn charge(
             amount: NonZeroU64::new(1).expect("one is non-zero"),
         });
     }
-    let route_digest = &blake3::hash(request.path().as_bytes()).to_hex()[..16];
     let reservation = format!(
-        "{}.storage{}.{route_digest}",
+        "{}.storage{}.{}",
         request.request_id(),
-        if with_bytes { ".bytes" } else { "" }
+        if with_bytes { ".bytes" } else { "" },
+        crate::document_http::request_digest(request)
     );
     let policy = graph
         .quota_policies()

@@ -714,6 +714,41 @@ fn trusted_query(
     Ok(TrustedQuery::indexed(indexed))
 }
 
+/// What one request is, for the quota reservation it is charged under: its
+/// method, path, query, `Idempotency-Key` and body. A reservation is keyed by
+/// the caller's request id, and a function's calls all carry its invocation's
+/// id, so keying by the path alone made a function that read a document and
+/// then wrote it -- the same path, different charges -- fail its write with
+/// "X-Mako-Request-Id was already used for a different request", and two
+/// different queries collided the same way. A retry of the same request still
+/// maps to the same reservation and is charged once.
+pub(crate) fn request_digest(request: &HttpRequest) -> String {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"mako/data-plane/reservation/v2");
+    let method = format!("{:?}", request.method());
+    let mut query = request.query().to_vec();
+    query.sort();
+    let query = query
+        .iter()
+        .map(|(name, value)| format!("{name}={value}"))
+        .collect::<Vec<_>>()
+        .join("&");
+    for part in [
+        method.as_bytes(),
+        request.path().as_bytes(),
+        query.as_bytes(),
+        request
+            .header("idempotency-key")
+            .unwrap_or_default()
+            .as_bytes(),
+        request.body(),
+    ] {
+        hasher.update(&(part.len() as u64).to_be_bytes());
+        hasher.update(part);
+    }
+    hasher.finalize().to_hex()[..32].to_owned()
+}
+
 async fn charge_document(
     graph: &DataPlaneGraph,
     tenant: &TenantScope,
@@ -733,8 +768,11 @@ async fn charge_document(
             amount: bytes,
         });
     }
-    let route_digest = &blake3::hash(request.path().as_bytes()).to_hex()[..16];
-    let reservation = format!("{}.document.{route_digest}", request.request_id());
+    let reservation = format!(
+        "{}.document.{}",
+        request.request_id(),
+        request_digest(request)
+    );
     match graph
         .quota_engine()
         .check_and_reserve(
@@ -1229,6 +1267,34 @@ mod tests {
     use mako_documents::DocumentId;
 
     use super::percent_decode;
+
+    #[test]
+    fn a_functions_read_then_write_reserve_separately_and_a_retry_does_not() {
+        use mako_service_runtime::{HttpMethod, HttpRequest};
+
+        let path = "/v1/projects/prj_x/environments/env_x/collections/todos/documents/cmd-1";
+        let request = |method, key: Option<&str>, body: &[u8]| {
+            let headers: Vec<(String, String)> = key
+                .map(|key| vec![("Idempotency-Key".to_owned(), key.to_owned())])
+                .unwrap_or_default();
+            HttpRequest::for_test(method, path, headers, body.to_vec(), None)
+        };
+        let read = super::request_digest(&request(HttpMethod::Get, None, b""));
+        let write =
+            super::request_digest(&request(HttpMethod::Post, Some("command-1"), b"{\"a\":1}"));
+        let other_write =
+            super::request_digest(&request(HttpMethod::Post, Some("command-2"), b"{\"a\":2}"));
+        assert_ne!(
+            read, write,
+            "a read and a write of one document are different requests"
+        );
+        assert_ne!(write, other_write, "so are two different writes");
+        assert_eq!(
+            write,
+            super::request_digest(&request(HttpMethod::Post, Some("command-1"), b"{\"a\":1}")),
+            "a retry of the same request is the same reservation"
+        );
+    }
 
     /// A client escapes the id it puts in the path, so the route has to decode
     /// it before comparing it with the body's primary key. Without this, no
