@@ -258,7 +258,7 @@ test("expired access renews automatically before the next document request", asy
   await expect(page.getByRole("alert")).toHaveCount(0);
 });
 
-for (const status of [401, 403, 503]) {
+for (const status of [401, 503]) {
   test(`access failure ${status} does not request data and can be retried`, async ({ page }) => {
     let allowed = false;
     let grants = 0;
@@ -308,6 +308,98 @@ for (const status of [401, 403, 503]) {
     expect(reads).toBe(1);
   });
 }
+
+test("a developer refused administrative access previews the collection as an application user", async ({
+  page,
+}) => {
+  const grantRequests: Record<string, unknown>[] = [];
+  let reads = 0;
+  await page.route("**/v1/**", async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    if (await serveWorkspaceShell(route, path)) return;
+    if (path.endsWith("/collections")) return json(route, { items: [collection()] });
+    if (path.endsWith("/users") && request.method() === "GET") {
+      return json(route, {
+        truncated: false,
+        users: [
+          {
+            id: "usr_riya0001",
+            email: "riya@example.test",
+            status: "active",
+            createdAt: "2026-08-06T12:00:00.000Z",
+            updatedAt: "2026-08-06T12:00:00.000Z",
+          },
+          {
+            id: "usr_gone0001",
+            email: "gone@example.test",
+            status: "disabled",
+            createdAt: "2026-08-06T12:00:00.000Z",
+            updatedAt: "2026-08-06T12:00:00.000Z",
+          },
+        ],
+      });
+    }
+    if (path.endsWith("/explorer/grants")) {
+      const body = request.postDataJSON() as Record<string, unknown>;
+      grantRequests.push(body);
+      if (body.mode === "administrative") {
+        return json(
+          route,
+          {
+            apiVersion: "v1",
+            error: {
+              code: "permission_denied",
+              message: "explorer action is forbidden",
+              requestId: "req_denied",
+              retry: { kind: "never" },
+            },
+          },
+          403,
+        );
+      }
+      return json(
+        route,
+        {
+          ...automaticGrant(),
+          mode: "policy_preview",
+          operations: ["get", "browse", "query", "plan", "simulate"],
+          applicationUserId: "usr_riya0001",
+        },
+        201,
+      );
+    }
+    if (path.endsWith("/browse")) {
+      reads += 1;
+      return json(route, documentPage());
+    }
+    if (path.includes("/explorer/grants/")) return json(route, {});
+    return json(route, {}, 500);
+  });
+  await page.goto(`/projects/${PROJECT_ID}/environments/${ENVIRONMENT_ID}/data`);
+  await expect(page.getByText("Browsing every document needs an administrator")).toBeVisible();
+  await expect(page.getByText("explorer action is forbidden")).toHaveCount(0);
+  expect(reads).toBe(0);
+  // Only active users are offered.
+  await expect(page.getByLabel("Preview as").locator("option")).toHaveText([
+    "Choose an application user",
+    "riya@example.test",
+  ]);
+  await page.getByLabel("Preview as").selectOption("usr_riya0001");
+  await page.getByRole("button", { name: "Preview as this user" }).click();
+  await expect(page.getByText("doc_visible01")).toBeVisible();
+  await expect(
+    page.getByText("Showing what riya@example.test may read under the active policy."),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "New document" })).toHaveCount(0);
+  expect(grantRequests.at(-1)).toMatchObject({
+    mode: "policy_preview",
+    applicationUserId: "usr_riya0001",
+    reason: null,
+    operations: ["get", "browse", "query", "plan", "simulate"],
+  });
+  expect(reads).toBe(1);
+});
 
 for (const state of ["empty", "disabled"] as const) {
   test(`${state} explorer does not issue access or read documents`, async ({ page }) => {

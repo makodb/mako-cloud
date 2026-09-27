@@ -10,6 +10,7 @@ import type {
   ExplorerQueryRequest,
   ExplorerRevision,
   ExplorerSimulation,
+  ApplicationUserSummary,
 } from "@mako-cloud/management-sdk";
 import { ManagementApiError } from "@mako-cloud/management-sdk";
 import {
@@ -44,7 +45,15 @@ import {
   Textarea,
 } from "@mako-cloud/ui";
 import { AlertTriangle, CheckCircle2, Info, RefreshCw, Search, Table2 } from "lucide-react";
-import { type FormEvent, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import {
+  type FormEvent,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from "react";
 
 import { ApiFailureNotice, type ConsoleApiFailure, toConsoleApiFailure } from "./api-error.js";
 import { useDeveloperAuth } from "./auth.js";
@@ -100,6 +109,12 @@ export function DataExplorer({
   const [simulation, setSimulation] = useState<ExplorerSimulation | null>(null);
   const [conflict, setConflict] = useState<ConflictView | null>(null);
   const [auditReference, setAuditReference] = useState<string | null>(null);
+  // Administrative browsing is for administrators and owners. When it is
+  // refused, the page offers what a developer may do instead: see the
+  // collection as one application user's policy lets them see it.
+  const [adminRefused, setAdminRefused] = useState(false);
+  const [previewUser, setPreviewUser] = useState<ApplicationUserSummary | null>(null);
+  const [previewCandidates, setPreviewCandidates] = useState<ApplicationUserSummary[] | null>(null);
 
   const clearExplorerState = useCallback(() => {
     setTool("documents");
@@ -149,13 +164,21 @@ export function DataExplorer({
     return next.capability;
   }, []);
 
-  const reportFailure = useCallback((error: unknown) => {
-    // A revoked or stale capability must be replaced on the next action. Never replay a write.
-    if (error instanceof ManagementApiError && error.status === 401) {
-      accessRef.current?.invalidate();
-    }
-    setFailure(consoleFailure(error));
-  }, []);
+  const reportFailure = useCallback(
+    (error: unknown) => {
+      // A revoked or stale capability must be replaced on the next action. Never replay a write.
+      if (error instanceof ManagementApiError && error.status === 401) {
+        accessRef.current?.invalidate();
+      }
+      if (error instanceof ManagementApiError && error.status === 403 && previewUser === null) {
+        setAdminRefused(true);
+        setFailure(null);
+        return;
+      }
+      setFailure(consoleFailure(error));
+    },
+    [previewUser],
+  );
 
   const browse = useCallback(
     async (cursor: string | null = null, includeRetainedTombstones = false) => {
@@ -189,7 +212,14 @@ export function DataExplorer({
     setGrant(null);
     setLoading(false);
     if (collectionId === "" || !adminEnabled) return;
-    const access = createExplorerAccess(client, projectId, environmentId, collectionId);
+    if (adminRefused && previewUser === null) return;
+    const access = createExplorerAccess(
+      client,
+      projectId,
+      environmentId,
+      collectionId,
+      previewUser?.id ?? null,
+    );
     accessRef.current = access;
     void browse();
     return () => {
@@ -197,7 +227,30 @@ export function DataExplorer({
       accessRef.current = null;
       access.close();
     };
-  }, [adminEnabled, browse, clearExplorerState, client, collectionId, environmentId, projectId]);
+  }, [
+    adminEnabled,
+    adminRefused,
+    browse,
+    clearExplorerState,
+    client,
+    collectionId,
+    environmentId,
+    previewUser,
+    projectId,
+  ]);
+
+  useEffect(() => {
+    if (!adminRefused || previewCandidates !== null) return;
+    let active = true;
+    void client.searchApplicationUsers(projectId, environmentId, { limit: 50 }).then(
+      (found) =>
+        active && setPreviewCandidates(found.users.filter((user) => user.status === "active")),
+      (error: unknown) => active && setFailure(toConsoleApiFailure(error)),
+    );
+    return () => {
+      active = false;
+    };
+  }, [adminRefused, client, environmentId, previewCandidates, projectId]);
 
   const lookup = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -461,6 +514,20 @@ export function DataExplorer({
             </AlertDescription>
           </Alert>
         ) : null}
+        {adminRefused && collectionId !== "" ? (
+          <PreviewChooser
+            candidates={previewCandidates}
+            current={previewUser}
+            onChoose={(user) => {
+              scopeVersion.current += 1;
+              accessRef.current?.close();
+              accessRef.current = null;
+              setGrant(null);
+              clearExplorerState();
+              setPreviewUser(user);
+            }}
+          />
+        ) : null}
         {!adminEnabled && collectionId !== "" ? (
           <p className="m-0 text-sm text-muted-foreground">
             Document browsing is unavailable in this deployment.
@@ -487,7 +554,7 @@ export function DataExplorer({
                 <TabsTrigger value="query">Query editor</TabsTrigger>
                 {jobsEnabled ? <TabsTrigger value="jobs">Import / export</TabsTrigger> : null}
               </TabsLine>
-              {tool !== "jobs" ? (
+              {tool !== "jobs" && grant.mode === "administrative" ? (
                 <Button
                   size="sm"
                   variant="outline"
@@ -1795,4 +1862,76 @@ async function sha256Hex(bytes: ArrayBuffer): Promise<string> {
   return Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)))
     .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("");
+}
+
+/**
+ * What a developer is offered when administrative browsing is refused: the
+ * collection as one application user's policy lets them see it.
+ */
+function PreviewChooser({
+  candidates,
+  current,
+  onChoose,
+}: {
+  readonly candidates: ApplicationUserSummary[] | null;
+  readonly current: ApplicationUserSummary | null;
+  readonly onChoose: (user: ApplicationUserSummary) => void;
+}) {
+  const [choice, setChoice] = useState(current?.id ?? "");
+  const pickerId = useId();
+  return (
+    <Alert role="status">
+      <Info aria-hidden="true" />
+      <AlertTitle>
+        {current === null ? "Browsing every document needs an administrator" : "Policy preview"}
+      </AlertTitle>
+      <AlertDescription className="grid gap-3">
+        {current === null ? (
+          <p className="m-0">
+            Team administrators and owners browse and edit every document. As a developer you can
+            preview the collection as one of this environment's application users sees it.
+          </p>
+        ) : (
+          <p className="m-0">
+            Showing what {current.email ?? current.id} may read under the active policy. Editing is
+            not available in a preview.
+          </p>
+        )}
+        {candidates === null ? (
+          <p className="m-0 text-sm text-muted-foreground">Loading application users…</p>
+        ) : candidates.length === 0 ? (
+          <p className="m-0 text-sm">
+            This environment has no active application users to preview as.
+          </p>
+        ) : (
+          <form
+            className="flex flex-wrap items-end gap-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const user = candidates.find((candidate) => candidate.id === choice);
+              if (user !== undefined) onChoose(user);
+            }}
+          >
+            <Field label="Preview as" htmlFor={pickerId} className="min-w-64">
+              <NativeSelect
+                id={pickerId}
+                value={choice}
+                onChange={(event) => setChoice(event.currentTarget.value)}
+              >
+                <option value="">Choose an application user</option>
+                {candidates.map((user) => (
+                  <option key={user.id} value={user.id}>
+                    {user.email ?? user.id}
+                  </option>
+                ))}
+              </NativeSelect>
+            </Field>
+            <Button type="submit" disabled={choice === ""}>
+              Preview as this user
+            </Button>
+          </form>
+        )}
+      </AlertDescription>
+    </Alert>
+  );
 }

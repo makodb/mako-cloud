@@ -1,11 +1,17 @@
 import type { ExplorerGrant, MakoManagementClient } from "@mako-cloud/management-sdk";
 
-/** One collection's in-memory access. The service still checks the developer's role. */
+/**
+ * One collection's in-memory access. The service still checks the developer's
+ * role: administrative access needs an administrator or owner; with
+ * `previewUserId` the grant is a policy preview -- what that application user
+ * may read -- which a developer may hold.
+ */
 export function createExplorerAccess(
   client: Pick<MakoManagementClient, "issueExplorerGrant" | "revokeExplorerGrant">,
   projectId: string,
   environmentId: string,
   collectionId: string,
+  previewUserId: string | null = null,
 ) {
   let closed = false;
   let current: ExplorerGrant | null = null;
@@ -28,15 +34,29 @@ export function createExplorerAccess(
       if (pending !== null) return pending;
       invalidate();
       pending = client
-        .issueExplorerGrant(projectId, environmentId, {
-          tenant: { projectId, environmentId },
-          collectionId,
-          mode: "administrative",
-          operations: ["get", "browse", "query", "plan", "history", "simulate", "mutate"],
-          applicationUserId: null,
-          reason: "Browse and manage documents in the cloud console",
-          durationSeconds: 300,
-        })
+        .issueExplorerGrant(
+          projectId,
+          environmentId,
+          previewUserId === null
+            ? {
+                tenant: { projectId, environmentId },
+                collectionId,
+                mode: "administrative",
+                operations: ["get", "browse", "query", "plan", "history", "simulate", "mutate"],
+                applicationUserId: null,
+                reason: "Browse and manage documents in the cloud console",
+                durationSeconds: 300,
+              }
+            : {
+                tenant: { projectId, environmentId },
+                collectionId,
+                mode: "policy_preview",
+                operations: ["get", "browse", "query", "plan", "simulate"],
+                applicationUserId: previewUserId,
+                reason: null,
+                durationSeconds: 300,
+              },
+        )
         .then((grant) => {
           if (closed) {
             revoke(grant);
