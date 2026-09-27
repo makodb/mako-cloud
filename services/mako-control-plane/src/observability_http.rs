@@ -87,11 +87,7 @@ fn handle_team_activity(
         &["cursor", "from", "until", "limit", "order", "changes"],
     )?;
     let query = observability_query(request)?;
-    let changes_only = match query_value(request, "changes")? {
-        None | Some("false") => false,
-        Some("true") => true,
-        Some(_) => return Err(invalid(request, "changes must be true or false")),
-    };
+    let changes_only = changes_query(request)?;
     let team = OrganizationId::parse(request.path_parameter("teamId").unwrap_or_default())
         .map_err(|_| invalid(request, "team path is invalid"))?;
     with_developer(graph, request, |actor, now| async move {
@@ -150,7 +146,16 @@ fn handle_observability(
     if !request.body().is_empty() {
         return Err(invalid(request, "request body is not supported"));
     }
-    reject_unknown_query(request, &["cursor", "from", "until", "limit", "order"])?;
+    let changes_only = if signal == ObservabilitySignal::Audit {
+        reject_unknown_query(
+            request,
+            &["cursor", "from", "until", "limit", "order", "changes"],
+        )?;
+        changes_query(request)?
+    } else {
+        reject_unknown_query(request, &["cursor", "from", "until", "limit", "order"])?;
+        false
+    };
     let query = observability_query(request)?;
     let tenant = tenant(request)?;
     with_developer(graph, request, |actor, now| async move {
@@ -199,7 +204,7 @@ fn handle_observability(
             }
             ObservabilitySignal::Audit => {
                 service
-                    .query_audit_events(&actor, &tenant, &query, now_milliseconds)
+                    .query_audit_events(&actor, &tenant, &query, changes_only, now_milliseconds)
                     .await
             }
         }
@@ -208,6 +213,15 @@ fn handle_observability(
             public_page(&page).map_err(|_| internal(request, "response serialization failed"))?;
         public_value(request, 200, page)
     })
+}
+
+/// `changes=true` leaves reads out of an audit listing.
+fn changes_query(request: &HttpRequest) -> Result<bool, HttpApiError> {
+    match query_value(request, "changes")? {
+        None | Some("false") => Ok(false),
+        Some("true") => Ok(true),
+        Some(_) => Err(invalid(request, "changes must be true or false")),
+    }
 }
 
 /// A page with its payloads named as the API's `…Signal` schemas name them.

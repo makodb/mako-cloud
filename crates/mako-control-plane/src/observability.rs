@@ -215,21 +215,32 @@ impl ObservabilityService {
         .await
     }
 
+    /// An environment's audit events. With `changes_only`, reads are left out
+    /// as for a team's activity: every visit to the Activity page records
+    /// reads of its own, and they used to push the changes a reader came for
+    /// off the page.
     pub async fn query_audit_events(
         &self,
         actor: &DeveloperPrincipal,
         tenant: &TenantScope,
         query: &ObservabilityQuery,
+        changes_only: bool,
         now_unix_milliseconds: u64,
     ) -> Result<ObservabilityPage, ObservabilityError> {
-        self.query_signal(
-            actor,
-            tenant,
-            ObservabilitySignal::Audit,
-            query,
-            now_unix_milliseconds,
-        )
-        .await
+        let page = self
+            .query_signal(
+                actor,
+                tenant,
+                ObservabilitySignal::Audit,
+                query,
+                now_unix_milliseconds,
+            )
+            .await?;
+        if !changes_only {
+            return Ok(page);
+        }
+        self.keep_changes(tenant, query, page, now_unix_milliseconds)
+            .await
     }
 
     /// A team's own activity: its invitations, membership and role changes,
@@ -277,40 +288,9 @@ impl ObservabilityService {
             now_unix_milliseconds,
         )?;
         if changes_only {
-            let mut items = Vec::with_capacity(query.limit);
-            let mut next = page.next_cursor.clone();
-            items.extend(page.items.drain(..).filter(is_change));
-            let mut scans = 1;
-            while items.len() < query.limit && scans < MAX_TEAM_ACTIVITY_SCANS {
-                let Some(cursor) = next.clone() else { break };
-                let continued = ObservabilityQuery {
-                    cursor: Some(cursor),
-                    ..query.clone()
-                };
-                let more = self
-                    .backend
-                    .query(&tenant, ObservabilitySignal::Audit, &continued)
-                    .await?;
-                validate_page(
-                    &more,
-                    &tenant,
-                    ObservabilitySignal::Audit,
-                    &continued,
-                    now_unix_milliseconds,
-                )?;
-                let changes: Vec<_> = more.items.into_iter().filter(is_change).collect();
-                // Taken whole or not at all, so the cursor never passes an
-                // event that was not returned.
-                if items.len() + changes.len() > query.limit {
-                    break;
-                }
-                items.extend(changes);
-                next = more.next_cursor;
-                page.retention = more.retention;
-                scans += 1;
-            }
-            page.items = items;
-            page.next_cursor = next;
+            page = self
+                .keep_changes(&tenant, query, page, now_unix_milliseconds)
+                .await?;
         }
         self.audit.record(ControlAuditEvent {
             organization_id: team.clone(),
@@ -320,6 +300,51 @@ impl ObservabilityService {
             outcome: ControlAuditOutcome::Allowed,
             at_unix_seconds: now_unix_milliseconds / 1_000,
         });
+        Ok(page)
+    }
+
+    /// Leaves reads out of an audit page and reads further backend pages to
+    /// fill it; a page is only ever taken whole, so paging on never skips an
+    /// event.
+    async fn keep_changes(
+        &self,
+        tenant: &TenantScope,
+        query: &ObservabilityQuery,
+        mut page: ObservabilityPage,
+        now_unix_milliseconds: u64,
+    ) -> Result<ObservabilityPage, ObservabilityError> {
+        let mut items = Vec::with_capacity(query.limit);
+        let mut next = page.next_cursor.clone();
+        items.extend(page.items.drain(..).filter(is_change));
+        let mut scans = 1;
+        while items.len() < query.limit && scans < MAX_TEAM_ACTIVITY_SCANS {
+            let Some(cursor) = next.clone() else { break };
+            let continued = ObservabilityQuery {
+                cursor: Some(cursor),
+                ..query.clone()
+            };
+            let more = self
+                .backend
+                .query(tenant, ObservabilitySignal::Audit, &continued)
+                .await?;
+            validate_page(
+                &more,
+                tenant,
+                ObservabilitySignal::Audit,
+                &continued,
+                now_unix_milliseconds,
+            )?;
+            let changes: Vec<_> = more.items.into_iter().filter(is_change).collect();
+            if items.len() + changes.len() > query.limit {
+                break;
+            }
+            items.extend(changes);
+            next = more.next_cursor;
+            page.retention = more.retention;
+            scans += 1;
+        }
+        page.items = items;
+        page.next_cursor = next;
         Ok(page)
     }
 
@@ -691,6 +716,98 @@ mod tests {
                 },
             })
         }
+    }
+
+    #[test]
+    fn an_environments_audit_can_leave_its_reads_out() {
+        futures::executor::block_on(async {
+            let adapter: Arc<dyn KvAdapter> = Arc::new(MemoryAdapter::new());
+            let organizations =
+                OrganizationStore::new(adapter.clone(), Durability::Memory).expect("organizations");
+            let projects = ProjectStore::new(adapter, Durability::Memory).expect("projects");
+            let team = OrganizationId::parse("org_websiteteam").expect("team");
+            let member = DeveloperIdentityId::parse("dev_example00").expect("member");
+            organizations
+                .create_organization(
+                    &OrganizationRecord::new(team.clone(), "Website", 1).expect("team"),
+                    &MembershipRecord::new(
+                        team.clone(),
+                        member.clone(),
+                        OrganizationRole::Owner,
+                        1,
+                    ),
+                )
+                .await
+                .expect("team");
+            let project = mako_api::ProjectId::parse("prj_example00").expect("project");
+            let environment = mako_api::EnvironmentId::parse("env_example00").expect("environment");
+            projects
+                .create_project(
+                    &crate::ProjectRecord::new(project.clone(), team, "Site", "local", 1)
+                        .expect("project"),
+                )
+                .await
+                .expect("project");
+            projects
+                .create_environment(
+                    &crate::EnvironmentRecord::new(
+                        environment.clone(),
+                        project.clone(),
+                        "Development",
+                        1,
+                    )
+                    .expect("environment"),
+                )
+                .await
+                .expect("environment");
+            let tenant = TenantScope::new(project, environment);
+            // What the Activity page itself leaves behind: reads around the changes.
+            let backend = Arc::new(PagedBackend {
+                pages: vec![
+                    vec![
+                        "observability_read",
+                        "collection_read",
+                        "observability_read",
+                    ],
+                    vec!["policy_activate", "observability_read", "function_deploy"],
+                ],
+                tenant: tenant.clone(),
+                queried: Mutex::new(Vec::new()),
+            });
+            let service = ObservabilityService::new(
+                projects,
+                organizations,
+                Arc::new(Audit::default()),
+                backend,
+            );
+            let actor = DeveloperPrincipal::for_test(member, "developer@example.test");
+            let query = ObservabilityQuery {
+                cursor: None,
+                from_unix_milliseconds: Some(5_000),
+                until_unix_milliseconds: Some(10_000),
+                limit: 3,
+                newest_first: true,
+            };
+            let everything = service
+                .query_audit_events(&actor, &tenant, &query, false, 10_000)
+                .await
+                .expect("everything");
+            assert_eq!(everything.items.len(), 3, "the first page is all reads");
+            let changes = service
+                .query_audit_events(&actor, &tenant, &query, true, 10_000)
+                .await
+                .expect("changes");
+            let actions: Vec<_> = changes
+                .items
+                .iter()
+                .map(|record| match &record.payload {
+                    ObservabilityPayload::Audit { action, .. } => action.clone(),
+                    other => panic!("unexpected payload {other:?}"),
+                })
+                .collect();
+            assert_eq!(actions, ["policy_activate", "function_deploy"]);
+            assert_eq!(changes.next_cursor, None);
+        });
     }
 
     #[test]

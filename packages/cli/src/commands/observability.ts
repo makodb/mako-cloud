@@ -221,6 +221,8 @@ interface SignalCommandSpec<K extends Kind> {
   readonly view: SignalView<K>;
   readonly options?: Readonly<Record<string, OptionSpec>>;
   readonly filter?: (args: CommandArgs) => ((signal: Signal<K>) => boolean) | undefined;
+  /** Query parameters the command's own options add to every page request. */
+  readonly extraQuery?: (args: CommandArgs) => Record<string, unknown>;
 }
 
 function signalCommand<K extends Kind>(spec: SignalCommandSpec<K>): Command {
@@ -231,7 +233,10 @@ function signalCommand<K extends Kind>(spec: SignalCommandSpec<K>): Command {
     options: { ...TENANT_OPTIONS, ...QUERY_OPTIONS, ...(spec.options ?? {}) },
     run: async (context, args) => {
       const filter = spec.filter?.(args);
-      const { page, retention } = await readSignals(context, args, spec.query);
+      const extra = spec.extraQuery?.(args) ?? {};
+      const query: SignalQuery = (client, projectId, environmentId, window) =>
+        spec.query(client, projectId, environmentId, { ...window, ...extra });
+      const { page, retention } = await readSignals(context, args, query);
       emit(context, page, retention, spec.view, filter);
     },
   };
@@ -452,6 +457,10 @@ function auditCommand(path: readonly string[], summary: string): Command {
     query: (client, projectId, environmentId, query) =>
       client.queryAuditEvents(projectId, environmentId, query),
     view: auditView,
+    options: {
+      changes: { type: "boolean", description: "Leave out events that only read something" },
+    },
+    extraQuery: (args) => (args.boolean("changes") ? { changes: true } : {}),
   });
 }
 

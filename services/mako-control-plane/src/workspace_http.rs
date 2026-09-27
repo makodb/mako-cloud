@@ -214,7 +214,7 @@ fn workspace_summary(
                 "activity",
                 graph
                     .observability_service()
-                    .query_audit_events(&actor, &tenant, &recent, now.saturating_mul(1_000))
+                    .query_audit_events(&actor, &tenant, &recent, true, now.saturating_mul(1_000))
                     .await,
             ),
         ] {

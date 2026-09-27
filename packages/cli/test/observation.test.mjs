@@ -201,6 +201,10 @@ test("activity renders audited actions newest first, one line each", async (t) =
   assert.equal(long.code, 0, long.stderr);
   assert.deepEqual(JSON.parse(long.stdout).items, events, "JSON keeps the served order");
   assert.equal(api.find(`${OBSERVABILITY}/audit-events`).length, 2);
+  assert.equal(api.find(`${OBSERVABILITY}/audit-events`)[0].query.changes, undefined, "reads are included by default");
+  const changes = await runCli(["activity", ...TENANT, "--changes"], { configDir: directory });
+  assert.equal(changes.code, 0, changes.stderr);
+  assert.equal(api.find(`${OBSERVABILITY}/audit-events`).at(-1).query.changes, "true");
 });
 
 test("teams activity reads the team's own audit trail, newest first, with --changes on the wire", async (t) => {

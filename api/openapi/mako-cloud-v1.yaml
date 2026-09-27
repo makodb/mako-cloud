@@ -3721,6 +3721,10 @@ paths:
       tags: [Management]
       operationId: queryAuditEvents
       summary: Query export-safe immutable audit events
+      description: >-
+        With `changes=true` events that only read something are left out, and
+        further records are read to fill the page; paging on with
+        `nextCursor` never skips an event.
       parameters:
         - $ref: "#/components/parameters/ProjectId"
         - $ref: "#/components/parameters/EnvironmentId"
@@ -3729,6 +3733,13 @@ paths:
         - $ref: "#/components/parameters/ObservabilityUntil"
         - $ref: "#/components/parameters/ObservabilityLimit"
         - $ref: "#/components/parameters/ObservabilityOrder"
+        - name: changes
+          in: query
+          required: false
+          description: Leave out events that only read something.
+          schema:
+            type: boolean
+            default: false
       responses:
         "200":
           $ref: "#/components/responses/ObservabilityPage"

@@ -15,9 +15,11 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
+  Checkbox,
   Eyebrow,
   Field,
   Input,
+  Label,
   NativeSelect,
   Table,
   TableBody,
@@ -98,6 +100,9 @@ export function ActivityScreen({
   const [moreFailure, setMoreFailure] = useState<ConsoleApiFailure | null>(null);
   const [outcome, setOutcome] = useState<OutcomeFilter>("all");
   const [actionText, setActionText] = useState("");
+  // Reads are left out unless asked for: every visit to this page records
+  // reads of its own, which used to push the changes off the first page.
+  const [includeReads, setIncludeReads] = useState(false);
   const filterId = useId();
 
   useEffect(() => {
@@ -106,8 +111,8 @@ export function ActivityScreen({
     setMoreFailure(null);
     const read =
       environmentId === undefined
-        ? readProjectFeed(client, projectId)
-        : readEnvironmentFeed(client, projectId, environmentId);
+        ? readProjectFeed(client, projectId, !includeReads)
+        : readEnvironmentFeed(client, projectId, environmentId, !includeReads);
     void read.then(
       (feed) => active && setState({ status: "ready", feed }),
       (error: unknown) =>
@@ -116,7 +121,7 @@ export function ActivityScreen({
     return () => {
       active = false;
     };
-  }, [client, environmentId, projectId]);
+  }, [client, environmentId, includeReads, projectId]);
 
   const loadMore = useCallback(async () => {
     if (environmentId === undefined || state.status !== "ready" || state.feed.nextCursor === null) {
@@ -131,6 +136,7 @@ export function ActivityScreen({
         limit: PAGE_LIMIT,
         order: "newest",
         cursor,
+        changes: !includeReads,
       });
       const older = rowsFromPage(page, environmentId, environmentId, current.rows.length);
       setState({
@@ -146,7 +152,7 @@ export function ActivityScreen({
     } finally {
       setLoadingMore(false);
     }
-  }, [client, environmentId, projectId, state]);
+  }, [client, environmentId, includeReads, projectId, state]);
 
   const rows = state.status === "ready" ? state.feed.rows : [];
   const visibleRows = useMemo(
@@ -209,6 +215,14 @@ export function ActivityScreen({
               onChange={(event) => setActionText(event.currentTarget.value)}
             />
           </Field>
+          <div className="flex items-center gap-2 sm:col-span-2">
+            <Checkbox
+              id={`${filterId}-reads`}
+              checked={includeReads}
+              onCheckedChange={(checked) => setIncludeReads(checked === true)}
+            />
+            <Label htmlFor={`${filterId}-reads`}>Include reads</Label>
+          </div>
         </form>
         {state.status === "loading" ? (
           <p className="m-0 text-sm text-muted-foreground" aria-live="polite">
@@ -367,12 +381,14 @@ async function readEnvironmentFeed(
   client: MakoManagementClient,
   projectId: string,
   environmentId: string,
+  changes: boolean,
 ): Promise<Feed> {
   // Newest first: read oldest first, a page is the start of the retention
   // window, days before anything the developer just did.
   const page = await client.queryAuditEvents(projectId, environmentId, {
     limit: PAGE_LIMIT,
     order: "newest",
+    changes,
   });
   return {
     rows: newestFirst(rowsFromPage(page, environmentId, environmentId, 0)),
@@ -387,11 +403,19 @@ async function readEnvironmentFeed(
 /** A project's feed is the union of its environments' feeds, merged newest
  * first and bounded; an environment whose feed fails is reported, not
  * silently dropped. */
-async function readProjectFeed(client: MakoManagementClient, projectId: string): Promise<Feed> {
+async function readProjectFeed(
+  client: MakoManagementClient,
+  projectId: string,
+  changes: boolean,
+): Promise<Feed> {
   const environments: Environment[] = await client.listEnvironments(projectId);
   const results = await Promise.allSettled(
     environments.map((environment) =>
-      client.queryAuditEvents(projectId, environment.id, { limit: PAGE_LIMIT, order: "newest" }),
+      client.queryAuditEvents(projectId, environment.id, {
+        limit: PAGE_LIMIT,
+        order: "newest",
+        changes,
+      }),
     ),
   );
   const rows: ActivityRow[] = [];

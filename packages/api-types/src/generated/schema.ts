@@ -1965,7 +1965,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Query export-safe immutable audit events */
+        /**
+         * Query export-safe immutable audit events
+         * @description With `changes=true` events that only read something are left out, and further records are read to fill the page; paging on with `nextCursor` never skips an event.
+         */
         get: operations["queryAuditEvents"];
         put?: never;
         post?: never;
@@ -9949,6 +9952,8 @@ export interface operations {
                 limit?: components["parameters"]["ObservabilityLimit"];
                 /** @description `newest` pages from the latest record back, each cursor continuing towards older ones, as a feed of recent activity reads; `oldest`, the default, pages forward from the start of the window. */
                 order?: components["parameters"]["ObservabilityOrder"];
+                /** @description Leave out events that only read something. */
+                changes?: boolean;
             };
             header?: never;
             path: {

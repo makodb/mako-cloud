@@ -280,10 +280,27 @@ test("the activity feed lists newest first, filters by outcome and action, and l
   await expect(rows).toHaveCount(4);
   await expect(rows.last().locator("td").nth(2)).toHaveText("project rename");
   await expect(loadMore).toBeDisabled();
+  // Reads are left out unless asked for.
   expect(distinct(api.auditQueries)).toEqual([
-    { environmentId: ENV_A, cursor: null, limit: "100" },
-    { environmentId: ENV_A, cursor: "audit-older", limit: "100" },
+    { environmentId: ENV_A, cursor: null, limit: "100", changes: "true" },
+    { environmentId: ENV_A, cursor: "audit-older", limit: "100", changes: "true" },
   ]);
+  expect(api.unhandled).toEqual([]);
+});
+
+test("the activity feed leaves reads out until they are asked for", async ({ page }) => {
+  const api = new UsageActivityHarness();
+  await api.install(page);
+
+  await page.goto(`/projects/${PROJECT_ID}/environments/${ENV_A}/activity`);
+  const feed = page.locator("section.activity-screen");
+  await expect(feed).toHaveAttribute("data-state", "ready");
+  await expect(page.getByLabel("Include reads")).not.toBeChecked();
+  expect(api.auditQueries.at(-1)?.changes).toBe("true");
+
+  await page.getByLabel("Include reads").check();
+  await expect.poll(() => api.auditQueries.at(-1)?.changes).toBe("false");
+  await expect(feed).toHaveAttribute("data-state", "ready");
   expect(api.unhandled).toEqual([]);
 });
 
@@ -323,8 +340,12 @@ class UsageActivityHarness {
     from: string | null;
     limit: string | null;
   }[] = [];
-  readonly auditQueries: { environmentId: string; cursor: string | null; limit: string | null }[] =
-    [];
+  readonly auditQueries: {
+    environmentId: string;
+    cursor: string | null;
+    limit: string | null;
+    changes: string | null;
+  }[] = [];
   readonly usageFailsFor = new Set<string>();
   billFails = false;
 
@@ -405,7 +426,12 @@ class UsageActivityHarness {
     } else if (observability?.[1] !== undefined && observability[2] === "audit-events") {
       const environmentId = observability[1];
       const cursor = url.searchParams.get("cursor");
-      this.auditQueries.push({ environmentId, cursor, limit: url.searchParams.get("limit") });
+      this.auditQueries.push({
+        environmentId,
+        cursor,
+        limit: url.searchParams.get("limit"),
+        changes: url.searchParams.get("changes"),
+      });
       await json(route, auditPage(environmentId, cursor));
     } else if (observability?.[1] !== undefined && method === "GET") {
       // Other signals the project home may summarize are outside this spec.

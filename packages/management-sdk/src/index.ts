@@ -422,6 +422,9 @@ export interface TeamActivityQuery extends ObservabilityQuery {
   readonly changes?: boolean;
 }
 
+/** An environment's audit listing takes the same filter as a team's activity. */
+export type AuditEventsQuery = TeamActivityQuery;
+
 export type ManagementCredential =
   | {
       readonly kind: "developer_session";
@@ -2461,10 +2464,11 @@ export class MakoManagementClient {
     );
   }
 
+  /** An environment's audit events; `changes: true` leaves reads out. */
   async queryAuditEvents(
     projectId: string,
     environmentId: string,
-    query: ObservabilityQuery = {},
+    query: AuditEventsQuery = {},
   ): Promise<ObservabilityPage> {
     return unwrap(
       await this.#client.GET(
