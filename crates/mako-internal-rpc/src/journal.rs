@@ -12,7 +12,7 @@ use mako_storage::{
 use rand_core::{OsRng, RngCore};
 use serde::{Deserialize, Serialize};
 
-use crate::{DeploymentKey, VerifiedInternalRequest};
+use crate::{CONTROL_DATA_RESPONSE_BYTES, DeploymentKey, VerifiedInternalRequest};
 
 const RESPONSE_RETENTION_SECONDS: u64 = 24 * 60 * 60;
 
@@ -106,7 +106,8 @@ impl EncryptedResponseJournal {
         now_unix_seconds: u64,
     ) -> Result<ResponseJournalStoreOutcome, ResponseJournalError> {
         self.ensure_tenant(request)?;
-        if successful_response.is_empty() || successful_response.len() > 1024 * 1024 {
+        if successful_response.is_empty() || successful_response.len() > CONTROL_DATA_RESPONSE_BYTES
+        {
             return Err(ResponseJournalError::InvalidResponse);
         }
         // An expired record is not an answer -- it is what an answer decays
@@ -167,7 +168,8 @@ impl EncryptedResponseJournal {
         now_unix_seconds: u64,
     ) -> Result<PreparedResponseJournal, ResponseJournalError> {
         self.ensure_tenant(request)?;
-        if successful_response.is_empty() || successful_response.len() > 1024 * 1024 {
+        if successful_response.is_empty() || successful_response.len() > CONTROL_DATA_RESPONSE_BYTES
+        {
             return Err(ResponseJournalError::InvalidResponse);
         }
         match self.lookup(request, now_unix_seconds).await? {

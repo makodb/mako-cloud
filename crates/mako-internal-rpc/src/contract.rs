@@ -8,7 +8,7 @@ use serde_json::{Map, Value};
 pub const INTERNAL_PROTOCOL_VERSION: &str = "v1";
 pub const MAX_INTERNAL_BODY_BYTES: usize = 256 * 1024;
 // A one-MiB document plus canonical metadata must fit in an export page.
-// Keep the response allowance above the page budget for the JSON envelope.
+// The HTTP client and encrypted response journal must admit the JSON envelope.
 pub const DATA_JOB_EXPORT_PAGE_BYTES: usize = 2 * 1024 * 1024;
 pub const CONTROL_DATA_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
 

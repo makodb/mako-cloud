@@ -2366,7 +2366,7 @@ Grants last at most five minutes and stay in memory. Never put an `x-mako-explor
 
 ### Import and export
 
-The only bulk format is UTF-8 **JSON Lines**, one JSON object per non-empty line. Imports require an immutable digest-verified upload and a dry run before confirmation; conflict strategies are `create_only`, `update_existing`, and `upsert`. Each row is conditionally idempotent; cancellation stops future work and does not roll back committed rows. Exports read one consistent snapshot and become downloadable only after their manifest and digest are finalized; partial artifacts are never served.
+The only bulk format is UTF-8 **JSON Lines**, one JSON object per non-empty line. Imports require an immutable digest-verified upload and a dry run before confirmation; conflict strategies are `create_only`, `update_existing`, and `upsert`. Each row is conditionally idempotent; cancellation stops future work and does not roll back committed rows. Exports read one consistent snapshot and become downloadable only after their manifest and digest are finalized; partial artifacts are never served. Exports include valid documents up to the 1 MiB document limit. Pagination keeps the original snapshot, and retrying a page returns the same rows. Writes made after the snapshot starts appear only in a later export.
 
 ```bash
 mako-cloud data export --collection transactions --output ./transactions.jsonl

@@ -1911,6 +1911,101 @@ mod tests {
     use super::*;
 
     #[test]
+    fn control_data_client_accepts_export_pages_and_rejects_oversized_responses() {
+        use mako_internal_rpc::{
+            DataJobExportPageInput, DataJobExportPageOutput, InternalClientError,
+        };
+        let directory = local_tempdir("control-data-response-budget");
+        let config = config_for(directory.path(), DeploymentEnvironment::Local);
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let endpoint = listener.local_addr().unwrap();
+        let server = thread::spawn(move || {
+            for payload_bytes in [
+                2 * 1024 * 1024,
+                mako_internal_rpc::CONTROL_DATA_RESPONSE_BYTES,
+            ] {
+                let (mut stream, _) = listener.accept().unwrap();
+                stream
+                    .set_read_timeout(Some(std::time::Duration::from_secs(10)))
+                    .unwrap();
+                let mut headers = Vec::new();
+                while !headers.ends_with(b"\r\n\r\n") {
+                    let mut byte = [0];
+                    stream.read_exact(&mut byte).unwrap();
+                    headers.push(byte[0]);
+                    assert!(headers.len() < 32 * 1024);
+                }
+                let headers = String::from_utf8(headers).unwrap();
+                let header = |name: &str| {
+                    headers
+                        .lines()
+                        .find_map(|line| {
+                            let (key, value) = line.split_once(':')?;
+                            key.eq_ignore_ascii_case(name).then(|| value.trim())
+                        })
+                        .unwrap()
+                };
+                let mut body = vec![0; header("content-length").parse::<usize>().unwrap()];
+                assert!(body.len() <= mako_internal_rpc::MAX_INTERNAL_BODY_BYTES);
+                stream.read_exact(&mut body).unwrap();
+                let command: IdentityAdminCommand = serde_json::from_slice(&body).unwrap();
+                assert_eq!(command.operation, IdentityAdminOperation::ExportDataJobPage);
+                let output = DataJobExportPageOutput {
+                    rows: vec![
+                        serde_json::json!({"id":"large", "payload":"x".repeat(payload_bytes)}),
+                    ],
+                    next_cursor: None,
+                    snapshot: "test-snapshot".into(),
+                    schema_version: 1,
+                };
+                let bytes = serde_json::to_vec(&output).unwrap();
+                write!(stream, "HTTP/1.1 200 OK\r\ncontent-length: {}\r\nx-mako-request-id: {}\r\nconnection: close\r\n\r\n",
+                    bytes.len(), header("x-mako-request-id")).unwrap();
+                stream.write_all(&bytes).unwrap();
+            }
+        });
+        let graph = ControlPlaneGraph::open_with_data_plane_endpoint(&config, endpoint).unwrap();
+        let tenant = mako_api::TenantScope::new(
+            mako_api::ProjectId::parse("prj_exporttest").unwrap(),
+            mako_api::EnvironmentId::parse("env_exporttest").unwrap(),
+        );
+        let command = IdentityAdminCommand {
+            operation: IdentityAdminOperation::ExportDataJobPage,
+            actor_id: "dev_exporttest".into(),
+            permissions: std::collections::BTreeSet::from([
+                IdentityAdminPermission::ExecuteDataJobs,
+            ]),
+            input: serde_json::to_value(DataJobExportPageInput {
+                job_id: "djob_exporttest01".into(),
+                collection_id: "captures".into(),
+                cursor: None,
+                limit: 64,
+            })
+            .unwrap(),
+        };
+        let output: DataJobExportPageOutput = graph
+            .data_plane_identity_admin()
+            .administer(&tenant, "req_large_export", "idem_large_export", &command)
+            .unwrap();
+        assert_eq!(
+            output.rows[0]["payload"].as_str().unwrap().len(),
+            2 * 1024 * 1024
+        );
+        assert!(matches!(
+            graph
+                .data_plane_identity_admin()
+                .administer::<DataJobExportPageOutput>(
+                    &tenant,
+                    "req_oversized_export",
+                    "idem_oversized_export",
+                    &command
+                ),
+            Err(InternalClientError::ResponseTooLarge)
+        ));
+        server.join().unwrap();
+    }
+
+    #[test]
     fn local_graph_composes_all_dependencies_and_probes_data_plane() {
         let directory = local_tempdir("control-plane-local");
         let config = config_for(directory.path(), DeploymentEnvironment::Local);
