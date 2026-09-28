@@ -1526,6 +1526,7 @@ fn worker_failure_code(error: &DataJobError) -> String {
         DataJobError::Forbidden => "forbidden",
         DataJobError::QuotaExceeded => "quota",
         DataJobError::Conflict => "conflict",
+        DataJobError::SchemaVersionMismatch { .. } => "schema_version",
         DataJobError::Project(_) => "project",
         DataJobError::Organization(_) => "organization",
         DataJobError::Collection(_) => "collection",
