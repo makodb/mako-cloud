@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, sync::Arc};
 
-use mako_api::{CollectionId, CollectionScope, TenantScope};
+use mako_api::{CollectionId, CollectionScope, ErrorCode, RetryAdvice, TenantScope};
 use mako_control_plane::{
     ActivePolicyView, DeveloperPrincipal, NewPolicyDraft, PolicyAdminError, PolicyExampleResult,
     PolicyValidationView,
@@ -277,11 +277,42 @@ fn policy_lifecycle(
         // traffic was still evaluated against the old ones. Failing before the
         // local commit keeps the previously granted version in effect on both
         // sides. Both writes are idempotent, so a retry converges.
-        let target = graph
+        let mut target = graph
             .policy_service()
             .get_policy(&actor, &tenant, &collection_id, version, now)
             .await
             .map_err(|error| policy_error(request, error))?;
+        // A draft is validated first. The data plane refuses rules that do
+        // not compile with a bare conflict ("identity operation conflicts
+        // with current state"), so an invalid draft is refused here with the
+        // validation's own reason; a valid one becomes validated and goes on.
+        if !rollback && target.state() == mako_policy::PolicyState::Draft {
+            let validation = graph
+                .policy_service()
+                .validate(&actor, &tenant, &collection_id, version, now)
+                .await
+                .map_err(|error| policy_error(request, error))?;
+            if !validation.valid {
+                let reason = validation
+                    .policy
+                    .diagnostics()
+                    .iter()
+                    .find(|diagnostic| diagnostic.severity() == DiagnosticSeverity::Error)
+                    .map_or("its rules do not compile", |diagnostic| {
+                        diagnostic.message()
+                    });
+                return Err(HttpApiError::new(
+                    409,
+                    ErrorCode::Conflict,
+                    format!(
+                        "policy version {version} is not valid: {reason}; fix it and validate it again before activating"
+                    ),
+                    request.request_id(),
+                    RetryAdvice::Never,
+                ));
+            }
+            target = validation.policy;
+        }
         propagate_policy(graph, request, &actor, &tenant, &collection_id, &target).await?;
         let view = if current
             .policy
@@ -386,10 +417,13 @@ fn policy_error(request: &HttpRequest, error: PolicyAdminError) -> HttpApiError 
         | PolicyAdminError::Collection(_)
         | PolicyAdminError::Model(_)
         | PolicyAdminError::Context(_) => invalid(request, "policy input is invalid"),
+        PolicyAdminError::Store(PolicyStoreError::ValidationFailed(_)) => conflict(
+            request,
+            "the policy is not valid for the collection's current schema; validate it to see why",
+        ),
         PolicyAdminError::Store(
             PolicyStoreError::VersionAlreadyExists
             | PolicyStoreError::ConcurrentLifecycleChange
-            | PolicyStoreError::ValidationFailed(_)
             | PolicyStoreError::NewVersionMustBeDraft,
         ) => conflict(request, "policy lifecycle or version conflict"),
         _ => unavailable(request, "policy administration is unavailable"),
