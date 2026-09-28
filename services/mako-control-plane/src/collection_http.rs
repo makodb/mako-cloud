@@ -116,6 +116,18 @@ fn handle_list_collections(
     })
 }
 
+/// A 409 whose message names what is taken, for refusals that must say which
+/// version or name to use instead.
+fn taken(request: &HttpRequest, message: String) -> HttpApiError {
+    HttpApiError::new(
+        409,
+        ErrorCode::Conflict,
+        message,
+        request.request_id(),
+        RetryAdvice::Never,
+    )
+}
+
 fn handle_create_collection(
     graph: &Arc<ControlPlaneGraph>,
     request: &HttpRequest,
@@ -149,7 +161,11 @@ fn handle_create_collection(
                 if collection_matches(&existing, &body) {
                     existing
                 } else {
-                    return Err(conflict(request, "collection idempotency conflict"));
+                    // A fresh request, not a retry: the ID is taken.
+                    return Err(conflict(
+                        request,
+                        "a collection with this ID already exists with a different definition; choose another ID, or publish a new schema version of it",
+                    ));
                 }
             }
             Err(error) => return Err(collection_error(request, error)),
@@ -241,7 +257,14 @@ fn handle_publish_schema(
                 {
                     SchemaPublicationOutcome::Published(current)
                 } else {
-                    return Err(conflict(request, "schema publication idempotency conflict"));
+                    return Err(taken(
+                        request,
+                        format!(
+                            "the collection is already at schema version {}; publish version {} or later",
+                            current.schema_version().get(),
+                            current.schema_version().get().saturating_add(1)
+                        ),
+                    ));
                 }
             }
             Err(error) => return Err(collection_error(request, error)),
@@ -334,7 +357,10 @@ fn handle_create_migration(
                 ) {
                     existing
                 } else {
-                    return Err(conflict(request, "migration idempotency conflict"));
+                    return Err(conflict(
+                        request,
+                        "a migration with this ID already exists with a different target or reason; choose another migration ID",
+                    ));
                 }
             }
             Err(error) => return Err(collection_error(request, error)),
@@ -538,7 +564,14 @@ fn handle_create_index(
                 {
                     existing
                 } else {
-                    return Err(conflict(request, "index idempotency conflict"));
+                    return Err(taken(
+                        request,
+                        format!(
+                            "index {} version {} already exists with a different kind or fields; choose another name or version",
+                            name.as_str(),
+                            version.get()
+                        ),
+                    ));
                 }
             }
             Err(error) => return Err(collection_error(request, error)),
