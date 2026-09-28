@@ -1245,7 +1245,6 @@ async fn derive_rated_period(
     period_end: u64,
     now: u64,
 ) -> Result<DerivedBill, HttpApiError> {
-    let now_milliseconds = now.saturating_mul(1_000);
     // Which plan held when, as stretch starts in milliseconds clipped to the
     // window. Weights come from the calendar window, not from retention: the
     // base fee covers time subscribed, which no telemetry needs to prove.
@@ -1297,68 +1296,29 @@ async fn derive_rated_period(
         }
         for environment in &environments {
             let tenant = TenantScope::new(project.id().clone(), environment.id().clone());
-            let mut per_segment: Vec<
-                std::collections::BTreeMap<mako_api::QuotaResource, Vec<u64>>,
-            > = vec![std::collections::BTreeMap::new(); segments.len()];
-            let mut cursor: Option<String> = None;
-            for _page in 0..16 {
-                // No `from` bound: the retention boundary is recomputed by
-                // the store on every call, and chasing it loses the race.
-                // The whole retained window is fetched and the period is
-                // applied here, where the clock stands still.
-                let page = graph
-                    .observability_service()
-                    .query_usage(
-                        actor,
-                        &tenant,
-                        &mako_api::ObservabilityQuery {
-                            cursor: cursor.clone(),
-                            from_unix_milliseconds: None,
-                            until_unix_milliseconds: None,
-                            limit: 1_000,
-                            newest_first: false,
-                        },
-                        now_milliseconds,
-                    )
-                    .await
-                    .map_err(|_| unavailable(request, "usage records are unavailable"))?;
-                // The bill covers the evidence that still exists; when
-                // retention starts inside the window, the reported start
-                // says so instead of pretending.
-                evidence_start = evidence_start.max(page.retention.retained_from_unix_milliseconds);
-                for record in &page.items {
-                    let at = record.timestamp_unix_milliseconds;
-                    if at < evidence_start || at >= period_end {
-                        continue;
-                    }
-                    if let mako_api::ObservabilityPayload::Usage {
-                        resource, quantity, ..
-                    } = &record.payload
-                    {
-                        let index = segments
-                            .iter()
-                            .rposition(|(_, from)| *from <= at)
-                            .unwrap_or(0);
-                        per_segment[index]
-                            .entry(*resource)
-                            .or_default()
-                            .push(*quantity);
-                    }
-                }
-                cursor = page.next_cursor;
-                if cursor.is_none() {
-                    break;
-                }
-            }
-            if cursor.is_some() {
-                return Err(unavailable(
-                    request,
-                    "usage billing exceeds the retained-record limit",
-                ));
-            }
+            let tenant = &tenant;
+            let (per_segment, retained_from) =
+                billing_usage(request, &segments, period_end, |query| async move {
+                    // Validate each page against the time of that read, even
+                    // when a large period takes longer than the clock-skew allowance.
+                    let observed_at = SystemTime::now()
+                        .duration_since(SystemTime::UNIX_EPOCH)
+                        .map_err(|_| internal(request, "system clock is unavailable"))?;
+                    graph
+                        .observability_service()
+                        .query_usage(
+                            actor,
+                            tenant,
+                            &query,
+                            u64::try_from(observed_at.as_millis()).unwrap_or(u64::MAX),
+                        )
+                        .await
+                        .map_err(|_| unavailable(request, "usage records are unavailable"))
+                })
+                .await?;
+            evidence_start = evidence_start.max(retained_from);
             for (index, resources) in per_segment.into_iter().enumerate() {
-                for (resource, records) in resources {
-                    let quantity = mako_billing::rating::period_quantity(resource, &records);
+                for (resource, quantity) in resources {
                     let entry = usage_by_segment[index].entry(resource).or_insert(0);
                     *entry = entry.saturating_add(quantity);
                     let project_entry = project_segments[index].entry(resource).or_insert(0_u64);
@@ -1409,6 +1369,97 @@ async fn derive_rated_period(
         retained_from: evidence_start.min(period_end),
         projects,
     })
+}
+
+type SegmentUsage = Vec<std::collections::BTreeMap<mako_api::QuotaResource, u64>>;
+
+/// Read a fixed billing window backwards and aggregate each page immediately.
+/// There is no record-count cap. Memory holds one page and one sum/count per
+/// resource and plan segment, rather than every retained sample.
+async fn billing_usage<F, Fut>(
+    request: &HttpRequest,
+    segments: &[(String, u64)],
+    period_end: u64,
+    mut query: F,
+) -> Result<(SegmentUsage, u64), HttpApiError>
+where
+    F: FnMut(mako_api::ObservabilityQuery) -> Fut,
+    Fut: Future<Output = Result<mako_api::ObservabilityPage, HttpApiError>>,
+{
+    let mut totals: Vec<
+        std::collections::BTreeMap<mako_api::QuotaResource, mako_billing::rating::PeriodQuantity>,
+    > = vec![std::collections::BTreeMap::new(); segments.len()];
+    let period_start = segments.first().map_or(period_end, |segment| segment.1);
+    // Discover retention before setting an upper bound: querying an already
+    // expired month with `until` older than retention is rejected by telemetry.
+    let metadata = query(mako_api::ObservabilityQuery {
+        cursor: None,
+        from_unix_milliseconds: None,
+        until_unix_milliseconds: None,
+        limit: 1,
+        newest_first: true,
+    })
+    .await?;
+    let mut retained_from = period_start.max(metadata.retention.retained_from_unix_milliseconds);
+    let until = period_end
+        .saturating_sub(1)
+        .min(metadata.retention.observed_at_unix_milliseconds);
+    let mut cursor = None;
+    let mut previous_timestamp = until;
+    while retained_from <= until && period_start < period_end {
+        let page = query(mako_api::ObservabilityQuery {
+            cursor: cursor.clone(),
+            // Retention advances between requests. Leave its lower bound to
+            // telemetry and stop locally once records precede the period.
+            from_unix_milliseconds: None,
+            until_unix_milliseconds: Some(until),
+            limit: 1_000,
+            newest_first: true,
+        })
+        .await?;
+        retained_from = retained_from.max(page.retention.retained_from_unix_milliseconds);
+        if page.next_cursor.is_some() && (page.items.is_empty() || page.next_cursor == cursor) {
+            return Err(unavailable(request, "usage pagination did not advance"));
+        }
+        let mut reached_start = false;
+        for record in page.items {
+            let at = record.timestamp_unix_milliseconds;
+            if at > previous_timestamp {
+                return Err(unavailable(request, "usage records are out of order"));
+            }
+            previous_timestamp = at;
+            if at < retained_from {
+                reached_start = true;
+                break;
+            }
+            if let mako_api::ObservabilityPayload::Usage {
+                resource, quantity, ..
+            } = record.payload
+            {
+                let index = segments
+                    .iter()
+                    .rposition(|(_, from)| *from <= at)
+                    .unwrap_or(0);
+                totals[index].entry(resource).or_default().record(quantity);
+            }
+        }
+        cursor = page.next_cursor;
+        if reached_start || cursor.is_none() {
+            break;
+        }
+    }
+    Ok((
+        totals
+            .into_iter()
+            .map(|resources| {
+                resources
+                    .into_iter()
+                    .map(|(resource, total)| (resource, total.quantity(resource)))
+                    .collect()
+            })
+            .collect(),
+        retained_from.min(period_end),
+    ))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2324,6 +2375,198 @@ struct EnvironmentWire {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn billing_request() -> HttpRequest {
+        HttpRequest::for_test(
+            HttpMethod::Get,
+            "/v1/teams/org_billingtest/bill",
+            vec![],
+            b"",
+            None,
+        )
+    }
+
+    fn usage_page(at: u64, quantity: u64, next: Option<&str>) -> mako_api::ObservabilityPage {
+        mako_api::ObservabilityPage {
+            items: vec![mako_api::ObservabilityRecord {
+                tenant: TenantScope::new(
+                    ProjectId::parse("prj_billingtest").unwrap(),
+                    EnvironmentId::parse("env_billingtest").unwrap(),
+                ),
+                timestamp_unix_milliseconds: at,
+                payload: mako_api::ObservabilityPayload::Usage {
+                    resource: mako_api::QuotaResource::StorageBytes,
+                    quantity,
+                    unit: "bytes".into(),
+                },
+            }],
+            next_cursor: next.map(str::to_owned),
+            retention: mako_api::RetentionWindow {
+                observed_at_unix_milliseconds: 500_000,
+                retained_from_unix_milliseconds: 1,
+                retention_seconds: 500,
+            },
+        }
+    }
+
+    #[test]
+    fn billing_pages_large_histories_with_exact_segment_totals_and_averages() {
+        use mako_api::{ObservabilityPayload, QuotaResource};
+        let request = billing_request();
+        let segments = vec![("free".into(), 110_000), ("pro".into(), 120_007)];
+        let mut records = Vec::new();
+        let mut expected = [
+            std::collections::BTreeMap::<QuotaResource, Vec<u64>>::new(),
+            std::collections::BTreeMap::new(),
+        ];
+        for at in 100_000..150_000 {
+            for (resource, quantity) in [
+                (
+                    QuotaResource::StorageBytes,
+                    if at % 2 == 0 { 100 } else { 301 },
+                ),
+                (QuotaResource::ObjectEgressBytesPerMonth, at % 7 + 1),
+            ] {
+                let mut record = usage_page(at, quantity, None).items.remove(0);
+                record.payload = ObservabilityPayload::Usage {
+                    resource,
+                    quantity,
+                    unit: "bytes".into(),
+                };
+                records.push(record);
+                if (110_000..140_000).contains(&at) {
+                    expected[usize::from(at >= 120_007)]
+                        .entry(resource)
+                        .or_default()
+                        .push(quantity);
+                }
+            }
+        }
+        let mut calls = 0;
+        let mut served = 0;
+        let (actual, retained_from) =
+            block_on(billing_usage(&request, &segments, 140_000, |query| {
+                calls += 1;
+                assert!(query.newest_first);
+                assert!(query.from_unix_milliseconds.is_none());
+                let mut page = usage_page(500_000, u64::MAX, None);
+                if calls > 1 {
+                    // Every page uses the same exclusive period end, regardless of
+                    // newer records arriving during pagination.
+                    assert_eq!(query.until_unix_milliseconds, Some(139_999));
+                    assert_eq!(query.limit, 1_000);
+                    let offset = query
+                        .cursor
+                        .as_deref()
+                        .unwrap_or("0")
+                        .parse::<usize>()
+                        .unwrap();
+                    let eligible: Vec<_> = records
+                        .iter()
+                        .rev()
+                        .filter(|record| record.timestamp_unix_milliseconds <= 139_999)
+                        .collect();
+                    page.items = eligible
+                        .iter()
+                        .skip(offset)
+                        .take(query.limit)
+                        .map(|record| (*record).clone())
+                        .collect();
+                    served += page.items.len();
+                    page.next_cursor = (offset + query.limit < eligible.len())
+                        .then(|| (offset + query.limit).to_string());
+                }
+                std::future::ready(Ok(page))
+            }))
+            .unwrap();
+        assert_eq!(retained_from, 110_000);
+        assert_eq!(calls, 62); // Metadata, 60 usage pages, then the first older page.
+        assert_eq!(served, 61_000);
+        for (actual, expected) in actual.iter().zip(expected) {
+            for (resource, samples) in expected {
+                assert_eq!(
+                    actual[&resource],
+                    mako_billing::rating::period_quantity(resource, &samples)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn billing_reports_partial_retention_and_skips_fully_expired_periods() {
+        let request = billing_request();
+        for end in [1_000, 10_000] {
+            let mut calls = 0;
+            let (totals, from) =
+                block_on(billing_usage(&request, &[("free".into(), 1)], end, |_| {
+                    calls += 1;
+                    let mut page = usage_page(5_000, 42, None);
+                    page.retention.retained_from_unix_milliseconds = 4_000;
+                    std::future::ready(Ok(page))
+                }))
+                .unwrap();
+            if end == 1_000 {
+                assert_eq!(calls, 1);
+                assert!(totals[0].is_empty());
+                assert_eq!(from, end);
+            } else {
+                assert_eq!(calls, 2);
+                assert_eq!(totals[0][&mako_api::QuotaResource::StorageBytes], 42);
+                assert_eq!(from, 4_000);
+            }
+        }
+    }
+
+    #[test]
+    fn billing_never_returns_partial_totals_after_a_late_page_failure() {
+        let request = billing_request();
+        let mut calls = 0;
+        let result = block_on(billing_usage(
+            &request,
+            &[("free".into(), 1)],
+            500_001,
+            |_| {
+                calls += 1;
+                std::future::ready(if calls <= 18 {
+                    Ok(usage_page(10_000, 7, Some(&calls.to_string())))
+                } else {
+                    Err(unavailable(&request, "synthetic telemetry failure"))
+                })
+            },
+        ));
+        assert_eq!(calls, 19);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn billing_rejects_stuck_empty_or_out_of_order_pages() {
+        let request = billing_request();
+        for invalid_page in ["repeated", "empty", "order"] {
+            let mut calls = 0;
+            let result = block_on(billing_usage(
+                &request,
+                &[("free".into(), 1)],
+                500_001,
+                |_| {
+                    calls += 1;
+                    let mut page = usage_page(10_000, 7, Some("same-cursor"));
+                    if calls == 3 {
+                        match invalid_page {
+                            "empty" => page.items.clear(),
+                            "order" => {
+                                page.items[0].timestamp_unix_milliseconds = 11_000;
+                                page.next_cursor = None;
+                            }
+                            _ => {}
+                        }
+                    }
+                    assert!(calls <= 3);
+                    std::future::ready(Ok(page))
+                },
+            ));
+            assert!(result.is_err(), "{invalid_page}");
+        }
+    }
 
     /// Calendar arithmetic the biller stands on: a month's start must invert
     /// the year-and-month read, the end must be the next month's start across

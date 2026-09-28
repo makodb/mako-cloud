@@ -81,6 +81,10 @@ Run `npm run validate:traceability` whenever a scenario or row changes. The vali
 | BI-08 | A tenant's balance is deeply negative | `scripts/validate-no-collection.js` (proves no enforcement path reads the balance) | Automated |
 | BI-09 | A component attempts collection | `scripts/validate-no-collection.js` | Automated |
 | BI-10 | The beta ends | `scripts/validate-no-collection.js` (no conversion mechanism exists to find) | Automated |
+| BI-11 | Usage exceeds sixteen thousand records | `crates/mako-smoke/tests/telemetry_pipeline.rs::observed_events_and_usage_reach_the_management_api` (end-to-end) and `services/mako-control-plane/src/management_http.rs::billing_pages_large_histories_with_exact_segment_totals_and_averages` | Automated |
+| BI-12 | A later usage page fails | `services/mako-control-plane/src/management_http.rs::billing_never_returns_partial_totals_after_a_late_page_failure` | Automated |
+| BI-13 | A billing period has expired from retention | `services/mako-control-plane/src/management_http.rs::billing_reports_partial_retention_and_skips_fully_expired_periods` | Automated |
+
 
 ## Developer registration and wait list
 

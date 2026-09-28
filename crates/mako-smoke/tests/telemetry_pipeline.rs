@@ -349,6 +349,52 @@ fn observed_events_and_usage_reach_the_management_api() {
         );
     }
 
+    // Regress the billing read's former 16,000-record ceiling using the real
+    // telemetry store, HTTP client, authentication, and billing routes. All
+    // samples share a timestamp, so continuation must retain distinct records.
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64;
+    let mut ingest_headers = BTreeMap::from([
+        (
+            mako_api::TELEMETRY_AUTHORIZATION_HEADER.to_owned(),
+            INTERNAL_AUTH_SECRET.to_owned(),
+        ),
+        (
+            mako_api::TELEMETRY_VERSION_HEADER.to_owned(),
+            mako_api::TELEMETRY_PROTOCOL_VERSION.to_string(),
+        ),
+    ]);
+    let mut remaining = 17_017;
+    let mut offset = 1;
+    while remaining > 0 {
+        let count = remaining.min(256);
+        ingest_headers.insert(
+            "x-mako-request-id".to_owned(),
+            format!("req_billing{offset:08}"),
+        );
+        let records: Vec<_> = (0..count).map(|_| json!({
+            "tenant": {"projectId": PROJECT_ID, "environmentId": ENVIRONMENT_ID},
+            "timestampUnixMilliseconds": timestamp,
+            "payload": {"kind": "usage", "resource": "object_egress_bytes_per_month", "quantity": 7, "unit": "bytes"},
+        })).collect();
+        let (status, body) = request(
+            telemetry_port,
+            "POST",
+            mako_api::TELEMETRY_INGEST_PATH,
+            &ingest_headers,
+            Some(&json!({
+                "protocolVersion": mako_api::TELEMETRY_PROTOCOL_VERSION,
+                "requestId": format!("req_billing{offset:08}"),
+                "source": "billing-history-regression", "offset": offset, "records": records,
+            })),
+        );
+        assert_eq!(status, 200, "usage fixture ingest: {body}");
+        remaining -= count;
+        offset += 1;
+    }
+
     // Once usage has arrived, the bill's quantities must derive from it: the
     // storage sample this test caused has to show up as a rated quantity, not
     // just as a telemetry record.
@@ -385,6 +431,20 @@ fn observed_events_and_usage_reach_the_management_api() {
     assert_eq!(project_bill["allocation"], "proportional_resource_usage");
     assert_eq!(project_bill["totalMicroDollars"], 0);
     assert_eq!(project_bill["collectable"], false);
+    for rated in [&bill, &project_bill] {
+        let egress = rated["lineItems"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|line| line["resource"] == "object_egress_bytes_per_month")
+            .unwrap();
+        assert_eq!(
+            egress["quantity"],
+            17_017 * 7,
+            "every retained usage record must count"
+        );
+    }
+
     for owner_field in [
         "baseMicroDollars",
         "creditsMicroDollars",

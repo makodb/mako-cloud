@@ -48,21 +48,37 @@ pub fn aggregation(resource: QuotaResource) -> Aggregation {
     }
 }
 
+/// Running sum and sample count, independent of the number of usage records.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct PeriodQuantity {
+    total: u128,
+    samples: u64,
+}
+
+impl PeriodQuantity {
+    pub fn record(&mut self, quantity: u64) {
+        self.total = self.total.saturating_add(u128::from(quantity));
+        self.samples = self.samples.saturating_add(1);
+    }
+
+    #[must_use]
+    pub fn quantity(self, resource: QuotaResource) -> u64 {
+        let quantity = match aggregation(resource) {
+            Aggregation::SumOfRecords => self.total,
+            Aggregation::AverageOfSamples => self.total / u128::from(self.samples.max(1)),
+        };
+        u64::try_from(quantity).unwrap_or(u64::MAX)
+    }
+}
+
 /// Reduce a period's usage records for one resource to the quantity billed.
 #[must_use]
 pub fn period_quantity(resource: QuotaResource, records: &[u64]) -> u64 {
-    if records.is_empty() {
-        return 0;
+    let mut total = PeriodQuantity::default();
+    for quantity in records {
+        total.record(*quantity);
     }
-    match aggregation(resource) {
-        Aggregation::SumOfRecords => records
-            .iter()
-            .fold(0_u64, |total, record| total.saturating_add(*record)),
-        Aggregation::AverageOfSamples => {
-            let total: u128 = records.iter().map(|record| u128::from(*record)).sum();
-            u64::try_from(total / records.len() as u128).unwrap_or(u64::MAX)
-        }
-    }
+    total.quantity(resource)
 }
 
 /// What one unit of overage costs, and what a period on the plan costs before
@@ -457,6 +473,23 @@ mod tests {
 
     fn pro() -> Plan {
         plan("pro").expect("pro plan")
+    }
+
+    #[test]
+    fn streaming_quantities_preserve_overflow_and_sample_rounding() {
+        let mut quantity = PeriodQuantity::default();
+        assert_eq!(quantity.quantity(QuotaResource::StorageBytes), 0);
+        quantity.record(u64::MAX);
+        quantity.record(u64::MAX);
+        quantity.record(0);
+        assert_eq!(
+            quantity.quantity(QuotaResource::ObjectEgressBytesPerMonth),
+            u64::MAX
+        );
+        assert_eq!(
+            quantity.quantity(QuotaResource::StorageBytes),
+            ((u128::from(u64::MAX) * 2) / 3) as u64
+        );
     }
 
     #[test]

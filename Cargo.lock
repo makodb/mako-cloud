@@ -1480,6 +1480,7 @@ version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
  "hmac",
+ "mako-api",
  "mako-control-plane",
  "ring",
  "serde_json",

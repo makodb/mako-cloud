@@ -57,3 +57,18 @@ An accrued balance SHALL NOT become a payable debt by the passage of time, by th
 #### Scenario: The beta ends
 - **WHEN** the beta period ends
 - **THEN** accrued balances remain informational until an operator explicitly converts them, and no team is billed for beta use without that decision
+
+### Requirement: Billing handles large retained usage histories
+Overall and project billing SHALL aggregate all retained usage in the requested billing period without a fixed record-count ceiling. Reads SHALL use a fixed upper time bound and process pages with memory bounded by the page size and resource counts per plan segment. Flows SHALL sum and levels SHALL average per environment and plan segment before combining environments. Retention gaps SHALL remain explicit. A failed page MUST fail the derivation rather than return or finalize a partial bill.
+
+#### Scenario: Usage exceeds sixteen thousand records
+- **WHEN** an environment has more than 16,000 retained usage records in the billing period
+- **THEN** overall and project billing succeed and include every in-period record with the existing sum, average, and plan-segment rules
+
+#### Scenario: A later usage page fails
+- **WHEN** a usage page fails after earlier pages were aggregated
+- **THEN** the derivation fails without returning or finalizing partial totals
+
+#### Scenario: A billing period has expired from retention
+- **WHEN** the entire billing period predates retained telemetry
+- **THEN** billing reports the empty evidence window without querying an invalid telemetry range or inventing usage
