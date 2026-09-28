@@ -1510,6 +1510,7 @@ fn worker_failure_code(error: &DataJobError) -> String {
             InternalClientError::InvalidPayload => "internal_payload",
             InternalClientError::ClockUnavailable => "internal_clock",
             InternalClientError::Unavailable => "internal_transport",
+            InternalClientError::TimedOut => "internal_timeout",
             InternalClientError::ResponseTooLarge => "internal_response_size",
             InternalClientError::InvalidResponse => "internal_response",
             InternalClientError::CorrelationFailed => "internal_correlation",
@@ -1526,6 +1527,7 @@ fn worker_failure_code(error: &DataJobError) -> String {
         DataJobError::Forbidden => "forbidden",
         DataJobError::QuotaExceeded => "quota",
         DataJobError::Conflict => "conflict",
+        DataJobError::SchemaVersionMismatch { .. } => "schema_version",
         DataJobError::Project(_) => "project",
         DataJobError::Organization(_) => "organization",
         DataJobError::Collection(_) => "collection",
@@ -2004,6 +2006,20 @@ mod tests {
         assert_eq!(
             worker_failure_code(&DataJobError::Internal(InternalClientError::Unavailable)),
             "worker_internal_transport"
+        );
+        assert_eq!(
+            worker_failure_code(&DataJobError::Internal(InternalClientError::TimedOut)),
+            "worker_internal_timeout"
+        );
+        assert!(worker_error_is_retryable(&DataJobError::Internal(
+            InternalClientError::TimedOut
+        )));
+        assert_eq!(
+            worker_failure_code(&DataJobError::SchemaVersionMismatch {
+                requested: 1,
+                active: 2
+            }),
+            "worker_schema_version"
         );
         assert_eq!(
             worker_failure_code(&DataJobError::InvalidArtifact),
