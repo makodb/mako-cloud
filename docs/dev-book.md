@@ -1318,6 +1318,14 @@ and import progress remain authoritative. Worker discovery preserves existing
 job keys, so deploying the corrected control plane requires no storage migration;
 retention expiration and normal retry rules still apply.
 
+Import execution limits each RPC to 32 rows **and** the 256 KiB internal request
+budget, including the command envelope and JSON escaping. A successful upload or
+dry run alone does not prove execution succeeded: verify the final job state and
+committed/failed row counts. Older workers grouped 32 rows without a byte limit,
+so valid larger documents could fail before the first batch reached the data
+plane. After upgrading, create a new reviewed import for a terminal failed job;
+check any already committed rows and keep the intended conflict strategy.
+
 ### Runbook: tenant-isolation signal
 
 Severity: critical/P0. Owner: security incident commander. Any impossible cross-project or cross-environment observation is presumed to be a confidentiality or integrity incident until disproved.

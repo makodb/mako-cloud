@@ -819,26 +819,24 @@ impl DataJobService {
                     .await?;
                 return Ok(DataJobState::Cancelled);
             }
-            let end = offset.saturating_add(32).min(rows.len());
-            let input = DataJobImportBatchInput {
-                job_id: record.view.job_id.clone(),
-                collection_id: record.view.collection_id.as_str().to_owned(),
-                schema_version: manifest.schema_version,
-                conflict_strategy,
-                start_row: offset as u64,
-                rows: rows[offset..end].to_vec(),
-            };
+            let (batch_len, command) = bounded_import_command(
+                DataJobImportBatchInput {
+                    job_id: record.view.job_id.clone(),
+                    collection_id: record.view.collection_id.as_str().to_owned(),
+                    schema_version: manifest.schema_version,
+                    conflict_strategy,
+                    start_row: offset as u64,
+                    rows: Vec::new(),
+                },
+                &rows[offset..],
+            )?;
             let result: DataJobImportBatchOutput = self.data_plane.administer(
                 &record.view.tenant,
                 &worker_request_id(&record.view.job_id, offset as u64),
                 &worker_idempotency_key(&record.view.job_id, offset as u64),
-                &IdentityAdminCommand {
-                    operation: IdentityAdminOperation::ImportDataJobBatch,
-                    actor_id: "system/data-job-worker".to_owned(),
-                    permissions: BTreeSet::from([IdentityAdminPermission::ExecuteDataJobs]),
-                    input: serde_json::to_value(input)?,
-                },
+                &command,
             )?;
+            let end = offset + batch_len;
             self.update_record(&record.view.tenant, &record.view.job_id, |record| {
                 if record.view.state != DataJobState::Running || record.cancel_requested {
                     return Err(DataJobError::InvalidState);
@@ -1326,6 +1324,36 @@ const fn job_permission(kind: DataJobKind) -> ProjectDataPermission {
         DataJobKind::Import => ProjectDataPermission::Import,
         DataJobKind::Export => ProjectDataPermission::Export,
     }
+}
+
+/// Preserve the 32-row batch cap while accounting for the complete serialized
+/// RPC envelope, JSON escaping, and commas. Row offsets remain deterministic for
+/// replay after an interrupted batch or a lost response.
+fn bounded_import_command(
+    mut input: DataJobImportBatchInput,
+    rows: &[Value],
+) -> Result<(usize, IdentityAdminCommand), DataJobError> {
+    let mut command = IdentityAdminCommand {
+        operation: IdentityAdminOperation::ImportDataJobBatch,
+        actor_id: "system/data-job-worker".to_owned(),
+        permissions: BTreeSet::from([IdentityAdminPermission::ExecuteDataJobs]),
+        input: serde_json::to_value(&input)?,
+    };
+    let mut bytes = serde_json::to_vec(&command)?.len();
+    for row in rows.iter().take(32) {
+        let row_bytes = serde_json::to_vec(row)?.len() + usize::from(!input.rows.is_empty());
+        if bytes + row_bytes > mako_internal_rpc::MAX_INTERNAL_BODY_BYTES {
+            break;
+        }
+        bytes += row_bytes;
+        input.rows.push(row.clone());
+    }
+    if input.rows.is_empty() {
+        return Err(DataJobError::InvalidArtifact);
+    }
+    let count = input.rows.len();
+    command.input = serde_json::to_value(input)?;
+    Ok((count, command))
 }
 
 const fn job_is_terminal(state: DataJobState) -> bool {
@@ -1828,6 +1856,154 @@ mod tests {
             assert_eq!(bytes.as_ref(), b"\n");
             assert_eq!(manifest.digest, sha256_digest(&bytes));
             assert_eq!(manifest.byte_count, bytes.len() as u64);
+        });
+        response.join().expect("data-plane stub");
+    }
+
+    #[test]
+    fn import_batch_budget_includes_escaping_and_envelope_and_preserves_row_cap() {
+        let input = DataJobImportBatchInput {
+            job_id: "djob_abcdefgh".to_owned(),
+            collection_id: "todos".to_owned(),
+            schema_version: 1,
+            conflict_strategy: mako_api::ImportConflictStrategy::CreateOnly,
+            start_row: 0,
+            rows: Vec::new(),
+        };
+        let rows = vec![serde_json::json!({"id":"row"}); 40];
+        let (count, _) = bounded_import_command(input.clone(), &rows).expect("small batch");
+        assert_eq!(count, 32);
+        let rows = vec![serde_json::json!({"payload":"\"\\é".repeat(8_000)}); 32];
+        let (count, command) = bounded_import_command(input.clone(), &rows).expect("escaped batch");
+        let size = serde_json::to_vec(&command).expect("command").len();
+        assert!(size <= mako_internal_rpc::MAX_INTERNAL_BODY_BYTES);
+        assert!(
+            size + serde_json::to_vec(&rows[count]).expect("row").len() + 1
+                > mako_internal_rpc::MAX_INTERNAL_BODY_BYTES
+        );
+        let oversized = vec![
+            serde_json::json!({"payload":"x".repeat(mako_internal_rpc::MAX_INTERNAL_BODY_BYTES)}),
+        ];
+        assert!(matches!(
+            bounded_import_command(input, &oversized),
+            Err(DataJobError::InvalidArtifact)
+        ));
+    }
+
+    #[test]
+    fn worker_imports_large_documents_in_bounded_batches_from_durable_progress() {
+        let server = tiny_http::Server::http("127.0.0.1:0").expect("data-plane stub");
+        let service = worker_fixture_at(server.server_addr().to_ip().expect("address"));
+        let response = std::thread::spawn(move || {
+            let mut next = 3;
+            let mut batches = 0;
+            while next < 20 {
+                let mut request = server
+                    .recv_timeout(std::time::Duration::from_secs(5))
+                    .expect("receive RPC")
+                    .expect("worker must send a bounded batch");
+                let correlation = request
+                    .headers()
+                    .iter()
+                    .find(|header| header.field.equiv("x-mako-request-id"))
+                    .expect("request correlation")
+                    .value
+                    .as_str()
+                    .to_owned();
+                let mut body = Vec::new();
+                request
+                    .as_reader()
+                    .read_to_end(&mut body)
+                    .expect("request body");
+                assert!(body.len() <= mako_internal_rpc::MAX_INTERNAL_BODY_BYTES);
+                let command: IdentityAdminCommand = serde_json::from_slice(&body).expect("command");
+                assert_eq!(
+                    command.operation,
+                    IdentityAdminOperation::ImportDataJobBatch
+                );
+                let input: DataJobImportBatchInput =
+                    serde_json::from_value(command.input).expect("batch");
+                assert_eq!(input.start_row, next);
+                assert!(!input.rows.is_empty());
+                assert!(input.rows.len() <= 32);
+                for row in &input.rows {
+                    assert_eq!(row["id"], format!("row_{next}"));
+                    next += 1;
+                }
+                batches += 1;
+                let output = DataJobImportBatchOutput {
+                    processed: input.rows.len() as u64,
+                    committed: input.rows.len() as u64,
+                    failed: 0,
+                    skipped: 0,
+                    errors: Vec::new(),
+                };
+                request
+                    .respond(
+                        tiny_http::Response::from_data(
+                            serde_json::to_vec(&output).expect("output"),
+                        )
+                        .with_header(
+                            tiny_http::Header::from_bytes("x-mako-request-id", correlation)
+                                .expect("header"),
+                        ),
+                    )
+                    .expect("reply");
+            }
+            assert!(batches > 1);
+        });
+        futures::executor::block_on(async {
+            let mut record = worker_record(0, DataJobState::Running);
+            record.view.conflict_strategy = Some(mako_api::ImportConflictStrategy::CreateOnly);
+            record.view.progress.processed = 3;
+            record.view.progress.committed = 3;
+            let mut bytes = Vec::new();
+            for i in 0..20 {
+                serde_json::to_writer(
+                    &mut bytes,
+                    &serde_json::json!({
+                        "id": format!("row_{i}"), "payload": "x".repeat(30_000),
+                    }),
+                )
+                .expect("row");
+                bytes.push(b'\n');
+            }
+            let digest = sha256_digest(&bytes);
+            record.upload_digest = Some(digest.clone());
+            record.view.manifest = Some(DataJobManifest {
+                format_version: 1,
+                tenant: record.view.tenant.clone(),
+                collection_id: record.view.collection_id.clone(),
+                schema_version: 1,
+                snapshot: None,
+                row_count: 20,
+                byte_count: bytes.len() as u64,
+                digest: digest.clone(),
+                finalized_at_unix_seconds: 1,
+            });
+            let address = ObjectAddress::data_job_artifact(
+                record.view.tenant.clone(),
+                &record.view.job_id,
+                DataJobArtifactKind::ImportUpload,
+                &digest,
+            )
+            .expect("upload address");
+            service
+                .objects
+                .put_immutable(&record.view.tenant, &address, Arc::from(bytes))
+                .await
+                .expect("upload");
+            store_worker_records(&service, &[record.clone()]).await;
+            let report = service.run_worker_once(10).await.expect("worker");
+            assert_eq!(report.succeeded, 1);
+            let stored = service
+                .get_record(&record.view.tenant, &record.view.job_id)
+                .await
+                .expect("stored job");
+            assert_eq!(stored.view.state, DataJobState::Succeeded);
+            assert_eq!(stored.view.progress.processed, 20);
+            assert_eq!(stored.view.progress.committed, 20);
+            assert_eq!(stored.view.progress.failed, 0);
         });
         response.join().expect("data-plane stub");
     }
