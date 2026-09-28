@@ -718,6 +718,7 @@ impl DataJobService {
                         &record.view.job_id,
                         now_unix_seconds,
                         terminal,
+                        &error,
                     )
                     .await?;
                     if terminal {
@@ -1022,6 +1023,7 @@ impl DataJobService {
         job_id: &str,
         now_unix_seconds: u64,
         terminal: bool,
+        error: &DataJobError,
     ) -> Result<(), DataJobError> {
         self.update_record(tenant, job_id, |record| {
             if !job_is_terminal(record.view.state) {
@@ -1031,13 +1033,15 @@ impl DataJobService {
                 } else {
                     DataJobState::Queued
                 };
-                if record.view.errors.len() < 100 {
-                    record.view.errors.push(if terminal {
-                        "worker_failure_terminal".to_owned()
-                    } else {
-                        "worker_dependency_retry_scheduled".to_owned()
-                    });
-                }
+                // Keep the earliest row errors, reserving the last two slots
+                // for the latest worker outcome and its safe failure category.
+                record.view.errors.truncate(98);
+                record.view.errors.push(if terminal {
+                    "worker_failure_terminal".to_owned()
+                } else {
+                    "worker_dependency_retry_scheduled".to_owned()
+                });
+                record.view.errors.push(worker_failure_code(error));
                 record.view.updated_at_unix_seconds = now_unix_seconds;
             }
             Ok(())
@@ -1489,6 +1493,50 @@ pub struct DataJobWorkerReport {
     pub deferred: u64,
 }
 
+// Persist only closed error categories. Messages, request bodies, URLs and
+// remote details can contain tenant data and must never enter job diagnostics.
+fn worker_failure_code(error: &DataJobError) -> String {
+    let category = match error {
+        DataJobError::Internal(InternalClientError::Remote { status, envelope }) => {
+            let code =
+                serde_json::to_value(envelope.error.code).expect("closed error enum serializes");
+            return format!(
+                "worker_internal_http_{status}:{}",
+                code.as_str().expect("error code is a string")
+            );
+        }
+        DataJobError::Internal(error) => match error {
+            InternalClientError::InvalidConfiguration => "internal_configuration",
+            InternalClientError::InvalidPayload => "internal_payload",
+            InternalClientError::ClockUnavailable => "internal_clock",
+            InternalClientError::Unavailable => "internal_transport",
+            InternalClientError::ResponseTooLarge => "internal_response_size",
+            InternalClientError::InvalidResponse => "internal_response",
+            InternalClientError::CorrelationFailed => "internal_correlation",
+            InternalClientError::UnsafeRemoteError => "internal_unsafe_response",
+            InternalClientError::Authentication(_) => "internal_authentication",
+            InternalClientError::Remote { .. } => unreachable!("handled above"),
+        },
+        DataJobError::InvalidConfiguration => "configuration",
+        DataJobError::InvalidRequest => "request",
+        DataJobError::InvalidState => "state",
+        DataJobError::InvalidArtifact => "artifact",
+        DataJobError::InvalidArtifactGrant => "artifact_grant",
+        DataJobError::NotFound => "not_found",
+        DataJobError::Forbidden => "forbidden",
+        DataJobError::QuotaExceeded => "quota",
+        DataJobError::Conflict => "conflict",
+        DataJobError::Project(_) => "project",
+        DataJobError::Organization(_) => "organization",
+        DataJobError::Collection(_) => "collection",
+        DataJobError::Keyspace(_) => "keyspace",
+        DataJobError::Storage(_) => "storage",
+        DataJobError::Object(_) => "object_store",
+        DataJobError::Serialization(_) => "serialization",
+    };
+    format!("worker_{category}")
+}
+
 const fn worker_error_is_retryable(error: &DataJobError) -> bool {
     matches!(
         error,
@@ -1752,7 +1800,7 @@ mod tests {
         futures::executor::block_on(async {
             let mut record = worker_record(0, DataJobState::Queued);
             record.view.kind = DataJobKind::Export;
-            store_worker_records(&service, &[record.clone()]).await;
+            store_worker_records(&service, std::slice::from_ref(&record)).await;
             let report = service.run_worker_once(10).await.expect("worker");
             assert_eq!(report.claimed, 1);
             assert_eq!(report.succeeded, 1);
@@ -1813,6 +1861,10 @@ mod tests {
                 .expect("stored record");
             assert_eq!(stored.view.state, DataJobState::Failed);
             assert_eq!(stored.execution_attempt, 1);
+            assert_eq!(
+                stored.view.errors,
+                vec!["worker_failure_terminal", "worker_state"]
+            );
             let idle = service.run_worker_once(10).await.expect("idle pass");
             assert_eq!(
                 idle.claimed + idle.failed + idle.cancelled + idle.expired,
@@ -1929,6 +1981,142 @@ mod tests {
             validate_json_lines(oversized.as_bytes()),
             Err(DataJobError::InvalidArtifact)
         ));
+    }
+
+    #[test]
+    fn worker_diagnostics_distinguish_transport_and_remote_errors_without_tenant_data() {
+        let remote = DataJobError::Internal(InternalClientError::Remote {
+            status: 503,
+            envelope: Box::new(mako_api::ApiErrorEnvelope::new(
+                mako_api::ApiError::new(
+                    mako_api::ErrorCode::Unavailable,
+                    "private document body",
+                    "secret-request-id",
+                    mako_api::RetryAdvice::Immediate,
+                )
+                .with_detail("secret", mako_api::SafeDetail::String("credential".into())),
+            )),
+        });
+        assert_eq!(
+            worker_failure_code(&remote),
+            "worker_internal_http_503:unavailable"
+        );
+        assert_eq!(
+            worker_failure_code(&DataJobError::Internal(InternalClientError::Unavailable)),
+            "worker_internal_transport"
+        );
+        assert_eq!(
+            worker_failure_code(&DataJobError::InvalidArtifact),
+            "worker_artifact"
+        );
+    }
+
+    #[test]
+    fn worker_failure_diagnostics_survive_full_row_error_lists() {
+        futures::executor::block_on(async {
+            for count in [0, 98, 99, 100] {
+                let service = worker_fixture();
+                let mut record = worker_record(count + 40, DataJobState::Running);
+                let rows: Vec<String> = (0..count)
+                    .map(|row| format!("row_{row}:already_exists"))
+                    .collect();
+                record.view.errors = rows.clone();
+                store_worker_records(&service, std::slice::from_ref(&record)).await;
+                for (now, terminal, error, marker, category) in [
+                    (
+                        10,
+                        false,
+                        DataJobError::Internal(InternalClientError::Unavailable),
+                        "worker_dependency_retry_scheduled",
+                        "worker_internal_transport",
+                    ),
+                    (
+                        12,
+                        true,
+                        DataJobError::InvalidArtifact,
+                        "worker_failure_terminal",
+                        "worker_artifact",
+                    ),
+                ] {
+                    service
+                        .record_worker_failure(
+                            &record.view.tenant,
+                            &record.view.job_id,
+                            now,
+                            terminal,
+                            &error,
+                        )
+                        .await
+                        .unwrap();
+                    let stored = service
+                        .get_record(&record.view.tenant, &record.view.job_id)
+                        .await
+                        .unwrap();
+                    assert!(stored.view.errors.len() <= 100);
+                    assert!(
+                        stored
+                            .view
+                            .errors
+                            .ends_with(&[marker.to_owned(), category.to_owned()])
+                    );
+                    assert_eq!(&stored.view.errors[..count.min(98)], &rows[..count.min(98)]);
+                    assert_eq!(
+                        stored.view.state,
+                        if terminal {
+                            DataJobState::Failed
+                        } else {
+                            DataJobState::Queued
+                        }
+                    );
+                    assert_eq!(stored.view.updated_at_unix_seconds, now);
+                    assert_eq!(stored.worker_failures, if terminal { 2 } else { 1 });
+                }
+            }
+        });
+    }
+
+    #[test]
+    fn persisted_worker_diagnostics_exclude_sensitive_remote_fields() {
+        futures::executor::block_on(async {
+            let service = worker_fixture();
+            let record = worker_record(43, DataJobState::Running);
+            store_worker_records(&service, std::slice::from_ref(&record)).await;
+            let error = DataJobError::Internal(InternalClientError::Remote {
+                status: 503,
+                envelope: Box::new(mako_api::ApiErrorEnvelope::new(
+                    mako_api::ApiError::new(
+                        mako_api::ErrorCode::Unavailable,
+                        "sensitive-body-sentinel",
+                        "sensitive-request-sentinel",
+                        mako_api::RetryAdvice::Immediate,
+                    )
+                    .with_detail(
+                        "secret",
+                        mako_api::SafeDetail::String("sensitive-credential-sentinel".into()),
+                    ),
+                )),
+            });
+            service
+                .record_worker_failure(&record.view.tenant, &record.view.job_id, 10, false, &error)
+                .await
+                .unwrap();
+            let stored = service
+                .get_record(&record.view.tenant, &record.view.job_id)
+                .await
+                .unwrap();
+            assert_eq!(
+                stored.view.errors,
+                vec![
+                    "worker_dependency_retry_scheduled",
+                    "worker_internal_http_503:unavailable"
+                ]
+            );
+            assert!(
+                !serde_json::to_string(&stored)
+                    .unwrap()
+                    .contains("sensitive-")
+            );
+        });
     }
 
     #[test]
