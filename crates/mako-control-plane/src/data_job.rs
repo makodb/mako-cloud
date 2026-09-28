@@ -49,11 +49,29 @@ struct DataJobRecord {
     execution_attempt: u64,
     #[serde(default)]
     worker_failures: u8,
+    /// After a retryable worker failure, the job waits until this time.
+    #[serde(default)]
+    retry_not_before_unix_seconds: u64,
 }
 
 const DATA_JOB_STATE_COUNT: usize = 10;
 const WORKER_SCAN_LIMIT: usize = 1_000;
 const WORKER_JOB_LIMIT: usize = 16;
+/// Consecutive worker failures before a job fails. With the backoff below a
+/// job keeps retrying for about ten minutes, so a data-plane restart or a
+/// short outage delays a job rather than failing it.
+const WORKER_FAILURE_LIMIT: u8 = 10;
+const WORKER_RETRY_FIRST_SECONDS: u64 = 5;
+const WORKER_RETRY_MAX_SECONDS: u64 = 120;
+
+/// The wait after the given number of consecutive failures: 5 s, doubling,
+/// at most two minutes.
+fn worker_retry_delay_seconds(failures: u8) -> u64 {
+    let doublings = u32::from(failures.saturating_sub(1)).min(16);
+    WORKER_RETRY_FIRST_SECONDS
+        .saturating_mul(1 << doublings)
+        .min(WORKER_RETRY_MAX_SECONDS)
+}
 
 /// Fixed-cardinality transition counters for data jobs. The dimensions are a
 /// closed enum; tenant, actor, artifact, document, and email values can never
@@ -229,6 +247,7 @@ impl DataJobService {
             cancel_requested: false,
             execution_attempt: 0,
             worker_failures: 0,
+            retry_not_before_unix_seconds: 0,
         };
         let key =
             ControlKeyspace::data_job_key(tenant.project_id(), tenant.environment_id(), &job_id)?;
@@ -711,16 +730,15 @@ impl DataJobService {
                 }
                 Ok(_) => {}
                 Err(error) => {
-                    let terminal =
-                        !worker_error_is_retryable(&error) || record.worker_failures >= 2;
-                    self.record_worker_failure(
-                        &record.view.tenant,
-                        &record.view.job_id,
-                        now_unix_seconds,
-                        terminal,
-                        &error,
-                    )
-                    .await?;
+                    let terminal = self
+                        .record_worker_failure(
+                            &record.view.tenant,
+                            &record.view.job_id,
+                            now_unix_seconds,
+                            !worker_error_is_retryable(&error),
+                            &error,
+                        )
+                        .await?;
                     if terminal {
                         report.failed = report.failed.saturating_add(1);
                     } else {
@@ -860,6 +878,8 @@ impl DataJobService {
                     record.view.progress.failed.saturating_add(result.failed);
                 record.view.progress.skipped =
                     record.view.progress.skipped.saturating_add(result.skipped);
+                // The dependency answered, so the failure run starts again.
+                record.worker_failures = 0;
                 for error in &result.errors {
                     if record.view.errors.len() < 100 {
                         record
@@ -1020,17 +1040,27 @@ impl DataJobService {
         .map(|_| ())
     }
 
+    /// Records a failed worker pass and answers whether the job failed. A
+    /// retryable failure schedules another attempt until the job has failed
+    /// `WORKER_FAILURE_LIMIT` times in a row.
     async fn record_worker_failure(
         &self,
         tenant: &mako_api::TenantScope,
         job_id: &str,
         now_unix_seconds: u64,
-        terminal: bool,
+        non_retryable: bool,
         error: &DataJobError,
-    ) -> Result<(), DataJobError> {
+    ) -> Result<bool, DataJobError> {
         self.update_record(tenant, job_id, |record| {
             if !job_is_terminal(record.view.state) {
                 record.worker_failures = record.worker_failures.saturating_add(1);
+                let terminal = non_retryable || record.worker_failures >= WORKER_FAILURE_LIMIT;
+                record.retry_not_before_unix_seconds = if terminal {
+                    0
+                } else {
+                    now_unix_seconds
+                        .saturating_add(worker_retry_delay_seconds(record.worker_failures))
+                };
                 record.view.state = if terminal {
                     DataJobState::Failed
                 } else {
@@ -1050,7 +1080,7 @@ impl DataJobService {
             Ok(())
         })
         .await
-        .map(|_| ())
+        .map(|record| record.view.state == DataJobState::Failed)
     }
 
     async fn audit_success(
@@ -1184,10 +1214,11 @@ impl DataJobService {
                 && record.view.state != DataJobState::Expired;
             let needs_execution = !job_is_terminal(record.view.state)
                 && (record.cancel_requested
-                    || matches!(
+                    || record.view.state == DataJobState::Cancelling
+                    || (matches!(
                         record.view.state,
-                        DataJobState::Queued | DataJobState::Running | DataJobState::Cancelling
-                    ));
+                        DataJobState::Queued | DataJobState::Running
+                    ) && record.retry_not_before_unix_seconds <= now_unix_seconds));
             if needs_expiration || needs_execution {
                 records.push(record);
                 if records.len() == WORKER_JOB_LIMIT {
@@ -1565,13 +1596,17 @@ fn worker_failure_code(error: &DataJobError) -> String {
 }
 
 const fn worker_error_is_retryable(error: &DataJobError) -> bool {
-    matches!(
-        error,
+    match error {
+        // The same request would be refused the same way on every attempt.
+        DataJobError::Internal(
+            InternalClientError::RequestTooLarge | InternalClientError::InvalidPayload,
+        ) => false,
         DataJobError::Conflict
-            | DataJobError::Storage(_)
-            | DataJobError::Object(_)
-            | DataJobError::Internal(_)
-    )
+        | DataJobError::Storage(_)
+        | DataJobError::Object(_)
+        | DataJobError::Internal(_) => true,
+        _ => false,
+    }
 }
 
 fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
@@ -1729,6 +1764,7 @@ mod tests {
             cancel_requested: false,
             execution_attempt: 0,
             worker_failures: 0,
+            retry_not_before_unix_seconds: 0,
         }
     }
 
@@ -2081,6 +2117,52 @@ mod tests {
             worker_failure_code(&DataJobError::InvalidArtifact),
             "worker_artifact"
         );
+        assert!(worker_error_is_retryable(&DataJobError::Internal(
+            InternalClientError::Unavailable
+        )));
+        assert!(!worker_error_is_retryable(&DataJobError::Internal(
+            InternalClientError::RequestTooLarge
+        )));
+    }
+
+    #[test]
+    fn a_dependency_outage_delays_a_job_with_backoff_before_failing_it() {
+        futures::executor::block_on(async {
+            // Nothing listens on the fixture's data-plane address.
+            let service = worker_fixture();
+            let mut record = worker_record(60, DataJobState::Queued);
+            record.view.kind = DataJobKind::Export;
+            record.view.expires_at_unix_seconds = 100_000;
+            store_worker_records(&service, std::slice::from_ref(&record)).await;
+            let mut now = 10;
+            let mut waits = Vec::new();
+            let stored = loop {
+                let report = service.run_worker_once(now).await.expect("worker");
+                assert_eq!(report.claimed, 1);
+                let stored = service
+                    .get_record(&record.view.tenant, &record.view.job_id)
+                    .await
+                    .expect("job");
+                if stored.view.state == DataJobState::Failed {
+                    assert_eq!(report.failed, 1);
+                    break stored;
+                }
+                assert_eq!(report.deferred, 1);
+                assert_eq!(stored.view.state, DataJobState::Queued);
+                let wait = stored.retry_not_before_unix_seconds - now;
+                let early = service.run_worker_once(now + wait - 1).await.expect("pass");
+                assert_eq!(early.claimed, 0, "retried before its wait was over");
+                waits.push(wait);
+                now += wait;
+            };
+            assert_eq!(waits, [5, 10, 20, 40, 80, 120, 120, 120, 120]);
+            assert!(waits.iter().sum::<u64>() >= 600);
+            assert_eq!(stored.worker_failures, WORKER_FAILURE_LIMIT);
+            assert!(stored.view.errors.ends_with(&[
+                "worker_failure_terminal".to_owned(),
+                "worker_internal_transport".to_owned()
+            ]));
+        });
     }
 
     #[test]

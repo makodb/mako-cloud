@@ -2380,6 +2380,8 @@ Limits are 1 MiB per document, 512 MiB per upload or output, four active jobs pe
 
 Worker failures include a retry or terminal marker and a safe category, such as `worker_internal_transport` or `worker_internal_http_503:unavailable`. The latest pair remains visible within the 100-error limit even after row errors fill the list. Remote messages, request IDs, document bodies, and credentials are excluded. A failed import can have committed rows; inspect progress and existing data before retrying it.
 
+A failure caused by a dependency (the data plane, storage, or the object store) is retried after 5 seconds, doubling to at most two minutes, until the job has failed ten times in a row, about ten minutes; a batch that goes through starts the count again. A data-plane restart therefore delays a job rather than failing it. A job that recovers keeps its retry markers, and the console reports them as retries, not as a failure.
+
 ### API & Connect and sync diagnostics
 
 The Connect page (`mako-cloud workspace connect`) shows the public endpoint, active public credential id, active collection/schema versions, the supported RxDB range (`>=17.0.0 <18.0.0`), and template version 1. Public credential values are one-time material and cannot be recovered later. The connection check (`mako-cloud workspace check`) accepts public metadata only and returns separate DNS, TLS, route, readiness, key-recognition, schema, client-version, and replication-route steps; it never signs in an application user or invokes pull/push.
