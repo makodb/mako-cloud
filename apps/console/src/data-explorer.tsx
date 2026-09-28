@@ -1584,7 +1584,7 @@ function DataJobs({
                     </TableCell>
                     <TableCell className="max-w-xs whitespace-normal text-xs">
                       <span className={cn(job.errors.length === 0 && "font-mono")}>
-                        {job.errors.slice(0, 5).join("; ") || (manifestDigest(job) ?? "—")}
+                        {jobErrorSummary(job) ?? manifestDigest(job) ?? "—"}
                       </span>
                     </TableCell>
                     <TableCell>
@@ -1636,6 +1636,56 @@ function DataJobs({
   );
 }
 
+const WORKER_RETRY_MARKER = "worker_dependency_retry_scheduled";
+const WORKER_TERMINAL_MARKER = "worker_failure_terminal";
+
+// A job's errors mix row errors (`row_<n>:<code>`) with worker outcomes: a
+// retry or terminal marker, each followed by the failure's safe category. A
+// retry the job recovered from is not a failure of the job.
+function splitJobErrors(errors: readonly string[]): {
+  readonly rows: readonly string[];
+  readonly retries: readonly string[];
+  readonly terminal: string | null;
+} {
+  const rows: string[] = [];
+  const retries: string[] = [];
+  let terminal: string | null = null;
+  for (let position = 0; position < errors.length; position += 1) {
+    const entry = errors[position] ?? "";
+    if (entry !== WORKER_RETRY_MARKER && entry !== WORKER_TERMINAL_MARKER) {
+      rows.push(entry);
+      continue;
+    }
+    const category = errors[position + 1] ?? "unknown";
+    position += 1;
+    if (entry === WORKER_TERMINAL_MARKER) {
+      terminal = category;
+    } else {
+      retries.push(category);
+    }
+  }
+  return { rows, retries, terminal };
+}
+
+function retrySummary(retries: readonly string[]): string {
+  const times = retries.length === 1 ? "once" : `${retries.length} times`;
+  return `retried ${times} after a worker failure (${[...new Set(retries)].join(", ")})`;
+}
+
+function jobErrorSummary(job: DataJob): string | null {
+  const { rows, retries, terminal } = splitJobErrors(job.errors);
+  const parts = [...rows.slice(0, 5)];
+  if (rows.length > 5) {
+    parts.push(`${rows.length - 5} more`);
+  }
+  if (terminal !== null) {
+    parts.push(`stopped by a worker failure (${terminal})`);
+  } else if (retries.length > 0) {
+    parts.push(retrySummary(retries));
+  }
+  return parts.length === 0 ? null : parts.join("; ");
+}
+
 // One job in full: status, kind, counts, timestamps, the retained failure
 // diagnostic, and the grant actions its state allows.
 function DataJobDetail({
@@ -1657,7 +1707,13 @@ function DataJobDetail({
   readonly onDownload: () => void;
   readonly onIssueUploadGrant: () => void;
 }) {
-  const diagnostics = job.errors.map((message, position) => ({ id: `${position}`, message }));
+  const { rows, retries, terminal } = splitJobErrors(job.errors);
+  const failed = job.state === "failed";
+  const diagnostics = [
+    ...(terminal === null ? [] : [`The worker stopped the job after a failure: ${terminal}`]),
+    ...(failed && retries.length > 0 ? [`Before that it ${retrySummary(retries)}`] : []),
+    ...rows,
+  ].map((message, position) => ({ id: `${position}`, message }));
   // `job-detail` is not decoration: it is the handle the jobs scenario opens
   // this panel by.
   return (
@@ -1717,13 +1773,31 @@ function DataJobDetail({
             , finalized {formatTime(job.manifest.finalizedAtUnixSeconds)}.
           </p>
         )}
+        {!failed && retries.length > 0 ? (
+          <Alert variant="warning" role="status">
+            <Info aria-hidden="true" />
+            <AlertTitle>
+              {job.state === "succeeded"
+                ? "Recovered after worker retries"
+                : job.state === "queued" || job.state === "running"
+                  ? "Retrying after a worker failure"
+                  : "Worker retries"}
+            </AlertTitle>
+            <AlertDescription>
+              The worker {retrySummary(retries)}. Rows already committed are kept
+              {job.state === "succeeded" ? "; the job then finished." : "."}
+            </AlertDescription>
+          </Alert>
+        ) : null}
         {diagnostics.length > 0 ? (
           <Alert variant="destructive" role="status">
             <AlertTriangle aria-hidden="true" />
             <AlertTitle>
               {job.state === "awaiting_confirmation"
                 ? "Rows the dry run found the schema refuses"
-                : "Failure diagnostic"}
+                : failed
+                  ? "Failure diagnostic"
+                  : "Rows that failed"}
             </AlertTitle>
             <AlertDescription>
               <ul className="m-0 list-disc pl-4">
@@ -1733,7 +1807,7 @@ function DataJobDetail({
               </ul>
             </AlertDescription>
           </Alert>
-        ) : job.state === "failed" ? (
+        ) : failed ? (
           <Alert variant="destructive" role="status">
             <AlertTriangle aria-hidden="true" />
             <AlertDescription>The job failed without a retained diagnostic.</AlertDescription>

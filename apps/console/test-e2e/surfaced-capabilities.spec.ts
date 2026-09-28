@@ -171,7 +171,20 @@ test("a data job opens in detail from the jobs list", async ({ page }) => {
   await expect(detail.getByText("Failure diagnostic")).toBeVisible();
   await expect(detail).toContainText("row 3: schema validation failed: ownerId is required");
   await expect(detail.getByRole("button", { name: "Download and verify" })).toHaveCount(0);
-  expect(api.jobDetailRequests).toEqual(["djob_export01", "djob_import02"]);
+
+  // A job that retried through a dependency outage and then finished is not
+  // a failure; its retries are summarized, not listed as raw markers.
+  const recoveredRow = page.getByRole("row").filter({ hasText: "djob_import03" });
+  await expect(recoveredRow).toContainText(
+    "retried 2 times after a worker failure (worker_internal_transport)",
+  );
+  await expect(recoveredRow).not.toContainText("worker_dependency_retry_scheduled");
+  await page.getByRole("button", { name: "Details for djob_import03" }).click();
+  await expect(detail.getByRole("heading", { name: "Job djob_import03" })).toBeVisible();
+  await expect(detail.getByText("Recovered after worker retries")).toBeVisible();
+  await expect(detail.getByText("Failure diagnostic")).toHaveCount(0);
+  await expect(detail).not.toContainText("worker_dependency_retry_scheduled");
+  expect(api.jobDetailRequests).toEqual(["djob_export01", "djob_import02", "djob_import03"]);
 
   await detail.getByRole("button", { name: "Close" }).click();
   await expect(detail).toHaveCount(0);
@@ -353,11 +366,16 @@ class SurfacedApiHarness {
     } else if (path === `${ENVIRONMENT_API}/explorer/collections/todos/browse`) {
       await json(route, { items: [], nextCursor: null, snapshot: "empty", exhausted: true });
     } else if (path === `${ENVIRONMENT_API}/data-jobs` && method === "GET") {
-      await json(route, { items: [exportJob(), failedImportJob()], nextCursor: null });
+      await json(route, {
+        items: [exportJob(), failedImportJob(), recoveredImportJob()],
+        nextCursor: null,
+      });
     } else if (path.startsWith(`${ENVIRONMENT_API}/data-jobs/`) && method === "GET") {
       const jobId = path.split("/").at(-1) ?? "";
       this.jobDetailRequests.push(jobId);
-      const job = [exportJob(), failedImportJob()].find((item) => item.jobId === jobId);
+      const job = [exportJob(), failedImportJob(), recoveredImportJob()].find(
+        (item) => item.jobId === jobId,
+      );
       if (job === undefined) {
         await json(route, apiError("not_found", "No such data job."), 404);
       } else {
@@ -625,6 +643,23 @@ function failedImportJob() {
     conflictStrategy: "create_only",
     progress: { processed: 3, committed: 2, failed: 1, skipped: 0, exported: 0, bytes: 96 },
     errors: ["row 3: schema validation failed: ownerId is required"],
+    manifest: null,
+  });
+}
+
+function recoveredImportJob() {
+  return dataJob({
+    jobId: "djob_import03",
+    kind: "import",
+    state: "succeeded",
+    conflictStrategy: "upsert",
+    progress: { processed: 4, committed: 4, failed: 0, skipped: 0, exported: 0, bytes: 128 },
+    errors: [
+      "worker_dependency_retry_scheduled",
+      "worker_internal_transport",
+      "worker_dependency_retry_scheduled",
+      "worker_internal_transport",
+    ],
     manifest: null,
   });
 }
