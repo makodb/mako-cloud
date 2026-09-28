@@ -35,6 +35,7 @@ pub use engine::{DocumentEngine, DocumentEngineScopeError, ScopedCollectionEngin
 pub use index::{
     IndexDefinition, IndexDirection, IndexError, IndexFailure, IndexFailureCode, IndexField,
     IndexKind, IndexName, IndexNumber, IndexState, IndexValue, IndexVersion,
+    MAX_INDEXED_VALUE_BYTES,
 };
 pub use index_build::{
     IndexActivationOutcome, IndexBuildError, IndexBuildProgress, IndexRemovalReport,
@@ -54,9 +55,7 @@ pub use retention::{CheckpointStatus, CompactionMode, CompactionReport, Retentio
 pub use sequencer::{
     EnvironmentSequencer, FinalizeOutcome, SequenceDisposition, SequenceLease, SequencerError,
 };
-pub use stored_check::{
-    MAX_REPORTED_FAILURES, StoredDocumentCheck, StoredDocumentCheckError,
-};
+pub use stored_check::{MAX_REPORTED_FAILURES, StoredDocumentCheck, StoredDocumentCheckError};
 pub use validation::{
     DocumentValidationError, DocumentValidator, SchemaValidationIssue, ValidatedDocumentBody,
 };

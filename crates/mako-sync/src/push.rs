@@ -3,7 +3,7 @@ use std::{error::Error, fmt, num::NonZeroU64};
 use mako_api::{ApiError, ApiErrorEnvelope, ErrorCode, RetryAdvice};
 use mako_documents::{
     CanonicalDocument, CommitPosition, DocumentMutationAuthorizer, DocumentReadAuthorizer,
-    DocumentValidator, EnvironmentSequencer, ExpectedRevision, MutationCommitOutcome,
+    DocumentValidator, EnvironmentSequencer, ExpectedRevision, IndexError, MutationCommitOutcome,
     MutationError, MutationId, MutationRequest, ReadAuthorizationContext, ReadAuthorizationPath,
     RevisionToken, ScopedCollectionEngine, SequencerError,
 };
@@ -194,6 +194,16 @@ impl<'a> PushService<'a> {
             }
             Err(MutationError::IdempotencyMismatch) => {
                 Ok(RowResult::NotCommitted(denied_idempotency(context, row)))
+            }
+            // This document can never be written, so it is refused on its own;
+            // failing the whole push would block the client's later changes.
+            Err(MutationError::Index(IndexError::IndexedValueTooLarge)) => {
+                Ok(RowResult::NotCommitted(denied(
+                    context,
+                    row,
+                    ErrorCode::SchemaMismatch,
+                    "a value of an indexed field is longer than 16 KiB, which an index cannot hold",
+                )))
             }
             Err(error) => Err(PushError::Mutation(error)),
         }

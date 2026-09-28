@@ -26,6 +26,9 @@ pub struct IndexBuildProgress {
     caught_up_position: u64,
 }
 
+/// The reason a build records when a document's value cannot be indexed.
+const VALUE_TOO_LARGE_FAILURE: &str = "a document's value for an indexed field is longer than 16 KiB, which an index cannot hold; shorten it or index another field";
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum IndexActivationOutcome {
     Active(IndexDefinition),
@@ -210,7 +213,25 @@ impl ScopedCollectionEngine {
         for entry in &entries {
             let document = CanonicalDocument::decode(&entry.value)?;
             if !document.is_deleted() {
-                batch.put(definition.entry_key(&self.keyspace, &document)?, []);
+                match definition.entry_key(&self.keyspace, &document) {
+                    Ok(key) => {
+                        batch.put(key, []);
+                    }
+                    // No retry can index this document, so the build fails
+                    // and says why instead of staying "building".
+                    Err(IndexError::IndexedValueTooLarge) => {
+                        self.fail_index_build(
+                            &definition,
+                            crate::IndexFailureCode::BackfillFailed,
+                            0,
+                            VALUE_TOO_LARGE_FAILURE,
+                            durability,
+                        )
+                        .await?;
+                        return Err(IndexError::IndexedValueTooLarge.into());
+                    }
+                    Err(error) => return Err(error.into()),
+                }
             }
         }
         if let Some(last) = entries.last() {
@@ -322,13 +343,28 @@ impl ScopedCollectionEngine {
                     change.commit_position(),
                 ))
                 .and_then(|bytes| CanonicalDocument::decode(&bytes).map_err(Into::into))?;
-            append_replayed_index_delta(
+            if let Err(error) = append_replayed_index_delta(
                 &mut batch,
                 &self.keyspace,
                 &definition,
                 old.as_ref(),
                 &new,
-            )?;
+            ) {
+                if matches!(
+                    error,
+                    IndexBuildError::Index(IndexError::IndexedValueTooLarge)
+                ) {
+                    self.fail_index_build(
+                        &definition,
+                        crate::IndexFailureCode::BackfillFailed,
+                        0,
+                        VALUE_TOO_LARGE_FAILURE,
+                        durability,
+                    )
+                    .await?;
+                }
+                return Err(error);
+            }
         }
         progress.caught_up_position = if changes.len() < page_size.get() {
             target
@@ -813,11 +849,25 @@ impl ScopedCollectionEngine {
         duplicate_values: u64,
         durability: Durability,
     ) -> Result<IndexDefinition, IndexBuildError> {
-        let failure = crate::IndexFailure::new(
+        self.fail_index_build(
+            definition,
             crate::IndexFailureCode::DuplicateValues,
             duplicate_values,
             "unique index build found duplicate indexed values",
-        )?;
+            durability,
+        )
+        .await
+    }
+
+    async fn fail_index_build(
+        &self,
+        definition: &IndexDefinition,
+        code: crate::IndexFailureCode,
+        affected_values: u64,
+        safe_message: &str,
+        durability: Durability,
+    ) -> Result<IndexDefinition, IndexBuildError> {
+        let failure = crate::IndexFailure::new(code, affected_values, safe_message)?;
         self.update_index_catalog(
             definition.name(),
             definition.version(),
@@ -1321,6 +1371,66 @@ mod tests {
                 .index_entry_key("todos", "by-title@1", &old_component, "todo-1")
                 .expect("old key");
             assert!(!entries.contains_key(&old_key));
+        });
+    }
+
+    #[test]
+    fn a_value_no_index_can_hold_fails_the_build_and_says_why() {
+        block_on(async {
+            let adapter = Arc::new(MemoryAdapter::new());
+            let (_, scoped, sequencer, validator) = setup(adapter);
+            let mut lease = sequencer
+                .lease(NonZeroU64::new(1).expect("non-zero"))
+                .await
+                .expect("lease");
+            let long = "t".repeat(crate::MAX_INDEXED_VALUE_BYTES + 1);
+            create(&scoped, &validator, &mut lease, "long-doc", &long).await;
+
+            let name = IndexName::parse("by-title").expect("name");
+            let version = IndexVersion::new(1).expect("version");
+            let definition = IndexDefinition::new_building(
+                CollectionId::parse("todos").expect("collection"),
+                name.clone(),
+                version,
+                IndexKind::NonUnique,
+                [IndexField::ascending("title").expect("field")],
+            )
+            .expect("index");
+            let short = serde_json::json!({"title": "short"});
+            assert!(
+                definition
+                    .encoded_components(short.as_object().expect("object"))
+                    .is_ok()
+            );
+            let over = serde_json::json!({"title": long});
+            assert!(matches!(
+                definition.encoded_components(over.as_object().expect("object")),
+                Err(IndexError::IndexedValueTooLarge)
+            ));
+            scoped
+                .create_index(definition, Durability::Memory)
+                .await
+                .expect("create index");
+            assert!(matches!(
+                scoped
+                    .backfill_index(
+                        &name,
+                        version,
+                        NonZeroUsize::new(10).expect("non-zero"),
+                        Durability::Memory,
+                    )
+                    .await,
+                Err(IndexBuildError::Index(IndexError::IndexedValueTooLarge))
+            ));
+            let failed = scoped
+                .index_definition(&name, version)
+                .await
+                .expect("catalog")
+                .expect("definition");
+            assert_eq!(failed.state(), IndexState::Failed);
+            let failure = failed.failure().expect("failure");
+            assert_eq!(failure.code(), crate::IndexFailureCode::BackfillFailed);
+            assert!(failure.safe_message().contains("16 KiB"));
         });
     }
 

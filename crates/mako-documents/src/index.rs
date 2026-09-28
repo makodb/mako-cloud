@@ -186,6 +186,10 @@ pub enum IndexState {
     Deleting,
 }
 
+/// The longest encoded value one indexed field may have: an index key holds
+/// each field's value as one segment, and a key segment is at most 16 KiB.
+pub const MAX_INDEXED_VALUE_BYTES: usize = 16 * 1024;
+
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum IndexFailureCode {
@@ -387,7 +391,15 @@ impl IndexDefinition {
         self.values_for_body(body)?
             .into_iter()
             .zip(&self.fields)
-            .map(|(value, field)| Ok(value.encode(field.direction())))
+            .map(|(value, field)| {
+                let encoded = value.encode(field.direction());
+                // Each component is one key segment; a longer one used to
+                // surface as a storage error, a 503 on every write.
+                if encoded.len() > MAX_INDEXED_VALUE_BYTES {
+                    return Err(IndexError::IndexedValueTooLarge);
+                }
+                Ok(encoded)
+            })
             .collect()
     }
 
@@ -912,6 +924,8 @@ fn normalize_number(value: &str) -> Result<NormalizedNumber, IndexError> {
 
 #[derive(Debug)]
 pub enum IndexError {
+    /// One indexed value is longer than an index key can hold.
+    IndexedValueTooLarge,
     InvalidDefinition {
         field: &'static str,
         reason: &'static str,
@@ -937,6 +951,11 @@ pub enum IndexError {
 impl fmt::Display for IndexError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::IndexedValueTooLarge => write!(
+                formatter,
+                "an indexed value is longer than {} bytes",
+                MAX_INDEXED_VALUE_BYTES
+            ),
             Self::InvalidDefinition { field, reason } => {
                 write!(formatter, "invalid index {field}: {reason}")
             }

@@ -921,14 +921,14 @@ async fn execute_index_install(
             ));
         }
     }
-    let state = build_index(&scoped, request, &name, version).await?;
+    let (state, message) = build_index(&scoped, request, &name, version).await?;
     report_index_state(
         graph,
         tenant,
         &input.collection_id,
         &input.name,
         input.version,
-        state,
+        (state, message),
         now,
     );
     index_response(request, &input.name, input.version, state)
@@ -963,14 +963,14 @@ async fn execute_index_inspect(
     )?;
     // Reading also advances an unfinished build, so an index that ran out of
     // page budget converges instead of waiting for another write.
-    let state = build_index(&scoped, request, &name, version).await?;
+    let (state, message) = build_index(&scoped, request, &name, version).await?;
     report_index_state(
         graph,
         tenant,
         &input.collection_id,
         &input.name,
         input.version,
-        state,
+        (state, message),
         now,
     );
     index_response(request, &input.name, input.version, state)
@@ -1023,7 +1023,7 @@ async fn execute_index_remove(
         &input.collection_id,
         &input.name,
         input.version,
-        "deleted",
+        ("deleted", None),
         now,
     );
     index_response(request, &input.name, input.version, "deleted")
@@ -1038,7 +1038,7 @@ fn report_index_state(
     collection_id: &str,
     index_name: &str,
     index_version: u64,
-    state: &str,
+    (state, message): (&str, Option<String>),
     now: u64,
 ) {
     graph.telemetry().record(mako_api::ObservabilityRecord {
@@ -1052,7 +1052,7 @@ fn report_index_state(
             // Progress in percent is not something the build reports; claiming
             // a number would be invention. Done and not-done are true.
             progress_percent: if state == "active" { 100 } else { 0 },
-            message: None,
+            message,
         },
     });
 }
@@ -1089,22 +1089,44 @@ fn index_target(
 }
 
 /// Drive an online build as far as one call is allowed to, and report the state
-/// the index ended in.
+/// the index ended in, with the reason when it failed.
+///
+/// A unique index over documents that already share a value fails at
+/// activation. That outcome used to be reported as "active", and every later
+/// read then tried to build the failed index again, failed, and left the
+/// control plane showing "building" for good.
 async fn build_index(
     scoped: &mako_documents::ScopedCollectionEngine,
     request: &HttpRequest,
     name: &mako_documents::IndexName,
     version: mako_documents::IndexVersion,
-) -> Result<&'static str, HttpApiError> {
+) -> Result<(&'static str, Option<String>), HttpApiError> {
     let page = NonZeroUsize::new(INDEX_BUILD_PAGE).expect("page size is not zero");
-    if index_state(scoped, request, name, version).await? == "active" {
-        return Ok("active");
+    let definitions = scoped
+        .index_definitions()
+        .await
+        .map_err(|_| conflict(request, "index catalog is unreadable"))?;
+    if let Some(definition) = definitions
+        .iter()
+        .find(|definition| definition.name() == name && definition.version() == version)
+    {
+        match definition.state() {
+            mako_documents::IndexState::Active => return Ok(("active", None)),
+            mako_documents::IndexState::Failed => {
+                return Ok(("failed", definition.failure().map(index_failure_message)));
+            }
+            mako_documents::IndexState::Deleting => return Ok(("deleting", None)),
+            mako_documents::IndexState::Building => {}
+        }
     }
     for _ in 0..INDEX_BUILD_MAX_PAGES {
-        let progress = scoped
+        let progress = match scoped
             .backfill_index(name, version, page, Durability::Sync)
             .await
-            .map_err(|_| conflict(request, "index backfill failed"))?;
+        {
+            Ok(progress) => progress,
+            Err(_) => return recorded_failure(scoped, request, name, version).await,
+        };
         if progress.backfill_complete() {
             break;
         }
@@ -1121,40 +1143,74 @@ async fn build_index(
             Ok(progress) if progress.caught_up_position() == caught_up => break,
             Ok(progress) => caught_up = progress.caught_up_position(),
             Err(mako_documents::IndexBuildError::BackfillIncomplete) => {
-                return Ok("building");
+                return Ok(("building", None));
             }
-            Err(_) => return Err(conflict(request, "index catch-up failed")),
+            Err(_) => return recorded_failure(scoped, request, name, version).await,
         }
     }
     match scoped.activate_index(name, version, Durability::Sync).await {
-        Ok(_) => Ok("active"),
+        Ok(mako_documents::IndexActivationOutcome::Active(_)) => Ok(("active", None)),
+        Ok(mako_documents::IndexActivationOutcome::Failed(definition)) => {
+            Ok(("failed", definition.failure().map(index_failure_message)))
+        }
         Err(
             mako_documents::IndexBuildError::BackfillIncomplete
             | mako_documents::IndexBuildError::CatchUpIncomplete { .. },
-        ) => Ok("building"),
+        ) => Ok(("building", None)),
         Err(_) => Err(conflict(request, "index activation failed")),
     }
 }
 
-async fn index_state(
+/// After a build step fails: the failure the build recorded, when it recorded
+/// one (a value no index can hold), or else a retryable conflict.
+async fn recorded_failure(
     scoped: &mako_documents::ScopedCollectionEngine,
     request: &HttpRequest,
     name: &mako_documents::IndexName,
     version: mako_documents::IndexVersion,
-) -> Result<&'static str, HttpApiError> {
+) -> Result<(&'static str, Option<String>), HttpApiError> {
     let definitions = scoped
         .index_definitions()
         .await
         .map_err(|_| conflict(request, "index catalog is unreadable"))?;
-    Ok(definitions
+    match definitions
         .iter()
         .find(|definition| definition.name() == name && definition.version() == version)
-        .map_or("absent", |definition| match definition.state() {
-            mako_documents::IndexState::Active => "active",
-            mako_documents::IndexState::Building => "building",
-            mako_documents::IndexState::Failed => "failed",
-            mako_documents::IndexState::Deleting => "deleting",
-        }))
+    {
+        Some(definition) if definition.state() == mako_documents::IndexState::Failed => {
+            Ok(("failed", definition.failure().map(index_failure_message)))
+        }
+        _ => Err(conflict(request, "index build failed")),
+    }
+}
+
+/// Why an index failed, in words that say what to do; no document values.
+fn index_failure_message(failure: &mako_documents::IndexFailure) -> String {
+    match failure.code() {
+        mako_documents::IndexFailureCode::DuplicateValues => format!(
+            "{} value(s) of the indexed fields are shared by more than one document, so this unique index cannot be built; remove the duplicates, then delete the index and create it again",
+            failure.affected_values()
+        ),
+        mako_documents::IndexFailureCode::BackfillFailed => failure.safe_message().to_owned(),
+    }
+}
+
+#[cfg(test)]
+mod index_failure_tests {
+    use super::index_failure_message;
+
+    #[test]
+    fn a_duplicate_failure_says_how_many_values_and_what_to_do() {
+        let failure = mako_documents::IndexFailure::new(
+            mako_documents::IndexFailureCode::DuplicateValues,
+            2,
+            "unique index build found duplicate indexed values",
+        )
+        .expect("failure");
+        let message = index_failure_message(&failure);
+        assert!(message.starts_with("2 value(s)"));
+        assert!(message.contains("remove the duplicates"));
+    }
 }
 
 fn index_response(
@@ -1576,6 +1632,32 @@ async fn execute_import_batch(
                 })?;
                 output.failed = output.failed.saturating_add(1);
                 push_row_error(&mut output, row_number, "concurrent_change");
+            }
+            // A row an index cannot hold, or one a unique index refuses, fails
+            // alone; before, it failed the batch and the job retried it for
+            // ten minutes.
+            Err(
+                error @ (mako_documents::MutationError::Index(
+                    mako_documents::IndexError::IndexedValueTooLarge,
+                )
+                | mako_documents::MutationError::UniqueConstraintViolation { .. }),
+            ) => {
+                sequencer.mark_aborted(position).await.map_err(|_| {
+                    auth_http::unavailable(request, "data-job sequencer is unavailable")
+                })?;
+                output.failed = output.failed.saturating_add(1);
+                push_row_error(
+                    &mut output,
+                    row_number,
+                    if matches!(
+                        error,
+                        mako_documents::MutationError::UniqueConstraintViolation { .. }
+                    ) {
+                        "unique_violation"
+                    } else {
+                        "index_value_too_large"
+                    },
+                );
             }
             Err(_) => {
                 let _ = sequencer.mark_aborted(position).await;

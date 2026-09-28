@@ -1006,6 +1006,11 @@ fn map_mutation_error(request: &HttpRequest, error: &MutationError) -> HttpApiEr
             conflict(request, "document mutation conflicts with current state")
         }
         MutationError::Document(_) => schema_mismatch(request, "document schema is invalid"),
+        // Permanent for this document, so not a retryable 503.
+        MutationError::Index(mako_documents::IndexError::IndexedValueTooLarge) => schema_mismatch(
+            request,
+            "a value of an indexed field is longer than 16 KiB, which an index cannot hold; shorten it, or remove that field from the collection's indexes",
+        ),
         _ => unavailable(request, "document mutation is unavailable"),
     }
 }
