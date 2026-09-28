@@ -1011,16 +1011,15 @@ impl DataJobService {
                 } else {
                     DataJobState::Queued
                 };
-                if record.view.errors.len() < 100 {
-                    record.view.errors.push(if terminal {
-                        "worker_failure_terminal".to_owned()
-                    } else {
-                        "worker_dependency_retry_scheduled".to_owned()
-                    });
-                    if record.view.errors.len() < 100 {
-                        record.view.errors.push(worker_failure_code(error));
-                    }
-                }
+                // Keep the earliest row errors, reserving the last two slots
+                // for the latest worker outcome and its safe failure category.
+                record.view.errors.truncate(98);
+                record.view.errors.push(if terminal {
+                    "worker_failure_terminal".to_owned()
+                } else {
+                    "worker_dependency_retry_scheduled".to_owned()
+                });
+                record.view.errors.push(worker_failure_code(error));
                 record.view.updated_at_unix_seconds = now_unix_seconds;
             }
             Ok(())
@@ -1713,7 +1712,7 @@ mod tests {
         futures::executor::block_on(async {
             let mut record = worker_record(0, DataJobState::Queued);
             record.view.kind = DataJobKind::Export;
-            store_worker_records(&service, &[record.clone()]).await;
+            store_worker_records(&service, std::slice::from_ref(&record)).await;
             let report = service.run_worker_once(10).await.expect("worker");
             assert_eq!(report.claimed, 1);
             assert_eq!(report.succeeded, 1);
@@ -1922,6 +1921,114 @@ mod tests {
             worker_failure_code(&DataJobError::InvalidArtifact),
             "worker_artifact"
         );
+    }
+
+    #[test]
+    fn worker_failure_diagnostics_survive_full_row_error_lists() {
+        futures::executor::block_on(async {
+            for count in [0, 98, 99, 100] {
+                let service = worker_fixture();
+                let mut record = worker_record(count + 40, DataJobState::Running);
+                let rows: Vec<String> = (0..count)
+                    .map(|row| format!("row_{row}:already_exists"))
+                    .collect();
+                record.view.errors = rows.clone();
+                store_worker_records(&service, std::slice::from_ref(&record)).await;
+                for (now, terminal, error, marker, category) in [
+                    (
+                        10,
+                        false,
+                        DataJobError::Internal(InternalClientError::Unavailable),
+                        "worker_dependency_retry_scheduled",
+                        "worker_internal_transport",
+                    ),
+                    (
+                        12,
+                        true,
+                        DataJobError::InvalidArtifact,
+                        "worker_failure_terminal",
+                        "worker_artifact",
+                    ),
+                ] {
+                    service
+                        .record_worker_failure(
+                            &record.view.tenant,
+                            &record.view.job_id,
+                            now,
+                            terminal,
+                            &error,
+                        )
+                        .await
+                        .unwrap();
+                    let stored = service
+                        .get_record(&record.view.tenant, &record.view.job_id)
+                        .await
+                        .unwrap();
+                    assert!(stored.view.errors.len() <= 100);
+                    assert!(
+                        stored
+                            .view
+                            .errors
+                            .ends_with(&[marker.to_owned(), category.to_owned()])
+                    );
+                    assert_eq!(&stored.view.errors[..count.min(98)], &rows[..count.min(98)]);
+                    assert_eq!(
+                        stored.view.state,
+                        if terminal {
+                            DataJobState::Failed
+                        } else {
+                            DataJobState::Queued
+                        }
+                    );
+                    assert_eq!(stored.view.updated_at_unix_seconds, now);
+                    assert_eq!(stored.worker_failures, if terminal { 2 } else { 1 });
+                }
+            }
+        });
+    }
+
+    #[test]
+    fn persisted_worker_diagnostics_exclude_sensitive_remote_fields() {
+        futures::executor::block_on(async {
+            let service = worker_fixture();
+            let record = worker_record(43, DataJobState::Running);
+            store_worker_records(&service, std::slice::from_ref(&record)).await;
+            let error = DataJobError::Internal(InternalClientError::Remote {
+                status: 503,
+                envelope: Box::new(mako_api::ApiErrorEnvelope::new(
+                    mako_api::ApiError::new(
+                        mako_api::ErrorCode::Unavailable,
+                        "sensitive-body-sentinel",
+                        "sensitive-request-sentinel",
+                        mako_api::RetryAdvice::Immediate,
+                    )
+                    .with_detail(
+                        "secret",
+                        mako_api::SafeDetail::String("sensitive-credential-sentinel".into()),
+                    ),
+                )),
+            });
+            service
+                .record_worker_failure(&record.view.tenant, &record.view.job_id, 10, false, &error)
+                .await
+                .unwrap();
+            let stored = service
+                .get_record(&record.view.tenant, &record.view.job_id)
+                .await
+                .unwrap();
+            assert_eq!(
+                stored.view.errors,
+                vec![
+                    "worker_dependency_retry_scheduled",
+                    "worker_internal_http_503:unavailable"
+                ]
+            );
+            assert!(
+                !serde_json::to_string(&stored)
+                    .unwrap()
+                    .contains("sensitive-")
+            );
+        });
     }
 
     #[test]

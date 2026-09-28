@@ -144,6 +144,11 @@ The system SHALL enforce document-size, page, predicate, sort, upload, artifact,
 - **WHEN** a developer requests more predicates, rows, or bytes than allowed
 - **THEN** the system rejects or safely truncates according to the documented contract, identifies the applicable limit, and returns no out-of-scope data
 
+#### Scenario: Worker fails after the row error list fills
+- **WHEN** an import or export worker fails with a full or nearly full bounded error list
+- **THEN** the stored errors retain the latest retry or terminal marker and a closed failure category within the 100-entry limit, keeping the earliest row errors that fit
+- **AND** internal HTTP failures include only the status and closed API error code, without remote messages, details, request IDs, document content, or credentials
+
 ### Requirement: Accessible explorer interaction
 The explorer SHALL support keyboard and assistive-technology use for collection selection, query construction, tables, document viewing, validation, comparisons, confirmations, and job progress. Loading, empty, denied, conflict, stale, deleted, failed, and completed states MUST be visually and programmatically distinct.
 

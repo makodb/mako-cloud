@@ -2312,6 +2312,8 @@ mako-cloud data jobs cancel job_… --yes
 
 Limits are 1 MiB per document, 512 MiB per upload or output, four active jobs per tenant, one hour of execution, 24 hours of artifact retention, and five minutes per upload/download grant. Job progress reports exact processed, committed, failed, skipped, exported, and byte counts. Object-store outages defer cleanup or job execution rather than silently publishing incomplete output.
 
+Worker failures include a retry or terminal marker and a safe category, such as `worker_internal_transport` or `worker_internal_http_503:unavailable`. The latest pair remains visible within the 100-error limit even after row errors fill the list. Remote messages, request IDs, document bodies, and credentials are excluded. A failed import can have committed rows; inspect progress and existing data before retrying it.
+
 ### API & Connect and sync diagnostics
 
 The Connect page (`mako-cloud workspace connect`) shows the public endpoint, active public credential id, active collection/schema versions, the supported RxDB range (`>=17.0.0 <18.0.0`), and template version 1. Public credential values are one-time material and cannot be recovered later. The connection check (`mako-cloud workspace check`) accepts public metadata only and returns separate DNS, TLS, route, readiness, key-recognition, schema, client-version, and replication-route steps; it never signs in an application user or invokes pull/push.
