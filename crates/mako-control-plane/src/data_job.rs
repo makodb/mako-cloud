@@ -800,10 +800,13 @@ impl DataJobService {
         if sha256_digest(&bytes) != digest {
             return Err(DataJobError::InvalidArtifact);
         }
-        let rows = std::str::from_utf8(&bytes)
+        let lines = std::str::from_utf8(&bytes)
             .map_err(|_| DataJobError::InvalidArtifact)?
             .lines()
-            .map(serde_json::from_str::<Value>)
+            .collect::<Vec<_>>();
+        let rows = lines
+            .iter()
+            .map(|line| serde_json::from_str::<Value>(line))
             .collect::<Result<Vec<_>, _>>()?;
         let mut offset = usize::try_from(record.view.progress.processed)
             .map_err(|_| DataJobError::InvalidState)?;
@@ -819,7 +822,7 @@ impl DataJobService {
                     .await?;
                 return Ok(DataJobState::Cancelled);
             }
-            let end = offset.saturating_add(32).min(rows.len());
+            let end = import_batch_end(&lines, offset);
             let input = DataJobImportBatchInput {
                 job_id: record.view.job_id.clone(),
                 collection_id: record.view.collection_id.as_str().to_owned(),
@@ -1420,6 +1423,28 @@ fn index_keys(view: &DataJobView) -> Result<Vec<Vec<u8>>, DataJobError> {
         .collect()
 }
 
+/// Rows per import batch, and the row bytes a batch may carry so the request
+/// stays within the identity-administration route's bound. A batch always
+/// takes at least one row; upload validation keeps each row within
+/// `EXPLORER_MAX_DOCUMENT_BYTES`. The split depends only on the upload, so a
+/// retried batch covers the same rows under the same idempotency key.
+const IMPORT_BATCH_ROWS: usize = 32;
+const IMPORT_BATCH_BYTES: usize = EXPLORER_MAX_DOCUMENT_BYTES as usize;
+
+fn import_batch_end(lines: &[&str], offset: usize) -> usize {
+    let mut end = offset;
+    let mut bytes = 0_usize;
+    while end < lines.len() && end - offset < IMPORT_BATCH_ROWS {
+        let next = bytes.saturating_add(lines[end].len());
+        if end > offset && next > IMPORT_BATCH_BYTES {
+            break;
+        }
+        bytes = next;
+        end += 1;
+    }
+    end
+}
+
 fn validate_json_lines(bytes: &[u8]) -> Result<(u64, u64), DataJobError> {
     let text = std::str::from_utf8(bytes).map_err(|_| DataJobError::InvalidArtifact)?;
     let mut rows = 0_u64;
@@ -1510,6 +1535,7 @@ fn worker_failure_code(error: &DataJobError) -> String {
             InternalClientError::InvalidPayload => "internal_payload",
             InternalClientError::ClockUnavailable => "internal_clock",
             InternalClientError::Unavailable => "internal_transport",
+            InternalClientError::RequestTooLarge => "internal_request_size",
             InternalClientError::ResponseTooLarge => "internal_response_size",
             InternalClientError::InvalidResponse => "internal_response",
             InternalClientError::CorrelationFailed => "internal_correlation",
@@ -1985,6 +2011,45 @@ mod tests {
     }
 
     #[test]
+    fn import_batches_are_bounded_by_rows_and_bytes() {
+        let small = ["{}"; 70];
+        assert_eq!(import_batch_end(&small, 0), 32);
+        assert_eq!(import_batch_end(&small, 64), 70);
+        let ten_kb = "x".repeat(10 * 1024);
+        let medium = vec![ten_kb.as_str(); 64];
+        assert_eq!(import_batch_end(&medium, 0), 32);
+        let half = "x".repeat(IMPORT_BATCH_BYTES / 2);
+        let large = [half.as_str(), half.as_str(), "{}"];
+        assert_eq!(import_batch_end(&large, 0), 2);
+        let full = "x".repeat(IMPORT_BATCH_BYTES);
+        let single = [full.as_str(), full.as_str()];
+        assert_eq!(import_batch_end(&single, 0), 1);
+        assert_eq!(import_batch_end(&single, 1), 2);
+        // A batch at the byte bound, escaped as badly as JSON allows, still
+        // fits the route.
+        let quotes = "\"".repeat(IMPORT_BATCH_BYTES / 2 - 8);
+        let full_request = serde_json::to_vec(&IdentityAdminCommand {
+            operation: IdentityAdminOperation::ImportDataJobBatch,
+            actor_id: "system/data-job-worker".to_owned(),
+            permissions: BTreeSet::from([IdentityAdminPermission::ExecuteDataJobs]),
+            input: serde_json::to_value(DataJobImportBatchInput {
+                job_id: "djob_0123456789abcdef".into(),
+                collection_id: "c".repeat(64),
+                schema_version: 1,
+                conflict_strategy: mako_api::ImportConflictStrategy::Upsert,
+                start_row: u64::MAX,
+                rows: vec![serde_json::json!({ "v": quotes })],
+            })
+            .unwrap(),
+        })
+        .unwrap();
+        assert!(
+            full_request.len()
+                < mako_internal_rpc::InternalRoute::IdentityAdmin.max_request_bytes()
+        );
+    }
+
+    #[test]
     fn worker_diagnostics_distinguish_transport_and_remote_errors_without_tenant_data() {
         let remote = DataJobError::Internal(InternalClientError::Remote {
             status: 503,
@@ -2005,6 +2070,12 @@ mod tests {
         assert_eq!(
             worker_failure_code(&DataJobError::Internal(InternalClientError::Unavailable)),
             "worker_internal_transport"
+        );
+        assert_eq!(
+            worker_failure_code(&DataJobError::Internal(
+                InternalClientError::RequestTooLarge
+            )),
+            "worker_internal_request_size"
         );
         assert_eq!(
             worker_failure_code(&DataJobError::InvalidArtifact),

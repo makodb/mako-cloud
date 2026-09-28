@@ -11,6 +11,10 @@ pub const MAX_INTERNAL_BODY_BYTES: usize = 256 * 1024;
 // The HTTP client and encrypted response journal must admit the JSON envelope.
 pub const DATA_JOB_EXPORT_PAGE_BYTES: usize = 2 * 1024 * 1024;
 pub const CONTROL_DATA_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
+// A data-job import batch carries a document at the 1 MiB limit on its own,
+// so the control plane's identity-administration requests get this allowance.
+// Every other internal route keeps `MAX_INTERNAL_BODY_BYTES`.
+pub const CONTROL_DATA_REQUEST_BYTES: usize = 2 * 1024 * 1024;
 
 pub const VERSION_HEADER: &str = "x-mako-internal-version";
 pub const CALLER_HEADER: &str = "x-mako-internal-caller";
@@ -96,6 +100,15 @@ impl InternalRoute {
     #[must_use]
     pub const fn method(self) -> HttpMethod {
         HttpMethod::Post
+    }
+
+    /// The largest request body the route admits.
+    #[must_use]
+    pub const fn max_request_bytes(self) -> usize {
+        match self {
+            Self::IdentityAdmin => CONTROL_DATA_REQUEST_BYTES,
+            _ => MAX_INTERNAL_BODY_BYTES,
+        }
     }
 
     #[must_use]

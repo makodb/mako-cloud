@@ -14,9 +14,10 @@ use mako_storage::{
 use serde_json::json;
 
 use crate::{
-    CONTROL_DATA_RESPONSE_BYTES, DeploymentKey, EncryptedResponseJournal, GuardDecision,
-    InternalAuthError, InternalCaller, InternalHttpClient, InternalHttpClientConfig,
-    InternalReplayGuard, InternalRequestAuthenticator, InternalRoute, PreparedResponseJournal,
+    CONTROL_DATA_REQUEST_BYTES, CONTROL_DATA_RESPONSE_BYTES, DeploymentKey,
+    EncryptedResponseJournal, GuardDecision, InternalAuthError, InternalCaller,
+    InternalClientError, InternalHttpClient, InternalHttpClientConfig, InternalReplayGuard,
+    InternalRequestAuthenticator, InternalRoute, MAX_INTERNAL_BODY_BYTES, PreparedResponseJournal,
     ResponseJournalError, ResponseJournalLookup, ResponseJournalStoreOutcome,
     RocksInternalReplayGuard,
 };
@@ -310,6 +311,59 @@ fn durable_guard_rejects_replay_and_preserves_idempotency() {
 }
 
 #[test]
+fn identity_administration_admits_a_document_sized_batch_and_other_routes_do_not() {
+    let key = DeploymentKey::derive(SECRET).expect("deployment key");
+    let signer = InternalRequestAuthenticator::new(key.clone(), InternalCaller::ControlPlane);
+    let verifier = InternalRequestAuthenticator::new(key, InternalCaller::ControlPlane);
+    let tenant = tenant("prj_abcdefgh", "env_abcdefgh");
+    let body = |bytes: usize| {
+        serde_json::to_vec(
+            &json!({"operation": "import_data_job_batch", "input": "x".repeat(bytes)}),
+        )
+        .expect("body")
+    };
+    let batch = signer
+        .sign(
+            InternalRoute::IdentityAdmin,
+            &tenant,
+            "req_abcdefgh",
+            "idem_abcdefgh",
+            100,
+            body(3 * 512 * 1024),
+        )
+        .expect("a batch carrying a 1 MiB document signs");
+    verifier
+        .verify_signed(InternalRoute::IdentityAdmin, &batch, 100)
+        .expect("and verifies");
+    assert_eq!(
+        signer
+            .sign(
+                InternalRoute::IdentityAdmin,
+                &tenant,
+                "req_abcdefgh",
+                "idem_abcdefgh",
+                100,
+                body(CONTROL_DATA_REQUEST_BYTES),
+            )
+            .err(),
+        Some(InternalAuthError::InvalidBody)
+    );
+    assert_eq!(
+        signer
+            .sign(
+                InternalRoute::ApplicationMailDrain,
+                &tenant,
+                "req_abcdefgh",
+                "idem_abcdefgh",
+                100,
+                body(MAX_INTERNAL_BODY_BYTES),
+            )
+            .err(),
+        Some(InternalAuthError::InvalidBody)
+    );
+}
+
+#[test]
 fn http_client_is_loopback_only_and_requires_correlated_bounded_responses() {
     let listener = TcpListener::bind("127.0.0.1:0").expect("listener");
     let endpoint = listener.local_addr().expect("address");
@@ -373,6 +427,18 @@ fn http_client_is_loopback_only_and_requires_correlated_bounded_responses() {
     assert_eq!(response.status, 200);
     assert_eq!(response.request_id, "req_network");
     server.join().expect("server");
+    // An oversized request is refused before anything is signed or sent, and
+    // is not mistaken for an authentication failure.
+    assert!(matches!(
+        client.call(
+            InternalRoute::IdentityVerify,
+            &tenant("prj_abcdefgh", "env_abcdefgh"),
+            "req_oversize",
+            "idem_oversize",
+            &json!({"presentedCredential": "x".repeat(MAX_INTERNAL_BODY_BYTES)}),
+        ),
+        Err(InternalClientError::RequestTooLarge)
+    ));
 
     let public = "192.0.2.1:8080".parse().expect("address");
     assert!(

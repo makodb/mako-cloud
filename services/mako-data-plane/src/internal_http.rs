@@ -65,9 +65,10 @@ pub fn add_internal_routes(
     let export_snapshots = Arc::new(Mutex::new(BTreeMap::new()));
     let identity_admin_graph = Arc::clone(&graph);
     let identity_admin_snapshots = Arc::clone(&export_snapshots);
-    router.add_route(
+    router.add_route_with_body_limit(
         HttpMethod::Post,
         InternalRoute::IdentityAdmin.path(),
+        Some(InternalRoute::IdentityAdmin.max_request_bytes()),
         move |request| {
             handle_identity_admin(&identity_admin_graph, &identity_admin_snapshots, &request)
         },

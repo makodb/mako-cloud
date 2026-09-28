@@ -2,7 +2,7 @@ use std::{num::NonZeroUsize, sync::Arc};
 
 use mako_api::{
     DataJobConfirmationRequest, DataJobCreateRequest, DataJobDryRunRequest,
-    EXPLORER_MAX_ACTIVE_JOBS_PER_TENANT, ErrorCode, RetryAdvice,
+    EXPLORER_MAX_ACTIVE_JOBS_PER_TENANT, EXPLORER_MAX_UPLOAD_BYTES, ErrorCode, RetryAdvice,
 };
 use mako_control_plane::{ArtifactMethod, DataJobError};
 use mako_service_runtime::{
@@ -77,7 +77,13 @@ pub(crate) fn add_data_job_routes(
         ),
     ] {
         let graph = Arc::clone(&graph);
-        router.add_route(method, path, move |request| handler(&graph, &request))?;
+        // The artifact upload's body is the import file itself, which may be
+        // as large as the documented upload bound; every other route keeps the
+        // listener's bound.
+        let body_limit = (method == HttpMethod::Put).then_some(EXPLORER_MAX_UPLOAD_BYTES as usize);
+        router.add_route_with_body_limit(method, path, body_limit, move |request| {
+            handler(&graph, &request)
+        })?;
     }
     Ok(())
 }

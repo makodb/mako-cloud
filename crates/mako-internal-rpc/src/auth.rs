@@ -6,8 +6,8 @@ use rand_core::{OsRng, RngCore};
 
 use crate::contract::{
     CALLER_HEADER, DIGEST_HEADER, ENVIRONMENT_HEADER, IDEMPOTENCY_HEADER,
-    INTERNAL_PROTOCOL_VERSION, InternalCaller, InternalRoute, MAX_INTERNAL_BODY_BYTES,
-    NONCE_HEADER, PROJECT_HEADER, SIGNATURE_HEADER, TIMESTAMP_HEADER, VERSION_HEADER,
+    INTERNAL_PROTOCOL_VERSION, InternalCaller, InternalRoute, NONCE_HEADER, PROJECT_HEADER,
+    SIGNATURE_HEADER, TIMESTAMP_HEADER, VERSION_HEADER,
 };
 
 const MAX_CLOCK_SKEW_SECONDS: u64 = 30;
@@ -88,7 +88,12 @@ impl InternalRequestAuthenticator {
         if route.caller() != self.caller {
             return Err(InternalAuthError::CallerNotAllowed);
         }
-        validate_request_parts(request_id, idempotency_key, &body)?;
+        validate_request_parts(
+            request_id,
+            idempotency_key,
+            &body,
+            route.max_request_bytes(),
+        )?;
         let nonce = random_nonce();
         let body_digest = digest_hex(&body);
         let canonical = canonical_request(&CanonicalRequest {
@@ -190,7 +195,7 @@ impl InternalRequestAuthenticator {
         if request.method != expected_route.method() || request.path != expected_route.path() {
             return Err(InternalAuthError::RouteNotAllowed);
         }
-        if request.body.is_empty() || request.body.len() > MAX_INTERNAL_BODY_BYTES {
+        if request.body.is_empty() || request.body.len() > expected_route.max_request_bytes() {
             return Err(InternalAuthError::InvalidBody);
         }
         if (request.header)("content-type") != Some("application/json") {
@@ -294,11 +299,12 @@ fn validate_request_parts(
     request_id: &str,
     idempotency_key: &str,
     body: &[u8],
+    max_body_bytes: usize,
 ) -> Result<(), InternalAuthError> {
     if !valid_identifier(request_id) || !valid_identifier(idempotency_key) {
         return Err(InternalAuthError::InvalidIdentifier);
     }
-    if body.is_empty() || body.len() > MAX_INTERNAL_BODY_BYTES {
+    if body.is_empty() || body.len() > max_body_bytes {
         return Err(InternalAuthError::InvalidBody);
     }
     serde_json::from_slice::<serde_json::Value>(body)

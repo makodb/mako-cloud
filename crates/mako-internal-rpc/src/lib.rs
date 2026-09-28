@@ -22,9 +22,9 @@ pub use client::{
 pub use contract::{
     ApplicationMailAcknowledgeRequest, ApplicationMailAcknowledgeResponse,
     ApplicationMailDrainRequest, ApplicationMailDrainResponse, ApplicationMailIntent,
-    CONTROL_DATA_RESPONSE_BYTES, ChangeFeedEntry, ChangeFeedEvent, DATA_JOB_EXPORT_PAGE_BYTES,
-    DataJobExportPageInput, DataJobExportPageOutput, DataJobImportBatchInput,
-    DataJobImportBatchOutput, DataJobRowError, DeleteBucketObjectInput,
+    CONTROL_DATA_REQUEST_BYTES, CONTROL_DATA_RESPONSE_BYTES, ChangeFeedEntry, ChangeFeedEvent,
+    DATA_JOB_EXPORT_PAGE_BYTES, DataJobExportPageInput, DataJobExportPageOutput,
+    DataJobImportBatchInput, DataJobImportBatchOutput, DataJobRowError, DeleteBucketObjectInput,
     FunctionScheduleInvokeRequest, FunctionScheduleInvokeResponse, FunctionSecretResolutionRequest,
     FunctionSecretResolutionResponse, INTERNAL_PROTOCOL_VERSION, IdentityAdminCommand,
     IdentityAdminOperation, IdentityAdminPermission, IdentityVerificationOperation,

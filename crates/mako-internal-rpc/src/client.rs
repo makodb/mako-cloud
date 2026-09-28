@@ -18,8 +18,7 @@ use crate::{
     FunctionScheduleInvokeRequest, FunctionScheduleInvokeResponse, FunctionSecretResolutionRequest,
     IdentityAdminCommand, IdentityAdminOperation, IdentityAdminPermission,
     IdentityVerificationRequest, InternalAuthError, InternalCaller, InternalRequestAuthenticator,
-    InternalRoute, MAX_INTERNAL_BODY_BYTES, ReadChangeFeedInput, ReadChangeFeedOutput,
-    SignedInternalRequest,
+    InternalRoute, ReadChangeFeedInput, ReadChangeFeedOutput, SignedInternalRequest,
 };
 
 const MAX_RESPONSE_HEADER_BYTES: usize = 32 * 1024;
@@ -92,6 +91,11 @@ impl InternalHttpClient {
         payload: &T,
     ) -> Result<InternalResponse, InternalClientError> {
         let body = serde_json::to_vec(payload).map_err(|_| InternalClientError::InvalidPayload)?;
+        // Refused here rather than while signing, where it surfaced as an
+        // authentication failure.
+        if body.len() > route.max_request_bytes() {
+            return Err(InternalClientError::RequestTooLarge);
+        }
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map_err(|_| InternalClientError::ClockUnavailable)?
@@ -124,8 +128,8 @@ impl InternalHttpClient {
         &self,
         request: &SignedInternalRequest,
     ) -> Result<InternalResponse, InternalClientError> {
-        if request.body.len() > MAX_INTERNAL_BODY_BYTES {
-            return Err(InternalClientError::InvalidPayload);
+        if request.body.len() > request.route.max_request_bytes() {
+            return Err(InternalClientError::RequestTooLarge);
         }
         let response = send_http(
             &self.config,
@@ -483,6 +487,8 @@ pub enum InternalClientError {
     InvalidPayload,
     ClockUnavailable,
     Unavailable,
+    /// The request is larger than its route admits.
+    RequestTooLarge,
     ResponseTooLarge,
     InvalidResponse,
     CorrelationFailed,
@@ -508,6 +514,7 @@ impl fmt::Display for InternalClientError {
             Self::InvalidPayload => "internal client payload is invalid",
             Self::ClockUnavailable => "system clock is unavailable",
             Self::Unavailable => "internal dependency is unavailable",
+            Self::RequestTooLarge => "internal request exceeds its route's bound",
             Self::ResponseTooLarge => "internal response exceeded its configured bound",
             Self::InvalidResponse => "internal dependency returned an invalid response",
             Self::CorrelationFailed => "internal response correlation failed",
@@ -526,6 +533,7 @@ impl Error for InternalClientError {
             | Self::InvalidPayload
             | Self::ClockUnavailable
             | Self::Unavailable
+            | Self::RequestTooLarge
             | Self::ResponseTooLarge
             | Self::InvalidResponse
             | Self::CorrelationFailed
