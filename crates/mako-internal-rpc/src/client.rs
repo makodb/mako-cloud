@@ -24,6 +24,8 @@ use crate::{
 
 const MAX_RESPONSE_HEADER_BYTES: usize = 32 * 1024;
 const MAX_RESPONSE_HEADERS: usize = 128;
+// A bulk batch may perform many synchronous durable writes before replying.
+const DATA_JOB_IO_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct InternalHttpClientConfig {
@@ -174,7 +176,14 @@ impl ControlToDataClient {
         idempotency_key: &str,
         command: &IdentityAdminCommand,
     ) -> Result<R, InternalClientError> {
-        deserialize_response(self.0.call(
+        let mut client = self.0.clone();
+        if matches!(
+            command.operation,
+            IdentityAdminOperation::ImportDataJobBatch | IdentityAdminOperation::ExportDataJobPage
+        ) {
+            client.config.io_timeout = client.config.io_timeout.max(DATA_JOB_IO_TIMEOUT);
+        }
+        deserialize_response(client.call(
             InternalRoute::IdentityAdmin,
             tenant,
             request_id,
@@ -358,6 +367,15 @@ fn deserialize_response<R: DeserializeOwned>(
     serde_json::from_slice(&response.body).map_err(|_| InternalClientError::InvalidResponse)
 }
 
+fn transport_error(error: std::io::Error) -> InternalClientError {
+    match error.kind() {
+        std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock => {
+            InternalClientError::TimedOut
+        }
+        _ => InternalClientError::Unavailable,
+    }
+}
+
 fn send_http(
     config: &InternalHttpClientConfig,
     method: &str,
@@ -366,28 +384,28 @@ fn send_http(
     body: &[u8],
 ) -> Result<InternalResponse, InternalClientError> {
     let mut stream = TcpStream::connect_timeout(&config.endpoint, config.connect_timeout)
-        .map_err(|_| InternalClientError::Unavailable)?;
+        .map_err(transport_error)?;
     stream
         .set_read_timeout(Some(config.io_timeout))
-        .map_err(|_| InternalClientError::Unavailable)?;
+        .map_err(transport_error)?;
     stream
         .set_write_timeout(Some(config.io_timeout))
-        .map_err(|_| InternalClientError::Unavailable)?;
+        .map_err(transport_error)?;
     write!(
         stream,
         "{method} {path} HTTP/1.1\r\nHost: {}\r\nConnection: close\r\nContent-Length: {}\r\n",
         config.endpoint,
         body.len(),
     )
-    .map_err(|_| InternalClientError::Unavailable)?;
+    .map_err(transport_error)?;
     for (name, value) in headers {
-        write!(stream, "{name}: {value}\r\n").map_err(|_| InternalClientError::Unavailable)?;
+        write!(stream, "{name}: {value}\r\n").map_err(transport_error)?;
     }
     stream
         .write_all(b"\r\n")
         .and_then(|()| stream.write_all(body))
         .and_then(|()| stream.flush())
-        .map_err(|_| InternalClientError::Unavailable)?;
+        .map_err(transport_error)?;
 
     let maximum = config
         .maximum_response_bytes
@@ -397,7 +415,7 @@ fn send_http(
     stream
         .take(u64::try_from(maximum).unwrap_or(u64::MAX))
         .read_to_end(&mut wire)
-        .map_err(|_| InternalClientError::Unavailable)?;
+        .map_err(transport_error)?;
     if wire.len() >= maximum {
         return Err(InternalClientError::ResponseTooLarge);
     }
@@ -483,6 +501,7 @@ pub enum InternalClientError {
     InvalidPayload,
     ClockUnavailable,
     Unavailable,
+    TimedOut,
     ResponseTooLarge,
     InvalidResponse,
     CorrelationFailed,
@@ -497,7 +516,7 @@ pub enum InternalClientError {
 impl InternalClientError {
     #[must_use]
     pub const fn is_dependency_unavailable(&self) -> bool {
-        matches!(self, Self::Unavailable)
+        matches!(self, Self::Unavailable | Self::TimedOut)
     }
 }
 
@@ -508,6 +527,7 @@ impl fmt::Display for InternalClientError {
             Self::InvalidPayload => "internal client payload is invalid",
             Self::ClockUnavailable => "system clock is unavailable",
             Self::Unavailable => "internal dependency is unavailable",
+            Self::TimedOut => "internal dependency timed out",
             Self::ResponseTooLarge => "internal response exceeded its configured bound",
             Self::InvalidResponse => "internal dependency returned an invalid response",
             Self::CorrelationFailed => "internal response correlation failed",
@@ -526,6 +546,7 @@ impl Error for InternalClientError {
             | Self::InvalidPayload
             | Self::ClockUnavailable
             | Self::Unavailable
+            | Self::TimedOut
             | Self::ResponseTooLarge
             | Self::InvalidResponse
             | Self::CorrelationFailed

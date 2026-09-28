@@ -2378,7 +2378,9 @@ mako-cloud data jobs cancel job_… --yes
 
 Limits are 1 MiB per document, 512 MiB per upload or output, four active jobs per tenant, one hour of execution, 24 hours of artifact retention, and five minutes per upload/download grant. Job progress reports exact processed, committed, failed, skipped, exported, and byte counts. Object-store outages defer cleanup or job execution rather than silently publishing incomplete output.
 
-Worker failures include a retry or terminal marker and a safe category, such as `worker_internal_transport` or `worker_internal_http_503:unavailable`. The latest pair remains visible within the 100-error limit even after row errors fill the list. Remote messages, request IDs, document bodies, and credentials are excluded. A failed import can have committed rows; inspect progress and existing data before retrying it.
+Bulk import batches and export pages use a 30-second socket I/O budget on the control-to-data hop, while ordinary interactive calls retain their configured shorter budget. Connect and response-size bounds still apply. A timeout can occur after writes commit, so workers retain the same batch idempotency key when retrying.
+
+Worker failures include a retry or terminal marker and a safe category, such as `worker_internal_timeout`, `worker_internal_transport` (other transport failures), or `worker_internal_http_503:unavailable`. The latest pair remains visible within the 100-error limit even after row errors fill the list. Remote messages, request IDs, document bodies, and credentials are excluded. A failed import can have committed rows; inspect progress and existing data before retrying it.
 
 ### API & Connect and sync diagnostics
 
