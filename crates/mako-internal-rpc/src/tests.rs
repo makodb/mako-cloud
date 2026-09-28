@@ -14,9 +14,10 @@ use mako_storage::{
 use serde_json::json;
 
 use crate::{
-    DeploymentKey, EncryptedResponseJournal, GuardDecision, InternalAuthError, InternalCaller,
-    InternalHttpClient, InternalHttpClientConfig, InternalReplayGuard,
-    InternalRequestAuthenticator, InternalRoute, PreparedResponseJournal, ResponseJournalLookup,
+    CONTROL_DATA_RESPONSE_BYTES, DeploymentKey, EncryptedResponseJournal, GuardDecision,
+    InternalAuthError, InternalCaller, InternalHttpClient, InternalHttpClientConfig,
+    InternalReplayGuard, InternalRequestAuthenticator, InternalRoute, PreparedResponseJournal,
+    ResponseJournalError, ResponseJournalLookup, ResponseJournalStoreOutcome,
     RocksInternalReplayGuard,
 };
 
@@ -66,6 +67,59 @@ fn canonical_signature_binds_route_caller_tenant_body_and_time() {
             )
             .is_err()
     );
+}
+
+#[test]
+fn response_journal_accepts_large_export_pages_but_keeps_a_finite_bound() {
+    block_on(async {
+        let directory = tempfile::tempdir().unwrap();
+        let mut config = RocksDbConfig::new(directory.path());
+        config.minimum_durability = Durability::Sync;
+        let adapter: Arc<dyn KvAdapter> = Arc::new(RocksDbAdapter::open(config).unwrap());
+        let tenant = tenant("prj_abcdefgh", "env_abcdefgh");
+        let deployment_key = DeploymentKey::derive(SECRET).unwrap();
+        let journal =
+            EncryptedResponseJournal::new(adapter, &tenant, &tenant, &deployment_key).unwrap();
+        let auth = InternalRequestAuthenticator::new(deployment_key, InternalCaller::ControlPlane);
+        let signed = auth
+            .sign(
+                InternalRoute::IdentityAdmin,
+                &tenant,
+                "req_large_journal",
+                "idem_large_journal",
+                100,
+                b"{}".to_vec(),
+            )
+            .unwrap();
+        let verified = auth
+            .verify_signed(InternalRoute::IdentityAdmin, &signed, 100)
+            .unwrap();
+        let response = vec![b'x'; CONTROL_DATA_RESPONSE_BYTES];
+        assert!(matches!(
+            journal
+                .prepare_atomic(&verified, &response, 100)
+                .await
+                .unwrap(),
+            PreparedResponseJournal::Fresh(_)
+        ));
+        assert_eq!(
+            journal.store(&verified, &response, 100).await.unwrap(),
+            ResponseJournalStoreOutcome::Stored
+        );
+        assert_eq!(
+            journal.lookup(&verified, 101).await.unwrap(),
+            ResponseJournalLookup::Replay(response)
+        );
+        let oversized = vec![b'x'; CONTROL_DATA_RESPONSE_BYTES + 1];
+        assert!(matches!(
+            journal.store(&verified, &oversized, 101).await,
+            Err(ResponseJournalError::InvalidResponse)
+        ));
+        assert!(matches!(
+            journal.prepare_atomic(&verified, &oversized, 101).await,
+            Err(ResponseJournalError::InvalidResponse)
+        ));
+    });
 }
 
 #[test]

@@ -122,6 +122,11 @@ An authorized member SHALL be able to export a bounded query result or collectio
 - **WHEN** an authorized administrative user starts an export within project limits
 - **THEN** the job produces an integrity-addressed artifact and manifest, records the access in audit, and offers a short-lived tenant-bound download
 
+#### Scenario: Export includes documents near the document-size limit
+- **WHEN** a collection snapshot contains valid documents up to the supported 1 MiB document limit and the job remains within its quotas
+- **THEN** the export includes every document exactly once across bounded 2 MiB pages, with a bounded 4 MiB allowance in both the control-to-data HTTP client and the encrypted response journal
+- **AND** pagination retains the same snapshot and excludes later writes, retrying a page replays its exact journaled response, and request-size and document-size limits remain unchanged
+
 #### Scenario: Export would exceed a limit
 - **WHEN** an export exceeds its row, byte, duration, or concurrent-job quota
 - **THEN** the system stops safely, reports the applicable limit, produces no partial downloadable artifact, and records the outcome

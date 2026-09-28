@@ -1682,7 +1682,8 @@ async fn execute_export_page(
         .browse_primary_keys(
             PrimaryKeyBrowseOptions::new(
                 NonZeroUsize::new(input.limit as usize).expect("validated export limit"),
-                NonZeroUsize::new(192 * 1024).expect("export byte limit"),
+                NonZeroUsize::new(mako_internal_rpc::DATA_JOB_EXPORT_PAGE_BYTES)
+                    .expect("export byte limit"),
                 scoped.storage_capabilities().maximum_scan_items,
                 false,
             ),
@@ -3013,5 +3014,167 @@ mod change_feed_tests {
                 ChangeFeedFailure::CollectionNotFound
             );
         });
+    }
+}
+
+#[cfg(test)]
+mod export_size_tests {
+    use super::*;
+    use crate::graph::test_support::{DeploymentEnvironment, config_for, local_tempdir, tenant};
+    use mako_api::CollectionScope;
+    use mako_documents::{
+        CollectionLifecycle, CollectionMetadataVersion, PrimaryKeyDefinition, SchemaCompatibility,
+        SchemaVersion,
+    };
+    use serde_json::json;
+
+    #[test]
+    fn exports_large_documents_without_omitting_or_duplicating_page_boundaries() {
+        let directory = local_tempdir("export-large-documents");
+        let graph = Arc::new(
+            DataPlaneGraph::open(&config_for(directory.path(), DeploymentEnvironment::Local))
+                .unwrap(),
+        );
+        let tenant = tenant();
+        let metadata = CollectionMetadata::new(
+            mako_api::CollectionId::parse("captures").unwrap(),
+            CollectionMetadataVersion::new(1).unwrap(),
+            SchemaVersion::new(1).unwrap(),
+            json!({"type":"object", "properties":{"id":{"type":"string"},
+                "payload":{"type":"string"}}, "required":["id","payload"],
+                "additionalProperties":false}),
+            PrimaryKeyDefinition::field("id").unwrap(),
+            SchemaCompatibility::Compatible,
+            CollectionLifecycle::Active,
+        )
+        .unwrap();
+        let scoped = graph
+            .document_engine()
+            .scope_collection(
+                &tenant,
+                CollectionScope::new(tenant.clone(), metadata.collection_id().clone()),
+            )
+            .unwrap();
+        block_on(scoped.install_collection_metadata(&metadata, Durability::Sync)).unwrap();
+        let validator = DocumentValidator::compile(&metadata).unwrap();
+        let sequencer = graph
+            .document_engine()
+            .scope_sequencer(&tenant, &tenant, Durability::Sync)
+            .unwrap();
+        let mut lease = block_on(sequencer.lease(NonZeroU64::new(6).unwrap())).unwrap();
+        let positions: Vec<u64> = (0..6).map(|_| lease.issue().unwrap()).collect();
+        let payload = "x".repeat(1024 * 1024 - 1024);
+        let mutation = |i: u64| MutationInput {
+            mutation_id: MutationId::parse(format!("large-document-{i}")).unwrap(),
+            commit_position: CommitPosition::new(positions[i as usize]).unwrap(),
+            document: validator
+                .validate_create(json!({"id":format!("doc-{i}"),
+                "payload":payload}))
+                .unwrap(),
+            durability: Durability::Sync,
+        };
+        for i in 0..5 {
+            assert!(matches!(
+                block_on(scoped.create_document(mutation(i))).unwrap(),
+                MutationCommitOutcome::Applied(_)
+            ));
+            block_on(sequencer.mark_committed(positions[i as usize])).unwrap();
+        }
+        block_on(sequencer.recover_high_water()).unwrap();
+        let registry = Arc::new(Mutex::new(BTreeMap::new()));
+        let auth = graph.internal_authenticator(InternalCaller::ControlPlane);
+        let request = |command: &IdentityAdminCommand, page_number: usize| {
+            // HttpRequest::for_test fixes the transport correlation ID.
+            let request_id = "req_test_support";
+            let now = auth_http::now_unix_seconds(request_id).unwrap();
+            let signed = auth
+                .sign(
+                    InternalRoute::IdentityAdmin,
+                    &tenant,
+                    request_id,
+                    &format!("idem_export_{page_number}"),
+                    now,
+                    serde_json::to_vec(command).unwrap(),
+                )
+                .unwrap();
+            HttpRequest::for_test(
+                HttpMethod::Post,
+                signed.route.path(),
+                signed.headers,
+                signed.body,
+                None,
+            )
+        };
+        let mut cursor = None;
+        let mut snapshot = None;
+        let mut ids = Vec::new();
+        for page_number in 0..6 {
+            let command = IdentityAdminCommand {
+                operation: IdentityAdminOperation::ExportDataJobPage,
+                actor_id: "system/data-job-worker".into(),
+                permissions: std::collections::BTreeSet::from([
+                    IdentityAdminPermission::ExecuteDataJobs,
+                ]),
+                input: serde_json::to_value(DataJobExportPageInput {
+                    job_id: "djob_exporttest01".into(),
+                    collection_id: "captures".into(),
+                    cursor: cursor.clone(),
+                    limit: 64,
+                })
+                .unwrap(),
+            };
+            let response =
+                handle_identity_admin(&graph, &registry, &request(&command, page_number)).unwrap();
+            assert_eq!(response.status_for_test(), 200);
+            let wire = response.body_for_test().unwrap();
+            assert!(wire.len() < mako_internal_rpc::CONTROL_DATA_RESPONSE_BYTES);
+            let output: DataJobExportPageOutput = serde_json::from_slice(wire).unwrap();
+            assert_eq!(output.schema_version, 1);
+            if page_number == 0 {
+                assert!(
+                    wire.len() > 1024 * 1024,
+                    "exercise the larger journal and HTTP budgets"
+                );
+                snapshot = Some(output.snapshot.clone());
+                // Later writes must not enter the snapshot or a replay of its first page.
+                block_on(scoped.create_document(mutation(5))).unwrap();
+                block_on(sequencer.mark_committed(positions[5])).unwrap();
+                block_on(sequencer.recover_high_water()).unwrap();
+                let replay =
+                    handle_identity_admin(&graph, &registry, &request(&command, page_number))
+                        .unwrap();
+                assert_eq!(replay.body_for_test().unwrap(), wire);
+                let mut wrong_job = command.clone();
+                wrong_job.input["jobId"] = json!("djob_anotherjob01");
+                wrong_job.input["cursor"] = json!(output.next_cursor);
+                assert!(
+                    handle_identity_admin(&graph, &registry, &request(&wrong_job, 20)).is_err()
+                );
+                let mut denied = command.clone();
+                denied.permissions.clear();
+                let error =
+                    handle_identity_admin(&graph, &registry, &request(&denied, 21)).unwrap_err();
+                assert_eq!(error.envelope().error.code, ErrorCode::PermissionDenied);
+            }
+            assert_eq!(snapshot.as_ref(), Some(&output.snapshot));
+            for row in output.rows {
+                assert_eq!(row["payload"].as_str(), Some(payload.as_str()));
+                ids.push(row["id"].as_str().unwrap().to_owned());
+            }
+            cursor = output.next_cursor;
+            if cursor.is_none() {
+                assert!(
+                    page_number >= 2,
+                    "large documents must cross page boundaries"
+                );
+                break;
+            }
+        }
+        assert!(cursor.is_none(), "export must finish within the page bound");
+        assert_eq!(ids, vec!["doc-0", "doc-1", "doc-2", "doc-3", "doc-4"]);
+        assert!(
+            registry.lock().unwrap().is_empty(),
+            "finished snapshots are released"
+        );
     }
 }
