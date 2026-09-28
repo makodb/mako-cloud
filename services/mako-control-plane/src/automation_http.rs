@@ -470,6 +470,10 @@ fn token_error(request: &HttpRequest, error: TokenServiceError) -> HttpApiError 
             request,
             "automation token changed or is no longer active",
         ),
+        TokenServiceError::ReplacementTaken => crate::management_http::conflict(
+            request,
+            "the replacement token ID is already in use; choose another ID",
+        ),
         _ => unavailable(request, "automation tokens are unavailable"),
     }
 }

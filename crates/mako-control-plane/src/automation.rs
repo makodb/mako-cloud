@@ -506,6 +506,11 @@ impl AutomationTokenService {
             .get(current_id)
             .await?
             .ok_or(TokenServiceError::NotFound)?;
+        // Said before the write, whose missing-key condition would otherwise
+        // report a taken ID as the current token having changed.
+        if self.get(&replacement_id).await?.is_some() {
+            return Err(TokenServiceError::ReplacementTaken);
+        }
         let mut retired = previous.clone();
         retired.revoke(now_unix_seconds)?;
         let secret = AutomationTokenSecret::generate(&replacement_id);
@@ -570,6 +575,8 @@ pub enum TokenServiceError {
     InvalidScope,
     NotFound,
     Conflict,
+    /// The replacement ID a rotation names is already a token's.
+    ReplacementTaken,
     UnsupportedDurability,
     Keyspace(ControlKeyspaceError),
     Storage(StorageError),
@@ -583,6 +590,9 @@ impl fmt::Display for TokenServiceError {
             Self::InvalidScope => formatter.write_str("automation scope is invalid"),
             Self::NotFound => formatter.write_str("automation token was not found"),
             Self::Conflict => formatter.write_str("automation token changed concurrently"),
+            Self::ReplacementTaken => {
+                formatter.write_str("automation token replacement id is already in use")
+            }
             Self::UnsupportedDurability => {
                 formatter.write_str("automation token durability is unsupported")
             }
@@ -689,6 +699,33 @@ mod tests {
                 )
                 .await
                 .expect("rotate");
+            let other = service
+                .issue(
+                    AutomationTokenId::parse("atm_otherone0").expect("other id"),
+                    "other",
+                    AutomationScope::new(
+                        OrganizationId::parse("org_example00").expect("organization"),
+                        ProjectId::parse("prj_example00").ok(),
+                        None,
+                        [AutomationPermission::ProjectRead],
+                    )
+                    .expect("scope"),
+                    DeveloperIdentityId::parse("dev_example00").expect("developer"),
+                    30,
+                    200,
+                )
+                .await
+                .expect("another token");
+            assert!(matches!(
+                service
+                    .rotate(other.record.id(), replacement.record.id().clone(), 31, 200)
+                    .await,
+                Err(TokenServiceError::ReplacementTaken)
+            ));
+            service
+                .authenticate(&other.secret, 31)
+                .await
+                .expect("a refused rotation leaves the token active");
             assert!(service.authenticate(&issue.secret, 31).await.is_err());
             service
                 .authenticate(&replacement.secret, 31)

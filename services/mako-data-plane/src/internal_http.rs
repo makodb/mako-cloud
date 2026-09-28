@@ -2562,6 +2562,9 @@ fn map_identity_error(request: &HttpRequest, error: IdentityStoreError) -> HttpA
         IdentityStoreError::RecordAlreadyExists | IdentityStoreError::EmailAlreadyExists => {
             conflict(request, "identity resource already exists")
         }
+        IdentityStoreError::ProjectCredentialNotActive => {
+            conflict(request, "identity credential is not active")
+        }
         IdentityStoreError::InvalidAdminQuery
         | IdentityStoreError::InvalidProjectCredential
         | IdentityStoreError::InvalidUserStatusTransition

@@ -458,7 +458,15 @@ impl IdentityStore {
         let mut current: StoredProjectCredential = serde_json::from_slice(&current_bytes)?;
         validate_stored(&current, &self.tenant, current_id)?;
         if current.metadata.state != ProjectCredentialState::Active {
-            return Err(IdentityStoreError::InvalidProjectCredential);
+            return Err(IdentityStoreError::ProjectCredentialNotActive);
+        }
+        let replacement_key = self
+            .keyspace
+            .project_credential_key(replacement_id.as_str())?;
+        // Said before the write, whose missing-key condition would otherwise
+        // report a taken ID as a concurrent change.
+        if self.adapter.get(&replacement_key).await?.is_some() {
+            return Err(IdentityStoreError::RecordAlreadyExists);
         }
         let replacement_credential = generate_credential(current.metadata.kind, &replacement_id);
         let replacement_metadata = ProjectCredentialMetadata {
@@ -481,9 +489,6 @@ impl IdentityStore {
                 .checked_add(overlap_seconds)
                 .ok_or(IdentityStoreError::InvalidProjectCredential)?,
         );
-        let replacement_key = self
-            .keyspace
-            .project_credential_key(replacement_id.as_str())?;
         Ok(PreparedProjectCredentialRotation {
             issued: IssuedProjectCredential {
                 metadata: replacement_metadata,
@@ -812,10 +817,40 @@ mod tests {
             assert!(verified.permits("todos", ServiceCredentialOperation::Read));
             assert!(!verified.permits("private", ServiceCredentialOperation::Read));
 
+            // The replaced credential is in its overlap, so it cannot be
+            // rotated again, and a replacement cannot take a used ID.
+            assert!(matches!(
+                store
+                    .rotate_project_credential(
+                        &service_id,
+                        ProjectCredentialId::parse("key_service_3").expect("id"),
+                        5,
+                        26
+                    )
+                    .await,
+                Err(IdentityStoreError::ProjectCredentialNotActive)
+            ));
+            assert!(matches!(
+                store
+                    .rotate_project_credential(&replacement_id, service_id.clone(), 5, 26)
+                    .await,
+                Err(IdentityStoreError::RecordAlreadyExists)
+            ));
             store
                 .retire_project_credential(&replacement_id, 30)
                 .await
                 .expect("retire");
+            assert!(matches!(
+                store
+                    .rotate_project_credential(
+                        &replacement_id,
+                        ProjectCredentialId::parse("key_service_4").expect("id"),
+                        5,
+                        31
+                    )
+                    .await,
+                Err(IdentityStoreError::ProjectCredentialNotActive)
+            ));
             assert!(
                 store
                     .verify_project_credential(replacement.credential.expose_once(), 31)

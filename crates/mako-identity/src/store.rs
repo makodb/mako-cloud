@@ -1213,6 +1213,9 @@ pub enum IdentityStoreError {
     CorruptRevocationEvent,
     InvalidProjectCredential,
     ProjectCredentialNotFound,
+    /// Only an active credential can be rotated: one already in its overlap
+    /// or retired has been replaced.
+    ProjectCredentialNotActive,
     ConcurrentProjectCredentialChange,
     InvalidAdminQuery,
 }
@@ -1265,6 +1268,9 @@ impl fmt::Display for IdentityStoreError {
             Self::InvalidProjectCredential => formatter.write_str("project credential is invalid"),
             Self::ProjectCredentialNotFound => {
                 formatter.write_str("project credential was not found")
+            }
+            Self::ProjectCredentialNotActive => {
+                formatter.write_str("project credential is not active")
             }
             Self::ConcurrentProjectCredentialChange => {
                 formatter.write_str("project credential changed concurrently")

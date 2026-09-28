@@ -635,8 +635,9 @@ pub(crate) async fn administer(
     })
 }
 
-/// A create refused because what it names is taken, said in the words of
-/// that resource. The generic "identity operation conflicts with current
+/// A create or rotation refused because what it names is taken, or because
+/// the credential it rotates is no longer active, said in the words of that
+/// resource. The generic "identity operation conflicts with current
 /// state" read like a server fault, and the forms stayed filled, so people
 /// kept retrying the same ID.
 fn existing_resource(
@@ -650,6 +651,13 @@ fn existing_resource(
     else {
         return None;
     };
+    if operation == IdentityAdminOperation::RotateProjectCredential
+        && envelope.error.message == "identity credential is not active"
+    {
+        return Some(
+            "only an active credential can be rotated; this one has already been replaced or retired, so rotate its replacement or issue a new credential",
+        );
+    }
     if envelope.error.message != "identity resource already exists" {
         return None;
     }
@@ -975,6 +983,24 @@ mod tests {
         assert_eq!(
             existing_resource(Op::CreateUser, &taken),
             Some("an application user with this email already exists")
+        );
+        assert_eq!(
+            existing_resource(Op::RotateProjectCredential, &taken),
+            Some("the replacement credential ID is already in use; choose another ID")
+        );
+        assert!(
+            existing_resource(
+                Op::RotateProjectCredential,
+                &refused("identity credential is not active")
+            )
+            .is_some_and(|message| message.starts_with("only an active credential"))
+        );
+        assert_eq!(
+            existing_resource(
+                Op::CreateProjectCredential,
+                &refused("identity credential is not active")
+            ),
+            None
         );
         assert_eq!(existing_resource(Op::DisableUser, &taken), None);
         assert_eq!(
