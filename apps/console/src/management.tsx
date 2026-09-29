@@ -13,7 +13,7 @@ export function ManagementProvider({
   readonly endpoint: string;
   readonly children: ReactNode;
 }) {
-  const { state } = useDeveloperAuth();
+  const { state, renew } = useDeveloperAuth();
   const client = useMemo(() => {
     if (state.status !== "authenticated" || state.session.audience !== "mako-management") {
       return null;
@@ -23,15 +23,19 @@ export function ManagementProvider({
       endpoint,
       credential: {
         kind: "developer_session",
-        accessToken: () => {
-          if (!isSessionActive(session)) {
+        accessToken: async () => {
+          if (isSessionActive(session)) {
+            return session.accessToken;
+          }
+          const renewed = await renew();
+          if (renewed === null) {
             throw new DeveloperSessionExpiredError();
           }
-          return session.accessToken;
+          return renewed.accessToken;
         },
       },
     });
-  }, [endpoint, state]);
+  }, [endpoint, state, renew]);
 
   return <ManagementContext.Provider value={client}>{children}</ManagementContext.Provider>;
 }

@@ -162,18 +162,80 @@ interface RecordedRequest {
   idempotencyKey: string | undefined;
 }
 
+test("a page left open past its access token keeps working on a renewed session", async ({
+  page,
+}) => {
+  // The first session expires four seconds after the page opens; the adapter
+  // then renews it with the refresh cookie, as the hosted console does.
+  await page.addInitScript(() => {
+    const window_ = window as unknown as { __renewals: number; __MAKO_CONSOLE__: unknown };
+    window_.__renewals = 0;
+    const opened = Date.now();
+    const profile = { id: "dev_abcdefgh", email: "owner@example.test", displayName: "Owner" };
+    const first = {
+      accessToken: "developer-session-token",
+      expiresAt: new Date(opened + 4_000).toISOString(),
+      audience: "mako-management",
+      profile,
+    };
+    const renewed = {
+      accessToken: "renewed-session-token-0001",
+      expiresAt: "2099-01-01T00:00:00.000Z",
+      audience: "mako-management",
+      profile,
+    };
+    window_.__MAKO_CONSOLE__ = {
+      managementEndpoint: "http://127.0.0.1:4174",
+      developerAuth: {
+        // By time, not by call: the development build mounts the provider twice.
+        loadSession: async () => {
+          if (Date.now() - opened < 2_000) return first;
+          window_.__renewals += 1;
+          return renewed;
+        },
+        beginSignIn: async () => {},
+        signOut: async () => {},
+        subscribe: () => () => {},
+      },
+      developerWorkspaceEnabled: true,
+    };
+  });
+  const api = new OriginsApiHarness();
+  api.acceptedTokens.add("renewed-session-token-0001");
+  await api.install(page);
+
+  await page.goto(SETTINGS_URL);
+  const section = page.getByRole("region", { name: "Allowed origins" });
+  await expect(section.locator(".allowed-origins-list li")).toHaveText(ORIGINS);
+  await page.waitForTimeout(4_500);
+  await section
+    .getByLabel("Origins, one per line")
+    .fill("https://app.example.com\nhttp://127.0.0.1:5173\nhttps://later.example.com");
+  await section.getByRole("button", { name: "Save origins" }).click();
+  await expect(section.locator(".allowed-origins-list li")).toHaveCount(3);
+  await expect(page.getByText("Your developer session expired")).toHaveCount(0);
+  expect(api.tokens.at(-1)).toBe("renewed-session-token-0001");
+  expect(
+    await page.evaluate(() => (window as unknown as { __renewals: number }).__renewals),
+  ).toBeGreaterThan(0);
+});
+
 class OriginsApiHarness {
   readonly requests: RecordedRequest[] = [];
   readonly unhandled: string[] = [];
   allowedOrigins: string[] = [...ORIGINS];
   updateRefusal: string | null = null;
+  readonly acceptedTokens = new Set(["developer-session-token"]);
+  readonly tokens: string[] = [];
 
   async install(page: import("@playwright/test").Page): Promise<void> {
     await page.route("**/v1/**", async (route) => {
       const request = route.request();
       const path = new URL(request.url()).pathname;
       const method = request.method();
-      if (request.headers().authorization !== "Bearer developer-session-token") {
+      const token = (request.headers().authorization ?? "").replace(/^Bearer /u, "");
+      this.tokens.push(token);
+      if (!this.acceptedTokens.has(token)) {
         await json(
           route,
           apiError("unauthenticated", "A valid developer session is required."),
