@@ -37,6 +37,9 @@ const MAXIMUM_ISSUER_BYTES: usize = 2_048;
 const MAXIMUM_SOURCE_BYTES: usize = 512;
 const MAXIMUM_PASSWORD_BYTES: usize = 1_024;
 const MAXIMUM_IDEMPOTENCY_BYTES: usize = 256;
+/// How many refresh rotations a sign-out follows to the current session; the
+/// bound only stops a loop, as for access tokens.
+const MAXIMUM_SIGN_OUT_ROTATIONS: usize = 16;
 const MAXIMUM_REQUEST_ID_BYTES: usize = 256;
 const MAIL_SCHEMA_VERSION: u32 = 1;
 
@@ -903,18 +906,42 @@ impl DeveloperRegistrationService {
         ) {
             return Ok(DeveloperGenericOutcome::Accepted);
         }
-        let mut revoked = previous.clone();
-        revoked.revoke(now_unix_seconds)?;
-        match self
-            .store
-            .replace_refresh_session(&previous, &revoked)
-            .await
-        {
-            Ok(()) | Err(DeveloperRegistrationError::Conflict) => {
-                Ok(DeveloperGenericOutcome::Accepted)
+        // A cookie from before a refresh names the session that refresh
+        // rotated. Revoking that one again changed nothing (a rotated session
+        // already carries its revocation time), so the session it was rotated
+        // into stayed signed in while sign-out answered success. The rotation
+        // is followed to the current session, as access-token checks follow
+        // it, and that one is revoked; a refresh racing the sign-out is
+        // followed too.
+        let mut current = previous;
+        for _ in 0..MAXIMUM_SIGN_OUT_ROTATIONS {
+            match (
+                current.revoked_at_unix_seconds(),
+                current.rotated_to().cloned(),
+            ) {
+                (None, _) => {
+                    let mut revoked = current.clone();
+                    revoked.revoke(now_unix_seconds)?;
+                    match self.store.replace_refresh_session(&current, &revoked).await {
+                        Ok(()) => return Ok(DeveloperGenericOutcome::Accepted),
+                        Err(DeveloperRegistrationError::Conflict) => {}
+                        Err(error) => return Err(error.into()),
+                    }
+                    let Some(reread) = self.store.get_refresh_session(current.id()).await? else {
+                        return Ok(DeveloperGenericOutcome::Accepted);
+                    };
+                    current = reread;
+                }
+                (Some(_), Some(next)) => {
+                    let Some(successor) = self.store.get_refresh_session(&next).await? else {
+                        return Ok(DeveloperGenericOutcome::Accepted);
+                    };
+                    current = successor;
+                }
+                (Some(_), None) => return Ok(DeveloperGenericOutcome::Accepted),
             }
-            Err(error) => Err(error.into()),
         }
+        Ok(DeveloperGenericOutcome::Accepted)
     }
 
     pub async fn waitlist_status(
@@ -2132,6 +2159,32 @@ mod tests {
                 .await
                 .expect("active sign in");
             assert_eq!(active.claims.audience, DeveloperAccessAudience::Active);
+
+            // Signing out with the cookie from before a refresh ends the
+            // session that refresh rotated it into.
+            let other = service
+                .sign_in("person@example.test", PASSWORD, "source-b", NOW + 9)
+                .await
+                .expect("second sign in");
+            let stale = other.refresh_credential().encoded().to_owned();
+            let refreshed = service
+                .refresh(&stale, NOW + 9)
+                .await
+                .expect("refresh of the second session");
+            service.sign_out(&stale, NOW + 9).await.expect("sign out");
+            assert!(matches!(
+                service
+                    .refresh(refreshed.refresh_credential().encoded(), NOW + 9)
+                    .await,
+                Err(DeveloperWorkflowError::InvalidSession)
+            ));
+            assert!(
+                service
+                    .refresh(active.refresh_credential().encoded(), NOW + 9)
+                    .await
+                    .is_ok(),
+                "another session of the same developer stays signed in"
+            );
             let before_recovery = service
                 .store()
                 .get_account(account.id())
