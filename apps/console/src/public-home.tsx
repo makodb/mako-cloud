@@ -17,6 +17,8 @@ import {
 } from "lucide-react";
 import type { ComponentType, SVGProps } from "react";
 
+import { MakoMark } from "./mako-mark.js";
+
 const THEME_KEY = "mako.console.theme";
 const USER_BOOK = "/docs/user-book";
 
@@ -353,19 +355,6 @@ export function PublicHome({ navigate }: PublicHomeProps) {
         </div>
       </footer>
     </div>
-  );
-}
-
-function MakoMark({ small = false }: { readonly small?: boolean }) {
-  return (
-    <span
-      className={`${small ? "size-7 rounded-lg" : "size-8 rounded-[0.6rem]"} grid shrink-0 place-items-center bg-primary text-primary-foreground shadow-sm shadow-primary/20`}
-      aria-hidden="true"
-    >
-      <span
-        className={`${small ? "size-2.5" : "size-3"} rotate-45 rounded-[0.2rem] border-2 border-current border-t-transparent`}
-      />
-    </span>
   );
 }
 

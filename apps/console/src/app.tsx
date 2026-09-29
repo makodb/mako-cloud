@@ -33,6 +33,7 @@ import { ConsoleErrorBoundary } from "./error-boundary.js";
 import { FunctionScreen, FunctionsScreen } from "./functions.js";
 import { HomeDashboard } from "./home.js";
 import { LogsScreen } from "./logs.js";
+import { MakoMark } from "./mako-mark.js";
 import { ObservabilityScreen } from "./observability.js";
 import { RequireOperatorSession } from "./operator.js";
 import { OperatorWorkspaceScreen } from "./operator-control-center.js";
@@ -560,7 +561,8 @@ function AuthenticatedShell({
         Skip to main content
       </a>
       <header className="flex h-14 items-center gap-4 border-b bg-card px-4 sm:px-6">
-        <div className="flex min-w-0 items-baseline gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <MakoMark />
           <p className="m-0 hidden text-xs font-semibold tracking-[0.18em] text-primary uppercase sm:block">
             Mako Cloud
           </p>

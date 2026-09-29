@@ -110,10 +110,10 @@
 		rewrite * /docs/user-book/index.html
 		file_server
 	}
-	# The remaining assets are scripts, stylesheets, and the self-hosted
+	# The remaining assets are brand images, scripts, stylesheets, and the self-hosted
 	# typeface. A font left out of this list does not fail loudly -- the console
 	# just quietly falls back to a system face.
-	@console_asset path_regexp console_asset ^/assets/[A-Za-z0-9._-]+\.(?:css|js|woff2)$
+	@console_asset path_regexp console_asset ^/assets/[A-Za-z0-9._-]+\.(?:css|js|woff2|png)$
 	handle @console_asset {
 		root * /opt/mako/current/console
 		file_server

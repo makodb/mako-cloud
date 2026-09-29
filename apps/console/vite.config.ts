@@ -126,12 +126,14 @@ function userBookHtml(markdown: string): string {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="color-scheme" content="light dark">
     <meta name="description" content="The Mako Cloud User Book for application developers.">
+    <link rel="icon" type="image/png" sizes="32x32" href="/assets/mako-cloud-favicon.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/assets/mako-cloud-apple-touch.png" />
     <title>Mako Cloud User Book</title>
     <style>${USER_BOOK_CSS}</style>
   </head>
   <body>
     <header class="site-header">
-      <a class="brand" href="/" aria-label="Mako Cloud home"><span class="mark">◆</span>Mako Cloud</a>
+      <a class="brand" href="/" aria-label="Mako Cloud home"><img class="mark" src="/assets/mako-cloud.png" alt="" width="40" height="40">Mako Cloud</a>
       <nav class="site-nav" aria-label="Documentation"><a href="#table-of-contents">Contents</a><a href="/login">Console</a></nav>
     </header>
     <div class="docs-shell" id="table-of-contents">
@@ -182,7 +184,7 @@ html { scroll-behavior: smooth; scroll-padding-top: 5.5rem; background: var(--bg
 body { margin: 0; }
 .site-header { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between; min-height: 4rem; padding: 0.7rem max(1.25rem,calc((100% - 82rem)/2)); border-bottom: 1px solid var(--line); background: color-mix(in srgb,var(--bg) 88%,transparent); backdrop-filter: blur(16px); }
 .brand { display: flex; align-items: center; gap: 0.65rem; color: var(--text); font-weight: 700; text-decoration: none; }
-.mark { display: grid; width: 2rem; height: 2rem; place-items: center; border-radius: 0.6rem; background: var(--brand); color: var(--paper); font-size: 0.65rem; }
+.mark { display: block; width: 2.5rem; height: 2.5rem; object-fit: contain; border-radius: 0.6rem; background: #fff; }
 .site-nav { display: flex; gap: 1.25rem; font-size: 0.875rem; }
 .docs-shell { display: grid; grid-template-columns: 15rem minmax(0,58rem); gap: 4rem; width: min(100% - 2.5rem,82rem); margin: 0 auto; align-items: start; }
 .document { min-width: 0; padding: 4rem 0 6rem; }

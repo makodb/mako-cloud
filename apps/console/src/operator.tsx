@@ -1,3 +1,13 @@
+import type {
+  AbuseResponse,
+  CreateAbuseResponseRequest,
+  CreateQuotaOverrideRequest,
+  OperatorProjectView,
+  ProvisioningWorkflow,
+  QuotaOverride,
+  SupportPermission,
+  SupportSession,
+} from "@mako-cloud/management-sdk";
 import {
   Alert,
   AlertDescription,
@@ -19,19 +29,8 @@ import {
 } from "@mako-cloud/ui";
 import { ChevronDown, CircleCheck, ShieldCheck } from "lucide-react";
 import { type FormEvent, type ReactNode, useId, useState } from "react";
-
-import type {
-  AbuseResponse,
-  CreateAbuseResponseRequest,
-  CreateQuotaOverrideRequest,
-  OperatorProjectView,
-  ProvisioningWorkflow,
-  QuotaOverride,
-  SupportPermission,
-  SupportSession,
-} from "@mako-cloud/management-sdk";
-
 import { ApiFailureNotice, type ConsoleApiFailure, toConsoleApiFailure } from "./api-error.js";
+import { MakoMark } from "./mako-mark.js";
 import { useOperatorAuth } from "./operator-auth.js";
 import { useOperatorClient } from "./operator-management.js";
 import { OperatorWaitListPanel } from "./operator-waitlist.js";
@@ -189,7 +188,7 @@ export function OperatorConsoleScreen({ onExit }: { readonly onExit: () => void 
       </a>
       <header className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b bg-card px-4 py-3 sm:px-6">
         <div className="flex min-w-0 items-center gap-3">
-          <ShieldCheck aria-hidden="true" className="size-5 shrink-0 text-primary" />
+          <MakoMark />
           <div className="grid min-w-0 leading-tight">
             <Eyebrow>Restricted surface</Eyebrow>
             <strong className="truncate text-sm">Mako Cloud Operator Console</strong>

@@ -308,7 +308,7 @@ for (const path of [
   );
   assert(consoleAssets !== null, "the console asset route is missing");
   const served = new Set(consoleAssets[1].split("|"));
-  for (const extension of ["css", "js", "woff2"]) {
+  for (const extension of ["css", "js", "woff2", "png"]) {
     assert(served.has(extension), `the console asset route does not serve .${extension}`);
   }
 }

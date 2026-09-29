@@ -1,3 +1,5 @@
+<img src="apps/console/public/assets/mako-cloud.png" alt="Mako Cloud shark rocket" width="160" height="160">
+
 # Mako Cloud
 
 Mako Cloud is an RxDB-native application backend with project authentication,
