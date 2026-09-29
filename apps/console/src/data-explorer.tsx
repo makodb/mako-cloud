@@ -1269,6 +1269,12 @@ function DataJobs({
   const [jobs, setJobs] = useState<DataJob[]>([]);
   const [failure, setFailure] = useState<ConsoleApiFailure | null>(null);
   const [exportScopeConfirmed, setExportScopeConfirmed] = useState(false);
+  // An upload of a large file takes seconds; a second press used to start a
+  // second job and leave the first waiting for confirmation, counting against
+  // the environment's unfinished-job limit. The ref refuses a second submit
+  // before a re-render could disable the button.
+  const [uploading, setUploading] = useState(false);
+  const uploadingRef = useRef(false);
   const [pendingConfirmation, setPendingConfirmation] = useState<DataJob | null>(null);
   const [detail, setDetail] = useState<DataJob | null>(null);
   const [uploadGrant, setUploadGrant] = useState<ArtifactGrant | null>(null);
@@ -1311,6 +1317,9 @@ function DataJobs({
   };
   const uploadImport = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (uploadingRef.current) return;
+    uploadingRef.current = true;
+    setUploading(true);
     try {
       const data = new FormData(event.currentTarget);
       const file = data.get("file");
@@ -1352,6 +1361,9 @@ function DataJobs({
       await reload();
     } catch (error) {
       setFailure(consoleFailure(error));
+    } finally {
+      uploadingRef.current = false;
+      setUploading(false);
     }
   };
   const confirm = async (event: FormEvent<HTMLFormElement>, job: DataJob) => {
@@ -1491,8 +1503,8 @@ function DataJobs({
               <option value="upsert">Upsert</option>
             </NativeSelect>
           </Field>
-          <Button type="submit" variant="outline">
-            Upload and dry run
+          <Button type="submit" variant="outline" disabled={uploading}>
+            {uploading ? "Uploading…" : "Upload and dry run"}
           </Button>
         </form>
         {pendingConfirmation === null ? null : (

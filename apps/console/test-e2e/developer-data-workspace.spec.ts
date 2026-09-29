@@ -612,6 +612,87 @@ test("direct access preserves audited conflicts, history, tombstones, and data j
   await expect(page.getByText("djob_export02", { exact: true })).toBeVisible();
 });
 
+test("an import upload in progress cannot be started a second time", async ({ page }) => {
+  let created = 0;
+  let releaseUpload = () => {};
+  const uploadHeld = new Promise<void>((resolve) => {
+    releaseUpload = resolve;
+  });
+  await page.route("**/v1/**", async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    if (await serveWorkspaceShell(route, path)) return;
+    if (path.endsWith("/collections") && request.method() === "GET")
+      return json(route, { items: [collection()] });
+    if (path.endsWith("/users") && request.method() === "GET")
+      return json(route, { users: [], truncated: false });
+    if (path.endsWith("/explorer/grants") && request.method() === "POST")
+      return json(
+        route,
+        {
+          grantId: "xgr_admin0123456789abcdef0123456789ab",
+          capability: CAPABILITY,
+          mode: "administrative",
+          operations: ["get", "browse", "query", "plan", "history", "simulate", "mutate"],
+          applicationUserId: null,
+          issuedAtUnixSeconds: 1_786_579_200,
+          expiresAtUnixSeconds: 4_102_444_800,
+          authorizationEpoch: 1,
+        },
+        201,
+      );
+    if (path.endsWith("/browse"))
+      return json(route, { items: [], nextCursor: null, snapshot: "empty", exhausted: true });
+    if (path.endsWith("/data-jobs") && request.method() === "GET")
+      return json(route, { items: [], nextCursor: null });
+    if (path.endsWith("/data-jobs") && request.method() === "POST") {
+      created += 1;
+      return json(route, { ...importJob("awaiting_confirmation"), state: "awaiting_upload" }, 201);
+    }
+    if (path.endsWith("/artifact-grants/upload"))
+      return json(
+        route,
+        {
+          jobId: "djob_import01",
+          method: "PUT",
+          url: `${path.replace("/artifact-grants/upload", "/artifact")}?grant=grant_upload01`,
+          digest: null,
+          expiresAtUnixSeconds: 4_102_444_800,
+        },
+        201,
+      );
+    if (path.endsWith("/artifact") && request.method() === "PUT") {
+      // The upload of a large file is still going when the person presses again.
+      await uploadHeld;
+      return json(route, { ...importJob("awaiting_confirmation"), state: "dry_run" }, 202);
+    }
+    if (path.endsWith("/actions/dry-run")) return json(route, importJob("awaiting_confirmation"));
+    return json(route, { error: "unhandled" }, 500);
+  });
+
+  await page.goto(`/projects/${PROJECT_ID}/environments/${ENVIRONMENT_ID}/data`);
+  await page.getByRole("tab", { name: "Import / export" }).click();
+  await page.getByLabel("JSON Lines file").setInputFiles({
+    name: "rows.jsonl",
+    mimeType: "application/x-ndjson",
+    buffer: Buffer.from('{"id":"a","ownerId":"u","title":"A"}\n'),
+  });
+  await page.getByRole("button", { name: "Upload and dry run" }).click();
+  const busy = page.getByRole("button", { name: "Uploading…" });
+  await expect(busy).toBeDisabled();
+  await busy.click({ force: true });
+  await page
+    .locator("form")
+    .filter({ has: busy })
+    .evaluate((form: HTMLFormElement) => {
+      form.requestSubmit();
+    });
+  releaseUpload();
+  await expect(page.getByText("Confirm import execution")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Upload and dry run" })).toBeEnabled();
+  expect(created).toBe(1);
+});
+
 test("overview preserves healthy sections when a provider is unavailable", async ({ page }) => {
   await page.route("**/v1/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
