@@ -95,6 +95,10 @@ export function PolicyScreen({
   // The highest version that exists, drafts included. Only the active version
   // is listed, so the versions after it are probed until one is free.
   const [highestVersion, setHighestVersion] = useState(0);
+  // Until the probing below finishes, the next free version is unknown: the
+  // form used to offer version 1 meanwhile, and a draft submitted then was
+  // refused because that version already existed.
+  const [versionsKnown, setVersionsKnown] = useState(false);
   const reloadActive = useCallback(async () => {
     try {
       const next = await client.getActiveCollectionPolicy(projectId, environmentId, collectionId);
@@ -110,6 +114,7 @@ export function PolicyScreen({
         highest = probe;
       }
       setHighestVersion(highest);
+      setVersionsKnown(true);
       setActive(next);
       if (selected === null && next.policy !== undefined) {
         setSelected(next.policy);
@@ -289,12 +294,14 @@ export function PolicyScreen({
             <form className="grid gap-4" onSubmit={(event) => void createDraft(event)}>
               <Field label="Policy version" htmlFor="draft-version">
                 <Input
-                  key={nextVersion}
+                  key={versionsKnown ? nextVersion : "unknown"}
                   id="draft-version"
                   name="version"
                   type="number"
                   min="1"
-                  defaultValue={nextVersion}
+                  defaultValue={versionsKnown ? nextVersion : undefined}
+                  placeholder={versionsKnown ? undefined : "Finding the next version…"}
+                  disabled={!versionsKnown}
                   required
                   className="max-w-40"
                 />
@@ -311,7 +318,9 @@ export function PolicyScreen({
                 />
               </Field>
               <div>
-                <Button type="submit">Create draft</Button>
+                <Button type="submit" disabled={!versionsKnown}>
+                  Create draft
+                </Button>
               </div>
             </form>
           </CardContent>
