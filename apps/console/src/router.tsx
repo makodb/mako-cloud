@@ -11,9 +11,9 @@ import {
   Input,
 } from "@mako-cloud/ui";
 import { type ReactNode, useCallback, useEffect, useState } from "react";
-
 import { useDeveloperAuth } from "./auth.js";
 import { HostedSignInView, WaitListStatusView } from "./developer-auth-views.js";
+import { MakoMark } from "./mako-mark.js";
 
 /** A page with one thing in the middle of it: a sign-in card, a notice, a wait. */
 const CENTERED_PAGE = "grid min-h-screen place-items-center bg-background p-6 text-foreground";
@@ -491,6 +491,7 @@ export function SignInView({
     <main className={CENTERED_PAGE}>
       <Card className="w-full max-w-md" aria-labelledby="sign-in-title">
         <CardHeader>
+          <MakoMark />
           <p className="m-0 text-xs font-semibold tracking-[0.18em] text-primary uppercase">
             Mako Cloud
           </p>
