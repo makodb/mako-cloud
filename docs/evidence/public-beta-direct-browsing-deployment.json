@@ -143,16 +143,7 @@
   },
   "localValidation": {
     "rustTestsPassed": 352,
-    "rustPackageCounts": [
-      25,
-      174,
-      59,
-      27,
-      11,
-      8,
-      26,
-      22
-    ],
+    "rustPackageCounts": [25, 174, 59, 27, 11, 8, 26, 22],
     "offlinePreflight": "passed",
     "documentation": "passed",
     "sourceCommit": "a7040e201cc3f7288056b7466e15e66cc648267a",

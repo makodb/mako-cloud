@@ -135,10 +135,7 @@
     "previousRelease": "fb3e84fe10f0b6be0cef3d598cffe8596a7830480ea182c91e999a20cf7d4847",
     "releaseDigest": "a2d2a458811dbc8354fae1f817dab720ffa3b039aeeb6486d16337e01b00a25b",
     "identicalBackendArtifacts": false,
-    "changedBackendArtifacts": [
-      "bin/mako-control-plane",
-      "bin/mako-data-plane"
-    ],
+    "changedBackendArtifacts": ["bin/mako-control-plane", "bin/mako-data-plane"],
     "backendArtifactCount": 14,
     "identicalRuntimeConfiguration": true,
     "identicalDependencies": true
@@ -161,11 +158,7 @@
     },
     "consoleBrowserTests": {
       "passed": 12,
-      "suites": [
-        "api-docs",
-        "public-home",
-        "developer-data-workspace"
-      ]
+      "suites": ["api-docs", "public-home", "developer-data-workspace"]
     },
     "candidateBinariesLocalSmoke": {
       "passed": 1,

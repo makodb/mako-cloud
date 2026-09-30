@@ -391,7 +391,7 @@ impl Error for IdentityCompositionError {
 
 #[cfg(test)]
 mod tests {
-    use ed25519_dalek::{Signer as _, SigningKey};
+    use ed25519_dalek::SigningKey;
     use serde_json::json;
 
     use super::*;

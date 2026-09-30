@@ -125,12 +125,7 @@
     "sidebarDocumentationLinkRemoved": true,
     "homepageRecentActivityRemoved": true,
     "homepageAuditRequests": 0,
-    "viewportWidths": [
-      1440,
-      768,
-      390,
-      320
-    ],
+    "viewportWidths": [1440, 768, 390, 320],
     "javascriptErrors": [],
     "scope": "Real deployed HTML, JS, CSS and fonts. Signed-in management requests intercepted with synthetic fixtures; no live account login or tenant data reads or writes."
   },
