@@ -303,6 +303,10 @@ test("credentials, functions, logs, metrics, and audit export use the management
   const api = new ManagementApiHarness();
   await api.install(page);
   page.on("dialog", (dialog) => void dialog.accept());
+  const keyWarnings: string[] = [];
+  page.on("console", (message) => {
+    if (message.text().includes("same key")) keyWarnings.push(message.text());
+  });
 
   await page.goto(`/projects/${PROJECT_ID}/environments/${ENVIRONMENT_ID}/credentials`);
   await page.getByLabel("Credential ID", { exact: true }).fill("pk_browser01");
@@ -344,6 +348,11 @@ test("credentials, functions, logs, metrics, and audit export use the management
   await page.getByRole("button", { name: "Invoke test" }).click();
   await expect(page.getByText("HTTP 200")).toBeVisible();
   await expect(page.getByText("function invocation completed")).toBeVisible();
+  // A line whose own text ends as a numbered repeat would does not collide.
+  await expect(page.getByText("loading the todo list", { exact: true })).toHaveCount(2);
+  await expect(page.getByText("loading the todo list#2", { exact: true })).toHaveCount(1);
+  await expect(page.getByText("todo list loaded")).toBeVisible();
+  expect(keyWarnings).toEqual([]);
   await expect(page.getByText(/1 calls · 0 errors/u)).toBeVisible();
 
   await page.goto(`/projects/${PROJECT_ID}/environments/${ENVIRONMENT_ID}/observability`);
@@ -660,6 +669,21 @@ class ManagementApiHarness {
             version: 1,
             region: "local",
           },
+          // One invocation writes several lines sharing time, correlation id
+          // and version, and can repeat a line exactly.
+          ...[
+            "loading the todo list",
+            "loading the todo list#2",
+            "loading the todo list",
+            "todo list loaded",
+          ].map((message) => ({
+            timestamp: NOW,
+            level: "info",
+            message,
+            correlationId: "corr_log02",
+            version: 1,
+            region: "local",
+          })),
         ],
         nextCursor: null,
       });

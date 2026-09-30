@@ -881,11 +881,11 @@ function FunctionMetricsPanel({
           </p>
         ) : (
           <ul className="m-0 grid list-none gap-3 p-0 text-sm">
-            {metrics.map(({ timestamp, metric }, position) => (
-              <li
-                key={`${timestamp}:${metric.version}:${metric.region}:${position}`}
-                className="grid gap-0.5 border-b pb-3 last:border-0 last:pb-0"
-              >
+            {keyedByContent(
+              metrics,
+              ({ timestamp, metric }) => `${timestamp}:${metric.version}:${metric.region}`,
+            ).map(({ key, item: { metric } }) => (
+              <li key={key} className="grid gap-0.5 border-b pb-3 last:border-0 last:pb-0">
                 <strong className="font-mono text-xs font-semibold">
                   v{metric.version} in {metric.region}
                 </strong>
@@ -902,6 +902,32 @@ function FunctionMetricsPanel({
       </CardContent>
     </Card>
   );
+}
+
+/**
+ * Each item with a React key taken from what it says, numbered only where
+ * items say exactly the same thing, so a key follows its item rather than its
+ * position in the list. A numbered key that another item's own text already
+ * produced is skipped, so every key is unique whatever the text holds.
+ */
+function keyedByContent<T>(
+  items: readonly T[],
+  base: (item: T) => string,
+): { readonly key: string; readonly item: T }[] {
+  const used = new Set<string>();
+  const counts = new Map<string, number>();
+  return items.map((item) => {
+    const text = base(item);
+    let count = counts.get(text) ?? 0;
+    let key: string;
+    do {
+      count += 1;
+      key = count === 1 ? text : `${text}#${count}`;
+    } while (used.has(key));
+    counts.set(text, count);
+    used.add(key);
+    return { key, item };
+  });
 }
 
 function FunctionLogsPanel({
@@ -934,12 +960,14 @@ function FunctionLogsPanel({
             </TableHeader>
             <TableBody>
               {/* One invocation writes several lines with the same time,
-                  correlation id, and version, so only the position tells
-                  them apart. */}
-              {logs.items.map((entry, position) => (
-                <TableRow
-                  key={`${entry.timestamp}:${entry.correlationId}:${entry.version}:${position}`}
-                >
+                  correlation id, and version; their messages tell them apart,
+                  and repeated identical lines are numbered. */}
+              {keyedByContent(
+                logs.items,
+                (entry) =>
+                  `${entry.timestamp}:${entry.correlationId}:${entry.version}:${entry.level}:${entry.message}`,
+              ).map(({ key, item: entry }) => (
+                <TableRow key={key}>
                   <TableCell className="align-top text-muted-foreground tabular-nums">
                     {new Date(entry.timestamp).toLocaleString()}
                   </TableCell>
