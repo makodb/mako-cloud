@@ -195,8 +195,15 @@ fn run_console_workflow(cli: &Cli) {
         .expect("environment id")
         .to_owned();
     assert_eq!(environment["state"], "active", "{environment}");
+    // The project also has its Development environment, and the list is in
+    // id order, so the new one is looked for rather than expected first.
     let listed = cli.json(&["envs", "list", "--project", &project_id]);
-    assert_eq!(listed[0]["id"], environment_id, "{listed}");
+    assert!(
+        listed.as_array().is_some_and(|environments| environments
+            .iter()
+            .any(|listed| listed["id"] == environment_id)),
+        "{listed}"
+    );
     let tenant = ["--project", &project_id, "--env", &environment_id];
 
     // Shape a collection: the schema is published with the collection.

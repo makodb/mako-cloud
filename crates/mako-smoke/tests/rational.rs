@@ -187,14 +187,31 @@ fn rationals_own_model_serves_a_household_over_http() {
     );
     let project_id = project["id"].as_str().expect("project id").to_owned();
     await_active(control_port, &bearer, &format!("/v1/projects/{project_id}"));
-    let environment_record = created(
+    // A new project comes with its Development environment, and a project
+    // holds one environment of each name, so the model is published there.
+    let (status, listed) = request(
+        control_port,
+        "GET",
         &format!("/v1/projects/{project_id}/environments"),
-        "environment",
-        Some(&json!({ "name": "development" })),
+        &bearer,
+        None,
     );
-    let environment_id = environment_record["id"]
-        .as_str()
-        .expect("environment id")
+    assert_eq!(
+        status, 200,
+        "listing the project's environments failed: {listed}"
+    );
+    let listed: Value = serde_json::from_str(&listed).expect("environment list");
+    let environment_id = listed["items"]
+        .as_array()
+        .expect("environments")
+        .iter()
+        .find(|environment| {
+            environment["name"]
+                .as_str()
+                .is_some_and(|name| name.eq_ignore_ascii_case("development"))
+        })
+        .and_then(|environment| environment["id"].as_str())
+        .expect("the project's Development environment")
         .to_owned();
     let scope = format!("/v1/projects/{project_id}/environments/{environment_id}");
     await_active(control_port, &bearer, &scope);
