@@ -536,9 +536,13 @@ fn deployed_function_is_served_through_the_edge_gateway() {
     );
     assert_eq!(document["body"]["title"], "groceries");
 
-    // Reusing one request id across two service requests is the caller's
-    // mistake, not an outage: it is a quota reservation conflict, and
-    // reporting it as `unavailable` sent clients into a retry loop that could
+    // A function's calls all carry its invocation's request id, so reading a
+    // document and then writing it under that one id are two different
+    // requests, not a reused id. Each reserves its own quota and both succeed;
+    // refusing the write is what kept a function from recovering a command's
+    // result. A retry of the very same write is still the same reservation, so
+    // it replays instead of writing a second revision. None of this may surface
+    // as `unavailable`, which once sent clients into a retry loop that could
     // never succeed.
     let reused = "req_edgesmokereuse00000000000001";
     let (status, body) = request(
@@ -578,12 +582,39 @@ fn deployed_function_is_served_through_the_edge_gateway() {
         })),
     );
     assert_eq!(
-        status, 409,
-        "reusing a request id is a conflict, not an outage: {body}"
+        status, 200,
+        "a write after a read under one request id is a different request: {body}"
     );
-    assert!(
-        body.contains("X-Mako-Request-Id"),
-        "the refusal must name the reused request id: {body}"
+    let written: serde_json::Value = serde_json::from_str(&body).expect("write json");
+    assert_eq!(written["status"], "applied", "{body}");
+    assert_eq!(written["document"]["body"]["title"], "reused", "{body}");
+    let (status, body) = request(
+        DATA_PLANE_PORT,
+        "POST",
+        &document_path,
+        &writing,
+        Some(&serde_json::json!({
+            "mutationId": "edge-smoke-request-id-reuse-mutation",
+            "schemaVersion": 1,
+            "operation": "update",
+            "expectedRevision": document["revision"],
+            "body": {
+                "id": SERVICE_FUNCTION_DOCUMENT_ID,
+                "ownerId": "usr_budget_function",
+                "title": "reused",
+                "updatedAt": 1_786_752_000_000_i64,
+            },
+        })),
+    );
+    assert_eq!(
+        status, 200,
+        "a retry of the same write replays, not an outage: {body}"
+    );
+    let replayed: serde_json::Value = serde_json::from_str(&body).expect("replay json");
+    assert_eq!(replayed["status"], "replayed", "{body}");
+    assert_eq!(
+        replayed["document"]["revision"], written["document"]["revision"],
+        "the retry writes no second revision: {body}"
     );
 
     // --- The worker sandbox: what tenant code may and may not do. ---------
