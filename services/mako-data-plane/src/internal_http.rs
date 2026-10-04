@@ -5,6 +5,7 @@ use std::{
         Arc, Mutex,
         atomic::{AtomicBool, Ordering},
     },
+    time::{Duration, Instant},
 };
 
 use async_trait::async_trait;
@@ -50,9 +51,13 @@ use mako_storage::Durability;
 use crate::{DataPlaneGraph, auth_http};
 
 type ExportSnapshotRegistry = Arc<Mutex<BTreeMap<String, ExportSnapshotEntry>>>;
+// A worker requests the next page immediately. Bound pins left by cancellation,
+// crashes, or lost responses while refreshing the lease on every active page.
+const EXPORT_SNAPSHOT_IDLE_TTL: Duration = Duration::from_secs(5 * 60);
 
 struct ExportSnapshotEntry {
     snapshot: Arc<ScopedCollectionSnapshot>,
+    last_used: Instant,
     tenant: mako_api::TenantScope,
     collection_id: String,
     job_id: String,
@@ -1499,7 +1504,15 @@ async fn execute_data_job_operation(
             execute_import_batch(graph, request, tenant, command).await
         }
         IdentityAdminOperation::ExportDataJobPage => {
-            execute_export_page(graph, export_snapshots, request, tenant, command).await
+            execute_export_page(
+                graph,
+                export_snapshots,
+                request,
+                tenant,
+                command,
+                Instant::now(),
+            )
+            .await
         }
         _ => unreachable!("data-job dispatcher restricts operations"),
     }
@@ -1693,6 +1706,7 @@ async fn execute_export_page(
     request: &HttpRequest,
     tenant: &mako_api::TenantScope,
     command: &IdentityAdminCommand,
+    now: Instant,
 ) -> Result<Vec<u8>, HttpApiError> {
     let input: DataJobExportPageInput = parse_input(request, &command.input)?;
     if !(1..=64).contains(&input.limit)
@@ -1720,13 +1734,27 @@ async fn execute_export_page(
                 && metadata.compatibility() == mako_documents::SchemaCompatibility::Compatible
         })
         .ok_or_else(|| auth_http::invalid(request, "data-job collection is unavailable"))?;
+    {
+        let mut registry = export_snapshots
+            .lock()
+            .map_err(|_| auth_http::unavailable(request, "data-job snapshot is unavailable"))?;
+        registry.retain(|_, entry| {
+            let expired =
+                now.saturating_duration_since(entry.last_used) >= EXPORT_SNAPSHOT_IDLE_TTL;
+            let restarting = input.cursor.is_none()
+                && entry.tenant == *tenant
+                && entry.collection_id == input.collection_id
+                && entry.job_id == input.job_id;
+            !expired && !restarting
+        });
+    }
     let (handle, snapshot, after) = if let Some(cursor) = input.cursor.as_deref() {
         let cursor = decode_export_cursor(request, cursor)?;
-        let registry = export_snapshots
+        let mut registry = export_snapshots
             .lock()
             .map_err(|_| auth_http::unavailable(request, "data-job snapshot is unavailable"))?;
         let entry = registry
-            .get(&cursor.handle)
+            .get_mut(&cursor.handle)
             .filter(|entry| {
                 entry.tenant == *tenant
                     && entry.collection_id == input.collection_id
@@ -1734,6 +1762,7 @@ async fn execute_export_page(
                     && entry.snapshot.snapshot_id() == cursor.snapshot_id
             })
             .ok_or_else(|| auth_http::invalid(request, "data-job cursor expired"))?;
+        entry.last_used = now;
         let after = DocumentId::parse(cursor.after_document_id)
             .map_err(|_| auth_http::invalid(request, "data-job cursor is invalid"))?;
         (cursor.handle, Arc::clone(&entry.snapshot), Some(after))
@@ -1760,6 +1789,7 @@ async fn execute_export_page(
             handle.clone(),
             ExportSnapshotEntry {
                 snapshot: Arc::clone(&snapshot),
+                last_used: now,
                 tenant: tenant.clone(),
                 collection_id: input.collection_id.clone(),
                 job_id: input.job_id.clone(),
@@ -2911,6 +2941,194 @@ impl From<&ProjectSigningKeyRecord> for SigningKeyViewWire {
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct SigningKeysWire {
     keys: Vec<SigningKeyViewWire>,
+}
+
+#[cfg(test)]
+mod export_lease_tests {
+    use super::*;
+    use crate::graph::test_support::{DeploymentEnvironment, config_for, local_tempdir, tenant};
+    use mako_api::{CollectionId, CollectionScope, ImportConflictStrategy};
+    use mako_documents::{
+        CollectionLifecycle, CollectionMetadataVersion, PrimaryKeyDefinition, SchemaCompatibility,
+        SchemaVersion,
+    };
+    use serde_json::json;
+
+    #[test]
+    fn interrupted_export_can_restart_when_all_snapshot_slots_are_occupied() {
+        let directory = local_tempdir("data-job-export-leases");
+        let config = config_for(directory.path(), DeploymentEnvironment::Local);
+        let graph = Arc::new(DataPlaneGraph::open(&config).expect("graph"));
+        let own = tenant();
+        let collection = CollectionId::parse("export_leases").unwrap();
+        let scoped = graph
+            .document_engine()
+            .scope_collection(&own, CollectionScope::new(own.clone(), collection.clone()))
+            .unwrap();
+        let metadata = CollectionMetadata::new(collection,
+            CollectionMetadataVersion::new(1).unwrap(), SchemaVersion::new(1).unwrap(),
+            json!({"type":"object","properties":{"id":{"type":"string"}},"required":["id"],"additionalProperties":false}),
+            PrimaryKeyDefinition::field("id").unwrap(), SchemaCompatibility::Compatible,
+            CollectionLifecycle::Active).unwrap();
+        let request = HttpRequest::for_test(
+            HttpMethod::Post,
+            "/internal/identity/admin",
+            [],
+            Vec::new(),
+            None,
+        );
+        let registry = Arc::new(Mutex::new(BTreeMap::new()));
+        let now = Instant::now();
+        let command = |number: u32, cursor: Option<String>| IdentityAdminCommand {
+            operation: IdentityAdminOperation::ExportDataJobPage,
+            actor_id: "data-job-worker".into(),
+            permissions: Default::default(),
+            input: serde_json::to_value(DataJobExportPageInput {
+                job_id: format!("djob_{number:032}"),
+                collection_id: "export_leases".into(),
+                cursor,
+                limit: 1,
+            })
+            .unwrap(),
+        };
+        block_on(async {
+            scoped
+                .install_collection_metadata(&metadata, Durability::Sync)
+                .await
+                .unwrap();
+            let seed = IdentityAdminCommand {
+                operation: IdentityAdminOperation::ImportDataJobBatch,
+                actor_id: "data-job-worker".into(),
+                permissions: Default::default(),
+                input: serde_json::to_value(DataJobImportBatchInput {
+                    job_id: "djob_99999999999999999999999999999999".into(),
+                    collection_id: "export_leases".into(),
+                    schema_version: 1,
+                    conflict_strategy: ImportConflictStrategy::CreateOnly,
+                    start_row: 0,
+                    rows: vec![
+                        json!({"id":"a"}),
+                        json!({"id":"b"}),
+                        json!({"id":"c"}),
+                        json!({"id":"d"}),
+                    ],
+                })
+                .unwrap(),
+            };
+            execute_import_batch(&graph, &request, &own, &seed)
+                .await
+                .unwrap();
+            let mut cursors = Vec::new();
+            for number in 0..32 {
+                let page = execute_export_page(
+                    &graph,
+                    &registry,
+                    &request,
+                    &own,
+                    &command(number, None),
+                    now,
+                )
+                .await
+                .unwrap();
+                let page: DataJobExportPageOutput = serde_json::from_slice(&page).unwrap();
+                cursors.push(page.next_cursor.expect("more rows"));
+            }
+            assert_eq!(registry.lock().unwrap().len(), 32);
+            // A failed/cancelled worker never consumes its final page. Restart
+            // must replace its own old snapshot, rather than need a 33rd slot.
+            let restarted =
+                execute_export_page(&graph, &registry, &request, &own, &command(0, None), now)
+                    .await;
+            assert!(
+                restarted.is_ok(),
+                "a job must be able to replace its abandoned snapshot at capacity"
+            );
+            assert_eq!(registry.lock().unwrap().len(), 32);
+            assert!(
+                execute_export_page(
+                    &graph,
+                    &registry,
+                    &request,
+                    &own,
+                    &command(0, Some(cursors[0].clone())),
+                    now
+                )
+                .await
+                .is_err(),
+                "a restart must invalidate its old cursor"
+            );
+            assert!(
+                execute_export_page(&graph, &registry, &request, &own, &command(32, None), now)
+                    .await
+                    .is_err(),
+                "active snapshots retain the capacity bound"
+            );
+
+            // Keep one export active while every abandoned pin expires. Use a
+            // monotonic test clock, not wall-clock sleeps or a process restart.
+            let active = execute_export_page(
+                &graph,
+                &registry,
+                &request,
+                &own,
+                &command(1, Some(cursors[1].clone())),
+                now + EXPORT_SNAPSHOT_IDLE_TTL - Duration::from_secs(1),
+            )
+            .await
+            .unwrap();
+            let mut active: DataJobExportPageOutput = serde_json::from_slice(&active).unwrap();
+            let snapshot = active.snapshot.clone();
+            let mut remaining = active.rows;
+            let replacement = execute_export_page(
+                &graph,
+                &registry,
+                &request,
+                &own,
+                &command(32, None),
+                now + EXPORT_SNAPSHOT_IDLE_TTL,
+            )
+            .await;
+            assert!(replacement.is_ok(), "idle exports must release capacity");
+            assert_eq!(registry.lock().unwrap().len(), 2);
+            assert!(
+                execute_export_page(
+                    &graph,
+                    &registry,
+                    &request,
+                    &own,
+                    &command(2, Some(cursors[2].clone())),
+                    now + EXPORT_SNAPSHOT_IDLE_TTL
+                )
+                .await
+                .is_err(),
+                "an expired cursor cannot silently select a new snapshot"
+            );
+            while active.next_cursor.is_some() {
+                let page = execute_export_page(
+                    &graph,
+                    &registry,
+                    &request,
+                    &own,
+                    &command(1, active.next_cursor),
+                    now + EXPORT_SNAPSHOT_IDLE_TTL + Duration::from_secs(1),
+                )
+                .await
+                .unwrap();
+                active = serde_json::from_slice(&page).unwrap();
+                assert_eq!(active.snapshot, snapshot);
+                remaining.extend(active.rows.clone());
+            }
+            assert_eq!(
+                remaining,
+                vec![json!({"id":"b"}), json!({"id":"c"}), json!({"id":"d"})]
+            );
+            assert_eq!(
+                registry.lock().unwrap().len(),
+                1,
+                "completed exports still release their pin immediately"
+            );
+        });
+    }
 }
 
 #[cfg(test)]
