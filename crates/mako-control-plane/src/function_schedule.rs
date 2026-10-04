@@ -885,7 +885,7 @@ impl FunctionScheduleInvoker for ControlToEdgeClient {
                     ..
                 } => FunctionScheduleInvokeError::InvalidRequest,
                 InternalClientError::InvalidPayload => FunctionScheduleInvokeError::InvalidRequest,
-                InternalClientError::Unavailable
+                InternalClientError::Unavailable | InternalClientError::TimedOut
                     if started.elapsed() >= Duration::from_secs(INVOCATION_TIMEOUT_SECONDS) =>
                 {
                     FunctionScheduleInvokeError::Timeout

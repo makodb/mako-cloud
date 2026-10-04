@@ -25,6 +25,93 @@ use crate::{
 const SECRET: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
 #[test]
+fn slow_bulk_responses_outlive_interactive_timeout_without_changing_other_calls() {
+    use crate::{
+        ControlToDataClient, IdentityAdminCommand, IdentityAdminOperation, IdentityAdminPermission,
+        InternalClientError,
+    };
+    use std::{collections::BTreeSet, time::Duration};
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let endpoint = listener.local_addr().unwrap();
+    let server = thread::spawn(move || {
+        for _ in 0..3 {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(2)))
+                .unwrap();
+            let mut headers = Vec::new();
+            while !headers.ends_with(b"\r\n\r\n") {
+                let mut byte = [0];
+                stream.read_exact(&mut byte).unwrap();
+                headers.push(byte[0]);
+                assert!(headers.len() < 32 * 1024);
+            }
+            let headers = String::from_utf8(headers).unwrap();
+            let header = |name: &str| {
+                headers
+                    .lines()
+                    .find_map(|line| {
+                        let (key, value) = line.split_once(':')?;
+                        key.eq_ignore_ascii_case(name).then(|| value.trim())
+                    })
+                    .unwrap()
+            };
+            let mut body = vec![0; header("content-length").parse::<usize>().unwrap()];
+            stream.read_exact(&mut body).unwrap();
+            let command: IdentityAdminCommand = serde_json::from_slice(&body).unwrap();
+            assert_eq!(command.actor_id, "system/data-job-worker");
+            thread::sleep(Duration::from_millis(250));
+            // The first caller has timed out, so a broken pipe is expected.
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: 11\r\nx-mako-request-id: {}\r\nConnection: close\r\n\r\n{{\"ok\":true}}",
+                header("x-mako-request-id")
+            );
+            let _ = stream.write_all(response.as_bytes());
+        }
+    });
+    let mut config = InternalHttpClientConfig::loopback(endpoint);
+    config.io_timeout = Duration::from_millis(50);
+    let client = ControlToDataClient::new(
+        InternalHttpClient::new(
+            config,
+            DeploymentKey::derive(SECRET).unwrap(),
+            InternalCaller::ControlPlane,
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let tenant = tenant("prj_abcdefgh", "env_abcdefgh");
+    for (index, operation) in [
+        IdentityAdminOperation::ListProjectCredentials,
+        IdentityAdminOperation::ImportDataJobBatch,
+        IdentityAdminOperation::ExportDataJobPage,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let command = IdentityAdminCommand {
+            operation,
+            actor_id: "system/data-job-worker".into(),
+            permissions: BTreeSet::from([IdentityAdminPermission::ExecuteDataJobs]),
+            input: json!({}),
+        };
+        let result = client.administer::<serde_json::Value>(
+            &tenant,
+            &format!("req_budget_{index}"),
+            &format!("idem_budget_{index}"),
+            &command,
+        );
+        if index == 0 {
+            assert!(matches!(result, Err(InternalClientError::TimedOut)));
+            assert!(InternalClientError::TimedOut.is_dependency_unavailable());
+        } else {
+            assert_eq!(result.unwrap(), json!({"ok":true}));
+        }
+    }
+    server.join().unwrap();
+}
+
+#[test]
 fn canonical_signature_binds_route_caller_tenant_body_and_time() {
     let key = DeploymentKey::derive(SECRET).expect("deployment key");
     let signer = InternalRequestAuthenticator::new(key.clone(), InternalCaller::ControlPlane);
