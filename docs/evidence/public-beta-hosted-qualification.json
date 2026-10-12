@@ -1,59 +1,59 @@
 {
   "schemaVersion": 1,
-  "startedAt": "2026-09-19T03:48:50.511Z",
-  "completedAt": "2026-09-19T05:24:56.242Z",
+  "startedAt": "2026-10-12T05:47:47.001Z",
+  "completedAt": "2026-10-12T06:49:30.214Z",
   "environment": "public-beta",
   "vmId": 124,
   "address": "130.245.173.11",
   "publicOrigin": "https://cloud-test.makodb.com",
   "planHash": "d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073",
-  "releaseDigest": "3d25eacc5dec6654f146ba26d3911f5fba62275c4ef007d57ad17ac4c1dfef30",
-  "sourceDigest": "8d2a5d250a87ff9f2165f2162384b9d841824bae8d3986eab9b7725e7fe475d1",
-  "runtimeDigest": "b0e4ea7b66166492c3c29910858dc5d1b7f9786df81aed7057d80f34a1ad2abd",
-  "dependencyDigest": "e36120e85d89457357022c75207037e98aefdbd8b75e1b3b3fd0ebc2dcfadfb2",
-  "artifactDigest": "93d8f6c4360a578c899ea690ff31226db7ff9515deea8241130607f900bd4bce",
+  "releaseDigest": "e32a5ca387bf47c11ed70fa3a95eaa6630503d2e9bd45b21c9084de3cb7cca14",
+  "sourceDigest": "28e97a860c87d879401d3250661d7bbd6b53f874a0f0ea0e8cf18504c1d5c107",
+  "runtimeDigest": "d0915597d19312edabf7498e9ee8682466732e9cab861937228d460d7ef01e60",
+  "dependencyDigest": "4a594762ddba3d395f740f823c5559a09b545e2ca12ee558f48a439ee6f15c10",
+  "artifactDigest": "5c57ef1644e27c49c64e405e2f85c751ddd1b35d586d1d0d76e790245f1f7383",
   "selectedReleaseVerifiedBeforeAndAfter": true,
   "publicAdmissionEnabled": false,
   "suites": [
     {
       "name": "auth",
       "passed": true,
-      "log": ".local/qualification/public-beta-3d25eacc5dec-auth.log"
+      "log": ".local/qualification/public-beta-e32a5ca387bf-auth.log"
     },
     {
       "name": "policy",
       "passed": true,
-      "log": ".local/qualification/public-beta-3d25eacc5dec-policy.log"
+      "log": ".local/qualification/public-beta-e32a5ca387bf-policy.log"
     },
     {
       "name": "rxdb-chaos",
       "passed": true,
-      "log": ".local/qualification/public-beta-3d25eacc5dec-rxdb-chaos.log"
+      "log": ".local/qualification/public-beta-e32a5ca387bf-rxdb-chaos.log"
     },
     {
       "name": "tenant-boundaries",
       "passed": true,
-      "log": ".local/qualification/public-beta-3d25eacc5dec-tenant-boundaries.log"
+      "log": ".local/qualification/public-beta-e32a5ca387bf-tenant-boundaries.log"
     },
     {
       "name": "edge-runtime",
       "passed": true,
-      "log": ".local/qualification/public-beta-3d25eacc5dec-edge-runtime.log"
+      "log": ".local/qualification/public-beta-e32a5ca387bf-edge-runtime.log"
     },
     {
       "name": "dependency-pins",
       "passed": true,
-      "log": ".local/qualification/public-beta-3d25eacc5dec-dependency-pins.log"
+      "log": ".local/qualification/public-beta-e32a5ca387bf-dependency-pins.log"
     },
     {
       "name": "production-rocksdb",
       "passed": true,
-      "log": ".local/qualification/public-beta-3d25eacc5dec-production-rocksdb.log"
+      "log": ".local/qualification/public-beta-e32a5ca387bf-production-rocksdb.log"
     },
     {
       "name": "rational",
       "passed": true,
-      "log": ".local/qualification/public-beta-3d25eacc5dec-rational.log"
+      "log": ".local/qualification/public-beta-e32a5ca387bf-rational.log"
     }
   ],
   "hostedCompositionProbes": [
@@ -101,8 +101,8 @@
     },
     {
       "name": "function-resolution",
-      "status": 503,
-      "expected": 503,
+      "status": 404,
+      "expected": 404,
       "passed": true
     }
   ],

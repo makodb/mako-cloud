@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "recordedAt": "2026-09-29T17:22:40.457Z",
+  "recordedAt": "2026-10-12T06:49:47Z",
   "status": "risk-accepted-public-preview-active",
   "environment": "public-beta",
   "vmId": 124,
@@ -8,39 +8,23 @@
   "publicOrigin": "https://cloud-test.makodb.com",
   "planHash": "d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073",
   "release": {
-    "digest": "b6d3350d66aaf2c42f986cc5376c10d377e7afaade8f5b25d35b4605f321cd77",
-    "sourceBaseCommit": "9a10f60417ebe16cee9c108d83222abeac1b081a",
-    "sourceHasLocalChanges": true,
-    "appliedPullRequests": [8, 10, 4, 11],
-    "pullRequests": [
-      {
-        "number": 4,
-        "reviewedHead": "0df61f861338b977db87e22e01c1bc757a1c4d1c",
-        "mergeCommit": "a5851302de40fc02279a130422dc0b2e75175c7e"
-      },
-      {
-        "number": 11,
-        "reviewedHead": "2a7b02f0982bf2f2c69a86b49f5d115647995690",
-        "mergeCommit": "3c2fc9e8e7274a9b15d77bf0eae41599cab20cf1"
-      }
-    ],
-    "billingFixCommit": "e690c2aacc6e74c351b557c721080e8eaef08bc8",
-    "unrelatedNewerMainChangesExcluded": true,
-    "sourceDigest": "2d66ba775912761eae0b6a49efe87b74391da8d825b0b21dc97488a70ffd8cad",
-    "runtimeDigest": "215f60e168be11b2a808fc1abc2443f7ed6c963491b503d834ba513746af8764",
-    "dependencyDigest": "3d8340166229d6afa0665045d3ad5ec08316404d61cd2be60adc55f6824e3a15",
-    "artifactDigest": "f586a6e30207477d8f8a6a2fe468bbfa76c3009cf6c3909fc2023da27f73bf9d",
-    "selectedPath": "/opt/mako/releases/b6d3350d66aaf2c42f986cc5376c10d377e7afaade8f5b25d35b4605f321cd77",
-    "lastKnownGood": "f93f5dbed293f4be171bf96a4b3cb2ea0efe4f036af457e4f64dc768ccf2aed2",
+    "digest": "e32a5ca387bf47c11ed70fa3a95eaa6630503d2e9bd45b21c9084de3cb7cca14",
+    "sourceCommit": "7bc9fc0",
+    "sourceDigest": "28e97a860c87d879401d3250661d7bbd6b53f874a0f0ea0e8cf18504c1d5c107",
+    "runtimeDigest": "d0915597d19312edabf7498e9ee8682466732e9cab861937228d460d7ef01e60",
+    "dependencyDigest": "4a594762ddba3d395f740f823c5559a09b545e2ca12ee558f48a439ee6f15c10",
+    "artifactDigest": "5c57ef1644e27c49c64e405e2f85c751ddd1b35d586d1d0d76e790245f1f7383",
+    "selectedPath": "/opt/mako/releases/e32a5ca387bf47c11ed70fa3a95eaa6630503d2e9bd45b21c9084de3cb7cca14",
+    "lastKnownGood": "77c7252a44df4f6d2c9f88a6235cfbb201981e8301788c1a64ffa5a4147ba2a6",
     "releaseOperation": {
       "schemaVersion": 1,
       "kind": "upgrade",
-      "from": "f93f5dbed293f4be171bf96a4b3cb2ea0efe4f036af457e4f64dc768ccf2aed2",
-      "to": "b6d3350d66aaf2c42f986cc5376c10d377e7afaade8f5b25d35b4605f321cd77",
+      "from": "77c7252a44df4f6d2c9f88a6235cfbb201981e8301788c1a64ffa5a4147ba2a6",
+      "to": "e32a5ca387bf47c11ed70fa3a95eaa6630503d2e9bd45b21c9084de3cb7cca14",
       "operator": "mako-admin",
-      "startedAtUnixSeconds": 1790702397,
-      "completedAtUnixSeconds": 1790702443,
-      "durationSeconds": 46,
+      "startedAtUnixSeconds": 1791783961,
+      "completedAtUnixSeconds": 1791783981,
+      "durationSeconds": 20,
       "checkpointVerified": false,
       "checkpointSkipped": true,
       "checkpointPolicy": "disabled-for-deployments",
@@ -50,12 +34,28 @@
       "allServicesReady": true,
       "publicAdmissionEnabled": false
     },
-    "brandingCommit": "7b7a79817d4cb9fdc91aa7babc55c46b253df680",
-    "backendArtifactsReusedFrom": "f93f5dbed293f4be171bf96a4b3cb2ea0efe4f036af457e4f64dc768ccf2aed2",
-    "sourceComposition": {
-      "kind": "console-update",
-      "backendArtifactsFrom": "f93f5dbed293f4be171bf96a4b3cb2ea0efe4f036af457e4f64dc768ccf2aed2",
-      "source": "Frontend source and dependencies from the tested workspace; backend source and artifacts retained from the previous release."
+    "precedingFailedOperation": {
+      "schemaVersion": 1,
+      "kind": "upgrade",
+      "outcome": "failed-closed-at-readiness",
+      "from": "b6d3350d66aaf2c42f986cc5376c10d377e7afaade8f5b25d35b4605f321cd77",
+      "to": "9322c816fbcaf44f4e198ad7588a6738cdb89e327361ecdd1dad2d229336e367",
+      "operator": "mako-admin",
+      "startedAt": "2026-10-12T03:28:22Z",
+      "servicesStoppedAt": "2026-10-12T03:28:24Z",
+      "servicesStartedAt": "2026-10-12T03:31:56Z",
+      "dataPlaneListeningAt": "2026-10-12T03:33:30Z",
+      "allServicesReadyObservedAt": "2026-10-12T03:33:56Z",
+      "operationRecordWritten": false,
+      "checkpointVerified": false,
+      "checkpointSkipped": true,
+      "checkpointPolicy": "disabled-for-deployments",
+      "storageFencedBeforeSelection": true,
+      "releaseSelected": true,
+      "allServicesReady": true,
+      "publicAdmissionEnabled": false,
+      "cause": "mako-release-operation waits 60 seconds per service for readiness. The data plane read its whole 8.1 GB RocksDB at startup and listened 94 seconds after start (20 seconds on 2026-09-29, before the store grew), and fence and activate took about 3.5 minutes (24 seconds on 2026-09-29). The operation exited before recording; the selected release and last-known-good were already in place.",
+      "recovery": "No rollback: all four services were ready on the target release at 03:33:56. The admission guard had fallen back to pre_gate and invalidated the preview approval; admission reopened only after exact-release requalification and a fresh acceptance."
     }
   },
   "networkAdmission": {
@@ -69,7 +69,7 @@
     "riskAcceptedPublicPreviewActive": true,
     "previewApprovalPersistence": "until-manually-paused",
     "previewApprovalExpiresAt": null,
-    "previewApprovalRenewedAt": "2026-09-24T15:44:09.050Z",
+    "previewApprovalRenewedAt": "2026-10-12T06:49:57.345Z",
     "userApprovedRenewal": true,
     "backupFreshnessRequired": false
   },
@@ -83,32 +83,23 @@
     "backupTimersActive": false,
     "publicPreviewGuardValid": true,
     "publicPreviewGuardTimerActive": true,
-    "releaseAssetsVerified": 14,
-    "deployedBrowserCheck": "Landing page, developer sign-in, and operator sign-in checked at desktop and mobile widths: zero icons, zero textless buttons, no horizontal overflow; theme toggle passed.",
-    "exactReleaseHostedQualification": "not-run-for-this-deployment",
+    "deployedBrowserCheck": null,
+    "exactReleaseHostedQualification": "passed",
     "mixedStorageTopology": "control-sqlite-and-service-owned-rocksdb",
-    "evidence": ["docs/evidence/public-beta-no-icons-deployment.json"],
+    "evidence": [
+      "docs/evidence/public-beta-hosted-qualification.json",
+      "docs/evidence/public-beta-streaming-qualification.json",
+      "docs/evidence/public-beta-hosted-benchmark.json"
+    ],
     "upgradeCheckpointSkippedByOperator": true,
     "deploymentCheckpointPolicy": "disabled-for-deployments"
   },
   "historicalQualification": {
-    "scope": "Earlier qualification results retain their own release bindings. They were not rerun for the current deployment.",
+    "scope": "Hosted security, streaming, and the hosted benchmark were rerun on this release. The other results retain their own release bindings.",
     "evidence": [
-      {
-        "path": "docs/evidence/public-beta-hosted-qualification.json",
-        "releaseDigest": "3d25eacc5dec6654f146ba26d3911f5fba62275c4ef007d57ad17ac4c1dfef30"
-      },
       {
         "path": "docs/evidence/public-beta-operator-browser-qualification.json",
         "releaseDigest": "a5ccdaabff7d6ef30da512330dab38b60e32ae034f621ee4d4eed2b49e976000"
-      },
-      {
-        "path": "docs/evidence/public-beta-streaming-qualification.json",
-        "releaseDigest": "3d25eacc5dec6654f146ba26d3911f5fba62275c4ef007d57ad17ac4c1dfef30"
-      },
-      {
-        "path": "docs/evidence/public-beta-hosted-benchmark.json",
-        "releaseDigest": "3d25eacc5dec6654f146ba26d3911f5fba62275c4ef007d57ad17ac4c1dfef30"
       },
       {
         "path": "docs/evidence/public-beta-role-lifecycle-qualification.json",
@@ -202,6 +193,14 @@
       "status": "recovered-cause-undiagnosed",
       "evidence": "docs/evidence/public-beta-rxdb-docs-deployment.json",
       "publicPreviewRenewalApprovedByUser": true
+    },
+    {
+      "kind": "release-operation-readiness-window",
+      "status": "resolved",
+      "observedAt": "2026-10-12T03:28:22Z",
+      "releaseDigest": "9322c816fbcaf44f4e198ad7588a6738cdb89e327361ecdd1dad2d229336e367",
+      "summary": "The upgrade to 9322c816 failed closed at its 60-second readiness wait because opening the 8.5 GB data-plane store read every key and value to find its tenants. Commit f47587c finds them with one read per tenant: release 77c7252a upgraded in 17 seconds with the data plane listening 5 seconds after start. 77c7252a then failed only the hosted composition probe, which still expected the 503 a7fe875 had replaced with 404 (fixed in 7bc9fc0), so this release supersedes it.",
+      "fixCommit": "f47587c"
     }
   ],
   "backupScheduling": {
