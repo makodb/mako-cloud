@@ -7,8 +7,8 @@ use futures::executor::block_on;
 use mako_api::{EnvironmentId, ProjectId, TenantScope};
 use mako_audit::{
     ActorIdentity, AttributeValue, AuditCategory, AuditEvent, AuditOutcome, AuditStore,
-    CorrelationId, RequestId, ResourceReference, SafeAttributes, SignalContext, SignalScope,
-    TelemetryRedactor,
+    AuditStoreError, CorrelationId, RequestId, ResourceReference, SafeAttributes, SignalContext,
+    SignalScope, TelemetryRedactor,
 };
 use mako_control_plane::{
     ActivityRecord, ControlAuditEvent, ControlAuditOutcome, ControlAuditSink, ControlKeyspace,
@@ -73,17 +73,67 @@ impl PersistentControlAudit {
         self.healthy.load(Ordering::Acquire)
     }
 
-    fn append(&self, tenant: &TenantScope, category: AuditCategory, event: AuditEvent) -> bool {
+    fn fail_closed(&self, stage: &'static str, reason: &str) {
+        // Callers supply only fixed labels or AuditStoreError's safe Display;
+        // never include event bodies, targets, actors, credentials, or panics.
+        eprintln!("control_audit_failed stage={stage} reason={reason}");
+        self.healthy.store(false, Ordering::Release);
+    }
+
+    fn persist<T: Send>(
+        &self,
+        stage: &'static str,
+        mut write: impl FnMut() -> Result<T, AuditStoreError> + Send,
+    ) -> Option<T> {
         let result = std::thread::scope(|scope| {
-            scope
-                .spawn(|| block_on(self.store.append(tenant, category, event, &self.redactor)))
-                .join()
+            scope.spawn(|| {
+                // The same immutable event / conditional projection is retried,
+                // including when the prior commit succeeded but its reply failed.
+                for attempt in 1..=3 {
+                    match write() {
+                        Ok(value) => return Ok(value),
+                        Err(AuditStoreError::Storage(ref error))
+                            if error.retryable && attempt < 3 =>
+                        {
+                            eprintln!(
+                                "control_audit_retry stage={stage} attempt={attempt} storage_kind={:?}",
+                                error.kind,
+                            );
+                            std::thread::sleep(std::time::Duration::from_millis(50 * attempt));
+                        }
+                        Err(error) => return Err(error),
+                    }
+                }
+                unreachable!("the final attempt returns")
+            }).join()
         });
-        let succeeded = matches!(result, Ok(Ok(_)));
-        if !succeeded {
-            self.healthy.store(false, Ordering::Release);
+        match result {
+            Ok(Ok(value)) => Some(value),
+            Ok(Err(error)) => {
+                if let AuditStoreError::Storage(storage) = &error {
+                    eprintln!(
+                        "control_audit_storage_failed stage={stage} storage_kind={:?} retryable={}",
+                        storage.kind, storage.retryable,
+                    );
+                }
+                self.fail_closed(stage, &error.to_string());
+                None
+            }
+            Err(_) => {
+                self.fail_closed(stage, "worker_panicked");
+                None
+            }
         }
-        succeeded
+    }
+
+    fn append(&self, tenant: &TenantScope, category: AuditCategory, event: AuditEvent) -> bool {
+        self.persist("append", || {
+            block_on(
+                self.store
+                    .append(tenant, category, event.clone(), &self.redactor),
+            )
+        })
+        .is_some()
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -123,33 +173,33 @@ impl PersistentControlAudit {
             at_unix_seconds.max(1).saturating_mul(1_000),
             &id,
         ) else {
-            self.healthy.store(false, Ordering::Release);
+            self.fail_closed("activity_key", "invalid_event");
             return;
         };
         let Ok(value) = serde_json::to_vec(&record) else {
-            self.healthy.store(false, Ordering::Release);
+            self.fail_closed("activity_serialization", "invalid_event");
             return;
         };
         let mut batch = WriteBatch::new();
-        batch.put(&key, value);
+        batch.put(&key, &value);
         let write = AtomicWrite {
             conditions: vec![KeyCondition::Missing { key }],
             batch,
             durability: Durability::Sync,
         };
-        let result = std::thread::scope(|scope| {
-            scope
-                .spawn(|| block_on(self.projection_adapter.compare_and_write(write)))
-                .join()
+        self.persist("activity_write", || {
+            block_on(self.projection_adapter.compare_and_write(write.clone()))
+                .map_err(AuditStoreError::Storage)
+                .and_then(|result| match result {
+                    CompareAndWriteResult::Applied => Ok(()),
+                    CompareAndWriteResult::Conflict { actual_value, .. }
+                        if actual_value.as_deref() == Some(value.as_slice()) =>
+                    {
+                        Ok(())
+                    }
+                    CompareAndWriteResult::Conflict { .. } => Err(AuditStoreError::EventIdConflict),
+                })
         });
-        if !matches!(
-            result,
-            Ok(Ok(
-                CompareAndWriteResult::Applied | CompareAndWriteResult::Conflict { .. }
-            ))
-        ) {
-            self.healthy.store(false, Ordering::Release);
-        }
     }
 }
 
@@ -165,7 +215,7 @@ impl ControlAuditSink for PersistentControlAudit {
         let Some(tenant) = tenant_from_control_target(&event.target)
             .or_else(|| team_audit_tenant(&event.organization_id))
         else {
-            self.healthy.store(false, Ordering::Release);
+            self.fail_closed("control_tenant", "invalid_event");
             return;
         };
         let Some(mut audit) = build_event(
@@ -183,7 +233,7 @@ impl ControlAuditSink for PersistentControlAudit {
             },
             event.at_unix_seconds,
         ) else {
-            self.healthy.store(false, Ordering::Release);
+            self.fail_closed("control_event", "invalid_event");
             return;
         };
         // The stored resource is a digest; the target itself (the member,
@@ -218,7 +268,7 @@ impl OperatorAuditSink for PersistentControlAudit {
             &event.at_unix_seconds.to_string(),
         ]);
         let Some(tenant) = project_audit_tenant(event.project_id.clone(), "operatoraudit") else {
-            self.healthy.store(false, Ordering::Release);
+            self.fail_closed("operator_tenant", "invalid_event");
             return;
         };
         let Some(audit) = build_event(
@@ -237,7 +287,7 @@ impl OperatorAuditSink for PersistentControlAudit {
             },
             event.at_unix_seconds,
         ) else {
-            self.healthy.store(false, Ordering::Release);
+            self.fail_closed("operator_event", "invalid_event");
             return;
         };
         let source_event_id = audit.event_id.clone();
@@ -281,7 +331,7 @@ impl OperatorAuthenticationAuditSink for PersistentControlAudit {
             &event.at_unix_seconds.to_string(),
         ]);
         let Some(tenant) = synthetic_tenant(operator_id, "operatorauth") else {
-            self.healthy.store(false, Ordering::Release);
+            self.fail_closed("operator_auth_tenant", "invalid_event");
             return;
         };
         let Some(audit) = build_event(
@@ -301,7 +351,7 @@ impl OperatorAuthenticationAuditSink for PersistentControlAudit {
             },
             event.at_unix_seconds,
         ) else {
-            self.healthy.store(false, Ordering::Release);
+            self.fail_closed("operator_auth_event", "invalid_event");
             return;
         };
         let source_event_id = audit.event_id.clone();
@@ -430,6 +480,194 @@ pub(crate) type SharedControlAudit = Arc<PersistentControlAudit>;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use mako_audit::{AuditStoreConfig, CursorSigningKey};
+    use mako_storage::{
+        FailurePoint, MemoryAdapter, SqliteAdapter, SqliteConfig, StorageError, StorageErrorKind,
+        TransactionMode,
+    };
+    use std::{
+        num::NonZeroUsize,
+        time::{Duration, Instant},
+    };
+
+    fn fixture() -> (
+        PersistentControlAudit,
+        MemoryAdapter,
+        SqliteAdapter,
+        tempfile::TempDir,
+    ) {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let mut config = SqliteConfig::new(directory.path().join("control.sqlite3"), "audit-tests");
+        config.create_if_missing = true;
+        config.busy_timeout = Duration::from_millis(5);
+        config.disk_warning_free_bytes = 2;
+        config.disk_critical_free_bytes = 1;
+        let projection = SqliteAdapter::open(config).expect("SQLite");
+        let adapter = MemoryAdapter::new();
+        let store = AuditStore::new(
+            Arc::new(adapter.clone()),
+            AuditStoreConfig {
+                durability: Durability::Memory,
+                retention_milliseconds: 100_000,
+                maximum_page_records: NonZeroUsize::new(10).unwrap(),
+                maximum_export_records: NonZeroUsize::new(10).unwrap(),
+                maximum_examined_records: NonZeroUsize::new(10).unwrap(),
+                cursor_signing_key: CursorSigningKey::new([7; 32]),
+            },
+        )
+        .expect("audit store");
+        (
+            PersistentControlAudit::new(
+                store,
+                TelemetryRedactor::new(Vec::<String>::new()).unwrap(),
+                Arc::new(projection.clone()),
+            ),
+            adapter,
+            projection,
+            directory,
+        )
+    }
+
+    fn event() -> ControlAuditEvent {
+        ControlAuditEvent {
+            organization_id: mako_control_plane::OrganizationId::parse("org_audittest").unwrap(),
+            actor_id: mako_control_plane::DeveloperIdentityId::parse("dev_audittest").unwrap(),
+            action: mako_control_plane::ControlAuditAction::CollectionRead,
+            target: "prj_audittest/env_audittest/collection".to_owned(),
+            outcome: ControlAuditOutcome::Allowed,
+            at_unix_seconds: 10,
+        }
+    }
+
+    fn busy() -> StorageError {
+        StorageError::new(
+            StorageErrorKind::Timeout,
+            "compare_and_write",
+            true,
+            "control storage is temporarily busy",
+        )
+    }
+
+    #[test]
+    fn audit_retries_transient_and_uncertain_commits_without_duplicate_events() {
+        for point in [FailurePoint::BeforeCommit, FailurePoint::AfterCommit] {
+            let (audit, adapter, projection, _directory) = fixture();
+            adapter.fail_next(point, busy()).unwrap();
+            ControlAuditSink::record(&audit, event());
+            assert!(audit.healthy());
+            // One event plus its immutable ID index, and exactly one activity.
+            assert_eq!(adapter.dump().unwrap().len(), 2);
+            assert_eq!(
+                block_on(
+                    projection.count_keys(ControlKeyspace::operator_activity_range().unwrap())
+                )
+                .unwrap(),
+                1
+            );
+            ControlAuditSink::record(&audit, event());
+            assert!(audit.healthy());
+            assert_eq!(adapter.dump().unwrap().len(), 2);
+            assert_eq!(
+                block_on(
+                    projection.count_keys(ControlKeyspace::operator_activity_range().unwrap())
+                )
+                .unwrap(),
+                1
+            );
+        }
+    }
+
+    #[test]
+    fn exhausted_audit_retries_remain_fail_closed_after_storage_recovers() {
+        let (audit, adapter, projection, _directory) = fixture();
+        for _ in 0..3 {
+            adapter
+                .fail_next(FailurePoint::BeforeCommit, busy())
+                .unwrap();
+        }
+        ControlAuditSink::record(&audit, event());
+        assert!(!audit.healthy());
+        assert!(adapter.dump().unwrap().is_empty());
+        assert_eq!(
+            block_on(projection.count_keys(ControlKeyspace::operator_activity_range().unwrap()))
+                .unwrap(),
+            0
+        );
+        ControlAuditSink::record(&audit, event());
+        assert!(
+            !audit.healthy(),
+            "later success must not erase a lost audit event"
+        );
+    }
+
+    #[test]
+    fn non_retryable_audit_failure_is_not_retried() {
+        let (audit, adapter, _projection, _directory) = fixture();
+        adapter
+            .fail_next(
+                FailurePoint::BeforeCommit,
+                StorageError::new(
+                    StorageErrorKind::Corruption,
+                    "compare_and_write",
+                    false,
+                    "corrupt",
+                ),
+            )
+            .unwrap();
+        ControlAuditSink::record(&audit, event());
+        assert!(!audit.healthy());
+        assert!(adapter.dump().unwrap().is_empty());
+    }
+
+    #[test]
+    fn activity_retries_real_sqlite_contention() {
+        let (audit, adapter, projection, _directory) = fixture();
+        let transaction =
+            block_on(projection.begin_transaction(TransactionMode::Serializable)).unwrap();
+        std::thread::scope(|scope| {
+            let pending = scope.spawn(|| ControlAuditSink::record(&audit, event()));
+            let started = Instant::now();
+            while projection.health_signals().unwrap().busy_failures == 0 {
+                assert!(
+                    started.elapsed() < Duration::from_secs(3),
+                    "writer must encounter held SQLite lock"
+                );
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            drop(transaction);
+            pending.join().unwrap();
+        });
+        assert!(audit.healthy());
+        assert_eq!(adapter.dump().unwrap().len(), 2);
+        assert_eq!(
+            block_on(projection.count_keys(ControlKeyspace::operator_activity_range().unwrap()))
+                .unwrap(),
+            1
+        );
+    }
+
+    #[test]
+    fn conflicting_activity_content_fails_closed() {
+        let (audit, _adapter, projection, _directory) = fixture();
+        ControlAuditSink::record(&audit, event());
+        let range = ControlKeyspace::operator_activity_range().unwrap();
+        let rows = block_on(projection.scan(mako_storage::ScanRequest {
+            range,
+            direction: mako_storage::ScanDirection::Forward,
+            limit: NonZeroUsize::new(10).unwrap(),
+        }))
+        .unwrap();
+        let mut batch = WriteBatch::new();
+        batch.put(&rows[0].key, b"different content");
+        block_on(projection.write(batch, Durability::Sync)).unwrap();
+        ControlAuditSink::record(&audit, event());
+        assert!(!audit.healthy());
+        assert_eq!(
+            block_on(projection.get(&rows[0].key)).unwrap().unwrap(),
+            b"different content"
+        );
+    }
 
     #[test]
     fn team_events_stay_under_the_tenant_they_were_always_stored_under() {

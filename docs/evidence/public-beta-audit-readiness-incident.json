@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-12T22:21:57Z",
+  "environment": "public-beta",
+  "releaseDigest": "b58934d88674855ac714c9a117a0e08a866cb9aa28af6b31a81b9e91dd1075eb",
+  "observed": {
+    "publicHttpsStatus": 403,
+    "publicResponseServer": "Caddy",
+    "firstFailedGuardAt": "2026-10-12T21:03:19Z",
+    "controlPlaneReadiness": "dependencies_not_ready:audit",
+    "controlSqliteReady": true,
+    "controlSqliteIntegrityVerified": true,
+    "controlSqliteBusyTotal": 1,
+    "controlSqliteCheckpointFailuresTotal": 0,
+    "controlSqliteWalBytes": 4169472,
+    "controlSqliteAvailableBytes": 253074702336,
+    "controlServiceRestartsBeforeRecovery": 0,
+    "recentPersistedAuditEventsChecked": 255,
+    "missingActivityProjections": 0
+  },
+  "assessment": {
+    "confirmed": "Any append or activity persistence error permanently latches audit readiness false. No error details were logged by this release. The admission guard invalidated the persistent preview approval and selected pre_gate.",
+    "leadingTrigger": "A transient SQLite busy timeout during concurrent management/export traffic; the exact failed operation cannot be proven from existing logs.",
+    "priorOccurrence": "docs/evidence/public-beta-rxdb-docs-deployment.json records the same previously undiagnosed audit readiness failure."
+  },
+  "recovery": {
+    "preservedEvidence": true,
+    "restartedServices": [
+      "mako-control-plane"
+    ],
+    "privateReadinessHttpStatus": {
+      "8080": 200,
+      "8081": 200,
+      "8082": 200,
+      "9465": 200
+    },
+    "publicAdmission": "pre_gate",
+    "previewApprovalInvalidated": true,
+    "publicAdmissionReopened": false,
+    "storageRestoredOrRewritten": false
+  },
+  "migrationContinuity": {
+    "existingImportCompleted": true,
+    "rowsCommitted": 36616,
+    "rowsFailed": 0,
+    "existingExportCompleted": true,
+    "replacementImportSubmitted": false
+  },
+  "patch": {
+    "deployed": false,
+    "behavior": [
+      "Retry identical immutable audit appends and conditional activity writes up to three attempts only for retryable storage failures.",
+      "Retain fail-closed readiness for permanent errors, exhausted retries, worker panics, and conflicting activity contents.",
+      "Record safe stage/error-class diagnostics without event data, identities, credentials, or raw storage errors."
+    ]
+  },
+  "validation": {
+    "newRegressionTests": 5,
+    "auditTestsPassed": 9,
+    "priorImplementationRegressionFailures": 3,
+    "regressionsReproduced": [
+      "transient/uncertain audit commit incorrectly latches readiness",
+      "real SQLite contention incorrectly latches readiness",
+      "different activity content is accepted as an identical retry"
+    ],
+    "fullTestPackagesPassed": [
+      "mako-control-plane-service",
+      "mako-audit",
+      "mako-control-plane",
+      "mako-storage"
+    ]
+  }
+}
