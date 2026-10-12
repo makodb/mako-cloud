@@ -25,9 +25,7 @@
   },
   "recovery": {
     "preservedEvidence": true,
-    "restartedServices": [
-      "mako-control-plane"
-    ],
+    "restartedServices": ["mako-control-plane"],
     "privateReadinessHttpStatus": {
       "8080": 200,
       "8081": 200,
