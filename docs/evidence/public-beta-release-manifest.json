@@ -10,7 +10,7 @@
   },
   "planHash": "d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073",
   "source": {
-    "digest": "28e97a860c87d879401d3250661d7bbd6b53f874a0f0ea0e8cf18504c1d5c107",
+    "digest": "37d197ae7dcf89cc60cfbf586f8e58aed1bacb0a141a8c350ca414da276801b2",
     "files": [
       {
         "path": ".env.example",
@@ -3812,8 +3812,8 @@
       },
       {
         "path": "packages/cli/src/cli/credentials.ts",
-        "sha256": "88ad8ef1e7a83d74e56c0689fa41bd014abd308e67467f82568f7924729537ec",
-        "size": 4027,
+        "sha256": "edbe23fefe0c7753c7fafdedd01c7d7f465ac14d41a1786810fd39fb5815940f",
+        "size": 4029,
         "mode": 420
       },
       {
@@ -4124,8 +4124,8 @@
       },
       {
         "path": "packages/cli/test/harness.mjs",
-        "sha256": "4cb06502c75ee9db53ed6afb5d1d20fc5d38f0ec6393e20be6a580046547e52d",
-        "size": 7008,
+        "sha256": "7a093225268f008615bea44fa0664d6b1a46ffed4cac67add9ac89b8bdde6aba",
+        "size": 7062,
         "mode": 420
       },
       {
@@ -5829,10 +5829,10 @@
       }
     ]
   },
-  "releaseDigest": "e32a5ca387bf47c11ed70fa3a95eaa6630503d2e9bd45b21c9084de3cb7cca14",
-  "generatedAt": "2026-10-12T05:45:44.076Z",
+  "releaseDigest": "b58934d88674855ac714c9a117a0e08a866cb9aa28af6b31a81b9e91dd1075eb",
+  "generatedAt": "2026-10-12T18:54:35.518Z",
   "candidateLayout": {
-    "root": ".local/public-beta-candidates/e32a5ca387bf47c11ed70fa3a95eaa6630503d2e9bd45b21c9084de3cb7cca14",
+    "root": ".local/public-beta-candidates/b58934d88674855ac714c9a117a0e08a866cb9aa28af6b31a81b9e91dd1075eb",
     "manifest": "manifest.json",
     "binaries": "bin",
     "console": "console"

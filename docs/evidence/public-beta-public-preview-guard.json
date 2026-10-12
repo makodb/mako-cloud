@@ -6,13 +6,13 @@
     "operatorIdentity": "msmummy@gmail.com",
     "persistence": "until-manually-paused",
     "planHash": "d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073",
-    "releaseDigest": "e32a5ca387bf47c11ed70fa3a95eaa6630503d2e9bd45b21c9084de3cb7cca14",
+    "releaseDigest": "b58934d88674855ac714c9a117a0e08a866cb9aa28af6b31a81b9e91dd1075eb",
     "valid": true
   },
-  "approvalFingerprint": "81b31a8d5ce0d32f90fda14f33946f414577fdd5d2b9d0998bafcc7477caa470",
+  "approvalFingerprint": "dec0991eaa24c7155bc512683bf221e10f5112016b0e3d7a85f52655e93f9662",
   "approvalInvalidated": false,
   "changed": false,
-  "evaluatedAt": "2026-10-12T06:55:34.408889Z",
+  "evaluatedAt": "2026-10-12T20:07:33.876296Z",
   "mode": "risk_accepted_preview",
   "reasons": [],
   "schemaVersion": 1
