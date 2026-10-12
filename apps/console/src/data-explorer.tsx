@@ -1770,7 +1770,6 @@ function DataJobDetail({
         )}
         {!failed && retries.length > 0 ? (
           <Alert variant="warning" role="status">
-            <Info aria-hidden="true" />
             <AlertTitle>
               {job.state === "succeeded"
                 ? "Recovered after worker retries"
@@ -1964,7 +1963,6 @@ function PreviewChooser({
   const pickerId = useId();
   return (
     <Alert role="status">
-      <Info aria-hidden="true" />
       <AlertTitle>
         {current === null ? "Browsing every document needs an administrator" : "Policy preview"}
       </AlertTitle>
