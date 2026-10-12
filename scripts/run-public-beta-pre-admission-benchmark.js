@@ -35,7 +35,8 @@ routes = [
   ("rxdb-push-gate", "POST", "http://127.0.0.1:8080/v1/projects/prj_beta/environments/env_beta/collections/documents/replication/push", 400),
   ("rxdb-live-gate", "GET", "http://127.0.0.1:8080/v1/projects/prj_beta/environments/env_beta/collections/documents/replication/live", 404),
   ("control-gate", "GET", "http://127.0.0.1:8081/v1/projects", 400),
-  ("function-resolution", "GET", "http://127.0.0.1:8082/prj_beta/functions/v1/missing", 503),
+  # A reference with no environment can never resolve: not found, not a retryable 503.
+  ("function-resolution", "GET", "http://127.0.0.1:8082/prj_beta/functions/v1/missing", 404),
 ]
 
 def one(route):
