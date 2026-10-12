@@ -295,6 +295,35 @@ operator-controlled and MUST NOT overwrite the sole live copy automatically.
 - **WHEN** an operator restores the selected backup to an empty target and executes the documented rollback matrix
 - **THEN** recovery, readiness, tenant-boundary, audit, and rollback evidence are recorded without destroying the original live volume
 
+### Requirement: Release operations do not create backups
+Upgrade and rollback commands SHALL run without creating data-plane RocksDB
+or control-plane SQLite backup checkpoints. This behavior MUST apply to the
+ordinary invocation without a per-deployment skip flag or renewed approval.
+Release operations MUST NOT start backup workers, backup orchestrators, or
+backup timers. They MUST require disabled backup timers and stopped backup
+jobs before stopping application services or changing the selected release.
+Unknown backup state MUST fail closed.
+
+Storage compatibility, nonempty-path checks, exclusive ownership, fencing,
+configuration snapshots, and readiness checks MUST remain enforced. Existing
+databases and retained backup artifacts MUST remain intact. Successful operation
+evidence MUST record `checkpointSkipped: true`, `checkpointVerified: false`,
+and `checkpointPolicy: "disabled-for-deployments"`. A deployment MUST NOT claim
+a new verified recovery point or satisfy beta recovery qualification merely
+because the release switch succeeded.
+
+#### Scenario: Ordinary upgrade runs without backups
+- **WHEN** an operator runs the standard upgrade command with backups disabled
+- **THEN** the release switches after storage checks without creating a database checkpoint or restarting backup timers, and records the skipped checkpoint
+
+#### Scenario: Ordinary rollback runs without backups
+- **WHEN** an operator runs the standard rollback command to the recorded compatible last-known-good release
+- **THEN** storage fencing, configuration restoration, and readiness checks run without creating a backup, and backup schedules remain disabled
+
+#### Scenario: Backup activity conflicts with deployment
+- **WHEN** a backup timer is enabled or has unknown state, or a backup job is running
+- **THEN** the operation refuses to select another release and does not create a backup or record a successful deployment
+
 ### Requirement: Public admission follows the single-region beta gate
 Qualified public beta traffic SHALL be admitted only after the exact VM,
 release digest, configuration, persistent storage, runtime, and public HTTPS
@@ -315,6 +344,11 @@ incomplete observation-window blockers only through a retained approval record
 that identifies the operator, exact plan hash, active blockers, acceptance
 time, and the release digest those safeguards were measured on. That record
 persists until an operator pauses it rather than expiring on a calendar.
+
+Backup scheduling, deployment checkpoints, and the live backup-age check MAY be suspended only under
+the explicit test-preview exception below. Retained-backup verification and
+recorded recovery evidence remain required; this exception MUST NOT waive
+any other preview safeguard or any qualified-beta requirement.
 
 The preview approval MUST fail closed to source-restricted pre-gate admission
 when its plan binding no longer matches, the recorded blocker set changes, or
@@ -340,6 +374,58 @@ rate-limit, audit, route, or private-listener controls.
 #### Scenario: The beta gate passes
 - **WHEN** all measurements and operator drills pass for the exact deployed candidate with no exception
 - **THEN** an authorized operator may enable rate-limited public beta admission and records the approval and release digest
+
+### Requirement: Approved test preview can suspend scheduled backups
+The test deployment SHALL support an explicitly approved suspension of both
+data-plane RocksDB and control-plane SQLite backup schedules. While suspended,
+the backup timers MUST remain stopped and disabled across configuration
+convergence. Disabling scheduling MUST preserve existing backup artifacts,
+restore verification, and the live databases. Operators MUST record that new
+scheduled recovery points are no longer being produced. This is a scoped
+exception to scheduled-backup requirements for the test preview, and MUST NOT
+be represented as satisfying the qualified-beta recovery objectives.
+Release operations SHALL preserve this suspension automatically. Upgrades and
+rollbacks do not create checkpoints or restart backup schedules, as required
+by the release-operation policy above.
+
+Keeping public-preview admission open without fresh backups SHALL require
+explicit operator acceptance recorded for the test deployment, in addition to
+its valid preview approval. A protected boolean setting SHALL control only
+the admission guard's 15-minute backup-age check. An absent setting MUST
+require freshness; a malformed non-boolean setting MUST fail validation. Only
+an explicit false value SHALL skip the age check. Retained-backup verification,
+recorded recovery evidence, readiness, TLS/HSTS, route isolation,
+authentication, authorization, audit, integrity, and emergency admission
+controls MUST remain required.
+
+Resuming normal backup operation SHALL require re-enabling the schedules,
+verifying a new backup, and restoring freshness enforcement. The exception
+MUST NOT authorize a restore from an unverified artifact or change qualified
+beta admission thresholds.
+
+#### Scenario: Operator suspends all scheduled test backups
+- **WHEN** the approved test configuration disables backup scheduling and is applied again
+- **THEN** both data-plane and control-plane backup timers remain stopped and disabled, retained artifacts remain available, and the recorded recovery point does not advance through scheduled backups
+
+#### Scenario: Backup freshness remains the default
+- **WHEN** the freshness setting is absent or true and the newest successful backup is more than 900 seconds old
+- **THEN** the guard rejects public-preview admission and returns to source-restricted pre-gate access
+
+#### Scenario: Operator accepts public test access without fresh backups
+- **WHEN** the operator has explicitly accepted the test exception, the protected freshness setting is false, the preview approval is valid, and all remaining safeguards pass
+- **THEN** backup age alone does not close public-preview admission, while the deployment remains unqualified for full beta
+
+#### Scenario: Another safeguard fails while freshness is waived
+- **WHEN** freshness enforcement is disabled but retained-backup verification, readiness, TLS/HSTS, or another required preview safeguard fails
+- **THEN** the guard closes unrestricted admission and requires a new valid approval before preview can resume
+
+#### Scenario: Freshness configuration is malformed
+- **WHEN** the protected freshness setting contains a string, number, null, or another non-boolean value
+- **THEN** validation fails and the value cannot disable the age check
+
+#### Scenario: Operator resumes normal backup operation
+- **WHEN** the operator ends the test exception
+- **THEN** the schedules are enabled, a new backup is verified, and the preview guard again enforces the 15-minute age limit
 
 ### Requirement: Operations and teardown are observable and recoverable
 The deployment SHALL expose sanitized health, certificate, resource,

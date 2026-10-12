@@ -303,11 +303,33 @@ record_operation() {
     --arg operator "$operator" \
     --argjson started "$started" \
     --argjson completed "$completed" \
-    '{schemaVersion:1,kind:$kind,from:$from,to:$to,operator:$operator,startedAtUnixSeconds:$started,completedAtUnixSeconds:$completed,durationSeconds:($completed-$started),checkpointVerified:true,storageFormatCompatible:true,configurationSnapshotBound:true,storageFencedBeforeSelection:true,allServicesReady:true,publicAdmissionEnabled:false}' >"$temporary"
+    '{schemaVersion:1,kind:$kind,from:$from,to:$to,operator:$operator,startedAtUnixSeconds:$started,completedAtUnixSeconds:$completed,durationSeconds:($completed-$started),checkpointVerified:false,checkpointSkipped:true,checkpointPolicy:"disabled-for-deployments",storageFormatCompatible:true,configurationSnapshotBound:true,storageFencedBeforeSelection:true,allServicesReady:true,publicAdmissionEnabled:false}' >"$temporary"
   /usr/bin/chown root:adm "$temporary"
   /usr/bin/chmod 0640 "$temporary"
   /usr/bin/mv --force "$temporary" "$record"
   printf 'operation evidence: %s\n' "$record"
+}
+
+# Deployment never creates a database backup or restarts backup schedules.
+# Refuse a conflicting state before stopping the application services.
+require_backups_disabled() {
+  local timer component unit state
+  for timer in "${timers[@]}"; do
+    state=$(/usr/bin/systemctl is-enabled "$timer" 2>/dev/null || true)
+    [[ "$state" == disabled ]] || {
+      echo "release operations require disabled backup timers: $timer" >&2
+      return 1
+    }
+  done
+  for component in data-plane control-plane; do
+    for unit in "mako-checkpoint-backup@$component.timer" "mako-checkpoint-backup@$component.service" "mako-checkpoint-backup-orchestrator@$component.service"; do
+      state=$(/usr/bin/systemctl is-active "$unit" 2>/dev/null || true)
+      [[ "$state" == inactive || "$state" == failed ]] || {
+        echo "release operations require stopped backup units: $unit" >&2
+        return 1
+      }
+    done
+  done
 }
 
 switch_release() {
@@ -380,8 +402,7 @@ switch_release() {
   }
   trap fail_closed EXIT
 
-  /usr/bin/systemctl start mako-checkpoint-backup-orchestrator@data-plane.service
-  /usr/bin/systemctl start mako-checkpoint-backup-orchestrator@control-plane.service
+  require_backups_disabled
   /usr/bin/systemctl stop "${services[@]/%/.service}"
   exec 8>>"$control_lock"
   /usr/bin/flock --exclusive --wait 10 8 || {
@@ -402,7 +423,6 @@ switch_release() {
   /usr/bin/systemctl reset-failed "${services[@]/%/.service}" || true
   /usr/bin/systemctl start "${services[@]/%/.service}"
   wait_for_readiness
-  for timer in "${timers[@]}"; do /usr/bin/systemctl start "$timer"; done
   completed=$(/usr/bin/date +%s)
   record_operation "$kind" "$current" "$target" "$started" "$completed"
   trap - EXIT

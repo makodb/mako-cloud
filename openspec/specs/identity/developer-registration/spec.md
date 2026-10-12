@@ -207,6 +207,13 @@ or any non-waivable safeguard becomes invalid. Deploying a different release
 MUST NOT by itself close admission; the approval records the release its
 safeguards were measured on as provenance rather than as a binding.
 
+For the explicitly approved test deployment, the scheduled-backup and
+freshness exception in `operations/public-beta-environment` SHALL also apply
+to registration admission. It SHALL waive only backup scheduling and the live
+backup-age check. Retained-backup verification, recorded recovery evidence,
+and every other required admission safeguard MUST remain valid, and the
+exception MUST NOT qualify the deployment for full beta.
+
 #### Scenario: Public caller probes a private identity route
 - **WHEN** an internet client requests an identity route outside the published allowlist
 - **THEN** the proxy and service fail closed without invoking a private operation or revealing whether an identity exists
@@ -224,6 +231,5 @@ safeguards were measured on as provenance rather than as a binding.
 - **THEN** public-preview admission atomically returns to source-restricted `pre_gate` without stopping private services or deleting wait-list state
 
 #### Scenario: Persistent preview safety binding drifts
-- **WHEN** the approval binding, TLS, readiness, backup, recovery, route-isolation, integrity, or emergency-stop safeguard becomes invalid
+- **WHEN** the approval binding, TLS, readiness, retained-backup verification, recovery evidence, route-isolation, integrity, emergency-stop safeguard, or required backup freshness becomes invalid
 - **THEN** the guard returns admission to `pre_gate` even though the operator has not manually paused it
-

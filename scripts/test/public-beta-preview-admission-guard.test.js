@@ -219,6 +219,89 @@ test("guard records fail-closed outcomes without a Caddy restart loop", () => {
   assert.doesNotMatch(guardUnit, /^Requires=caddy\.service$/mu);
 });
 
+test("backup freshness remains required unless explicitly disabled", () => {
+  for (const required of [undefined, true]) {
+    const state = fixture();
+    if (required !== undefined) state.context.backupFreshnessRequired = required;
+    writeJson(state.path("/etc/mako/public-preview-context.json"), state.context);
+    const stale = runDynamic(state, { backupAge: 901 });
+    assert.equal(stale.status, 1);
+    assert.match(stale.stderr, /backup age exceeded 15 minutes/);
+    const fresh = runDynamic(state, { backupAge: 900 });
+    assert.equal(fresh.status, 0, fresh.stderr);
+  }
+});
+
+test("approved stale-backup preview still enforces verification, readiness, TLS and HSTS", () => {
+  const state = fixture();
+  state.context.backupFreshnessRequired = false;
+  writeJson(state.path("/etc/mako/public-preview-context.json"), state.context);
+  const accepted = runDynamic(state, { backupAge: 86400 });
+  assert.equal(accepted.status, 0, accepted.stderr);
+  assert.deepEqual(JSON.parse(accepted.stdout).queries, [
+    "min(mako_storage_backup_remote_verified)",
+  ]);
+  for (const [options, reason] of [
+    [{ backupVerified: 0 }, /backup verification failed/],
+    [{ readiness: 503 }, /service readiness failed/],
+    [{ tlsFailure: true }, /TLS rejected/],
+  ]) {
+    const rejected = runDynamic(state, options);
+    assert.equal(rejected.status, 1);
+    assert.match(rejected.stderr, reason);
+  }
+  writeFileSync(state.path("/etc/caddy/mako-admission/Caddyfile.risk_accepted_preview"), "");
+  const noHsts = runDynamic(state);
+  assert.equal(noHsts.status, 1);
+  assert.match(noHsts.stderr, /preview HSTS is absent/);
+});
+
+test("malformed backup freshness policy fails closed", () => {
+  for (const value of ["false", null, 0]) {
+    const state = fixture();
+    state.context.backupFreshnessRequired = value;
+    writeJson(state.path("/etc/mako/public-preview-context.json"), state.context);
+    const result = run(state.directory, "activate");
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /backup freshness policy is invalid/);
+  }
+});
+
+function runDynamic(state, options = {}) {
+  const program = `
+import contextlib, json, runpy, sys
+from unittest.mock import patch
+guard = runpy.run_path(sys.argv[1])
+paths = guard['Paths'](__import__('pathlib').Path(sys.argv[2]))
+options = json.loads(sys.argv[3])
+scope = guard['verify_dynamic'].__globals__
+queries = []
+def metric(query):
+    queries.append(query)
+    if query == 'min(mako_storage_backup_remote_verified)':
+        return options.get('backupVerified', 1)
+    return options.get('backupAge', 901)
+class Ready:
+    status = options.get('readiness', 200)
+class TLS:
+    def wrap_socket(self, *args, **kwargs):
+        if options.get('tlsFailure'):
+            raise RuntimeError('TLS rejected')
+        return contextlib.nullcontext()
+scope['prometheus_value'] = metric
+with patch.object(scope['urllib'].request, 'urlopen', return_value=contextlib.nullcontext(Ready())), \\
+     patch.object(scope['socket'], 'create_connection', return_value=contextlib.nullcontext()), \\
+     patch.object(scope['ssl'], 'create_default_context', return_value=TLS()), \\
+     patch.object(scope['time'], 'sleep'):
+    _, context = guard['verify_static'](paths, guard['parse_time']('2026-08-10T00:00:00.000Z'))
+    guard['verify_dynamic'](paths, context)
+print(json.dumps({'queries': queries}))
+`;
+  return spawnSync("python3", ["-c", program, guard, state.directory, JSON.stringify(options)], {
+    encoding: "utf8",
+  });
+}
+
 function realActive(path) {
   return realpathSync(path("/etc/caddy/Caddyfile"));
 }

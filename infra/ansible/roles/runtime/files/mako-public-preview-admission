@@ -123,6 +123,10 @@ class Paths:
 def verify_static(paths, now):
     approval = read_json(paths.approval)
     context = read_json(paths.context)
+    require(
+        isinstance(context.get("backupFreshnessRequired", True), bool),
+        "backup freshness policy is invalid",
+    )
     require(approval.get("schemaVersion") == 2, "approval schema is invalid")
     require(approval.get("kind") == "risk-accepted-public-preview", "approval kind is invalid")
     require(
@@ -208,10 +212,14 @@ def verify_dynamic(paths, context):
             time.sleep(1)
         require(ready, f"service readiness failed on port {port}")
     require(prometheus_value("min(mako_storage_backup_remote_verified)") == 1, "backup verification failed")
-    require(
-        prometheus_value("max(time() - mako_storage_backup_last_success_unixtime_seconds)") <= 900,
-        "backup age exceeded 15 minutes",
-    )
+    # The test deployment may explicitly retain public access after its
+    # operator disables scheduled backups. Old contexts remain strict; the
+    # retained backup must still have passed verification in either mode.
+    if context.get("backupFreshnessRequired", True):
+        require(
+            prometheus_value("max(time() - mako_storage_backup_last_success_unixtime_seconds)") <= 900,
+            "backup age exceeded 15 minutes",
+        )
     fqdn = context.get("publicFqdn")
     require(isinstance(fqdn, str) and fqdn, "public FQDN is absent")
     tls_context = ssl.create_default_context()

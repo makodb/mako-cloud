@@ -18,7 +18,8 @@ mako_console_recovery_verified: true
 mako_data_device: /dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_drive-scsi1
 mako_data_mount: /srv/mako-data
 mako_prepare_data_filesystem: true
-mako_backup_enabled: true
+# Scheduled backups are disabled at the operator's request.
+mako_backup_enabled: false
 mako_services_enabled: true
 mako_health_collection_enabled: true
 mako_dependencies_enabled: true
@@ -32,6 +33,9 @@ mako_public_preview_trusted_https_and_hsts: false
 mako_public_preview_exact_route_allowlist: false
 mako_public_preview_application_security: false
 mako_public_preview_backup_and_recovery: false
+# Operator-approved test preview without scheduled backups. Retained-backup
+# verification and the other admission checks still apply.
+mako_public_preview_require_fresh_backup: false
 mako_public_preview_zero_acknowledged_write_loss: false
 mako_public_preview_zero_integrity_failures: false
 mako_public_preview_service_readiness: false
@@ -65,7 +69,7 @@ mako_operator_maximum_backoff_seconds: 300
 # Pre-gate rollback only. This is disabled after browser password qualification.
 mako_operator_break_glass_bearer_enabled: true
 mako_node_exporter_listen: 127.0.0.1:9100
-mako_release_digest: "38a4ee2fbfff7bf89d8ca6524b1bea7a0914dfe84bc1e694e2abc0b70f5bd0c1"
+mako_release_digest: b6d3350d66aaf2c42f986cc5376c10d377e7afaade8f5b25d35b4605f321cd77
 mako_release_candidate_path: "{{ playbook_dir }}/../../../.local/public-beta-candidates/{{ mako_release_digest }}"
 mako_storage_region: us-east-1-beta
 mako_disk_warning_free_bytes: 17179869184

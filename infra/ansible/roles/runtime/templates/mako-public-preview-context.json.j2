@@ -4,6 +4,7 @@
   "planHash": {{ mako_plan_hash | to_json }},
   "releaseDigest": {{ mako_release_digest | to_json }},
   "blockerDigest": {{ mako_public_preview_blocker_digest | to_json }},
+  "backupFreshnessRequired": {{ mako_public_preview_require_fresh_backup | default(true) | bool | to_json }},
   "nonWaivableSafeguards": {
     "trustedHttpsAndHsts": {{ mako_public_preview_trusted_https_and_hsts | bool | to_json }},
     "exactPublicRouteAllowlist": {{ mako_public_preview_exact_route_allowlist | bool | to_json }},

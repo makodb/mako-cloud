@@ -26,6 +26,7 @@
       tags: [configuration]
     - role: observability
     - role: backup
+      tags: [backup]
     - role: firewall
   post_tasks:
     - name: Apply service-unit changes after storage and dependencies exist
