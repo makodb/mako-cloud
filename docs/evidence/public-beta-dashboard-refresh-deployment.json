@@ -1,0 +1,215 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-09-25T19:22:41.775531+00:00",
+  "status": "deployed-and-verified",
+  "publicOrigin": "https://cloud-test.makodb.com",
+  "releaseDigest": "eb302b712590d7840d4b125fab4b6eee0cd9cd08cc14e4eb9b6808cd56320644",
+  "source": {
+    "baseCommit": "87de94041697c0e741282890f12fc84eb93c6767",
+    "hasLocalChanges": true,
+    "overlayPatchSha256": "d65e894b24e3f2d71145ea69cdc737a01ed034235f764979bde4c2de650910a4",
+    "newFiles": {
+      "apps/console/src/dashboard-refresh.tsx": "3fd5dc47d398e472e70f631951045b678d8bf82d9a95a82ed73881b6c3da1721",
+      "scripts/test/release-backup-timers.test.js": "f3b1268dd1bac3ac5ce924cee0410f9afa73a9f2155b9ed9f8f528bec991c7c0"
+    },
+    "backendSourceFilesMatchPreviousRelease": 287,
+    "backendBinariesIdenticalToPreviousRelease": 11,
+    "digest": "a0d231d47d9b8cc9ed5d6b5d271516f4322f81bc3e55325d7179749de2b55176"
+  },
+  "changes": [
+    "Developer dashboard metrics and inventory refresh every 60 seconds.",
+    "Observation ages replace Current and Stale freshness badges.",
+    "Transient refresh failures retain the last successful values and timestamp; revoked access clears retained values.",
+    "Published user documentation describes the refresh behavior."
+  ],
+  "validation": {
+    "candidateBrowserTestsPassed": 43,
+    "releaseOperationTestsPassed": 20,
+    "publicPreviewTestsPassed": 14,
+    "openSpecItemsPassed": 34,
+    "typecheckPassed": true,
+    "productionBuildPassed": true,
+    "documentationLinksValidated": 196,
+    "traceabilityScenariosValidated": 315,
+    "deployedPublicBrowserTestsPassed": 3,
+    "deployedDashboardBrowserTestsPassed": 6,
+    "dashboardBrowserScope": "Deployed frontend assets with synthetic developer auth and intercepted management APIs; all unmatched management calls blocked.",
+    "exactReleaseAuthenticatedHostedQualification": "not-run; no production accounts or tenant documents accessed",
+    "logs": {
+      "build": {
+        "path": "/var/tmp/mako-dashboard-deploy-build.log",
+        "sha256": "53801286a5e1978d6b80f7deffb2707e743f56a434fa4c2ebcf200b6a35c3134"
+      },
+      "browser-final": {
+        "path": "/var/tmp/mako-dashboard-deploy-browser-final.log",
+        "sha256": "ae62c323b6435f04c11b6111a14647c9a53a489bec251cdd0bca87fde896ed44"
+      },
+      "typecheck": {
+        "path": "/var/tmp/mako-dashboard-deploy-typecheck.log",
+        "sha256": "ba82a91cdf0f3ec1ef115d54593509bc85821aa07f1829707daf4cba9e575dfe"
+      },
+      "release-tests": {
+        "path": "/var/tmp/mako-dashboard-deploy-release-tests.log",
+        "sha256": "0c4177d3c70d5f774f2855259dfa41e48c1247a8bf476af7d6b5129daaa5468d"
+      },
+      "preview-tests": {
+        "path": "/var/tmp/mako-dashboard-deploy-preview-tests.log",
+        "sha256": "8d08c695e4b95ebb7929a0fdcb77b867094581ef367e68d84a070305a49966d6"
+      },
+      "docs": {
+        "path": "/var/tmp/mako-dashboard-deploy-docs.log",
+        "sha256": "25a4d24eb2c856e5c19573bed92ec31daee734c12cdff9c3c788c37db2cdd8a9"
+      },
+      "traceability": {
+        "path": "/var/tmp/mako-dashboard-deploy-traceability.log",
+        "sha256": "244b57f0edff00c72472674a09fa4153d07ddd056144e6dfe20de00be71951d5"
+      },
+      "style": {
+        "path": "/var/tmp/mako-dashboard-deploy-style.log",
+        "sha256": "9d7185f86845e640c74583c9cd64a602ab441256b8c172e569964e083b0f61ef"
+      },
+      "specs": {
+        "path": "/var/tmp/mako-dashboard-deploy-specs.log",
+        "sha256": "4054ae7ddacbd166ddde4f5a22207a1efa1210dde93f594aa95556ff335ba1ff"
+      }
+    }
+  },
+  "hosted": {
+    "backupStateUnchanged": true,
+    "inspection": {
+      "release": {
+        "releaseRoot": "/opt/mako",
+        "current": "eb302b712590d7840d4b125fab4b6eee0cd9cd08cc14e4eb9b6808cd56320644",
+        "lastKnownGood": "bed6f300704cf112128ac0564e515673e0aa8a4f3dd8ab99aa8172634a6ae6cf"
+      },
+      "publicAdmission": {
+        "caddyActive": "active",
+        "caddyEnabled": "enabled"
+      },
+      "services": [
+        {
+          "name": "mako-data-plane",
+          "state": "active"
+        },
+        {
+          "name": "mako-control-plane",
+          "state": "active"
+        },
+        {
+          "name": "mako-edge-gateway",
+          "state": "active"
+        },
+        {
+          "name": "mako-telemetry-query",
+          "state": "active"
+        }
+      ],
+      "storage": [
+        {
+          "service": "mako-data-plane",
+          "path": "/srv/mako-data/rocksdb/data-plane",
+          "state": "active",
+          "nonempty": true
+        },
+        {
+          "service": "mako-edge-gateway",
+          "path": "/srv/mako-data/rocksdb/edge-gateway",
+          "state": "active",
+          "nonempty": true
+        },
+        {
+          "service": "mako-telemetry-query",
+          "path": "/srv/mako-data/rocksdb/telemetry-query",
+          "state": "active",
+          "nonempty": true
+        },
+        {
+          "service": "mako-control-plane",
+          "path": "/srv/mako-data/sqlite/control-plane/live/control.sqlite3",
+          "engine": "sqlite",
+          "state": "active",
+          "nonempty": true
+        }
+      ]
+    },
+    "privateReadiness": {
+      "8080": 200,
+      "8081": 200,
+      "8082": 200,
+      "9465": 200
+    },
+    "authentication": {
+      "developerRegistrationEnabled": true,
+      "operatorPasswordAuthenticationEnabled": true,
+      "operatorBreakGlassBearerEnabled": false
+    },
+    "timers": {
+      "mako-checkpoint-backup@data-plane.timer": "inactive",
+      "mako-checkpoint-backup@control-plane.timer": "inactive",
+      "mako-public-preview-admission.timer": "active"
+    },
+    "previewGuard": {
+      "blockerDigest": "b8492baa802b961ba5cd240e211e0fccc87498d7fd589370dde5f44c8ef7e6a8",
+      "expiresAt": null,
+      "kind": "risk-accepted-public-preview",
+      "operatorIdentity": "msmummy@gmail.com",
+      "persistence": "until-manually-paused",
+      "planHash": "d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073",
+      "releaseDigest": "3d25eacc5dec6654f146ba26d3911f5fba62275c4ef007d57ad17ac4c1dfef30",
+      "valid": true,
+      "mode": "risk_accepted_preview",
+      "invalidated": false,
+      "acceptedAt": "2026-09-24T15:44:09.050Z"
+    },
+    "operation": {
+      "schemaVersion": 1,
+      "kind": "upgrade",
+      "from": "bed6f300704cf112128ac0564e515673e0aa8a4f3dd8ab99aa8172634a6ae6cf",
+      "to": "eb302b712590d7840d4b125fab4b6eee0cd9cd08cc14e4eb9b6808cd56320644",
+      "operator": "mako-admin",
+      "startedAtUnixSeconds": 1790364062,
+      "completedAtUnixSeconds": 1790364084,
+      "durationSeconds": 22,
+      "checkpointVerified": false,
+      "checkpointSkipped": true,
+      "checkpointPolicy": "disabled-for-deployments",
+      "storageFormatCompatible": true,
+      "configurationSnapshotBound": true,
+      "storageFencedBeforeSelection": true,
+      "allServicesReady": true,
+      "publicAdmissionEnabled": false
+    }
+  },
+  "publicChecks": {
+    "homepage": 200,
+    "releaseAssetsVerified": 5,
+    "userBook": 200,
+    "minuteRefreshInstructionsPublished": true,
+    "userBookMatchesReleaseArtifact": true,
+    "workingRxdbInstallCommandPublished": true,
+    "directBrowsingInstructionsPublished": true,
+    "obsoleteNpmPublicationClaimRemoved": true,
+    "/usage-and-plan": 200,
+    "/projects/prj_verify0001/billing": 200,
+    "/v1/projects/prj_verify0001/bill": 401,
+    "/v1/projects/prj_verify0001/bill/private": 404,
+    "/v1/projects/prj_verify0001/environments/env_verify0001/workspace/summary": 401,
+    "/internal/deployment-probe": 404,
+    "/unknown-deployment-probe": 404,
+    "/v1/projects/prj_routeprobe/environments/env_routeprobe/data-jobs": 401,
+    "explorerRouteOwnership": {
+      "GET /v1/projects/prj_routeprobe/environments/env_routeprobe/explorer/grants": 405,
+      "POST /v1/projects/prj_routeprobe/environments/env_routeprobe/explorer/grants/xgr_routeprobe": 405,
+      "GET /v1/projects/prj_routeprobe/environments/env_routeprobe/explorer/collections/routeprobe/browse": 405,
+      "GET /v1/projects/prj_routeprobe/environments/env_routeprobe/explorer/collections/routeprobe/query": 405,
+      "GET /v1/projects/prj_routeprobe/environments/env_routeprobe/explorer/collections/routeprobe/query/plan": 405,
+      "GET /v1/projects/prj_routeprobe/environments/env_routeprobe/explorer/collections/routeprobe/simulate": 405,
+      "GET /v1/projects/prj_routeprobe/environments/env_routeprobe/explorer/collections/routeprobe/mutate": 405,
+      "POST /v1/projects/prj_routeprobe/environments/env_routeprobe/explorer/collections/routeprobe/documents/doc_routeprobe": 405,
+      "POST /v1/projects/prj_routeprobe/environments/env_routeprobe/explorer/collections/routeprobe/documents/doc_routeprobe/history": 405
+    }
+  },
+  "databaseBackupsCreated": false,
+  "backupExecutionUnchangedDuringDeployment": true,
+  "passed": true
+}

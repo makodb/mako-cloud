@@ -1,0 +1,120 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-09-25T17:36:20.640427+00:00",
+  "status": "deployed-risk-accepted-public-preview",
+  "pullRequest": "https://github.com/makodb/mako-cloud/pull/7",
+  "sourceCommit": "87de94041697c0e741282890f12fc84eb93c6767",
+  "releaseDigest": "bed6f300704cf112128ac0564e515673e0aa8a4f3dd8ab99aa8172634a6ae6cf",
+  "publicOrigin": "https://cloud-test.makodb.com",
+  "operation": {
+    "schemaVersion": 1,
+    "kind": "upgrade",
+    "from": "38a4ee2fbfff7bf89d8ca6524b1bea7a0914dfe84bc1e694e2abc0b70f5bd0c1",
+    "to": "bed6f300704cf112128ac0564e515673e0aa8a4f3dd8ab99aa8172634a6ae6cf",
+    "operator": "mako-admin",
+    "startedAtUnixSeconds": 1790357617,
+    "completedAtUnixSeconds": 1790357640,
+    "durationSeconds": 23,
+    "checkpointVerified": false,
+    "checkpointSkipped": true,
+    "checkpointPolicy": "disabled-by-operator",
+    "storageFormatCompatible": true,
+    "configurationSnapshotBound": true,
+    "storageFencedBeforeSelection": true,
+    "allServicesReady": true,
+    "publicAdmissionEnabled": false
+  },
+  "backupPolicy": {
+    "operatorInstruction": "Keep all backups disabled",
+    "scheduledBackupsEnabled": false,
+    "upgradeCheckpointsEnabled": false,
+    "backupExecutionTimestampsUnchanged": true,
+    "lastSuccessfulBackupsUnchanged": true,
+    "retainedArtifactsPreserved": true,
+    "publicPreviewFreshnessRequired": false
+  },
+  "operationalOverlay": {
+    "source": "infra/ansible/roles/runtime/files/mako-release-operation",
+    "sha256": "44e5b56d6f14cf92fb4c884f824f94dbcaf76b93c68c168b2621ed097f1638c9",
+    "installed": true,
+    "behavior": "Explicit --skip-checkpoints requires disabled timers and stopped backup jobs, preserves storage/readiness checks, records skipped checkpoints, and does not resume disabled schedules."
+  },
+  "localValidation": {
+    "storageAndDocumentTestsPassed": 133,
+    "additionalServiceAndDomainTestsPassed": 317,
+    "consoleBrowserTestsPassed": 102,
+    "releaseToolTestsPassed": 21,
+    "candidateSmoke": {
+      "passed": true,
+      "concurrentCreates": 64,
+      "concurrentIdempotentReplays": 16,
+      "allWriteResponses": 200,
+      "importExportRoundTripPassed": true,
+      "releaseBinariesMatchManifest": true
+    },
+    "scope": "Synthetic local fixture only; customer data and production sessions were not used."
+  },
+  "hostedValidation": {
+    "passed": true,
+    "readiness": {
+      "8080": 200,
+      "8081": 200,
+      "8082": 200,
+      "9465": 200
+    },
+    "authentication": {
+      "developerRegistrationEnabled": true,
+      "operatorPasswordAuthenticationEnabled": true,
+      "operatorBreakGlassBearerEnabled": false
+    },
+    "previewGuard": {
+      "blockerDigest": "b8492baa802b961ba5cd240e211e0fccc87498d7fd589370dde5f44c8ef7e6a8",
+      "expiresAt": null,
+      "kind": "risk-accepted-public-preview",
+      "operatorIdentity": "msmummy@gmail.com",
+      "persistence": "until-manually-paused",
+      "planHash": "d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073",
+      "releaseDigest": "3d25eacc5dec6654f146ba26d3911f5fba62275c4ef007d57ad17ac4c1dfef30",
+      "valid": true,
+      "mode": "risk_accepted_preview",
+      "invalidated": false,
+      "acceptedAt": "2026-09-24T15:44:09.050Z"
+    },
+    "backupTimers": {
+      "mako-checkpoint-backup@data-plane.timer": "inactive",
+      "mako-checkpoint-backup@control-plane.timer": "inactive",
+      "mako-public-preview-admission.timer": "active"
+    },
+    "publicChecks": {
+      "homepage": 200,
+      "releaseAssetsVerified": 5,
+      "userBook": 200,
+      "userBookMatchesReleaseArtifact": true,
+      "workingRxdbInstallCommandPublished": true,
+      "directBrowsingInstructionsPublished": true,
+      "obsoleteNpmPublicationClaimRemoved": true,
+      "/usage-and-plan": 200,
+      "/projects/prj_verify0001/billing": 200,
+      "/v1/projects/prj_verify0001/bill": 401,
+      "/v1/projects/prj_verify0001/bill/private": 404,
+      "/v1/projects/prj_verify0001/environments/env_verify0001/workspace/summary": 401,
+      "/internal/deployment-probe": 404,
+      "/unknown-deployment-probe": 404,
+      "/v1/projects/prj_routeprobe/environments/env_routeprobe/data-jobs": 401,
+      "explorerRouteOwnership": {
+        "GET /v1/projects/prj_routeprobe/environments/env_routeprobe/explorer/grants": 405,
+        "POST /v1/projects/prj_routeprobe/environments/env_routeprobe/explorer/grants/xgr_routeprobe": 405,
+        "GET /v1/projects/prj_routeprobe/environments/env_routeprobe/explorer/collections/routeprobe/browse": 405,
+        "GET /v1/projects/prj_routeprobe/environments/env_routeprobe/explorer/collections/routeprobe/query": 405,
+        "GET /v1/projects/prj_routeprobe/environments/env_routeprobe/explorer/collections/routeprobe/query/plan": 405,
+        "GET /v1/projects/prj_routeprobe/environments/env_routeprobe/explorer/collections/routeprobe/simulate": 405,
+        "GET /v1/projects/prj_routeprobe/environments/env_routeprobe/explorer/collections/routeprobe/mutate": 405,
+        "POST /v1/projects/prj_routeprobe/environments/env_routeprobe/explorer/collections/routeprobe/documents/doc_routeprobe": 405,
+        "POST /v1/projects/prj_routeprobe/environments/env_routeprobe/explorer/collections/routeprobe/documents/doc_routeprobe/history": 405
+      }
+    },
+    "publicBrowserTestsPassed": 3,
+    "scope": "Read-only private readiness, storage-state, preserved authentication configuration, preview guard, real HTTPS and release assets; no tenant documents or live accounts changed.",
+    "tenantWriteQualification": "not-run-on-live-deployment"
+  }
+}

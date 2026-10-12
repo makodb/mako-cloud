@@ -1,0 +1,407 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-09-28T20:16:17.170129+00:00",
+  "status": "deployed-and-verified",
+  "publicOrigin": "https://cloud-test.makodb.com",
+  "releaseDigest": "be950e34c1bbab2de9be560f108dbeec18899aea5f119c46c025843b82202a40",
+  "source": {
+    "baseCommit": "87de94041697c0e741282890f12fc84eb93c6767",
+    "hasLocalChanges": true,
+    "previousReleaseDigest": "56ef4fa45313e818cce8cdad1e35a1cbf7b0428e3fc9f86d4d5af4f856bf42cf",
+    "appliedPullRequests": [8, 10, 4, 11],
+    "overlayPatchSha256": "67492919b52f121b0273346c2832992bfe40a1c19f84e05ab4d5114c7bb6c319",
+    "newFiles": {
+      "apps/console/src/dashboard-refresh.tsx": "3fd5dc47d398e472e70f631951045b678d8bf82d9a95a82ed73881b6c3da1721",
+      "scripts/test/release-backup-timers.test.js": "f3b1268dd1bac3ac5ce924cee0410f9afa73a9f2155b9ed9f8f528bec991c7c0"
+    },
+    "unrelatedNewerMainChangesExcluded": true,
+    "changedFilesFromPreviousRelease": [
+      "Cargo.lock",
+      "crates/mako-billing/src/rating.rs",
+      "crates/mako-smoke/Cargo.toml",
+      "crates/mako-smoke/tests/telemetry_pipeline.rs",
+      "docs/requirements-traceability.md",
+      "docs/user-book.md",
+      "openspec/specs/billing/invoicing-and-balance/spec.md",
+      "services/mako-control-plane/src/management_http.rs"
+    ],
+    "pullRequests": [
+      {
+        "number": 4,
+        "reviewedHead": "0df61f861338b977db87e22e01c1bc757a1c4d1c",
+        "mergeCommit": "a5851302de40fc02279a130422dc0b2e75175c7e"
+      },
+      {
+        "number": 11,
+        "reviewedHead": "2a7b02f0982bf2f2c69a86b49f5d115647995690",
+        "mergeCommit": "3c2fc9e8e7274a9b15d77bf0eae41599cab20cf1"
+      }
+    ],
+    "billingFixPatchSha256": "ad168c449821a4f271ffa3594e89a8884e04878085546029ac9a2f98c099fe26",
+    "localBranch": "fix/billing-history-pagination",
+    "billingFixCommit": "e690c2aacc6e74c351b557c721080e8eaef08bc8",
+    "pushed": true,
+    "remoteRef": "refs/heads/main",
+    "digest": "251af05ab0b3f12df6d6659a9ecfac568e6e7f7a65484b056826968630a74fa6"
+  },
+  "fix": "Remove the 16,000-record billing ceiling with paged aggregation of a fixed period; preserve sums, averages, plan segments and project allocation.",
+  "validation": {
+    "unitTests": [
+      {
+        "suite": "mako_billing",
+        "exitCode": 0,
+        "summary": "test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      },
+      {
+        "suite": "mako_control_plane_service",
+        "exitCode": 0,
+        "summary": "test result: ok. 67 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.06s"
+      }
+    ],
+    "clippy": "passed with warnings denied for billing, control-plane service and smoke packages",
+    "openspec": {
+      "passed": 34,
+      "failed": 0
+    },
+    "traceability": {
+      "candidateScenarios": 319,
+      "mainBranchScenarios": 308
+    },
+    "documentation": {
+      "areas": 11,
+      "files": 5,
+      "links": 196
+    },
+    "deploymentPolicyTests": {
+      "passed": 24,
+      "failed": 0
+    },
+    "reproduction": {
+      "releaseDigest": "56ef4fa45313e818cce8cdad1e35a1cbf7b0428e3fc9f86d4d5af4f856bf42cf",
+      "exitCode": 101,
+      "binaries": {
+        "mako-control-plane": "d2b9b4932a6142c220ecf2e4b60a0be3a41fc945f2907598e0f8792bb75acf02",
+        "mako-data-plane": "8deb15fde55cfc83cf83a5507e9734b66e05722c99d14fd615b90d9f440530f8",
+        "mako-telemetry-query": "3e4d5bbdd31daab40429aee09ea146369735672e5c0ed12dfd746d5c8f0b660f",
+        "mako-storage-ops": "92e5c0a0711ec06065c0b7ce0068c33ab2ce808374bbb4d4f81c349959b37c3d",
+        "mako-control-session": "732ff748a7bd3e65455a5663aaddbc4adc91095d3252151f534000c4f5d35b95",
+        "mako-local-bootstrap": "e9307baa02149513f09eae10963419e516439fda96d7a1b9e6698e0f6a54b170"
+      },
+      "localSyntheticDataOnly": true
+    },
+    "deploymentStatus": "deployed and verified",
+    "endToEnd": {
+      "releaseDigest": "be950e34c1bbab2de9be560f108dbeec18899aea5f119c46c025843b82202a40",
+      "exitCode": 0,
+      "binaries": {
+        "mako-control-plane": "33c41a06720f3922ceedca66950c2b19797d64d6969133796ad8feac1ad81ab6",
+        "mako-data-plane": "8deb15fde55cfc83cf83a5507e9734b66e05722c99d14fd615b90d9f440530f8",
+        "mako-telemetry-query": "3e4d5bbdd31daab40429aee09ea146369735672e5c0ed12dfd746d5c8f0b660f",
+        "mako-storage-ops": "92e5c0a0711ec06065c0b7ce0068c33ab2ce808374bbb4d4f81c349959b37c3d",
+        "mako-control-session": "732ff748a7bd3e65455a5663aaddbc4adc91095d3252151f534000c4f5d35b95",
+        "mako-local-bootstrap": "e9307baa02149513f09eae10963419e516439fda96d7a1b9e6698e0f6a54b170"
+      },
+      "localSyntheticDataOnly": true
+    },
+    "releaseDigest": "be950e34c1bbab2de9be560f108dbeec18899aea5f119c46c025843b82202a40",
+    "releaseArtifactVerification": "passed",
+    "changedReleaseArtifacts": ["bin/mako-control-plane", "console/docs/user-book/index.html"],
+    "localCommit": "e690c2aacc6e74c351b557c721080e8eaef08bc8",
+    "pushStatus": "pushed to origin/main",
+    "productionTenantAccess": false,
+    "liveStateChanged": true,
+    "deployedPublicBrowserTestsPassed": 6,
+    "backupExecutionUnchangedDuringDeployment": true
+  },
+  "githubChecks": [
+    {
+      "name": "Build artifacts",
+      "conclusion": "skipped",
+      "url": "https://github.com/makodb/mako-cloud/actions/runs/36477434192/job/109114581018",
+      "annotations": []
+    },
+    {
+      "name": "Public beta infrastructure (offline)",
+      "conclusion": "failure",
+      "url": "https://github.com/makodb/mako-cloud/actions/runs/36477434192/job/109114551745",
+      "annotations": [
+        {
+          "title": "",
+          "message": "The job was not started because recent account payments have failed or your spending limit needs to be increased. Please check the 'Billing & plans' section in your settings"
+        },
+        {
+          "title": "",
+          "message": "\"The ubuntu-latest label will migrate to Ubuntu 26 beginning October 19, 2026. For more information, see https://github.com/actions/runner-images/issues/14748\""
+        }
+      ]
+    },
+    {
+      "name": "Dependency audit",
+      "conclusion": "failure",
+      "url": "https://github.com/makodb/mako-cloud/actions/runs/36477434192/job/109114551721",
+      "annotations": [
+        {
+          "title": "",
+          "message": "The job was not started because recent account payments have failed or your spending limit needs to be increased. Please check the 'Billing & plans' section in your settings"
+        },
+        {
+          "title": "",
+          "message": "\"The ubuntu-latest label will migrate to Ubuntu 26 beginning October 19, 2026. For more information, see https://github.com/actions/runner-images/issues/14748\""
+        }
+      ]
+    },
+    {
+      "name": "Edge function end-to-end",
+      "conclusion": "failure",
+      "url": "https://github.com/makodb/mako-cloud/actions/runs/36477434192/job/109114551706",
+      "annotations": [
+        {
+          "title": "",
+          "message": "The job was not started because recent account payments have failed or your spending limit needs to be increased. Please check the 'Billing & plans' section in your settings"
+        },
+        {
+          "title": "",
+          "message": "\"The ubuntu-latest label will migrate to Ubuntu 26 beginning October 19, 2026. For more information, see https://github.com/actions/runner-images/issues/14748\""
+        }
+      ]
+    },
+    {
+      "name": "Unit tests",
+      "conclusion": "failure",
+      "url": "https://github.com/makodb/mako-cloud/actions/runs/36477434192/job/109114551458",
+      "annotations": [
+        {
+          "title": "",
+          "message": "The job was not started because recent account payments have failed or your spending limit needs to be increased. Please check the 'Billing & plans' section in your settings"
+        },
+        {
+          "title": "",
+          "message": "\"The ubuntu-latest label will migrate to Ubuntu 26 beginning October 19, 2026. For more information, see https://github.com/actions/runner-images/issues/14748\""
+        }
+      ]
+    },
+    {
+      "name": "End-to-end smoke",
+      "conclusion": "failure",
+      "url": "https://github.com/makodb/mako-cloud/actions/runs/36477434192/job/109114551440",
+      "annotations": [
+        {
+          "title": "",
+          "message": "The job was not started because recent account payments have failed or your spending limit needs to be increased. Please check the 'Billing & plans' section in your settings"
+        },
+        {
+          "title": "",
+          "message": "\"The ubuntu-latest label will migrate to Ubuntu 26 beginning October 19, 2026. For more information, see https://github.com/actions/runner-images/issues/14748\""
+        }
+      ]
+    },
+    {
+      "name": "Integration tests",
+      "conclusion": "failure",
+      "url": "https://github.com/makodb/mako-cloud/actions/runs/36477434192/job/109114551349",
+      "annotations": [
+        {
+          "title": "",
+          "message": "The job was not started because recent account payments have failed or your spending limit needs to be increased. Please check the 'Billing & plans' section in your settings"
+        },
+        {
+          "title": "",
+          "message": "\"The ubuntu-latest label will migrate to Ubuntu 26 beginning October 19, 2026. For more information, see https://github.com/actions/runner-images/issues/14748\""
+        }
+      ]
+    },
+    {
+      "name": "Format and lint",
+      "conclusion": "failure",
+      "url": "https://github.com/makodb/mako-cloud/actions/runs/36477434192/job/109114551225",
+      "annotations": [
+        {
+          "title": "",
+          "message": "The job was not started because recent account payments have failed or your spending limit needs to be increased. Please check the 'Billing & plans' section in your settings"
+        },
+        {
+          "title": "",
+          "message": "\"The ubuntu-latest label will migrate to Ubuntu 26 beginning October 19, 2026. For more information, see https://github.com/actions/runner-images/issues/14748\""
+        }
+      ]
+    }
+  ],
+  "changedReleaseArtifacts": ["bin/mako-control-plane", "console/docs/user-book/index.html"],
+  "hosted": {
+    "backupStateUnchanged": true,
+    "runningExecutables": {
+      "mako-data-plane": "/opt/mako/releases/be950e34c1bbab2de9be560f108dbeec18899aea5f119c46c025843b82202a40/bin/mako-data-plane",
+      "mako-control-plane": "/opt/mako/releases/be950e34c1bbab2de9be560f108dbeec18899aea5f119c46c025843b82202a40/bin/mako-control-plane",
+      "mako-edge-gateway": "/opt/mako/releases/be950e34c1bbab2de9be560f108dbeec18899aea5f119c46c025843b82202a40/bin/mako-edge-gateway",
+      "mako-telemetry-query": "/opt/mako/releases/be950e34c1bbab2de9be560f108dbeec18899aea5f119c46c025843b82202a40/bin/mako-telemetry-query"
+    },
+    "inspection": {
+      "release": {
+        "releaseRoot": "/opt/mako",
+        "current": "be950e34c1bbab2de9be560f108dbeec18899aea5f119c46c025843b82202a40",
+        "lastKnownGood": "56ef4fa45313e818cce8cdad1e35a1cbf7b0428e3fc9f86d4d5af4f856bf42cf"
+      },
+      "publicAdmission": {
+        "caddyActive": "active",
+        "caddyEnabled": "enabled"
+      },
+      "services": [
+        {
+          "name": "mako-data-plane",
+          "state": "active"
+        },
+        {
+          "name": "mako-control-plane",
+          "state": "active"
+        },
+        {
+          "name": "mako-edge-gateway",
+          "state": "active"
+        },
+        {
+          "name": "mako-telemetry-query",
+          "state": "active"
+        }
+      ],
+      "storage": [
+        {
+          "service": "mako-data-plane",
+          "path": "/srv/mako-data/rocksdb/data-plane",
+          "state": "active",
+          "nonempty": true
+        },
+        {
+          "service": "mako-edge-gateway",
+          "path": "/srv/mako-data/rocksdb/edge-gateway",
+          "state": "active",
+          "nonempty": true
+        },
+        {
+          "service": "mako-telemetry-query",
+          "path": "/srv/mako-data/rocksdb/telemetry-query",
+          "state": "active",
+          "nonempty": true
+        },
+        {
+          "service": "mako-control-plane",
+          "path": "/srv/mako-data/sqlite/control-plane/live/control.sqlite3",
+          "engine": "sqlite",
+          "state": "active",
+          "nonempty": true
+        }
+      ]
+    },
+    "privateReadiness": {
+      "8080": 200,
+      "8081": 200,
+      "8082": 200,
+      "9465": 200
+    },
+    "authentication": {
+      "developerRegistrationEnabled": true,
+      "operatorPasswordAuthenticationEnabled": true,
+      "operatorBreakGlassBearerEnabled": false
+    },
+    "timers": {
+      "mako-checkpoint-backup@data-plane.timer": "inactive",
+      "mako-checkpoint-backup@control-plane.timer": "inactive",
+      "mako-public-preview-admission.timer": "active"
+    },
+    "previewGuard": {
+      "valid": true,
+      "kind": "risk-accepted-public-preview",
+      "persistence": "until-manually-paused",
+      "expiresAt": null,
+      "releaseDigest": "3d25eacc5dec6654f146ba26d3911f5fba62275c4ef007d57ad17ac4c1dfef30",
+      "planHash": "d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073",
+      "blockerDigest": "b8492baa802b961ba5cd240e211e0fccc87498d7fd589370dde5f44c8ef7e6a8",
+      "mode": "risk_accepted_preview",
+      "invalidated": false,
+      "acceptedAt": "2026-09-24T15:44:09.050Z"
+    },
+    "operation": {
+      "schemaVersion": 1,
+      "kind": "upgrade",
+      "from": "56ef4fa45313e818cce8cdad1e35a1cbf7b0428e3fc9f86d4d5af4f856bf42cf",
+      "to": "be950e34c1bbab2de9be560f108dbeec18899aea5f119c46c025843b82202a40",
+      "operator": "mako-admin",
+      "startedAtUnixSeconds": 1790626411,
+      "completedAtUnixSeconds": 1790626454,
+      "durationSeconds": 43,
+      "checkpointVerified": false,
+      "checkpointSkipped": true,
+      "checkpointPolicy": "disabled-for-deployments",
+      "storageFormatCompatible": true,
+      "configurationSnapshotBound": true,
+      "storageFencedBeforeSelection": true,
+      "allServicesReady": true,
+      "publicAdmissionEnabled": false
+    }
+  },
+  "publicChecks": {
+    "homepage": 200,
+    "releaseAssetsVerified": 5,
+    "userBook": 200,
+    "minuteRefreshInstructionsPublished": true,
+    "rationalExporterRetirementPublished": true,
+    "bulkJobFixesDocumented": true,
+    "billingHistoryFixDocumented": true,
+    "userBookMatchesReleaseArtifact": true,
+    "workingRxdbInstallCommandPublished": true,
+    "directBrowsingInstructionsPublished": true,
+    "obsoleteNpmPublicationClaimRemoved": true,
+    "/usage-and-plan": 200,
+    "/projects/prj_verify0001/billing": 200,
+    "/v1/teams/org_verify0001/bill": 401,
+    "/v1/projects/prj_verify0001/bill": 401
+  },
+  "logs": {
+    "release-build": {
+      "path": "/var/tmp/mako-billing-release-build.log",
+      "sha256": "148f870d86ef2ee8e823a7d404727ca1e27c01800f39fc5efb1168075cbafaa7"
+    },
+    "install": {
+      "path": "/var/tmp/mako-billing-install.log",
+      "sha256": "eb5335389b3156fc65663eba4d5acf583b2898085fc7c7a44be4b50ab90d41c5"
+    },
+    "upgrade": {
+      "path": "/var/tmp/mako-billing-upgrade.log",
+      "sha256": "d20babb3a4980db579e612d7af33fae35e8772bb6e918717a0627dbfa116dc1c"
+    },
+    "converge": {
+      "path": "/var/tmp/mako-billing-converge.log",
+      "sha256": "0942649e0e0dac2852f5801445059e7e682d37587ac2e593a08eddf62f9fea56"
+    },
+    "post": {
+      "path": "/var/tmp/mako-billing-post.log",
+      "sha256": "0f8a11b1a4aed422ab5f11d765b0c30b1c6252060556c89069d679b3e4d1e96e"
+    },
+    "live-browser": {
+      "path": "/var/tmp/mako-billing-live-browser.log",
+      "sha256": "508c17fc7abadb8520526f95d97bf20cd59b9d04a48034a0c2bab863797115a9"
+    },
+    "clippy": {
+      "path": "/var/tmp/mako-billing-clippy.log",
+      "sha256": "5612c679494bf61a481965ce62180ba5d572651a145e21d1e9ad103fb44dc528"
+    },
+    "smoke-before.log": {
+      "path": "/home/users/shuai/mako-cloud/.local/billing-history-fix/smoke-before.log",
+      "sha256": "d31cc8076c19ecc6973bbf458f277e6b280b9cc79c73e83e48031285cb7dfa75"
+    },
+    "smoke-after.log": {
+      "path": "/home/users/shuai/mako-cloud/.local/billing-history-fix/smoke-after.log",
+      "sha256": "396c209bb512a644d61c2d99fc825fefe6fe157cad375e03c91ca3ab41cae59f"
+    },
+    "mako_billing-tests.log": {
+      "path": "/home/users/shuai/mako-cloud/.local/billing-history-fix/mako_billing-tests.log",
+      "sha256": "20c8c3f364c8be7ce85595cfa3d7edcaa44f14f65a7d56befd78b957975187c8"
+    },
+    "mako_control_plane_service-tests.log": {
+      "path": "/home/users/shuai/mako-cloud/.local/billing-history-fix/mako_control_plane_service-tests.log",
+      "sha256": "ec2fbc70cfae7ebf449a1b062dc5dff8fb8c8821b5a8f4f113bd9eb32a09427c"
+    }
+  },
+  "databaseBackupsCreated": false,
+  "backupExecutionUnchangedDuringDeployment": true,
+  "passed": true
+}

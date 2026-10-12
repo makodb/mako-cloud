@@ -1,0 +1,22 @@
+{
+  "installed": true,
+  "sha256": "d0116621528f1ccd5318435aadf8c37aad984faad1e98f4192d634f7a13de937",
+  "previousSha256": "44e5b56d6f14cf92fb4c884f824f94dbcaf76b93c68c168b2621ed097f1638c9",
+  "releaseDigest": "bed6f300704cf112128ac0564e515673e0aa8a4f3dd8ab99aa8172634a6ae6cf",
+  "releaseUnchanged": true,
+  "applicationRestarted": false,
+  "backupsStarted": false,
+  "backupTimersDisabled": true,
+  "privateReadiness": {
+    "8080": 200,
+    "8081": 200,
+    "8082": 200,
+    "9465": 200
+  },
+  "previewGuardValid": true,
+  "schemaVersion": 1,
+  "recordedAt": "2026-09-25T17:42:43.793904+00:00",
+  "operatorInstruction": "For future deployment, do not backup, update spec and code.",
+  "source": "infra/ansible/roles/runtime/files/mako-release-operation",
+  "policy": "Upgrades and rollbacks never create backups or restart backup schedules; no per-deployment skip option is required."
+}

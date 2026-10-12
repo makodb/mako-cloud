@@ -1,0 +1,139 @@
+{
+  "recordedAt": "2026-09-29T00:25:47.363045+00:00",
+  "publicOrigin": "https://cloud-test.makodb.com",
+  "releaseDigest": "f93f5dbed293f4be171bf96a4b3cb2ea0efe4f036af457e4f64dc768ccf2aed2",
+  "pullRequest": "https://github.com/makodb/mako-cloud/pull/14",
+  "sourceComparison": {
+    "previousRelease": "be950e34c1bbab2de9be560f108dbeec18899aea5f119c46c025843b82202a40",
+    "changedSourceFiles": [
+      "README.md",
+      "apps/console/index.html",
+      "apps/console/public/assets/mako-cloud-apple-touch.png",
+      "apps/console/public/assets/mako-cloud-favicon.png",
+      "apps/console/public/assets/mako-cloud.png",
+      "apps/console/src/app.tsx",
+      "apps/console/src/developer-auth-views.tsx",
+      "apps/console/src/mako-mark.tsx",
+      "apps/console/src/operator.tsx",
+      "apps/console/src/public-home.tsx",
+      "apps/console/src/router.tsx",
+      "apps/console/vite.config.ts",
+      "infra/ansible/roles/runtime/templates/Caddyfile.j2",
+      "scripts/validate-public-beta-caddy.js"
+    ],
+    "backendSourceUnchanged": true
+  },
+  "hosted": {
+    "inspection": {
+      "release": {
+        "releaseRoot": "/opt/mako",
+        "current": "f93f5dbed293f4be171bf96a4b3cb2ea0efe4f036af457e4f64dc768ccf2aed2",
+        "lastKnownGood": "be950e34c1bbab2de9be560f108dbeec18899aea5f119c46c025843b82202a40"
+      },
+      "publicAdmission": {
+        "caddyActive": "active",
+        "caddyEnabled": "enabled"
+      },
+      "services": [
+        {
+          "name": "mako-data-plane",
+          "state": "active"
+        },
+        {
+          "name": "mako-control-plane",
+          "state": "active"
+        },
+        {
+          "name": "mako-edge-gateway",
+          "state": "active"
+        },
+        {
+          "name": "mako-telemetry-query",
+          "state": "active"
+        }
+      ],
+      "storage": [
+        {
+          "service": "mako-data-plane",
+          "path": "/srv/mako-data/rocksdb/data-plane",
+          "state": "active",
+          "nonempty": true
+        },
+        {
+          "service": "mako-edge-gateway",
+          "path": "/srv/mako-data/rocksdb/edge-gateway",
+          "state": "active",
+          "nonempty": true
+        },
+        {
+          "service": "mako-telemetry-query",
+          "path": "/srv/mako-data/rocksdb/telemetry-query",
+          "state": "active",
+          "nonempty": true
+        },
+        {
+          "service": "mako-control-plane",
+          "path": "/srv/mako-data/sqlite/control-plane/live/control.sqlite3",
+          "engine": "sqlite",
+          "state": "active",
+          "nonempty": true
+        }
+      ]
+    },
+    "privateReadiness": {
+      "8080": 200,
+      "8081": 200,
+      "8082": 200,
+      "9465": 200
+    },
+    "previewGuard": {
+      "blockerDigest": "b8492baa802b961ba5cd240e211e0fccc87498d7fd589370dde5f44c8ef7e6a8",
+      "expiresAt": null,
+      "kind": "risk-accepted-public-preview",
+      "operatorIdentity": "msmummy@gmail.com",
+      "persistence": "until-manually-paused",
+      "planHash": "d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073",
+      "releaseDigest": "3d25eacc5dec6654f146ba26d3911f5fba62275c4ef007d57ad17ac4c1dfef30",
+      "valid": true
+    },
+    "operation": {
+      "schemaVersion": 1,
+      "kind": "upgrade",
+      "from": "be950e34c1bbab2de9be560f108dbeec18899aea5f119c46c025843b82202a40",
+      "to": "f93f5dbed293f4be171bf96a4b3cb2ea0efe4f036af457e4f64dc768ccf2aed2",
+      "operator": "mako-admin",
+      "startedAtUnixSeconds": 1790641498,
+      "completedAtUnixSeconds": 1790641541,
+      "durationSeconds": 43,
+      "checkpointVerified": false,
+      "checkpointSkipped": true,
+      "checkpointPolicy": "disabled-for-deployments",
+      "storageFormatCompatible": true,
+      "configurationSnapshotBound": true,
+      "storageFencedBeforeSelection": true,
+      "allServicesReady": true,
+      "publicAdmissionEnabled": false
+    },
+    "backupExecutionUnchanged": true
+  },
+  "verifiedPublicAssets": [
+    "/assets/index-CPhlHo3v.js",
+    "/assets/index-CWxrV-T0.css",
+    "/assets/inter-cyrillic-ext-wght-normal-BOeWTOD4.woff2",
+    "/assets/inter-cyrillic-wght-normal-DqGufNeO.woff2",
+    "/assets/inter-greek-ext-wght-normal-DlzME5K_.woff2",
+    "/assets/inter-greek-wght-normal-CkhJZR-_.woff2",
+    "/assets/inter-latin-ext-wght-normal-DO1Apj_S.woff2",
+    "/assets/inter-latin-wght-normal-Dx4kXJAl.woff2",
+    "/assets/inter-vietnamese-wght-normal-CBcvBZtf.woff2",
+    "/assets/mako-cloud-apple-touch.png",
+    "/assets/mako-cloud-favicon.png",
+    "/assets/mako-cloud.png",
+    "/assets/primitives-LdxfsBiy.js",
+    "/assets/react-DOgbI5BC.js",
+    "/assets/vendor-CxMmup1h.js",
+    "/docs/user-book",
+    "/"
+  ],
+  "passed": true
+}

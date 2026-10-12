@@ -1,0 +1,121 @@
+{
+  "schemaVersion": 1,
+  "kind": "operator-requested-backup-scheduling-disable",
+  "checkedAt": "2026-09-25T04:57:17.748318+00:00",
+  "operatorRequest": "Disable backup completely now.",
+  "scope": ["scheduled data-plane RocksDB backups", "scheduled control-plane SQLite backups"],
+  "scheduledBackupsEnabled": false,
+  "existingBackupArtifactsPreserved": true,
+  "releaseUnchanged": true,
+  "configuration": "infra/ansible/group_vars/public_beta.yml",
+  "verification": {
+    "timers": {
+      "data-plane": {
+        "NextElapseUSecRealtime": "",
+        "ActiveState": "inactive",
+        "UnitFileState": "disabled"
+      },
+      "control-plane": {
+        "NextElapseUSecRealtime": "",
+        "ActiveState": "inactive",
+        "UnitFileState": "disabled"
+      }
+    },
+    "workers": {
+      "mako-checkpoint-backup@data-plane.service": {
+        "Result": "success",
+        "ActiveState": "inactive",
+        "SubState": "dead"
+      },
+      "mako-checkpoint-backup@control-plane.service": {
+        "Result": "success",
+        "ActiveState": "inactive",
+        "SubState": "dead"
+      },
+      "mako-checkpoint-backup-orchestrator@data-plane.service": {
+        "Result": "success",
+        "ActiveState": "inactive",
+        "SubState": "dead"
+      },
+      "mako-checkpoint-backup-orchestrator@control-plane.service": {
+        "Result": "success",
+        "ActiveState": "inactive",
+        "SubState": "dead"
+      }
+    },
+    "services": {
+      "mako-data-plane": {
+        "ActiveState": "active",
+        "SubState": "running"
+      },
+      "mako-control-plane": {
+        "ActiveState": "active",
+        "SubState": "running"
+      },
+      "mako-edge-gateway": {
+        "ActiveState": "active",
+        "SubState": "running"
+      },
+      "mako-telemetry-query": {
+        "ActiveState": "active",
+        "SubState": "running"
+      }
+    },
+    "readiness": {
+      "8080": 200,
+      "8081": 200,
+      "8082": 200,
+      "9465": 200
+    },
+    "caddyMode": "Caddyfile.risk_accepted_preview",
+    "lastGuard": {
+      "evaluatedAt": "2026-09-25T04:56:56.159546Z",
+      "mode": "risk_accepted_preview",
+      "approvalInvalidated": false,
+      "reasons": []
+    },
+    "previewGuardValid": true,
+    "backupFreshnessRequired": false,
+    "guardTimer": {
+      "ActiveState": "active",
+      "UnitFileState": "enabled"
+    },
+    "authentication": {
+      "registration": true,
+      "operatorPassword": true,
+      "breakGlass": false
+    },
+    "guardSha256": "100f1d90105bce55193694a3bbc0359c279fca6d022a54c8411777475be7da33",
+    "publicHttps": {
+      "status": 200,
+      "certificateVerified": true,
+      "hstsEnabled": true
+    },
+    "checkedAt": "2026-09-25T04:57:17.748318+00:00",
+    "completed": true
+  },
+  "validation": {
+    "ansibleSyntax": "passed",
+    "publicBetaInfrastructure": "passed",
+    "ansibleApply": "passed",
+    "diffCheck": "passed",
+    "previewGuardTestsPassed": 14,
+    "ansibleLint": "passed",
+    "documentationLinks": 196,
+    "runtimeConvergence": "passed",
+    "deployedGuardMatchesTestedSource": true
+  },
+  "publicAdmission": {
+    "guardChanged": true,
+    "mode": "risk_accepted_preview",
+    "backupFreshnessRequired": false,
+    "retainedBackupVerificationRequired": true,
+    "otherSafeguardsUnchanged": true,
+    "guardTimerActive": true,
+    "approvalToChangeBackupRequirement": "approved-by-user",
+    "operatorApproval": "Keep the test site public without backups",
+    "approvalRecordedAt": "2026-09-25T04:57:17.748318+00:00",
+    "defaultPolicy": "Backup age must be at most 15 minutes unless the root-owned deployment context explicitly sets backupFreshnessRequired to false.",
+    "qualificationMeaning": "Historical backup and recovery qualification remains recorded. Scheduled backups are disabled and the retained recovery point no longer advances."
+  }
+}

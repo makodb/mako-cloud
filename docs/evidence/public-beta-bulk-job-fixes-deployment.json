@@ -1,0 +1,328 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-09-28T01:06:01.873323+00:00",
+  "status": "deployed-and-verified",
+  "publicOrigin": "https://cloud-test.makodb.com",
+  "releaseDigest": "56ef4fa45313e818cce8cdad1e35a1cbf7b0428e3fc9f86d4d5af4f856bf42cf",
+  "source": {
+    "baseCommit": "87de94041697c0e741282890f12fc84eb93c6767",
+    "hasLocalChanges": true,
+    "previousReleaseDigest": "0385c856fc9471a6dce9f8feb2cce7257854749f5d3390f6e6d7d2dbaa7342c6",
+    "appliedPullRequests": [8, 10, 4, 11],
+    "overlayPatchSha256": "e3adeb4dc82eadd673c407018c9787128f34ef1699be4c8f8e3b244c23909fff",
+    "newFiles": {
+      "apps/console/src/dashboard-refresh.tsx": "3fd5dc47d398e472e70f631951045b678d8bf82d9a95a82ed73881b6c3da1721",
+      "scripts/test/release-backup-timers.test.js": "f3b1268dd1bac3ac5ce924cee0410f9afa73a9f2155b9ed9f8f528bec991c7c0"
+    },
+    "unrelatedNewerMainChangesExcluded": true,
+    "changedFilesFromPreviousRelease": [
+      "crates/mako-control-plane/src/data_job.rs",
+      "crates/mako-internal-rpc/src/contract.rs",
+      "crates/mako-internal-rpc/src/journal.rs",
+      "crates/mako-internal-rpc/src/lib.rs",
+      "crates/mako-internal-rpc/src/tests.rs",
+      "docs/user-book.md",
+      "openspec/specs/cloud/developer-data-explorer/spec.md",
+      "services/mako-control-plane/src/graph.rs",
+      "services/mako-data-plane/src/internal_http.rs"
+    ],
+    "pullRequests": [
+      {
+        "number": 4,
+        "reviewedHead": "0df61f861338b977db87e22e01c1bc757a1c4d1c",
+        "mergeCommit": "a5851302de40fc02279a130422dc0b2e75175c7e"
+      },
+      {
+        "number": 11,
+        "reviewedHead": "2a7b02f0982bf2f2c69a86b49f5d115647995690",
+        "mergeCommit": "3c2fc9e8e7274a9b15d77bf0eae41599cab20cf1"
+      }
+    ],
+    "digest": "9a9af6080c561aae6ea05e7845f37cbbf123cab6f2ce97fb5eda4f491dc013cf"
+  },
+  "review": {
+    "pullRequests": [4, 11],
+    "findings": [
+      {
+        "pullRequest": 4,
+        "issue": "At 99 or 100 stored row errors, the proposed diagnostic could be dropped.",
+        "resolution": "Keep the earliest row errors and reserve the last two entries for the latest worker outcome and closed failure category.",
+        "tests": [
+          "worker_failure_diagnostics_survive_full_row_error_lists",
+          "persisted_worker_diagnostics_exclude_sensitive_remote_fields"
+        ]
+      },
+      {
+        "pullRequest": 11,
+        "issue": "The proposed larger export pages exceed the encrypted response journal limit of 1 MiB and still fail in the authenticated handler.",
+        "resolution": "Bound the encrypted journal at the same 4 MiB allowance as the control-plane HTTP client; retain the 2 MiB export page limit.",
+        "tests": [
+          "exports_large_documents_without_omitting_or_duplicating_page_boundaries",
+          "response_journal_accepts_large_export_pages_but_keeps_a_finite_bound",
+          "control_data_client_accepts_export_pages_and_rejects_oversized_responses"
+        ]
+      }
+    ],
+    "scope": "PR4 improves diagnostics without changing retries, writes, or conflict strategies. PR11 fixes bounded export page, HTTP response, and response journal sizes without raising document or request limits.",
+    "ci": "GitHub jobs did not start because of account billing/spending limits; local validation is recorded separately.",
+    "hostedTenantDataAccessed": false,
+    "hostedTenantFixturesCreated": false,
+    "hostedApplicationMigrationsResumed": false,
+    "validation": {
+      "serviceTestsPassed": 284,
+      "suiteCounts": {
+        "controlPlane": 184,
+        "controlPlaneService": 63,
+        "dataPlaneService": 28,
+        "internalRpc": 9
+      },
+      "backupAndPreviewChecksPassed": 24,
+      "openSpecItemsPassed": 34,
+      "traceabilityScenariosValidated": 316,
+      "documentationLinksValidated": 196,
+      "scopedFormattingPassed": true,
+      "strictClippyPassed": true,
+      "cleanBuildTestsPassed": true,
+      "testExecution": "Fresh release test executables on local disk, four test threads, isolated fixtures; shared-filesystem runs stalled and were replaced."
+    },
+    "reviewedHeads": {
+      "pr4": "0df61f861338b977db87e22e01c1bc757a1c4d1c",
+      "pr11": "2a7b02f0982bf2f2c69a86b49f5d115647995690"
+    },
+    "ciAnnotationsCheckedForCorrectedHeads": true
+  },
+  "merges": {
+    "4": {
+      "sha": "a5851302de40fc02279a130422dc0b2e75175c7e",
+      "merged": true,
+      "message": "Pull Request successfully merged"
+    },
+    "11": {
+      "sha": "3c2fc9e8e7274a9b15d77bf0eae41599cab20cf1",
+      "merged": true,
+      "message": "Pull Request successfully merged"
+    }
+  },
+  "changedReleaseArtifacts": [
+    "bin/mako-control-plane",
+    "bin/mako-data-plane",
+    "console/docs/user-book/index.html"
+  ],
+  "validation": {
+    "serviceTestsPassed": 284,
+    "suiteCounts": {
+      "controlPlane": 184,
+      "controlPlaneService": 63,
+      "dataPlaneService": 28,
+      "internalRpc": 9
+    },
+    "backupAndPreviewChecksPassed": 24,
+    "openSpecItemsPassed": 34,
+    "traceabilityScenariosValidated": 316,
+    "documentationLinksValidated": 196,
+    "scopedFormattingPassed": true,
+    "strictClippyPassed": true,
+    "cleanBuildTestsPassed": true,
+    "testExecution": "Fresh release test executables on local disk, four test threads, isolated fixtures; shared-filesystem runs stalled and were replaced.",
+    "productionBuildPassed": true,
+    "previousConsoleAssetsPreserved": true,
+    "deployedPublicBrowserTestsPassed": 5,
+    "bulkJobFixesPublishedInOnlineGuide": true,
+    "independentApplicationRepositoryModified": false,
+    "logs": {
+      "final-tests": {
+        "path": "/var/tmp/mako-pr4-pr11-final-tests.log",
+        "sha256": "504c268fcfad0ac935e420f190992810a7af78ba74e8d25c640b93f0ba9f2ad5"
+      },
+      "clippy": {
+        "path": "/var/tmp/mako-pr4-pr11-clippy.log",
+        "sha256": "7adfa297da063d20009512ca22eaf043eeb7700c48442b9f472037bfc80447c3"
+      },
+      "traceability": {
+        "path": "/var/tmp/mako-pr4-pr11-traceability.log",
+        "sha256": "e30621b37a3453ab4643d9c6d894b97f7a6ef5eeb947d29b623a0a516aed4146"
+      },
+      "docs": {
+        "path": "/var/tmp/mako-pr4-pr11-docs.log",
+        "sha256": "c3817f9c7211d73367f664afc62f86fe00774f63bffa5aed61ee8e6037298bd1"
+      },
+      "openspec": {
+        "path": "/var/tmp/mako-pr4-pr11-openspec.log",
+        "sha256": "91368e6210a851f2e3294f3505b77ca5abd6eb1500500e664d4c6b270e7c27f6"
+      },
+      "backup-tests": {
+        "path": "/var/tmp/mako-pr4-pr11-backup-tests.log",
+        "sha256": "80a9ad9f04c34553fd52fc0b0339be3bdc16ecd935fadf5cc1e9cdfd8ac5ac2f"
+      },
+      "release-build": {
+        "path": "/var/tmp/mako-pr4-pr11-release-build.log",
+        "sha256": "7ba403a7cacf53b199e16952cac4e96bdc7c7bcf07d5bf0664fc60e8ad55c9fb"
+      },
+      "install": {
+        "path": "/var/tmp/mako-pr4-pr11-install.log",
+        "sha256": "d4fefae4c7921cb4ba2f4ef9391217b50bb04fd1445e112ba3022f490a34b186"
+      },
+      "upgrade": {
+        "path": "/var/tmp/mako-pr4-pr11-upgrade.log",
+        "sha256": "e781e2e56b4055d7c488c29f07a46740740bee5f975a66a472dabd231f946994"
+      },
+      "converge": {
+        "path": "/var/tmp/mako-pr4-pr11-converge.log",
+        "sha256": "0942649e0e0dac2852f5801445059e7e682d37587ac2e593a08eddf62f9fea56"
+      },
+      "post": {
+        "path": "/var/tmp/mako-pr4-pr11-post.log",
+        "sha256": "829a1716b9aa842681e0278e32920b6162581e5c46a661cdec45dfcfbefe9d8d"
+      },
+      "live-browser": {
+        "path": "/var/tmp/mako-pr4-pr11-live-browser.log",
+        "sha256": "cc6adf7fe8d67c576c15a540d4be8849c7998771c5e73bf5ba63a6b7ded73464"
+      }
+    }
+  },
+  "hosted": {
+    "backupStateUnchanged": true,
+    "runningExecutables": {
+      "mako-data-plane": "/opt/mako/releases/56ef4fa45313e818cce8cdad1e35a1cbf7b0428e3fc9f86d4d5af4f856bf42cf/bin/mako-data-plane",
+      "mako-control-plane": "/opt/mako/releases/56ef4fa45313e818cce8cdad1e35a1cbf7b0428e3fc9f86d4d5af4f856bf42cf/bin/mako-control-plane",
+      "mako-edge-gateway": "/opt/mako/releases/56ef4fa45313e818cce8cdad1e35a1cbf7b0428e3fc9f86d4d5af4f856bf42cf/bin/mako-edge-gateway",
+      "mako-telemetry-query": "/opt/mako/releases/56ef4fa45313e818cce8cdad1e35a1cbf7b0428e3fc9f86d4d5af4f856bf42cf/bin/mako-telemetry-query"
+    },
+    "inspection": {
+      "release": {
+        "releaseRoot": "/opt/mako",
+        "current": "56ef4fa45313e818cce8cdad1e35a1cbf7b0428e3fc9f86d4d5af4f856bf42cf",
+        "lastKnownGood": "0385c856fc9471a6dce9f8feb2cce7257854749f5d3390f6e6d7d2dbaa7342c6"
+      },
+      "publicAdmission": {
+        "caddyActive": "active",
+        "caddyEnabled": "enabled"
+      },
+      "services": [
+        {
+          "name": "mako-data-plane",
+          "state": "active"
+        },
+        {
+          "name": "mako-control-plane",
+          "state": "active"
+        },
+        {
+          "name": "mako-edge-gateway",
+          "state": "active"
+        },
+        {
+          "name": "mako-telemetry-query",
+          "state": "active"
+        }
+      ],
+      "storage": [
+        {
+          "service": "mako-data-plane",
+          "path": "/srv/mako-data/rocksdb/data-plane",
+          "state": "active",
+          "nonempty": true
+        },
+        {
+          "service": "mako-edge-gateway",
+          "path": "/srv/mako-data/rocksdb/edge-gateway",
+          "state": "active",
+          "nonempty": true
+        },
+        {
+          "service": "mako-telemetry-query",
+          "path": "/srv/mako-data/rocksdb/telemetry-query",
+          "state": "active",
+          "nonempty": true
+        },
+        {
+          "service": "mako-control-plane",
+          "path": "/srv/mako-data/sqlite/control-plane/live/control.sqlite3",
+          "engine": "sqlite",
+          "state": "active",
+          "nonempty": true
+        }
+      ]
+    },
+    "privateReadiness": {
+      "8080": 200,
+      "8081": 200,
+      "8082": 200,
+      "9465": 200
+    },
+    "authentication": {
+      "developerRegistrationEnabled": true,
+      "operatorPasswordAuthenticationEnabled": true,
+      "operatorBreakGlassBearerEnabled": false
+    },
+    "timers": {
+      "mako-checkpoint-backup@data-plane.timer": "inactive",
+      "mako-checkpoint-backup@control-plane.timer": "inactive",
+      "mako-public-preview-admission.timer": "active"
+    },
+    "previewGuard": {
+      "valid": true,
+      "kind": "risk-accepted-public-preview",
+      "persistence": "until-manually-paused",
+      "expiresAt": null,
+      "releaseDigest": "3d25eacc5dec6654f146ba26d3911f5fba62275c4ef007d57ad17ac4c1dfef30",
+      "planHash": "d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073",
+      "blockerDigest": "b8492baa802b961ba5cd240e211e0fccc87498d7fd589370dde5f44c8ef7e6a8",
+      "mode": "risk_accepted_preview",
+      "invalidated": false,
+      "acceptedAt": "2026-09-24T15:44:09.050Z"
+    },
+    "operation": {
+      "schemaVersion": 1,
+      "kind": "upgrade",
+      "from": "0385c856fc9471a6dce9f8feb2cce7257854749f5d3390f6e6d7d2dbaa7342c6",
+      "to": "56ef4fa45313e818cce8cdad1e35a1cbf7b0428e3fc9f86d4d5af4f856bf42cf",
+      "operator": "mako-admin",
+      "startedAtUnixSeconds": 1790557384,
+      "completedAtUnixSeconds": 1790557415,
+      "durationSeconds": 31,
+      "checkpointVerified": false,
+      "checkpointSkipped": true,
+      "checkpointPolicy": "disabled-for-deployments",
+      "storageFormatCompatible": true,
+      "configurationSnapshotBound": true,
+      "storageFencedBeforeSelection": true,
+      "allServicesReady": true,
+      "publicAdmissionEnabled": false
+    }
+  },
+  "publicChecks": {
+    "homepage": 200,
+    "releaseAssetsVerified": 5,
+    "userBook": 200,
+    "minuteRefreshInstructionsPublished": true,
+    "rationalExporterRetirementPublished": true,
+    "bulkJobFixesDocumented": true,
+    "userBookMatchesReleaseArtifact": true,
+    "workingRxdbInstallCommandPublished": true,
+    "directBrowsingInstructionsPublished": true,
+    "obsoleteNpmPublicationClaimRemoved": true,
+    "/usage-and-plan": 200,
+    "/projects/prj_verify0001/billing": 200,
+    "/v1/projects/prj_verify0001/bill": 401,
+    "/v1/projects/prj_verify0001/bill/private": 404,
+    "/v1/projects/prj_verify0001/environments/env_verify0001/workspace/summary": 401,
+    "/internal/deployment-probe": 404,
+    "/unknown-deployment-probe": 404,
+    "/v1/projects/prj_routeprobe/environments/env_routeprobe/data-jobs": 401,
+    "explorerRouteOwnership": {
+      "GET /v1/projects/prj_routeprobe/environments/env_routeprobe/explorer/grants": 405,
+      "POST /v1/projects/prj_routeprobe/environments/env_routeprobe/explorer/grants/xgr_routeprobe": 405,
+      "GET /v1/projects/prj_routeprobe/environments/env_routeprobe/explorer/collections/routeprobe/browse": 405,
+      "GET /v1/projects/prj_routeprobe/environments/env_routeprobe/explorer/collections/routeprobe/query": 405,
+      "GET /v1/projects/prj_routeprobe/environments/env_routeprobe/explorer/collections/routeprobe/query/plan": 405,
+      "GET /v1/projects/prj_routeprobe/environments/env_routeprobe/explorer/collections/routeprobe/simulate": 405,
+      "GET /v1/projects/prj_routeprobe/environments/env_routeprobe/explorer/collections/routeprobe/mutate": 405,
+      "POST /v1/projects/prj_routeprobe/environments/env_routeprobe/explorer/collections/routeprobe/documents/doc_routeprobe": 405,
+      "POST /v1/projects/prj_routeprobe/environments/env_routeprobe/explorer/collections/routeprobe/documents/doc_routeprobe/history": 405
+    }
+  },
+  "databaseBackupsCreated": false,
+  "backupExecutionUnchangedDuringDeployment": true,
+  "passed": true
+}

@@ -1,0 +1,255 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-09-26T05:36:57.318682+00:00",
+  "status": "deployed-and-verified",
+  "publicOrigin": "https://cloud-test.makodb.com",
+  "releaseDigest": "89eb9367ad7669861d0fd8754498336f6c7ee992d8211fd84880ea2c5b11add7",
+  "source": {
+    "baseCommit": "87de94041697c0e741282890f12fc84eb93c6767",
+    "hasLocalChanges": true,
+    "previousReleaseDigest": "eb302b712590d7840d4b125fab4b6eee0cd9cd08cc14e4eb9b6808cd56320644",
+    "appliedPullRequest": 8,
+    "pullRequestHead": "f3f1027bd1aada0a2cb6c110aeebc1d7b2c37a60",
+    "mergeCommit": "75f4fa93c767e45c736f89f166516da45d3b3331",
+    "overlayPatchSha256": "333c1f620d2bf3adcb09fbe8f4b2f17f303c6125460ab4e2fc10556432aab9f0",
+    "newFiles": {
+      "apps/console/src/dashboard-refresh.tsx": "3fd5dc47d398e472e70f631951045b678d8bf82d9a95a82ed73881b6c3da1721",
+      "scripts/test/release-backup-timers.test.js": "f3b1268dd1bac3ac5ce924cee0410f9afa73a9f2155b9ed9f8f528bec991c7c0"
+    },
+    "changedBuildSourceFilesFromLive": ["services/mako-edge-gateway/src/http.rs"],
+    "unrelatedNewerMainChangesExcluded": true,
+    "digest": "fbfc816020c456ecb5e088c68329a33268f79b95cc5d8f97a58de8480cb6c641"
+  },
+  "review": {
+    "pullRequest": "https://github.com/makodb/mako-cloud/pull/8",
+    "reviewedHead": "f3f1027bd1aada0a2cb6c110aeebc1d7b2c37a60",
+    "baseAtReview": "368fc4e5c0e39847d8dcd9bead805a6fca70ab14",
+    "finding": "The public HTTP gateway allowlist omitted Idempotency-Key, If-Match, and If-None-Match, despite permitting them in browser preflight. The PR forwards those caller headers without widening platform-provenance forwarding.",
+    "changedFiles": [
+      "openspec/specs/functions/edge-runtime/spec.md",
+      "services/mako-edge-gateway/src/http.rs",
+      "docs/requirements-traceability.md"
+    ],
+    "regressionReproducedWithoutFix": true,
+    "gatewayAndRuntimeTestsPassed": 56,
+    "ci": "GitHub jobs did not start because of account billing/spending limits; no CI checks were bypassed.",
+    "format": "Changed Rust file passes rustfmt. Whole-workspace fmt finds one existing formatting difference in crates/mako-documents/src/lib.rs, byte-identical to the live source baseline.",
+    "deploymentScope": "Current live source and dashboard/no-backup overlay plus the two PR 8 files. Other main commits are excluded.",
+    "localFunctionProbe": "passed with two real HTTP invocations through the gateway and pinned runtime",
+    "traceabilityOmissionFixed": true,
+    "prTraceabilityScenariosValidated": 305,
+    "deploymentTraceabilityScenariosValidated": 316,
+    "mergeCommit": "75f4fa93c767e45c736f89f166516da45d3b3331",
+    "localProbeGatewaySha256": "6b214cc536f92828445bc328f269fce05aacc201029281abfeaab65b0fecdb8a"
+  },
+  "merge": {
+    "sha": "75f4fa93c767e45c736f89f166516da45d3b3331",
+    "merged": true,
+    "message": "Pull Request successfully merged"
+  },
+  "validation": {
+    "regressionFailsWithoutFix": true,
+    "gatewayAndRuntimeTestsPassed": 56,
+    "localRealWorkerProbePassed": true,
+    "localRealWorkerProbeInvocations": 2,
+    "probeScope": "Real local HTTP gateway, data/control services and pinned function runtime with temporary synthetic fixtures. No production tenant credentials, documents or functions were used.",
+    "gatewayBinaryMatchesLocalProbe": true,
+    "runningGatewayExecutableMatchesRelease": true,
+    "productionBuildPassed": true,
+    "deployedPublicBrowserTestsPassed": 3,
+    "deployedDashboardBrowserTestsPassed": 6,
+    "dashboardBrowserScope": "Deployed frontend assets with synthetic developer auth; every management API call intercepted or blocked.",
+    "logs": {
+      "regression-before": {
+        "path": "/var/tmp/mako-pr8-regression-before.log",
+        "sha256": "73ffb5c39cdda371bff84f0b59fa347c8ab83da085b3885f224a8b53220847a2"
+      },
+      "tests": {
+        "path": "/var/tmp/mako-pr8-tests.log",
+        "sha256": "e42e56533a323efaebf3bff708e255ae7e809a4c19cfa48c06eb243f692b1beb"
+      },
+      "candidate-format": {
+        "path": "/var/tmp/mako-pr8-candidate-format.log",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "candidate-specs": {
+        "path": "/var/tmp/mako-pr8-candidate-specs.log",
+        "sha256": "4054ae7ddacbd166ddde4f5a22207a1efa1210dde93f594aa95556ff335ba1ff"
+      },
+      "pr-traceability": {
+        "path": "/var/tmp/mako-pr8-pr-traceability.log",
+        "sha256": "fe78450289727f55f7fff5af9f2db173b798fdcbb2196068d54e7f7877502605"
+      },
+      "traceability": {
+        "path": "/var/tmp/mako-pr8-traceability.log",
+        "sha256": "67f03c6310b5f1169ce08d1b03c0d863a8e8ca853f9fce9dd5ee00334a5509f3"
+      },
+      "local-worker-probe": {
+        "path": "/var/tmp/mako-pr8-local-worker-probe.log",
+        "sha256": "a53c9ba4d7093a183380a4ce2357f211be1ccd59e15e1f6cb669915d23befe30"
+      },
+      "release-build": {
+        "path": "/var/tmp/mako-pr8-release-build.log",
+        "sha256": "91d418dadca1a4e521e0033e2c4b2be4fce495c40279fc10176855a0f3aca414"
+      },
+      "install": {
+        "path": "/var/tmp/mako-pr8-install.log",
+        "sha256": "4126af95848fa74a9b758b353e4e796fcfff26c2cd2e5126af9733d325ef164c"
+      },
+      "upgrade": {
+        "path": "/var/tmp/mako-pr8-upgrade.log",
+        "sha256": "024dc0460223bd4e1b830dae51249614854c427e79548a9bd7b34f7407a8698f"
+      },
+      "converge": {
+        "path": "/var/tmp/mako-pr8-converge.log",
+        "sha256": "0942649e0e0dac2852f5801445059e7e682d37587ac2e593a08eddf62f9fea56"
+      },
+      "post": {
+        "path": "/var/tmp/mako-pr8-post.log",
+        "sha256": "e0e0ea6317c8f792d97e85ee2dc282b38024f6423fabb557872dfc154790cb56"
+      },
+      "live-browser": {
+        "path": "/var/tmp/mako-pr8-live-browser.log",
+        "sha256": "299ae8696029ddfd0d6e15da2380097b58b2a5e8717080325377609fdfff4966"
+      }
+    }
+  },
+  "hosted": {
+    "backupStateUnchanged": true,
+    "inspection": {
+      "release": {
+        "releaseRoot": "/opt/mako",
+        "current": "89eb9367ad7669861d0fd8754498336f6c7ee992d8211fd84880ea2c5b11add7",
+        "lastKnownGood": "eb302b712590d7840d4b125fab4b6eee0cd9cd08cc14e4eb9b6808cd56320644"
+      },
+      "publicAdmission": {
+        "caddyActive": "active",
+        "caddyEnabled": "enabled"
+      },
+      "services": [
+        {
+          "name": "mako-data-plane",
+          "state": "active"
+        },
+        {
+          "name": "mako-control-plane",
+          "state": "active"
+        },
+        {
+          "name": "mako-edge-gateway",
+          "state": "active"
+        },
+        {
+          "name": "mako-telemetry-query",
+          "state": "active"
+        }
+      ],
+      "storage": [
+        {
+          "service": "mako-data-plane",
+          "path": "/srv/mako-data/rocksdb/data-plane",
+          "state": "active",
+          "nonempty": true
+        },
+        {
+          "service": "mako-edge-gateway",
+          "path": "/srv/mako-data/rocksdb/edge-gateway",
+          "state": "active",
+          "nonempty": true
+        },
+        {
+          "service": "mako-telemetry-query",
+          "path": "/srv/mako-data/rocksdb/telemetry-query",
+          "state": "active",
+          "nonempty": true
+        },
+        {
+          "service": "mako-control-plane",
+          "path": "/srv/mako-data/sqlite/control-plane/live/control.sqlite3",
+          "engine": "sqlite",
+          "state": "active",
+          "nonempty": true
+        }
+      ]
+    },
+    "privateReadiness": {
+      "8080": 200,
+      "8081": 200,
+      "8082": 200,
+      "9465": 200
+    },
+    "authentication": {
+      "developerRegistrationEnabled": true,
+      "operatorPasswordAuthenticationEnabled": true,
+      "operatorBreakGlassBearerEnabled": false
+    },
+    "timers": {
+      "mako-checkpoint-backup@data-plane.timer": "inactive",
+      "mako-checkpoint-backup@control-plane.timer": "inactive",
+      "mako-public-preview-admission.timer": "active"
+    },
+    "previewGuard": {
+      "blockerDigest": "b8492baa802b961ba5cd240e211e0fccc87498d7fd589370dde5f44c8ef7e6a8",
+      "expiresAt": null,
+      "kind": "risk-accepted-public-preview",
+      "operatorIdentity": "msmummy@gmail.com",
+      "persistence": "until-manually-paused",
+      "planHash": "d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073",
+      "releaseDigest": "3d25eacc5dec6654f146ba26d3911f5fba62275c4ef007d57ad17ac4c1dfef30",
+      "valid": true,
+      "mode": "risk_accepted_preview",
+      "invalidated": false,
+      "acceptedAt": "2026-09-24T15:44:09.050Z"
+    },
+    "operation": {
+      "schemaVersion": 1,
+      "kind": "upgrade",
+      "from": "eb302b712590d7840d4b125fab4b6eee0cd9cd08cc14e4eb9b6808cd56320644",
+      "to": "89eb9367ad7669861d0fd8754498336f6c7ee992d8211fd84880ea2c5b11add7",
+      "operator": "mako-admin",
+      "startedAtUnixSeconds": 1790400900,
+      "completedAtUnixSeconds": 1790400924,
+      "durationSeconds": 24,
+      "checkpointVerified": false,
+      "checkpointSkipped": true,
+      "checkpointPolicy": "disabled-for-deployments",
+      "storageFormatCompatible": true,
+      "configurationSnapshotBound": true,
+      "storageFencedBeforeSelection": true,
+      "allServicesReady": true,
+      "publicAdmissionEnabled": false
+    }
+  },
+  "publicChecks": {
+    "homepage": 200,
+    "releaseAssetsVerified": 5,
+    "userBook": 200,
+    "minuteRefreshInstructionsPublished": true,
+    "userBookMatchesReleaseArtifact": true,
+    "workingRxdbInstallCommandPublished": true,
+    "directBrowsingInstructionsPublished": true,
+    "obsoleteNpmPublicationClaimRemoved": true,
+    "/usage-and-plan": 200,
+    "/projects/prj_verify0001/billing": 200,
+    "/v1/projects/prj_verify0001/bill": 401,
+    "/v1/projects/prj_verify0001/bill/private": 404,
+    "/v1/projects/prj_verify0001/environments/env_verify0001/workspace/summary": 401,
+    "/internal/deployment-probe": 404,
+    "/unknown-deployment-probe": 404,
+    "/v1/projects/prj_routeprobe/environments/env_routeprobe/data-jobs": 401,
+    "explorerRouteOwnership": {
+      "GET /v1/projects/prj_routeprobe/environments/env_routeprobe/explorer/grants": 405,
+      "POST /v1/projects/prj_routeprobe/environments/env_routeprobe/explorer/grants/xgr_routeprobe": 405,
+      "GET /v1/projects/prj_routeprobe/environments/env_routeprobe/explorer/collections/routeprobe/browse": 405,
+      "GET /v1/projects/prj_routeprobe/environments/env_routeprobe/explorer/collections/routeprobe/query": 405,
+      "GET /v1/projects/prj_routeprobe/environments/env_routeprobe/explorer/collections/routeprobe/query/plan": 405,
+      "GET /v1/projects/prj_routeprobe/environments/env_routeprobe/explorer/collections/routeprobe/simulate": 405,
+      "GET /v1/projects/prj_routeprobe/environments/env_routeprobe/explorer/collections/routeprobe/mutate": 405,
+      "POST /v1/projects/prj_routeprobe/environments/env_routeprobe/explorer/collections/routeprobe/documents/doc_routeprobe": 405,
+      "POST /v1/projects/prj_routeprobe/environments/env_routeprobe/explorer/collections/routeprobe/documents/doc_routeprobe/history": 405
+    }
+  },
+  "databaseBackupsCreated": false,
+  "backupExecutionUnchangedDuringDeployment": true,
+  "passed": true
+}

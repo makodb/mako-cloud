@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "recordedAt": "2026-09-25T01:07:09.942490+00:00",
+  "recordedAt": "2026-09-29T17:22:40.457Z",
   "status": "risk-accepted-public-preview-active",
   "environment": "public-beta",
   "vmId": 124,
@@ -8,29 +8,54 @@
   "publicOrigin": "https://cloud-test.makodb.com",
   "planHash": "d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073",
   "release": {
-    "digest": "38a4ee2fbfff7bf89d8ca6524b1bea7a0914dfe84bc1e694e2abc0b70f5bd0c1",
-    "sourceCommit": "a571bd72d8fb40685bbfc6818ade0715f722d546",
-    "sourceDigest": "12b6cfde60add862ddc3b09e256815ef1c0b04a5d1d5b7a4b6e9126bf5b67ecb",
-    "runtimeDigest": "b0e4ea7b66166492c3c29910858dc5d1b7f9786df81aed7057d80f34a1ad2abd",
-    "dependencyDigest": "108b3bfeda5b20d6189ab7e8430be4ee548225ad0e7d8027875117c3261806d1",
-    "artifactDigest": "a0940ba445f6f28a97d235eab3c78fbc3936b063904068110ffc3cc8cf67892b",
-    "selectedPath": "/opt/mako/releases/38a4ee2fbfff7bf89d8ca6524b1bea7a0914dfe84bc1e694e2abc0b70f5bd0c1",
-    "lastKnownGood": "302e7f89b308bf187f31c90c4df66e094088c56055a92e05e8aeb1b0732cef87",
+    "digest": "b6d3350d66aaf2c42f986cc5376c10d377e7afaade8f5b25d35b4605f321cd77",
+    "sourceBaseCommit": "9a10f60417ebe16cee9c108d83222abeac1b081a",
+    "sourceHasLocalChanges": true,
+    "appliedPullRequests": [8, 10, 4, 11],
+    "pullRequests": [
+      {
+        "number": 4,
+        "reviewedHead": "0df61f861338b977db87e22e01c1bc757a1c4d1c",
+        "mergeCommit": "a5851302de40fc02279a130422dc0b2e75175c7e"
+      },
+      {
+        "number": 11,
+        "reviewedHead": "2a7b02f0982bf2f2c69a86b49f5d115647995690",
+        "mergeCommit": "3c2fc9e8e7274a9b15d77bf0eae41599cab20cf1"
+      }
+    ],
+    "billingFixCommit": "e690c2aacc6e74c351b557c721080e8eaef08bc8",
+    "unrelatedNewerMainChangesExcluded": true,
+    "sourceDigest": "2d66ba775912761eae0b6a49efe87b74391da8d825b0b21dc97488a70ffd8cad",
+    "runtimeDigest": "215f60e168be11b2a808fc1abc2443f7ed6c963491b503d834ba513746af8764",
+    "dependencyDigest": "3d8340166229d6afa0665045d3ad5ec08316404d61cd2be60adc55f6824e3a15",
+    "artifactDigest": "f586a6e30207477d8f8a6a2fe468bbfa76c3009cf6c3909fc2023da27f73bf9d",
+    "selectedPath": "/opt/mako/releases/b6d3350d66aaf2c42f986cc5376c10d377e7afaade8f5b25d35b4605f321cd77",
+    "lastKnownGood": "f93f5dbed293f4be171bf96a4b3cb2ea0efe4f036af457e4f64dc768ccf2aed2",
     "releaseOperation": {
       "schemaVersion": 1,
       "kind": "upgrade",
-      "from": "302e7f89b308bf187f31c90c4df66e094088c56055a92e05e8aeb1b0732cef87",
-      "to": "38a4ee2fbfff7bf89d8ca6524b1bea7a0914dfe84bc1e694e2abc0b70f5bd0c1",
+      "from": "f93f5dbed293f4be171bf96a4b3cb2ea0efe4f036af457e4f64dc768ccf2aed2",
+      "to": "b6d3350d66aaf2c42f986cc5376c10d377e7afaade8f5b25d35b4605f321cd77",
       "operator": "mako-admin",
-      "startedAtUnixSeconds": 1790298184,
-      "completedAtUnixSeconds": 1790298249,
-      "durationSeconds": 65,
-      "checkpointVerified": true,
+      "startedAtUnixSeconds": 1790702397,
+      "completedAtUnixSeconds": 1790702443,
+      "durationSeconds": 46,
+      "checkpointVerified": false,
+      "checkpointSkipped": true,
+      "checkpointPolicy": "disabled-for-deployments",
       "storageFormatCompatible": true,
       "configurationSnapshotBound": true,
       "storageFencedBeforeSelection": true,
       "allServicesReady": true,
       "publicAdmissionEnabled": false
+    },
+    "brandingCommit": "7b7a79817d4cb9fdc91aa7babc55c46b253df680",
+    "backendArtifactsReusedFrom": "f93f5dbed293f4be171bf96a4b3cb2ea0efe4f036af457e4f64dc768ccf2aed2",
+    "sourceComposition": {
+      "kind": "console-update",
+      "backendArtifactsFrom": "f93f5dbed293f4be171bf96a4b3cb2ea0efe4f036af457e4f64dc768ccf2aed2",
+      "source": "Frontend source and dependencies from the tested workspace; backend source and artifacts retained from the previous release."
     }
   },
   "networkAdmission": {
@@ -45,7 +70,8 @@
     "previewApprovalPersistence": "until-manually-paused",
     "previewApprovalExpiresAt": null,
     "previewApprovalRenewedAt": "2026-09-24T15:44:09.050Z",
-    "userApprovedRenewal": true
+    "userApprovedRenewal": true,
+    "backupFreshnessRequired": false
   },
   "qualification": {
     "privateReadinessEndpoints": 4,
@@ -53,15 +79,17 @@
     "developerRegistrationEnabled": true,
     "operatorPasswordAuthenticationEnabled": true,
     "operatorBreakGlassBearerEnabled": false,
-    "upgradeCheckpointVerified": true,
-    "backupTimersActive": true,
+    "upgradeCheckpointVerified": false,
+    "backupTimersActive": false,
     "publicPreviewGuardValid": true,
     "publicPreviewGuardTimerActive": true,
-    "releaseAssetsVerified": 5,
-    "deployedBrowserCheck": "not-rerun-console-artifacts-identical-to-previous-verified-deployment",
+    "releaseAssetsVerified": 14,
+    "deployedBrowserCheck": "Landing page, developer sign-in, and operator sign-in checked at desktop and mobile widths: zero icons, zero textless buttons, no horizontal overflow; theme toggle passed.",
     "exactReleaseHostedQualification": "not-run-for-this-deployment",
     "mixedStorageTopology": "control-sqlite-and-service-owned-rocksdb",
-    "evidence": ["docs/evidence/public-beta-data-job-worker-deployment.json"]
+    "evidence": ["docs/evidence/public-beta-no-icons-deployment.json"],
+    "upgradeCheckpointSkippedByOperator": true,
+    "deploymentCheckpointPolicy": "disabled-for-deployments"
   },
   "historicalQualification": {
     "scope": "Earlier qualification results retain their own release bindings. They were not rerun for the current deployment.",
@@ -133,6 +161,38 @@
       {
         "path": "docs/evidence/public-beta-explorer-routing-deployment.json",
         "releaseDigest": "302e7f89b308bf187f31c90c4df66e094088c56055a92e05e8aeb1b0732cef87"
+      },
+      {
+        "path": "docs/evidence/public-beta-data-job-worker-deployment.json",
+        "releaseDigest": "38a4ee2fbfff7bf89d8ca6524b1bea7a0914dfe84bc1e694e2abc0b70f5bd0c1"
+      },
+      {
+        "path": "docs/evidence/public-beta-optimistic-contention-deployment.json",
+        "releaseDigest": "bed6f300704cf112128ac0564e515673e0aa8a4f3dd8ab99aa8172634a6ae6cf"
+      },
+      {
+        "path": "docs/evidence/public-beta-dashboard-refresh-deployment.json",
+        "releaseDigest": "eb302b712590d7840d4b125fab4b6eee0cd9cd08cc14e4eb9b6808cd56320644"
+      },
+      {
+        "path": "docs/evidence/public-beta-function-headers-deployment.json",
+        "releaseDigest": "89eb9367ad7669861d0fd8754498336f6c7ee992d8211fd84880ea2c5b11add7"
+      },
+      {
+        "path": "docs/evidence/public-beta-rational-export-retirement-deployment.json",
+        "releaseDigest": "0385c856fc9471a6dce9f8feb2cce7257854749f5d3390f6e6d7d2dbaa7342c6"
+      },
+      {
+        "path": "docs/evidence/public-beta-bulk-job-fixes-deployment.json",
+        "releaseDigest": "56ef4fa45313e818cce8cdad1e35a1cbf7b0428e3fc9f86d4d5af4f856bf42cf"
+      },
+      {
+        "path": "docs/evidence/public-beta-billing-history-deployment.json",
+        "releaseDigest": "be950e34c1bbab2de9be560f108dbeec18899aea5f119c46c025843b82202a40"
+      },
+      {
+        "path": "docs/evidence/public-beta-shark-icon-deployment.json",
+        "releaseDigest": "f93f5dbed293f4be171bf96a4b3cb2ea0efe4f036af457e4f64dc768ccf2aed2"
       }
     ]
   },
@@ -143,5 +203,26 @@
       "evidence": "docs/evidence/public-beta-rxdb-docs-deployment.json",
       "publicPreviewRenewalApprovedByUser": true
     }
-  ]
+  ],
+  "backupScheduling": {
+    "enabled": false,
+    "operatorRequested": true,
+    "changedAt": "2026-09-25T04:52:35.651095+00:00",
+    "existingArtifactsPreserved": true,
+    "evidence": "docs/evidence/public-beta-backups-disabled.json",
+    "publicPreviewBackupRequirement": "freshness check disabled with user approval; retained-backup verification remains required",
+    "publicAccessWithoutFreshBackupsApprovedByUser": true,
+    "upgradeCheckpointsEnabled": false,
+    "upgradeCheckpointDecisionAt": "2026-09-25T17:36:20.640427+00:00",
+    "upgradeCheckpointEvidence": "docs/evidence/public-beta-billing-history-deployment.json",
+    "backupExecutionUnchangedDuringDeployment": true,
+    "deploymentPolicy": {
+      "checkpointCreation": "never",
+      "backupTimerRestart": "never",
+      "perDeploymentSkipFlagRequired": false,
+      "installedAt": "2026-09-25T17:42:43.793904+00:00",
+      "releaseOperationSha256": "d0116621528f1ccd5318435aadf8c37aad984faad1e98f4192d634f7a13de937",
+      "evidence": "docs/evidence/public-beta-deployment-no-backups.json"
+    }
+  }
 }
