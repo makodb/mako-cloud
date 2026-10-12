@@ -955,9 +955,10 @@ fn engine_command(engine: &[String]) -> Command {
 /// networking forwards that address to the host's *external* addresses only,
 /// so a loopback-bound data plane answers `connection refused`;
 /// `--map-host-loopback` is what makes the host's loopback reachable without
-/// exposing any service beyond it. `MAKO_EDGE_TEST_NETWORK` replaces the value
-/// for another engine or host layout (Docker typically wants `host`), and an
-/// empty value leaves the engine's default in place.
+/// exposing any service beyond it. Docker's default bridge reaches neither the
+/// host's loopback nor that name, so Docker runs the container on the host's
+/// network. `MAKO_EDGE_TEST_NETWORK` replaces the value for another engine or
+/// host layout, and an empty value leaves the engine's default in place.
 fn runtime_network(engine: &[String]) -> Option<String> {
     if let Ok(value) = std::env::var("MAKO_EDGE_TEST_NETWORK") {
         return (!value.is_empty()).then_some(value);
@@ -968,7 +969,13 @@ fn runtime_network(engine: &[String]) -> Option<String> {
     // the host's loopback, which only `--map-host-loopback` reaches. Guessing
     // by name left the suite red with a connection refused from inside the
     // function and nothing pointing at the network.
-    engine_is_podman(engine).then(|| "pasta:--map-host-loopback,169.254.1.2".to_owned())
+    if engine_is_podman(engine) {
+        Some("pasta:--map-host-loopback,169.254.1.2".to_owned())
+    } else {
+        // On the bridge the function's callback failed as "Mako service is
+        // unavailable" while the gateway's own requests to it succeeded.
+        Some("host".to_owned())
+    }
 }
 
 fn engine_is_podman(engine: &[String]) -> bool {
@@ -1027,8 +1034,6 @@ fn start_runtime(engine: &[String], root: &Path) -> RuntimeContainer {
             CONTAINER_NAME,
             "--init",
             "--read-only",
-            "--publish",
-            &format!("127.0.0.1:{SUPERVISOR_PORT}:9000"),
             "--mount",
             &format!(
                 "type=bind,src={},dst=/home/deno/functions/main,readonly",
@@ -1050,7 +1055,17 @@ fn start_runtime(engine: &[String], root: &Path) -> RuntimeContainer {
             "/var/lib/mako-runtime-workers:rw,noexec,nosuid,size=128m",
         ])
         .args(runtime_environment());
-    if let Some(network) = runtime_network(engine) {
+    let network = runtime_network(engine);
+    if network.as_deref() == Some("host") {
+        // The container shares the host's network namespace: the supervisor
+        // listens on the host's own port 9000, which is SUPERVISOR_PORT, and
+        // the host's loopback is the container's, so the data plane's name
+        // has to point there. Docker defines no `host.containers.internal`.
+        command.args(["--add-host", "host.containers.internal:127.0.0.1"]);
+    } else {
+        command.args(["--publish", &format!("127.0.0.1:{SUPERVISOR_PORT}:9000")]);
+    }
+    if let Some(network) = network {
         command.args(["--network".to_owned(), network]);
     }
     let status = command
