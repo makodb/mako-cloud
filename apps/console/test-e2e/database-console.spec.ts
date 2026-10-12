@@ -362,7 +362,7 @@ test("empty inventory offers setup while failed telemetry stays unavailable", as
   );
 });
 
-test("expired observations turn stale and partial measurements are identified", async ({
+test("older observations show their age and partial measurements are identified", async ({
   page,
 }) => {
   await page.route("**/v1/**", async (route) => {
@@ -371,6 +371,8 @@ test("expired observations turn stale and partial measurements are identified", 
     if (path.endsWith("/workspace/summary")) {
       const data = summary();
       data.sections.collections.freshUntilUnixSeconds = current() - 1;
+      data.sections.collections.observedAtUnixSeconds = current() - 60;
+      data.sections.collections.status = "stale";
       data.sections.usage = section({ samples: [], limited: true });
       return json(route, data);
     }
@@ -381,8 +383,9 @@ test("expired observations turn stale and partial measurements are identified", 
   await expect(
     page
       .getByRole("article", { name: "Collections", exact: true })
-      .getByText("Stale", { exact: true }),
+      .getByText("Updated 1 minute ago", { exact: true }),
   ).toBeVisible();
+  await expect(page.getByText(/^(Stale|Current)$/u)).toHaveCount(0);
   await expect(page.getByRole("region", { name: "Usage observations" })).toContainText(
     "Partial results",
   );
@@ -517,4 +520,154 @@ test("the workbench displays escaped document fields and discards a delayed read
     }),
   );
   expect(stored).not.toContain(capability);
+});
+
+test("overview refreshes each minute, retains failed observations, and recovers", async ({
+  page,
+}) => {
+  const epoch = new Date("2026-09-25T12:00:00Z");
+  await page.clock.install({ time: epoch });
+  let requests = 0;
+  let collectionsRequests = 0;
+  let failing = false;
+  let observedAt = epoch.getTime() / 1000;
+  let count = 3;
+  await page.route("**/v1/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (await shell(route, path)) return;
+    if (path.endsWith("/workspace/summary")) {
+      requests++;
+      if (failing)
+        return json(
+          route,
+          {
+            apiVersion: "v1",
+            error: {
+              code: "unavailable",
+              message: "Metrics could not be refreshed.",
+              requestId: "req_refresh",
+              retry: { kind: "immediate" },
+            },
+          },
+          503,
+        );
+      const data = summary();
+      data.sections.collections.payload = { count };
+      for (const value of Object.values(data.sections)) value.observedAtUnixSeconds = observedAt;
+      return json(route, data);
+    }
+    if (path.endsWith("/collections")) {
+      collectionsRequests++;
+      return json(route, { items: [collection()] });
+    }
+    return json(route, {}, 500);
+  });
+  await page.goto(`${base}/overview`);
+  const card = page.getByRole("article", { name: "Collections", exact: true });
+  await expect(card.getByText("3", { exact: true })).toBeVisible();
+  await expect(card.getByText("Updated just now")).toBeVisible();
+  const initialRequests = requests;
+  const initialCollectionsRequests = collectionsRequests;
+  failing = true;
+  await page.clock.runFor(50_000);
+  expect(requests).toBe(initialRequests);
+  expect(collectionsRequests).toBe(initialCollectionsRequests);
+  await page.clock.runFor(10_000);
+  await expect(
+    page.getByText("Unable to refresh. Showing the last successful update."),
+  ).toBeVisible();
+  await expect(card.getByText("3", { exact: true })).toBeVisible();
+  await expect(card.getByText("Updated 1 minute ago")).toBeVisible();
+  await expect(page.getByText(/^(Stale|Current)$/u)).toHaveCount(0);
+  failing = false;
+  count = 7;
+  observedAt += 120;
+  await page.clock.runFor(60_000);
+  await expect(card.getByText("7", { exact: true })).toBeVisible();
+  await expect(card.getByText("Updated just now")).toBeVisible();
+  await expect(
+    page.getByText("Unable to refresh. Showing the last successful update."),
+  ).toHaveCount(0);
+  expect(requests).toBe(initialRequests + 2);
+  expect(collectionsRequests).toBe(initialCollectionsRequests + 2);
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await expect.poll(() => requests).toBe(initialRequests + 3);
+  await page.goto(`${base}/collections`);
+  await expect(page.getByRole("heading", { name: "Collections", exact: true })).toBeVisible();
+  await page.clock.runFor(120_000);
+  expect(requests).toBe(initialRequests + 3);
+});
+
+test("minute refreshes do not overlap a slow metrics request", async ({ page }) => {
+  const epoch = new Date("2026-09-25T12:00:00Z");
+  await page.clock.install({ time: epoch });
+  let requests = 0;
+  let blocked = false;
+  let finish!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  await page.route("**/v1/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (await shell(route, path)) return;
+    if (path.endsWith("/workspace/summary")) {
+      requests++;
+      if (blocked) await pending;
+      return json(route, summary());
+    }
+    if (path.endsWith("/collections")) return json(route, { items: [collection()] });
+    return json(route, {}, 500);
+  });
+  await page.goto(`${base}/overview`);
+  const card = page.getByRole("article", { name: "Collections", exact: true });
+  await expect(card.getByText("3", { exact: true })).toBeVisible();
+  const initialRequests = requests;
+  blocked = true;
+  await page.clock.runFor(60_000);
+  await expect.poll(() => requests).toBe(initialRequests + 1);
+  await page.clock.runFor(120_000);
+  expect(requests).toBe(initialRequests + 1);
+  await expect(card.getByText("3", { exact: true })).toBeVisible();
+  blocked = false;
+  finish();
+  await expect(page.getByRole("button", { name: "Refresh", exact: true })).toBeEnabled();
+  await page.clock.runFor(60_000);
+  await expect.poll(() => requests).toBe(initialRequests + 2);
+});
+
+test("a refresh drops retained summaries when project access is revoked", async ({ page }) => {
+  const epoch = new Date("2026-09-25T12:00:00Z");
+  await page.clock.install({ time: epoch });
+  let revoked = false;
+  await page.route("**/v1/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (await shell(route, path)) return;
+    if (path.endsWith("/workspace/summary")) {
+      if (revoked)
+        return json(
+          route,
+          {
+            apiVersion: "v1",
+            error: {
+              code: "permission_denied",
+              message: "Project access revoked.",
+              requestId: "req_revoked",
+              retry: { kind: "never" },
+            },
+          },
+          403,
+        );
+      return json(route, summary());
+    }
+    if (path.endsWith("/collections")) return json(route, { items: [] });
+    return json(route, {}, 500);
+  });
+  await page.goto(`${base}/overview`);
+  const card = page.getByRole("article", { name: "Collections", exact: true });
+  await expect(card.getByText("3", { exact: true })).toBeVisible();
+  revoked = true;
+  await page.clock.runFor(60_000);
+  await expect(page.getByRole("alert")).toContainText("Project access revoked.");
+  await expect(card.getByText("3", { exact: true })).toHaveCount(0);
+  await expect(card.getByText(/^Updated /u)).toHaveCount(0);
 });

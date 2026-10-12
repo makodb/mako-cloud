@@ -11,6 +11,8 @@ The control plane SHALL support developer accounts, teams, invitations, and team
 
 Every developer SHALL also have a personal space: an implicit team of exactly one member, created on first use with a deterministic identity, that holds the developer's individual projects. A personal space MUST refuse invitations, role changes, member removal, and deletion, and MUST otherwise be a team for billing, limits, audit, and operator purposes.
 
+The console SHALL present individual projects under Personal projects, separately from Teams. The internal personal-space owner MUST NOT appear as a team in navigation, team-management lists, or team selectors. Ownership APIs SHALL retain the personal owner identity and kind so authorization, billing, and project transfers continue to use the same records.
+
 #### Scenario: Owner invites a developer
 - **WHEN** a team owner invites an email with the developer role and the recipient accepts
 - **THEN** the recipient gains only the permissions assigned to that role in the team
@@ -21,7 +23,7 @@ Every developer SHALL also have a personal space: an implicit team of exactly on
 
 #### Scenario: A developer creates an individual project
 - **WHEN** a developer creates a project without naming a team
-- **THEN** the project is created in the developer's personal space, which is created on first use and reused thereafter, and the space appears in the developer's team list marked personal
+- **THEN** the project is created in the developer's personal space, which is created on first use and reused thereafter, and appears under Personal projects without listing the personal space as a team
 
 #### Scenario: A personal space refuses members and deletion
 - **WHEN** anyone invites a developer to a personal space, changes its membership, or requests its deletion
@@ -200,4 +202,3 @@ Deleting a team, project, or environment SHALL require explicit confirmation, en
 #### Scenario: Grace period expires
 - **WHEN** no restoration occurs before the deadline
 - **THEN** the platform completes scoped data and secret destruction and records completion in the operator audit trail
-

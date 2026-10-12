@@ -99,7 +99,7 @@ test("environment usage sums flows, averages levels, and names the allowance beh
   // A level with no sample is not zero; a flow with no record is.
   await expect(row("edge_functions").locator("td").nth(1)).toHaveText("no samples");
   await expect(row("replication_requests_per_minute").locator("td").nth(1)).toHaveText("0");
-  await expect(usageSection.getByText(/8 records observed at/u)).toBeVisible();
+  await expect(usageSection.getByText(/8 records · Updated/u)).toBeVisible();
 
   // The read asked for the calendar month in UTC, a thousand records a page,
   // and followed the cursor to the end.

@@ -7,7 +7,7 @@ Provide developers with a coherent project and environment workspace for underst
 ## Requirements
 
 ### Requirement: Persistent project workspace
-The developer console SHALL provide persistent, responsive navigation for project overview, Data Explorer, collections and indexes, synchronization, application users, policies, functions, logs and metrics, backups, API & Connect, and settings. The active team, project, environment, and developer identity MUST remain visible, and navigation MUST show only resources allowed by the current membership.
+The developer console SHALL provide persistent, responsive navigation for project overview, Data Explorer, collections and indexes, synchronization, application users, policies, functions, logs and metrics, backups, API & Connect, and settings. The active personal or team ownership, project, environment, and developer identity MUST remain visible, and navigation MUST show only resources allowed by the current membership.
 
 The same navigation SHALL exist at the home and project levels, so that a developer reaches any product area from anywhere in at most two selections. Destinations the deployment does not provide MUST be shown as unavailable rather than omitted, so the product's shape is visible before every area is enabled.
 
@@ -20,7 +20,7 @@ The same navigation SHALL exist at the home and project levels, so that a develo
 - **THEN** any product area of any reachable environment is at most two selections away
 
 ### Requirement: Database project overview
-The project overview SHALL summarize lifecycle and provisioning state, endpoint readiness, collection and user counts, current usage and quota position, RxDB sync health, recent safe errors, active function deployment, backup freshness, and recent audit activity. Each summary MUST identify its observation time and distinguish unavailable or stale data from healthy data.
+The project overview SHALL summarize lifecycle and provisioning state, endpoint readiness, collection and user counts, current usage and quota position, RxDB sync health, recent safe errors, active function deployment, backup freshness, and recent audit activity. Each summary MUST show its observation age as plain relative text, such as "Updated 1 minute ago", and distinguish unavailable data from healthy data. Developer dashboards MUST NOT label successful observations "Current" or "Stale".
 
 The overview SHALL also present the selected environment's API URL and public key with a quickstart, and at the project level SHALL aggregate across environments so a project with several environments is understood before one is chosen.
 
@@ -29,8 +29,8 @@ The overview SHALL also present the selected environment's API URL and public ke
 - **THEN** the overview shows connection readiness, current usage, sync and backup status, recent activity, and links to relevant workspace destinations
 
 #### Scenario: One summary source is unavailable
-- **WHEN** a summary provider fails or becomes stale
-- **THEN** the overview marks only that summary unavailable or stale and does not represent missing data as healthy
+- **WHEN** a summary provider fails
+- **THEN** the overview marks only that summary unavailable, or keeps its last successful value with an explicit refresh error and its original observation time, and does not represent missing data as healthy
 
 #### Scenario: Developer opens a project with several environments
 - **WHEN** an authorized developer opens a project that has more than one environment
@@ -98,3 +98,31 @@ Home and project-level URLs SHALL follow the same rules, and the navigation shel
 #### Scenario: Developer navigates the shell by keyboard
 - **WHEN** a developer moves through the navigation shell using only the keyboard
 - **THEN** every destination is reachable and the current destination is announced
+
+### Requirement: Task-oriented database overview
+The environment overview SHALL display named database metrics, a collection inventory, database setup actions, and bounded recent audit metadata. Every metric MUST retain provider availability, freshness, observation window, and pagination limits where relevant. Missing data MUST NOT appear as zero or healthy. The management summary MUST return only metadata within the caller's authorized environment.
+
+#### Scenario: Populated environment
+- **WHEN** an authorized developer opens an environment with collections and activity
+- **THEN** the overview shows collection names and schema versions, explicit metric labels, and recent safe activity with links to the relevant tools
+
+#### Scenario: An observation ages or its provider fails
+- **WHEN** an observation ages or a refresh fails
+- **THEN** the summary shows its actual age without a "Current" or "Stale" badge, retains the last successful observation time on transient failure, and shows an explicit refresh error while other loaded sections remain usable
+- **AND** a summary without usable data remains unavailable, and an authorization or missing-resource response clears the retained value
+
+#### Scenario: Dashboard refreshes once per minute
+- **WHEN** a developer leaves the environment overview, project summaries, or usage metrics open
+- **THEN** each source is fetched on entry and every 60 seconds, with no overlapping request for the same source
+- **AND** a background refresh preserves loaded values until a new response arrives, manual refresh remains available on the overview, and leaving the view stops its polling
+
+#### Scenario: Environment changes during a background refresh
+- **WHEN** a refresh for the previous environment completes after navigation
+- **THEN** it cannot replace the new environment's values or observation times
+
+### Requirement: Grouped navigation and isolated environment state
+The console SHALL group database, application, operations, and configuration destinations, retaining the current destination and environment context. Switching project or environment MUST clear previous document data, grants, query cursors, and editor drafts before displaying the destination.
+
+#### Scenario: Environment changes during a request
+- **WHEN** a developer switches environment while an old read is pending
+- **THEN** the old response cannot populate the new environment's screen

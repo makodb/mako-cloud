@@ -1,28 +1,7 @@
 import { Button, ThemeToggle, useTheme } from "@mako-cloud/ui";
-import {
-  ArrowRight,
-  BookOpen,
-  Boxes,
-  Braces,
-  Check,
-  Cloud,
-  Database,
-  FileCode2,
-  Gauge,
-  KeyRound,
-  Radio,
-  ShieldCheck,
-  Sparkles,
-  Workflow,
-} from "lucide-react";
-import type { ComponentType, SVGProps } from "react";
-
-import { MakoMark } from "./mako-mark.js";
 
 const THEME_KEY = "mako.console.theme";
 const USER_BOOK = "/docs/user-book";
-
-type Icon = ComponentType<SVGProps<SVGSVGElement>>;
 
 interface PublicHomeProps {
   readonly navigate: (path: string, replace?: boolean) => void;
@@ -31,7 +10,7 @@ interface PublicHomeProps {
 interface Feature {
   readonly title: string;
   readonly description: string;
-  readonly icon: Icon;
+
   readonly className?: string;
 }
 
@@ -39,7 +18,6 @@ interface Guide {
   readonly title: string;
   readonly description: string;
   readonly href: string;
-  readonly icon: Icon;
 }
 
 const FEATURES: readonly Feature[] = [
@@ -47,33 +25,28 @@ const FEATURES: readonly Feature[] = [
     title: "Local-first data",
     description:
       "Sync RxDB clients through pull, push, and a live change stream. Apps keep working when the network drops.",
-    icon: Radio,
     className: "lg:col-span-2",
   },
   {
     title: "Project authentication",
     description:
       "Add password, magic-link, GitHub, Google, or OpenID Connect sign-in without mixing app users with your developer team.",
-    icon: KeyRound,
   },
   {
     title: "Document policies",
     description:
       "Apply default-deny rules to reads, writes, queries, replication, and conflicts from one policy model.",
-    icon: ShieldCheck,
   },
   {
     title: "Server-side building blocks",
     description:
       "Run edge functions, schedules, webhooks, transactional mail, and file storage beside your data.",
-    icon: Braces,
     className: "lg:col-span-2",
   },
   {
     title: "Operate from one console",
     description:
       "Review usage, logs, replication health, application users, audit events, and deployment state without changing tools.",
-    icon: Gauge,
     className: "lg:col-span-2",
   },
 ];
@@ -84,25 +57,21 @@ const GUIDES: readonly Guide[] = [
     description:
       "Create a project, define a collection, add a policy, and issue your first public key.",
     href: `${USER_BOOK}#getting-started`,
-    icon: Sparkles,
   },
   {
     title: "Connect an RxDB app",
     description: "Set up the supported client and understand pull, push, and live replication.",
     href: `${USER_BOOK}#building-a-local-first-app-with-rxdb`,
-    icon: Database,
   },
   {
     title: "Secure application data",
     description: "Learn how application authentication and document policies work together.",
     href: `${USER_BOOK}#document-policies`,
-    icon: ShieldCheck,
   },
   {
     title: "Run edge functions",
     description: "Deploy server-side TypeScript with scoped secrets and stable routes.",
     href: `${USER_BOOK}#edge-functions`,
-    icon: FileCode2,
   },
 ];
 
@@ -129,7 +98,6 @@ export function PublicHome({ navigate }: PublicHomeProps) {
             className="flex items-center gap-2.5 text-foreground no-underline"
             aria-label="Mako Cloud home"
           >
-            <MakoMark />
             <span className="text-base font-semibold tracking-tight">Mako Cloud</span>
           </a>
           <nav className="ml-auto hidden items-center gap-7 text-sm md:flex" aria-label="Main">
@@ -184,21 +152,16 @@ export function PublicHome({ navigate }: PublicHomeProps) {
                 <Button size="lg" asChild className="group">
                   <a href="/create-account" onClick={open("/create-account")}>
                     Start building
-                    <ArrowRight className="transition-transform group-hover:translate-x-0.5" />
                   </a>
                 </Button>
                 <Button size="lg" variant="outline" asChild>
-                  <a href={`${USER_BOOK}#getting-started`}>
-                    <BookOpen />
-                    Read the quickstart
-                  </a>
+                  <a href={`${USER_BOOK}#getting-started`}>Read the quickstart</a>
                 </Button>
               </div>
               <ul className="mt-8 flex flex-wrap gap-x-6 gap-y-2 p-0 text-sm text-muted-foreground">
                 {["Typed TypeScript clients", "Default-deny data access", "Built for RxDB"].map(
                   (item) => (
                     <li key={item} className="flex list-none items-center gap-2">
-                      <Check className="size-4 text-positive" aria-hidden="true" />
                       {item}
                     </li>
                   ),
@@ -247,10 +210,7 @@ export function PublicHome({ navigate }: PublicHomeProps) {
                 resolves checkpoints, and streams new data back to the device.
               </p>
               <Button variant="outline" asChild className="mt-7">
-                <a href={`${USER_BOOK}#building-a-local-first-app-with-rxdb`}>
-                  See the RxDB guide
-                  <ArrowRight />
-                </a>
+                <a href={`${USER_BOOK}#building-a-local-first-app-with-rxdb`}>See the RxDB guide</a>
               </Button>
             </div>
 
@@ -259,19 +219,16 @@ export function PublicHome({ navigate }: PublicHomeProps) {
                 number="01"
                 title="Model"
                 description="Create a JSON Schema, indexes, and access policy for each collection."
-                icon={Boxes}
               />
               <FlowStep
                 number="02"
                 title="Connect"
                 description="Add the Mako RxDB adapter with your environment URL and public key."
-                icon={Workflow}
               />
               <FlowStep
                 number="03"
                 title="Operate"
                 description="Inspect usage, logs, users, functions, and data from the console."
-                icon={Cloud}
               />
             </ol>
           </div>
@@ -293,10 +250,7 @@ export function PublicHome({ navigate }: PublicHomeProps) {
                 </p>
               </div>
               <Button variant="outline" asChild>
-                <a href={USER_BOOK}>
-                  Open the full User Book
-                  <ArrowRight />
-                </a>
+                <a href={USER_BOOK}>Open the full User Book</a>
               </Button>
             </div>
 
@@ -325,7 +279,6 @@ export function PublicHome({ navigate }: PublicHomeProps) {
               <Button asChild>
                 <a href="/create-account" onClick={open("/create-account")}>
                   Create developer account
-                  <ArrowRight />
                 </a>
               </Button>
             </div>
@@ -336,7 +289,6 @@ export function PublicHome({ navigate }: PublicHomeProps) {
       <footer className="border-t bg-card">
         <div className="mx-auto flex max-w-7xl flex-col gap-4 px-5 py-8 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between sm:px-8 lg:px-10">
           <div className="flex items-center gap-2.5 text-foreground">
-            <MakoMark small />
             <span className="font-medium">Mako Cloud</span>
           </div>
           <p className="m-0">Cloud test environment · Public preview</p>
@@ -401,7 +353,6 @@ function PlatformPreview() {
                 <p className="m-0 text-xs font-medium">Live replication</p>
                 <p className="mt-1 text-[11px] text-muted-foreground">Documents synced today</p>
               </div>
-              <Radio className="size-4 text-positive" />
             </div>
             <div className="flex h-24 items-end gap-1.5" aria-hidden="true">
               {[35, 48, 42, 62, 54, 78, 70, 86, 68, 92, 76, 88, 81, 96, 90, 100].map(
@@ -417,16 +368,13 @@ function PlatformPreview() {
           </div>
 
           <div className="grid gap-2 sm:grid-cols-2">
-            <PreviewStatus icon={Database} title="Data & sync" detail="All systems normal" />
-            <PreviewStatus icon={ShieldCheck} title="Policies" detail="8 collections protected" />
+            <PreviewStatus title="Data & sync" detail="All systems normal" />
+            <PreviewStatus title="Policies" detail="8 collections protected" />
           </div>
         </div>
       </div>
 
       <div className="absolute -right-3 -bottom-5 hidden items-center gap-3 rounded-xl border bg-card px-4 py-3 shadow-lg sm:flex">
-        <span className="grid size-8 place-items-center rounded-lg bg-positive/10 text-positive">
-          <Check className="size-4" />
-        </span>
         <span>
           <span className="block text-xs font-semibold">Client connected</span>
           <span className="block text-[11px] text-muted-foreground">Live sync is ready</span>
@@ -445,20 +393,9 @@ function PreviewMetric({ label, value }: { readonly label: string; readonly valu
   );
 }
 
-function PreviewStatus({
-  icon: Icon,
-  title,
-  detail,
-}: {
-  readonly icon: Icon;
-  readonly title: string;
-  readonly detail: string;
-}) {
+function PreviewStatus({ title, detail }: { readonly title: string; readonly detail: string }) {
   return (
     <div className="flex items-center gap-3 rounded-lg border bg-background/70 p-3">
-      <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
-        <Icon className="size-4" />
-      </span>
       <span className="min-w-0">
         <span className="block truncate text-xs font-medium">{title}</span>
         <span className="block truncate text-[11px] text-muted-foreground">{detail}</span>
@@ -468,15 +405,11 @@ function PreviewStatus({
 }
 
 function FeatureCard({ feature }: { readonly feature: Feature }) {
-  const Icon = feature.icon;
   return (
     <article
-      className={`group min-h-56 rounded-xl border bg-card p-6 shadow-xs transition-[transform,box-shadow,border-color] hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md ${feature.className ?? ""}`}
+      className={`group min-h-40 rounded-xl border bg-card p-6 shadow-xs transition-[transform,box-shadow,border-color] hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md ${feature.className ?? ""}`}
     >
-      <span className="grid size-10 place-items-center rounded-lg bg-primary/10 text-primary transition-colors group-hover:bg-primary group-hover:text-primary-foreground">
-        <Icon className="size-5" aria-hidden="true" />
-      </span>
-      <h3 className="mt-9 text-lg">{feature.title}</h3>
+      <h3 className="text-lg">{feature.title}</h3>
       <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">{feature.description}</p>
     </article>
   );
@@ -486,20 +419,15 @@ function FlowStep({
   number,
   title,
   description,
-  icon: Icon,
 }: {
   readonly number: string;
   readonly title: string;
   readonly description: string;
-  readonly icon: Icon;
 }) {
   return (
     <li className="relative flex min-h-64 list-none flex-col rounded-xl border bg-card p-5 shadow-xs">
       <div className="flex items-start justify-between">
         <span className="font-mono text-xs text-muted-foreground">{number}</span>
-        <span className="grid size-9 place-items-center rounded-lg bg-primary/10 text-primary">
-          <Icon className="size-4" aria-hidden="true" />
-        </span>
       </div>
       <div className="mt-auto pt-12">
         <h3 className="text-base">{title}</h3>
@@ -510,19 +438,12 @@ function FlowStep({
 }
 
 function GuideLink({ guide }: { readonly guide: Guide }) {
-  const Icon = guide.icon;
   return (
     <a
-      className="group flex min-h-56 flex-col bg-card p-5 text-foreground no-underline transition-colors hover:bg-accent"
+      className="group flex min-h-40 flex-col bg-card p-5 text-foreground no-underline transition-colors hover:bg-accent"
       href={guide.href}
     >
-      <span className="flex items-start justify-between">
-        <span className="grid size-9 place-items-center rounded-lg bg-primary/10 text-primary">
-          <Icon className="size-4" aria-hidden="true" />
-        </span>
-        <ArrowRight className="size-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
-      </span>
-      <span className="mt-auto pt-10">
+      <span className="my-auto">
         <span className="block text-base font-semibold">{guide.title}</span>
         <span className="mt-2 block text-sm leading-6 text-muted-foreground">
           {guide.description}

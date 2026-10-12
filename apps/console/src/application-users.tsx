@@ -25,7 +25,7 @@ import {
   TableRow,
   Textarea,
 } from "@mako-cloud/ui";
-import { Search, TriangleAlert, UserPlus, Users } from "lucide-react";
+
 import { type FormEvent, type ReactNode, useCallback, useEffect, useState } from "react";
 
 import { ApiFailureNotice, type ConsoleApiFailure, toConsoleApiFailure } from "./api-error.js";
@@ -99,7 +99,7 @@ export function ApplicationUsersScreen({
   return (
     <section aria-labelledby="users-title" className="grid gap-6">
       <div className="grid gap-3">
-        <BackButton onClick={onBack}>← Project</BackButton>
+        <BackButton onClick={onBack}>Project</BackButton>
         <div className="grid gap-1">
           <Eyebrow>Environment {environmentId}</Eyebrow>
           <h1 id="users-title" className="text-2xl">
@@ -126,7 +126,6 @@ export function ApplicationUsersScreen({
                   />
                 </Field>
                 <Button type="submit" variant="secondary">
-                  <Search aria-hidden="true" />
                   Search
                 </Button>
               </form>
@@ -134,7 +133,7 @@ export function ApplicationUsersScreen({
             {users === null ? (
               <p className="m-0 text-sm text-muted-foreground">Loading application users…</p>
             ) : users.length === 0 ? (
-              <EmptyState icon={<Users aria-hidden="true" />} title="No users match this search." />
+              <EmptyState title="No users match this search." />
             ) : (
               <Table aria-label="Application users">
                 <TableHeader>
@@ -168,7 +167,6 @@ export function ApplicationUsersScreen({
             )}
             {truncated ? (
               <Alert variant="warning" role="status">
-                <TriangleAlert aria-hidden="true" />
                 <AlertDescription>Only the first 100 matches are shown.</AlertDescription>
               </Alert>
             ) : null}
@@ -195,7 +193,6 @@ export function ApplicationUsersScreen({
               <JsonField name="trustedMetadata" label="Trusted metadata" />
               <JsonField name="profileMetadata" label="Profile metadata" />
               <Button type="submit" className="justify-self-start">
-                <UserPlus aria-hidden="true" />
                 Create application user
               </Button>
             </form>
@@ -312,7 +309,7 @@ export function ApplicationUserScreen({
   return (
     <section aria-labelledby="user-title" className="grid gap-6">
       <div className="grid gap-3">
-        <BackButton onClick={onBack}>← Application users</BackButton>
+        <BackButton onClick={onBack}>Application users</BackButton>
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="grid gap-1">
             <Eyebrow>Application user</Eyebrow>
@@ -488,7 +485,6 @@ function SessionsPanel({
         )}
         {user.sessionsTruncated ? (
           <Alert variant="warning" role="status">
-            <TriangleAlert aria-hidden="true" />
             <AlertDescription>Only the bounded retained session set is shown.</AlertDescription>
           </Alert>
         ) : null}

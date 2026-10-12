@@ -20,7 +20,7 @@ import {
   TableRow,
   cn,
 } from "@mako-cloud/ui";
-import { Copy, Globe } from "lucide-react";
+
 import { type FormEvent, type ReactNode, useCallback, useEffect, useState } from "react";
 
 import type { CustomDomain, Environment } from "@mako-cloud/management-sdk";
@@ -183,7 +183,6 @@ export function CustomDomainsScreen({
             </p>
           ) : domains.length === 0 ? (
             <EmptyState
-              icon={<Globe aria-hidden="true" />}
               title="No custom domains yet."
               description="Add one to serve an environment's API and functions on a name you own."
             />
@@ -408,7 +407,6 @@ function DnsRecord({ domain }: { readonly domain: CustomDomain }) {
               {recordName}
             </code>
             <Button variant="outline" size="sm" onClick={() => void copy("name", recordName)}>
-              <Copy aria-hidden="true" className="size-3.5" />
               Copy name
             </Button>
           </dd>
@@ -428,7 +426,6 @@ function DnsRecord({ domain }: { readonly domain: CustomDomain }) {
               {recordValue}
             </code>
             <Button variant="outline" size="sm" onClick={() => void copy("value", recordValue)}>
-              <Copy aria-hidden="true" className="size-3.5" />
               Copy value
             </Button>
           </dd>

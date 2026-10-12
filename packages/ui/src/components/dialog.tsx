@@ -1,4 +1,3 @@
-import { XIcon } from "lucide-react";
 import { Dialog as DialogPrimitive } from "radix-ui";
 import { type ComponentProps, useEffect } from "react";
 
@@ -77,10 +76,9 @@ export function DialogContent({
         {showCloseButton ? (
           <DialogPrimitive.Close
             data-slot="dialog-close"
-            className="absolute top-4 right-4 rounded-xs opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-hidden focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"
+            className="absolute top-3 right-3 rounded-md px-2 py-1 text-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-hidden focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"
           >
-            <XIcon />
-            <span className="sr-only">Close</span>
+            Close
           </DialogPrimitive.Close>
         ) : null}
       </DialogPrimitive.Content>
@@ -92,7 +90,7 @@ export function DialogHeader({ className, ...props }: ComponentProps<"div">) {
   return (
     <div
       data-slot="dialog-header"
-      className={cn("flex flex-col gap-2 text-center sm:text-left", className)}
+      className={cn("flex flex-col gap-2 pr-14 text-center sm:text-left", className)}
       {...props}
     />
   );

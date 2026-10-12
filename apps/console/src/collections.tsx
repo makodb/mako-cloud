@@ -15,7 +15,7 @@ import {
   NativeSelect,
   Textarea,
 } from "@mako-cloud/ui";
-import { AlertTriangle, CheckCircle2, Plus, RefreshCw, ShieldCheck } from "lucide-react";
+
 import { type FormEvent, type ReactNode, useCallback, useEffect, useState } from "react";
 
 import type {
@@ -106,7 +106,7 @@ export function CollectionsScreen({
   return (
     <section aria-labelledby="collections-title" className="grid gap-6">
       <div className="grid gap-3">
-        <BackButton onClick={onBack}>← Project</BackButton>
+        <BackButton onClick={onBack}>Project</BackButton>
         <div>
           <Eyebrow>
             Environment <span className={IDENTIFIER}>{environmentId}</span>
@@ -195,10 +195,7 @@ export function CollectionsScreen({
                 rows={4}
               />
               <div>
-                <Button type="submit">
-                  <Plus aria-hidden="true" />
-                  Create collection
-                </Button>
+                <Button type="submit">Create collection</Button>
               </div>
             </form>
           </CardContent>
@@ -281,7 +278,7 @@ export function CollectionScreen({
   return (
     <section aria-labelledby="collection-title" className="grid gap-6">
       <div className="grid gap-3">
-        <BackButton onClick={onBack}>← Collections</BackButton>
+        <BackButton onClick={onBack}>Collections</BackButton>
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <Eyebrow>Collection</Eyebrow>
@@ -292,10 +289,7 @@ export function CollectionScreen({
           {collection === null ? null : (
             <div className="flex flex-wrap items-center gap-3">
               <LifecycleBadge state={collection.state} />
-              <Button onClick={onOpenPolicies}>
-                <ShieldCheck aria-hidden="true" />
-                Manage policies
-              </Button>
+              <Button onClick={onOpenPolicies}>Manage policies</Button>
             </div>
           )}
         </div>
@@ -401,11 +395,6 @@ function CompatibilityResult({ result }: { readonly result: SchemaPublicationRes
   const migrationRequired = result.status === "migration_required";
   return (
     <Alert variant={migrationRequired ? "warning" : "positive"} role="status">
-      {migrationRequired ? (
-        <AlertTriangle aria-hidden="true" />
-      ) : (
-        <CheckCircle2 aria-hidden="true" />
-      )}
       <AlertTitle className="line-clamp-none">
         {result.status === "published"
           ? "Schema published."
@@ -739,7 +728,6 @@ function IndexesPanel({
         </CardDescription>
         <CardAction>
           <Button variant="outline" size="sm" onClick={() => void reload()}>
-            <RefreshCw aria-hidden="true" />
             Refresh
           </Button>
         </CardAction>
@@ -854,7 +842,6 @@ function IndexCard({
         )}
         {index.failure === undefined ? null : (
           <Alert variant="destructive" role="alert">
-            <AlertTriangle aria-hidden="true" />
             <AlertTitle>{index.failure.code.replaceAll("_", " ")}</AlertTitle>
             <AlertDescription>
               <p className="m-0">{index.failure.message}</p>

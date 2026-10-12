@@ -31,7 +31,7 @@ import {
   TableHeader,
   TableRow,
 } from "@mako-cloud/ui";
-import { CircleCheck, Copy, Eye, EyeOff, KeyRound, ShieldAlert } from "lucide-react";
+
 import { type FormEvent, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 
 import { ApiFailureNotice, type ConsoleApiFailure, toConsoleApiFailure } from "./api-error.js";
@@ -414,7 +414,7 @@ export function CredentialsScreen({
           className="-ml-2 w-fit text-muted-foreground hover:text-foreground"
           onClick={onBack}
         >
-          ← Project
+          Project
         </Button>
         <div className="grid gap-1">
           <Eyebrow>Environment {environmentId}</Eyebrow>
@@ -655,7 +655,6 @@ function SigningKeysPanel({
           <p className="m-0 text-sm text-muted-foreground">Loading signing keys…</p>
         ) : keys.length === 0 ? (
           <Alert role="status">
-            <KeyRound aria-hidden="true" />
             <AlertDescription>
               <p className="m-0">
                 No signing key exists for this environment yet. Application-user sessions cannot be
@@ -686,7 +685,6 @@ function SigningKeysPanel({
         )}
         {initialized === null ? null : (
           <Alert variant="positive" role="status">
-            <CircleCheck aria-hidden="true" />
             <AlertDescription>
               <p className="m-0">
                 Signing key <code className="font-mono">{initialized.keyId}</code> initialized (
@@ -1053,7 +1051,6 @@ function OneTimeSecretCard({
       className="grid gap-3 rounded-xl border border-warning/50 bg-warning/10 p-5 text-foreground"
     >
       <div className="flex items-start gap-3">
-        <ShieldAlert aria-hidden="true" className="mt-0.5 size-5 shrink-0 text-warning" />
         <div className="grid gap-1">
           <strong
             id="one-time-title"
@@ -1081,11 +1078,9 @@ function OneTimeSecretCard({
       )}
       <div className="flex flex-wrap gap-2">
         <Button variant="outline" onClick={() => setRevealed((shown) => !shown)}>
-          {revealed ? <EyeOff aria-hidden="true" /> : <Eye aria-hidden="true" />}
           {revealed ? "Hide value" : "Reveal value"}
         </Button>
         <Button variant="outline" onClick={() => void copy()}>
-          <Copy aria-hidden="true" />
           Copy value
         </Button>
         <Button onClick={onDismiss}>I have stored it securely</Button>

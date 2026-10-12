@@ -33,7 +33,7 @@ import {
   TableHeader,
   TableRow,
 } from "@mako-cloud/ui";
-import { Webhook } from "lucide-react";
+
 import { type FormEvent, type ReactNode, useCallback, useEffect, useId, useState } from "react";
 
 import { ApiFailureNotice, type ConsoleApiFailure, toConsoleApiFailure } from "./api-error.js";
@@ -204,7 +204,6 @@ function EndpointListScreen({
               </p>
             ) : endpoints.length === 0 ? (
               <EmptyState
-                icon={<Webhook aria-hidden="true" />}
                 title="No webhook endpoints have been registered in this environment."
                 className="border-0 py-8"
               />
@@ -531,7 +530,7 @@ function EndpointScreen({
           className="-ml-2 w-fit text-muted-foreground hover:text-foreground"
           onClick={onBack}
         >
-          ← Webhooks
+          Webhooks
         </Button>
         <div className="grid gap-1">
           <Eyebrow>Webhook endpoint</Eyebrow>

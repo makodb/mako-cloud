@@ -1,4 +1,3 @@
-import { CheckIcon, ChevronDownIcon, ChevronUpIcon } from "lucide-react";
 import { Select as SelectPrimitive } from "radix-ui";
 import type { ComponentProps } from "react";
 
@@ -29,19 +28,13 @@ export function NativeSelect({
         multiple={multiple}
         className={cn(
           "w-full appearance-none rounded-md border border-input bg-transparent py-1 pl-3 text-base shadow-xs outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 md:text-sm",
-          multiple ? "min-h-24 pr-3" : size === "default" ? "h-9 pr-8" : "h-8 pr-8 text-sm",
+          multiple ? "min-h-24 pr-3" : size === "default" ? "h-9 pr-3" : "h-8 pr-3 text-sm",
           className,
         )}
         {...props}
       >
         {children}
       </select>
-      {multiple ? null : (
-        <ChevronDownIcon
-          aria-hidden="true"
-          className="pointer-events-none absolute top-1/2 right-2.5 size-4 -translate-y-1/2 text-muted-foreground"
-        />
-      )}
     </span>
   );
 }
@@ -67,9 +60,6 @@ export function SelectTrigger({
       {...props}
     >
       {children}
-      <SelectPrimitive.Icon asChild>
-        <ChevronDownIcon className="size-4 opacity-50" />
-      </SelectPrimitive.Icon>
     </SelectPrimitive.Trigger>
   );
 }
@@ -94,7 +84,7 @@ export function SelectContent({
         {...props}
       >
         <SelectPrimitive.ScrollUpButton className="flex cursor-default items-center justify-center py-1">
-          <ChevronUpIcon className="size-4" />
+          <span className="text-xs">Scroll up</span>
         </SelectPrimitive.ScrollUpButton>
         <SelectPrimitive.Viewport
           className={cn(
@@ -106,7 +96,7 @@ export function SelectContent({
           {children}
         </SelectPrimitive.Viewport>
         <SelectPrimitive.ScrollDownButton className="flex cursor-default items-center justify-center py-1">
-          <ChevronDownIcon className="size-4" />
+          <span className="text-xs">Scroll down</span>
         </SelectPrimitive.ScrollDownButton>
       </SelectPrimitive.Content>
     </SelectPrimitive.Portal>
@@ -132,17 +122,15 @@ export function SelectItem({
     <SelectPrimitive.Item
       data-slot="select-item"
       className={cn(
-        "relative flex w-full cursor-default select-none items-center gap-2 rounded-sm py-1.5 pr-8 pl-2 text-sm outline-hidden focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 [&_svg:not([class*='text-'])]:text-muted-foreground *:[span]:last:flex *:[span]:last:items-center *:[span]:last:gap-2",
+        "relative flex w-full cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-hidden focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 [&_svg:not([class*='text-'])]:text-muted-foreground *:[span]:last:flex *:[span]:last:items-center *:[span]:last:gap-2",
         className,
       )}
       {...props}
     >
-      <span className="absolute right-2 flex size-3.5 items-center justify-center">
-        <SelectPrimitive.ItemIndicator>
-          <CheckIcon className="size-4" />
-        </SelectPrimitive.ItemIndicator>
-      </span>
       <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
+      <SelectPrimitive.ItemIndicator className="ml-auto text-xs text-muted-foreground">
+        Selected
+      </SelectPrimitive.ItemIndicator>
     </SelectPrimitive.Item>
   );
 }

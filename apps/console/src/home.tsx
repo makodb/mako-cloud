@@ -27,7 +27,7 @@ import {
   Input,
   NativeSelect,
 } from "@mako-cloud/ui";
-import { Database, FolderOpen, Gauge, Plus, Users } from "lucide-react";
+
 import {
   type FormEvent,
   type ReactNode,
@@ -140,9 +140,6 @@ export function HomeDashboard({
         className="flex flex-col gap-6 border-b bg-sidebar p-4 md:border-r md:border-b-0"
       >
         <div className="flex items-center gap-3 px-2 py-2">
-          <div className="grid size-9 place-items-center rounded-lg bg-primary/10 text-primary">
-            <Database className="size-5" aria-hidden="true" />
-          </div>
           <div>
             <strong className="text-sm">Your workspace</strong>
             <p className="m-0 text-xs text-muted-foreground">Mako Cloud</p>
@@ -157,7 +154,6 @@ export function HomeDashboard({
               view === "projects" && "bg-sidebar-accent",
             )}
           >
-            <FolderOpen className="size-4" aria-hidden="true" />
             Personal projects
           </a>
           <a
@@ -168,7 +164,6 @@ export function HomeDashboard({
               view === "usage" && "bg-sidebar-accent",
             )}
           >
-            <Gauge className="size-4" aria-hidden="true" />
             Usage and plan
           </a>
         </nav>
@@ -192,7 +187,6 @@ export function HomeDashboard({
                 onOpenTeam(team.id);
               }}
             >
-              <Users className="size-4 shrink-0" aria-hidden="true" />
               {team.name}
             </a>
           ))}
@@ -278,7 +272,6 @@ export function HomeDashboard({
                 its own submit and Cancel. */}
             {!loading && !noProjects && !guideActive && failure === null && !creating ? (
               <Button onClick={() => setCreating(true)} aria-expanded={creating}>
-                <Plus aria-hidden="true" />
                 Create project
               </Button>
             ) : null}
@@ -602,7 +595,6 @@ function ProjectRow({
                     navigate(`/projects/${project.id}/environments/${environment.id}/${section}`)
                   }
                 >
-                  {section === "data" ? <Database aria-hidden="true" /> : null}
                   {label}
                 </Button>
               ))}

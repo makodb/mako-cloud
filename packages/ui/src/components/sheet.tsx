@@ -1,4 +1,3 @@
-import { XIcon } from "lucide-react";
 import { Dialog as SheetPrimitive } from "radix-ui";
 import type { ComponentProps } from "react";
 
@@ -53,9 +52,8 @@ export function SheetContent({
         {...props}
       >
         {children}
-        <SheetPrimitive.Close className="absolute top-4 right-4 rounded-xs opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-hidden focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-secondary">
-          <XIcon className="size-4" />
-          <span className="sr-only">Close</span>
+        <SheetPrimitive.Close className="absolute top-3 right-3 rounded-md px-2 py-1 text-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-hidden focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-secondary">
+          Close
         </SheetPrimitive.Close>
       </SheetPrimitive.Content>
     </SheetPortal>
@@ -66,7 +64,7 @@ export function SheetHeader({ className, ...props }: ComponentProps<"div">) {
   return (
     <div
       data-slot="sheet-header"
-      className={cn("flex flex-col gap-1.5 p-5", className)}
+      className={cn("flex flex-col gap-1.5 p-5 pr-20", className)}
       {...props}
     />
   );

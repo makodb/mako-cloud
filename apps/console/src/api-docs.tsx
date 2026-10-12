@@ -21,7 +21,7 @@ import {
   TabsTrigger,
   cn,
 } from "@mako-cloud/ui";
-import { Copy, RefreshCw } from "lucide-react";
+
 import {
   type ComponentProps,
   type ReactNode,
@@ -247,7 +247,6 @@ export function ApiDocsScreen({
           </p>
         </div>
         <Button variant="outline" onClick={() => void regenerate()}>
-          <RefreshCw aria-hidden="true" />
           Regenerate
         </Button>
       </div>
@@ -981,7 +980,6 @@ function CodeBlock({ text, label }: { readonly text: string; readonly label: str
         aria-label={label}
         onClick={() => void navigator.clipboard.writeText(text)}
       >
-        <Copy aria-hidden="true" className="size-3.5" />
         Copy
       </Button>
       <pre className="m-0 overflow-x-auto p-3 pr-24 font-mono text-xs leading-relaxed">{text}</pre>

@@ -1,6 +1,5 @@
 import { ManagementApiError } from "@mako-cloud/management-sdk";
 import { Alert, AlertDescription, AlertTitle } from "@mako-cloud/ui";
-import { CircleAlert } from "lucide-react";
 
 import { RequestId } from "./error-boundary.js";
 
@@ -41,7 +40,6 @@ export function ApiFailureNotice({ failure }: { readonly failure: ConsoleApiFail
   }
   return (
     <Alert variant="destructive" role="alert">
-      <CircleAlert aria-hidden="true" />
       <AlertTitle>The management request failed</AlertTitle>
       <AlertDescription>
         <p className="m-0 text-foreground">{failure.message}</p>

@@ -1,4 +1,3 @@
-import { XIcon } from "lucide-react";
 import { Toast as ToastPrimitive } from "radix-ui";
 import { type ReactNode, createContext, useCallback, useContext, useMemo, useState } from "react";
 
@@ -44,7 +43,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
               if (!open) dismiss(entry.id);
             }}
             className={cn(
-              "group pointer-events-auto relative flex w-full items-start gap-3 overflow-hidden rounded-lg border p-4 pr-8 shadow-lg transition-all data-[swipe=cancel]:translate-x-0 data-[swipe=end]:translate-x-(--radix-toast-swipe-end-x) data-[swipe=move]:translate-x-(--radix-toast-swipe-move-x) data-[swipe=move]:transition-none data-[state=closed]:animate-out data-[state=closed]:fade-out-80 data-[state=closed]:slide-out-to-right-full data-[state=open]:animate-in data-[state=open]:slide-in-from-bottom-full",
+              "group pointer-events-auto relative flex w-full items-start gap-3 overflow-hidden rounded-lg border p-4 shadow-lg transition-all data-[swipe=cancel]:translate-x-0 data-[swipe=end]:translate-x-(--radix-toast-swipe-end-x) data-[swipe=move]:translate-x-(--radix-toast-swipe-move-x) data-[swipe=move]:transition-none data-[state=closed]:animate-out data-[state=closed]:fade-out-80 data-[state=closed]:slide-out-to-right-full data-[state=open]:animate-in data-[state=open]:slide-in-from-bottom-full",
               entry.variant === "destructive"
                 ? "border-destructive/40 bg-destructive text-destructive-foreground"
                 : entry.variant === "positive"
@@ -52,7 +51,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                   : "bg-card text-card-foreground",
             )}
           >
-            <div className="grid gap-1">
+            <div className="min-w-0 flex-1 grid gap-1">
               <ToastPrimitive.Title className="text-sm font-semibold">
                 {entry.title}
               </ToastPrimitive.Title>
@@ -64,9 +63,9 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             </div>
             <ToastPrimitive.Close
               aria-label="Dismiss"
-              className="absolute top-2 right-2 rounded-md p-1 opacity-70 transition-opacity hover:opacity-100 focus:opacity-100 focus:outline-hidden focus:ring-2 focus:ring-ring"
+              className="shrink-0 rounded-md p-1 text-sm opacity-70 transition-opacity hover:opacity-100 focus:opacity-100 focus:outline-hidden focus:ring-2 focus:ring-ring"
             >
-              <XIcon className="size-4" />
+              Dismiss
             </ToastPrimitive.Close>
           </ToastPrimitive.Root>
         ))}

@@ -18,7 +18,7 @@ import {
   TableHeader,
   TableRow,
 } from "@mako-cloud/ui";
-import { ChevronRight } from "lucide-react";
+
 import { type FormEvent, useCallback, useEffect, useId, useState } from "react";
 
 import { ApiFailureNotice, type ConsoleApiFailure, toConsoleApiFailure } from "./api-error.js";
@@ -112,13 +112,7 @@ export function ProjectsPanel({
           </Table>
         )}
         <details className="group rounded-lg border">
-          <summary className={SUMMARY}>
-            <ChevronRight
-              aria-hidden="true"
-              className="size-4 shrink-0 transition-transform group-open:rotate-90"
-            />
-            Create project
-          </summary>
+          <summary className={SUMMARY}>Create project</summary>
           <form
             className="grid max-w-md gap-4 border-t px-4 py-4"
             onSubmit={(event) => void create(event)}
@@ -320,7 +314,7 @@ export function ProjectScreen({
         disabled={project === null}
         onClick={() => project !== null && onBack(project.teamId)}
       >
-        ← Back
+        Back
       </Button>
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="grid gap-1">
@@ -364,13 +358,7 @@ export function ProjectScreen({
                 ))}
               </div>
               <details className="group rounded-lg border">
-                <summary className={SUMMARY}>
-                  <ChevronRight
-                    aria-hidden="true"
-                    className="size-4 shrink-0 transition-transform group-open:rotate-90"
-                  />
-                  Create environment
-                </summary>
+                <summary className={SUMMARY}>Create environment</summary>
                 <form
                   className="grid max-w-md gap-4 border-t px-4 py-4"
                   onSubmit={(event) => void createEnvironment(event)}

@@ -26,28 +26,7 @@ import {
   cn,
   useTheme,
 } from "@mako-cloud/ui";
-import {
-  Activity,
-  ArrowLeft,
-  Building2,
-  ChevronLeft,
-  ChevronRight,
-  DatabaseBackup,
-  ExternalLink,
-  FolderSync,
-  HardDrive,
-  Inbox,
-  LayoutDashboard,
-  LoaderCircle,
-  type LucideIcon,
-  RefreshCw,
-  Search,
-  Server,
-  ShieldCheck,
-  Siren,
-  UserCheck,
-  Wrench,
-} from "lucide-react";
+
 import {
   type FormEvent,
   type ReactNode,
@@ -107,30 +86,27 @@ interface NavigationItem {
   readonly section: Exclude<OperatorSection, "tenant">;
   readonly label: string;
   readonly permission?: string;
-  readonly icon: LucideIcon;
 }
 
 const NAVIGATION: readonly NavigationItem[] = [
-  { section: "overview", label: "Overview", permission: "overview_read", icon: LayoutDashboard },
-  { section: "tenants", label: "Tenants", permission: "tenant_read", icon: Building2 },
-  { section: "operations", label: "Operations", permission: "operations_read", icon: Wrench },
-  { section: "incidents", label: "Incidents", permission: "incident_read", icon: Siren },
+  { section: "overview", label: "Overview", permission: "overview_read" },
+  { section: "tenants", label: "Tenants", permission: "tenant_read" },
+  { section: "operations", label: "Operations", permission: "operations_read" },
+  { section: "incidents", label: "Incidents", permission: "incident_read" },
   {
     section: "backups",
     label: "Backups & recovery",
     permission: "backup_read",
-    icon: DatabaseBackup,
   },
-  { section: "sync", label: "RxDB sync", permission: "fleet_read", icon: FolderSync },
-  { section: "fleet", label: "Fleet", permission: "fleet_read", icon: Server },
-  { section: "storage", label: "Storage", permission: "fleet_read", icon: HardDrive },
-  { section: "security", label: "Security", permission: "security_read", icon: ShieldCheck },
-  { section: "activity", label: "Activity", permission: "activity_read", icon: Activity },
+  { section: "sync", label: "RxDB sync", permission: "fleet_read" },
+  { section: "fleet", label: "Fleet", permission: "fleet_read" },
+  { section: "storage", label: "Storage", permission: "fleet_read" },
+  { section: "security", label: "Security", permission: "security_read" },
+  { section: "activity", label: "Activity", permission: "activity_read" },
   {
     section: "waitlist",
     label: "Developer wait list",
     permission: "waitlist_review",
-    icon: UserCheck,
   },
 ];
 
@@ -172,7 +148,6 @@ export function OperatorWorkspaceScreen({
       </a>
       <header className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b bg-card px-4 py-3 sm:px-6">
         <div className="flex min-w-0 items-center gap-3">
-          <ShieldCheck aria-hidden="true" className="size-5 shrink-0 text-primary" />
           <div className="grid min-w-0 leading-tight">
             <Eyebrow>Audited platform administration</Eyebrow>
             <strong className="truncate text-sm">Mako Cloud Control Center</strong>
@@ -205,7 +180,7 @@ export function OperatorWorkspaceScreen({
             <nav className="flex gap-1 overflow-x-auto md:grid md:overflow-visible">
               {visibleNavigation.map((item) => {
                 const active = selected === item.section;
-                const Icon = item.icon;
+
                 return (
                   <Button
                     key={item.section}
@@ -217,7 +192,6 @@ export function OperatorWorkspaceScreen({
                     aria-current={active ? "page" : undefined}
                     onClick={() => navigate(`/operator/${item.section}`)}
                   >
-                    <Icon aria-hidden="true" className="size-4 shrink-0" />
                     {item.label}
                   </Button>
                 );
@@ -401,10 +375,7 @@ function TenantDirectoryPage({ navigate }: { readonly navigate: (path: string) =
             onChange={(event) => setQuery(event.currentTarget.value)}
           />
         </Field>
-        <Button type="submit">
-          <Search aria-hidden="true" />
-          Search
-        </Button>
+        <Button type="submit">Search</Button>
       </form>
       <ResourceFailure resource={resource} />
       {resource.status !== "ready" ? (
@@ -503,7 +474,6 @@ function Tenant360Page({
       actions={
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" size="sm" onClick={() => navigate("/operator/tenants")}>
-            <ArrowLeft aria-hidden="true" />
             Back to tenants
           </Button>
           <ReloadButton reload={resource.reload} pending={resource.status === "loading"} />
@@ -1058,7 +1028,6 @@ function CurrentAlertTable({ value }: { readonly value: OperatorAlertPage }) {
                         rel="noreferrer"
                       >
                         Open
-                        <ExternalLink aria-hidden="true" className="size-3.5" />
                       </a>
                     )}
                   </TableCell>
@@ -1216,7 +1185,6 @@ function IncidentTable({
         <div className="flex justify-end">
           <Button variant="outline" size="sm" onClick={() => onNext(value.nextCursor ?? "")}>
             Next incident page
-            <ChevronRight aria-hidden="true" />
           </Button>
         </div>
       )}
@@ -1445,10 +1413,7 @@ function ActivityPage({ permissions }: { readonly permissions: ReadonlySet<strin
             onChange={(event) => setQuery(event.currentTarget.value)}
           />
         </Field>
-        <Button type="submit">
-          <Search aria-hidden="true" />
-          Search
-        </Button>
+        <Button type="submit">Search</Button>
       </form>
       <ResourceFailure resource={resource} />
       {permissions.has("activity_export") && resource.status === "ready" ? (
@@ -1887,7 +1852,6 @@ function SectionGrid({ sections }: { readonly sections: readonly OperatorReadSec
                       rel="noreferrer"
                     >
                       {link.label}
-                      <ExternalLink aria-hidden="true" className="size-3.5" />
                     </a>
                   </li>
                 ))}
@@ -1980,9 +1944,6 @@ function StatCard({
 function WorkspaceEmptyState({ title }: { readonly title: string }) {
   return (
     <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed px-6 py-10 text-center">
-      <div className="mb-1 flex size-10 items-center justify-center rounded-full bg-muted text-muted-foreground">
-        <Inbox aria-hidden="true" className="size-5" />
-      </div>
       <h2 className="text-base">{title}</h2>
       <p className="m-0 max-w-sm text-sm text-muted-foreground">
         Adjust filters or refresh after the underlying state changes.
@@ -1998,7 +1959,6 @@ function LoadingState({ label }: { readonly label: string }) {
       aria-live="polite"
       aria-busy="true"
     >
-      <LoaderCircle aria-hidden="true" className="size-4 shrink-0 animate-spin" />
       {label}
     </p>
   );
@@ -2013,7 +1973,6 @@ function ReloadButton({
 }) {
   return (
     <Button variant="outline" size="sm" disabled={pending} onClick={reload}>
-      <RefreshCw aria-hidden="true" className={cn(pending && "animate-spin")} />
       {pending ? "Refreshing…" : "Refresh"}
     </Button>
   );
@@ -2036,13 +1995,11 @@ function CursorControls({
       aria-label="Cursor pagination"
     >
       <Button variant="outline" size="sm" disabled={!canPrevious} onClick={onPrevious}>
-        <ChevronLeft aria-hidden="true" />
         Previous page
       </Button>
       <span className="text-xs text-muted-foreground">Up to 25 records per page</span>
       <Button variant="outline" size="sm" disabled={!canNext} onClick={onNext}>
         Next page
-        <ChevronRight aria-hidden="true" />
       </Button>
     </nav>
   );
@@ -2060,10 +2017,6 @@ function Disclosure({
     <Card as="div" className="gap-0 py-0">
       <details className="group m-0">
         <summary className="m-0 flex cursor-pointer list-none items-center gap-2 px-5 py-4 text-base font-semibold tracking-tight [&::-webkit-details-marker]:hidden">
-          <ChevronRight
-            aria-hidden="true"
-            className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-90"
-          />
           {summary}
         </summary>
         <div className="grid gap-4 border-t px-5 py-5">{children}</div>

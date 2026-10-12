@@ -27,7 +27,7 @@ import {
   TableRow,
   Textarea,
 } from "@mako-cloud/ui";
-import { CircleCheck, Plus } from "lucide-react";
+
 import { type FormEvent, useCallback, useEffect, useState } from "react";
 
 import { ApiFailureNotice, type ConsoleApiFailure, toConsoleApiFailure } from "./api-error.js";
@@ -211,7 +211,6 @@ export function AuthProvidersScreen({
       {failure === null ? null : <ApiFailureNotice failure={failure} />}
       {status === null ? null : (
         <Alert variant="positive" role="status">
-          <CircleCheck aria-hidden="true" />
           <AlertDescription>{status}</AlertDescription>
         </Alert>
       )}
@@ -407,7 +406,6 @@ export function AuthProvidersScreen({
               <Label htmlFor="add-provider-enabled">Enabled</Label>
             </div>
             <Button type="submit" variant="secondary" className="justify-self-start">
-              <Plus aria-hidden="true" />
               Add provider
             </Button>
           </form>

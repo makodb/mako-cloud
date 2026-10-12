@@ -25,7 +25,7 @@ import {
   TabsTrigger,
   cn,
 } from "@mako-cloud/ui";
-import { Download, Info } from "lucide-react";
+
 import { type FormEvent, useCallback, useEffect, useId, useMemo, useState } from "react";
 
 import type {
@@ -186,7 +186,7 @@ export function ObservabilityScreen({
           className="-ml-2 w-fit text-muted-foreground hover:text-foreground"
           onClick={onBack}
         >
-          ← Project
+          Project
         </Button>
         <div className="grid gap-1">
           <Eyebrow>Environment {environmentId}</Eyebrow>
@@ -242,7 +242,6 @@ export function ObservabilityScreen({
                   disabled={visibleRecords.length === 0}
                   onClick={() => downloadExport(activeView, "json", visibleRecords)}
                 >
-                  <Download aria-hidden="true" />
                   Export JSON
                 </Button>
                 <Button
@@ -251,7 +250,6 @@ export function ObservabilityScreen({
                   disabled={visibleRecords.length === 0}
                   onClick={() => downloadExport(activeView, "csv", visibleRecords)}
                 >
-                  <Download aria-hidden="true" />
                   Export CSV
                 </Button>
               </CardAction>
@@ -302,7 +300,6 @@ export function ObservabilityScreen({
 export function RetentionNotice({ page }: { readonly page: ObservabilityPage }) {
   return (
     <Alert role="status">
-      <Info aria-hidden="true" />
       <AlertDescription className="block tabular-nums">
         Retained from {new Date(page.retention.retainedFrom).toLocaleString()}; observed at{" "}
         {new Date(page.retention.observedAt).toLocaleString()} (

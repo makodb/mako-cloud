@@ -22,7 +22,7 @@ import {
   Textarea,
   cn,
 } from "@mako-cloud/ui";
-import { HardDrive } from "lucide-react";
+
 import { type FormEvent, type ReactNode, useCallback, useEffect, useId, useState } from "react";
 
 import {
@@ -256,7 +256,6 @@ function BucketListScreen({
               </p>
             ) : buckets.length === 0 ? (
               <EmptyState
-                icon={<HardDrive aria-hidden="true" />}
                 title="No buckets have been created in this environment."
                 className="border-0 py-8"
               />
@@ -520,7 +519,7 @@ function BucketScreen({
           className="-ml-2 w-fit text-muted-foreground hover:text-foreground"
           onClick={onBack}
         >
-          ← Buckets
+          Buckets
         </Button>
         <div className="grid gap-1">
           <Eyebrow>Bucket</Eyebrow>

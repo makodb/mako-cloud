@@ -14,7 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from "@mako-cloud/ui";
-import { Info } from "lucide-react";
+
 import { type ReactNode, useEffect, useState } from "react";
 
 import { ApiFailureNotice, type ConsoleApiFailure, toConsoleApiFailure } from "./api-error.js";
@@ -83,7 +83,6 @@ export function BillingPanel({ teamId }: { readonly teamId: string }) {
             {/* The notice is the contract of the beta bill: it must be shown,
                 not implied, so it renders before any number does. */}
             <Alert role="note">
-              <Info aria-hidden="true" />
               <AlertDescription className="block text-foreground">{bill.notice}</AlertDescription>
             </Alert>
             <p className="m-0 text-sm text-muted-foreground">
@@ -202,7 +201,6 @@ export function ProjectBillingScreen({ projectId }: { readonly projectId: string
       {bill === null ? null : (
         <>
           <Alert role="note">
-            <Info aria-hidden="true" />
             <AlertDescription className="block text-foreground">{bill.notice}</AlertDescription>
           </Alert>
           <Card aria-labelledby="project-cost-title">

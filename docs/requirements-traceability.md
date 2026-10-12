@@ -1,6 +1,6 @@
 # Requirements-to-test traceability
 
-This matrix is the release-facing index from every scenario in the twenty capability specs named in `scripts/validate-requirements-traceability.js` to its primary evidence. The remaining capability specs under `openspec/specs/` are not indexed here. `Automated` means the cited test executes in the repository test suites. Supporting tests may exercise more behavior than the scenario named here.
+This matrix is the release-facing index from every scenario in the capability specs named in `scripts/validate-requirements-traceability.js` to its primary evidence. The remaining capability specs under `openspec/specs/` are not indexed here. `Automated` means the cited test executes in the repository test suites. Supporting tests may exercise more behavior than the scenario named here.
 
 Evidence marked `(mocked backend)` runs against intercepted HTTP responses rather than a running service, so it proves client behavior and not that the server implements the scenario. Evidence marked `(end-to-end)` drives the real service binaries. A scenario whose only evidence is mocked has no automated proof that the server side works.
 
@@ -74,16 +74,20 @@ Run `npm run validate:traceability` whenever a scenario or row changes. The vali
 | BI-01 | A finalized invoice is recomputed | `crates/mako-billing/src/rating.rs::one_segment_covering_the_period_rates_exactly_like_the_unsegmented_period` and `crates/mako-control-plane/src/organization.rs::an_invoice_closes_exactly_once_and_reads_back_unchanged` | Automated |
 | BI-02 | Prices change after a period closes | `crates/mako-control-plane/src/organization.rs::an_invoice_closes_exactly_once_and_reads_back_unchanged` | Automated |
 | BI-03 | The plan changed mid-period | `crates/mako-billing/src/rating.rs::an_upgrade_mid_month_prorates_the_base_and_the_flow_allowances` and `crates/mako-billing/src/rating.rs::a_level_prorates_its_charge_by_the_time_it_was_held` | Automated |
-| BI-04 | Use accrues beyond any credit | `apps/console/test-e2e/management-workflows.spec.ts` (mocked backend) -- asserts the negative balance is shown and marked, never clamped | Automated |
-| BI-05 | A balance is explained | `crates/mako-smoke/tests/telemetry_pipeline.rs::observed_events_and_usage_reach_the_management_api` (end-to-end; live bill and period queries) | Automated |
-| BI-06 | An operator grants credit | `crates/mako-control-plane/src/operator.rs::a_credit_is_granted_exactly_once_and_totals_are_the_sum_of_grants` | Automated |
-| BI-07 | A bill is displayed | `crates/mako-smoke/tests/telemetry_pipeline.rs::observed_events_and_usage_reach_the_management_api` (end-to-end) and `apps/console/test-e2e/management-workflows.spec.ts` (mocked backend) | Automated |
-| BI-08 | A tenant's balance is deeply negative | `scripts/validate-no-collection.js` (proves no enforcement path reads the balance) | Automated |
-| BI-09 | A component attempts collection | `scripts/validate-no-collection.js` | Automated |
-| BI-10 | The beta ends | `scripts/validate-no-collection.js` (no conversion mechanism exists to find) | Automated |
-| BI-11 | Usage exceeds sixteen thousand records | `crates/mako-smoke/tests/telemetry_pipeline.rs::observed_events_and_usage_reach_the_management_api` (end-to-end) and `services/mako-control-plane/src/management_http.rs::billing_pages_large_histories_with_exact_segment_totals_and_averages` | Automated |
-| BI-12 | A later usage page fails | `services/mako-control-plane/src/management_http.rs::billing_never_returns_partial_totals_after_a_late_page_failure` | Automated |
-| BI-13 | A billing period has expired from retention | `services/mako-control-plane/src/management_http.rs::billing_reports_partial_retention_and_skips_fully_expired_periods` | Automated |
+| BI-04 | Two projects share a metered resource charge | `crates/mako-billing/src/rating.rs::project_costs_split_usage_without_repeating_the_base_fee` | Automated |
+| BI-05 | Allocated costs require rounding | `crates/mako-billing/src/rating.rs::project_allocation_preserves_rounding_and_handles_large_quantities` and `crates/mako-billing/src/rating.rs::free_and_unused_projects_have_no_allocated_costs` | Automated |
+| BI-06 | Project billing is read without mutation | `crates/mako-smoke/tests/telemetry_pipeline.rs::observed_events_and_usage_reach_the_management_api` (end-to-end) and `packages/management-sdk/test/client.test.mjs::project billing reads the selected project without reading an owner's bill` (mocked SDK transport; GET-only project request) | Automated |
+| BI-07 | Caller lacks developer access | `crates/mako-smoke/tests/telemetry_pipeline.rs::observed_events_and_usage_reach_the_management_api` (end-to-end) -- rejects anonymous and application credentials on the project billing route | Automated |
+| BI-08 | Use accrues beyond any credit | `apps/console/test-e2e/management-workflows.spec.ts` (mocked backend) -- asserts the negative balance is shown and marked, never clamped | Automated |
+| BI-09 | A balance is explained | `crates/mako-smoke/tests/telemetry_pipeline.rs::observed_events_and_usage_reach_the_management_api` (end-to-end; live bill and period queries) | Automated |
+| BI-10 | An operator grants credit | `crates/mako-control-plane/src/operator.rs::a_credit_is_granted_exactly_once_and_totals_are_the_sum_of_grants` | Automated |
+| BI-11 | A bill is displayed | `crates/mako-smoke/tests/telemetry_pipeline.rs::observed_events_and_usage_reach_the_management_api` (end-to-end) and `apps/console/test-e2e/management-workflows.spec.ts` (mocked backend) | Automated |
+| BI-12 | A tenant's balance is deeply negative | `scripts/validate-no-collection.js` (proves no enforcement path reads the balance) | Automated |
+| BI-13 | A component attempts collection | `scripts/validate-no-collection.js` | Automated |
+| BI-14 | The beta ends | `scripts/validate-no-collection.js` (no conversion mechanism exists to find) | Automated |
+| BI-15 | Usage exceeds sixteen thousand records | `crates/mako-smoke/tests/telemetry_pipeline.rs::observed_events_and_usage_reach_the_management_api` (end-to-end) and `services/mako-control-plane/src/management_http.rs::billing_pages_large_histories_with_exact_segment_totals_and_averages` | Automated |
+| BI-16 | A later usage page fails | `services/mako-control-plane/src/management_http.rs::billing_never_returns_partial_totals_after_a_late_page_failure` | Automated |
+| BI-17 | A billing period has expired from retention | `services/mako-control-plane/src/management_http.rs::billing_reports_partial_retention_and_skips_fully_expired_periods` | Automated |
 
 
 ## Developer registration and wait list
@@ -330,9 +334,9 @@ Run `npm run validate:traceability` whenever a scenario or row changes. The vali
 
 | ID | Scenario | Primary automated evidence | Status |
 | --- | --- | --- | --- |
-| DC-01 | A developer with projects signs in | `apps/console/test-e2e/home-dashboard.spec.ts::projects across the personal space and a team appear as cards with recent activity` (mocked backend) | Automated |
-| DC-02 | A summary source is unavailable | `apps/console/test-e2e/home-dashboard.spec.ts::a usage source that fails marks only its own card` (mocked backend) | Automated |
-| DC-03 | A new developer completes onboarding | `apps/console/test-e2e/home-dashboard.spec.ts::a developer with no projects is guided from creation to a passing connection check` (mocked backend) | Automated |
+| DC-01 | A developer with projects signs in | `apps/console/test-e2e/home-dashboard.spec.ts::personal projects and team projects appear in separate lists with project summaries` (mocked backend) | Automated |
+| DC-02 | A summary source is unavailable | `apps/console/test-e2e/home-dashboard.spec.ts::a usage source that fails marks only its own row` (mocked backend) | Automated |
+| DC-03 | A new developer completes onboarding | `apps/console/test-e2e/home-dashboard.spec.ts::a developer creates the first project and continues in its workspace` (mocked backend) | Automated |
 | DC-04 | Onboarding is dismissed | `apps/console/test-e2e/home-dashboard.spec.ts::dismissing the guide leaves the ordinary empty state that can reopen it` (mocked backend) | Automated |
 | DC-05 | A developer opens a project | `apps/console/test-e2e/project-home.spec.ts::a project with two environments shows both with readiness and the selected environment's keys and quickstart` (mocked backend) | Automated |
 | DC-06 | Every destination is one click away | `apps/console/test-e2e/console-shell.spec.ts::a deep link opens inside the shell with its context and every destination` (mocked backend) | Automated |
@@ -340,10 +344,17 @@ Run `npm run validate:traceability` whenever a scenario or row changes. The vali
 | DC-08 | The console follows the developer's theme | `apps/console/test-e2e/design-system.spec.ts::the console follows the developer's theme and remembers it on the device` (mocked backend) | Automated |
 | DC-09 | A developer reads retained logs | `apps/console/test-e2e/surfaced-capabilities.spec.ts::retained logs list newest first, filter by level and source, and page through the window` (mocked backend) | Automated |
 | DC-10 | A developer renames a team | `apps/console/test-e2e/surfaced-capabilities.spec.ts::a team administrator renames the team and the name follows everywhere` (mocked backend) | Automated |
-| DC-11 | A developer checks a project's usage | `apps/console/test-e2e/usage-activity.spec.ts::project usage lists every environment and the team's bill with a negative balance marked` (mocked backend) | Automated |
-| DC-12 | A developer reviews recent activity | `apps/console/test-e2e/usage-activity.spec.ts::the activity feed lists newest first, filters by outcome and action, and loads more` (mocked backend) | Automated |
-| DC-13 | A developer transfers a project to a team | `apps/console/test-e2e/project-home.spec.ts::transferring a personal project to a team confirms, posts the team, and shows the new owner` (mocked backend) and `crates/mako-smoke/tests/project_transfer.rs::a_project_is_transferred_between_a_personal_space_and_a_team` (end-to-end) | Automated |
-| DC-14 | A developer deletes a project | `apps/console/test-e2e/project-home.spec.ts::settings shows identifiers and owner and offers deletion with grace` (mocked backend) | Automated |
+| DC-11 | A developer checks a project's usage | `apps/console/test-e2e/usage-activity.spec.ts::project usage lists every environment and links to its own billing` (mocked backend) | Automated |
+| DC-12 | Developer opens project billing | `apps/console/test-e2e/usage-activity.spec.ts::project billing excludes shared balances and links to overall usage and plan` (mocked backend) | Automated |
+| DC-13 | Developer checks the shared plan | `apps/console/test-e2e/home-dashboard.spec.ts::overall usage keeps personal and team plans separate and links to project billing` (mocked backend) | Automated |
+| DC-14 | Project billing is unavailable | `apps/console/test-e2e/usage-activity.spec.ts::project billing failures do not show zero costs or an owner's bill` (mocked backend) | Automated |
+| DC-15 | Developer opens data from the project list | `apps/console/test-e2e/home-dashboard.spec.ts::personal projects have one creation action, no search, and direct database entry` (mocked backend) | Automated |
+| DC-16 | Personal projects are populated | `apps/console/test-e2e/home-dashboard.spec.ts::personal projects have one creation action, no search, and direct database entry` (mocked backend) | Automated |
+| DC-17 | No projects exist | `apps/console/test-e2e/home-dashboard.spec.ts::a developer creates the first project and continues in its workspace` (mocked backend) and `apps/console/test-e2e/home-dashboard.spec.ts::dismissing the guide leaves the ordinary empty state that can reopen it` (mocked backend) | Automated |
+| DC-18 | Project listing fails | `apps/console/test-e2e/home-dashboard.spec.ts::an unavailable owner listing does not pretend the developer has no projects` (mocked backend) | Automated |
+| DC-19 | A developer reviews recent activity | `apps/console/test-e2e/usage-activity.spec.ts::the activity feed lists newest first, filters by outcome and action, and loads more` (mocked backend) | Automated |
+| DC-20 | A developer transfers a project to a team | `apps/console/test-e2e/project-home.spec.ts::transferring a personal project to a team confirms, posts the team, and shows the new owner` (mocked backend) and `crates/mako-smoke/tests/project_transfer.rs::a_project_is_transferred_between_a_personal_space_and_a_team` (end-to-end) | Automated |
+| DC-21 | A developer deletes a project | `apps/console/test-e2e/project-home.spec.ts::settings shows identifiers and owner and offers deletion with grace` (mocked backend) | Automated |
 
 ## Samples / Rational money app
 

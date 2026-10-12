@@ -1,4 +1,3 @@
-import { MoonIcon, SunIcon } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 import { Button, type ButtonProps } from "./components/button.js";
@@ -88,7 +87,7 @@ export function ThemeToggle({
   return (
     <Button
       variant="ghost"
-      size="icon"
+      size="sm"
       aria-label="Dark theme"
       title={resolved === "dark" ? "Switch to the light theme" : "Switch to the dark theme"}
       aria-pressed={resolved === "dark"}
@@ -96,7 +95,7 @@ export function ThemeToggle({
       className={className}
       {...props}
     >
-      {resolved === "dark" ? <SunIcon /> : <MoonIcon />}
+      Dark theme
     </Button>
   );
 }

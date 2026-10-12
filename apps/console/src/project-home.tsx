@@ -40,20 +40,7 @@ import {
   TableHeader,
   TableRow,
 } from "@mako-cloud/ui";
-import {
-  Activity,
-  Copy,
-  Database,
-  Gauge,
-  Globe,
-  Layers,
-  LayoutDashboard,
-  type LucideIcon,
-  Plus,
-  Receipt,
-  RefreshCw,
-  Settings,
-} from "lucide-react";
+
 import {
   type FormEvent,
   type MouseEvent,
@@ -69,6 +56,7 @@ import { ApiFailureNotice, type ConsoleApiFailure, toConsoleApiFailure } from ".
 import { ProjectBillingScreen } from "./billing.js";
 import { CustomDomainsScreen } from "./custom-domains.js";
 import { withOccurrenceKeys } from "./list-keys.js";
+import { type DashboardState, UpdatedAt, useDashboardResource } from "./dashboard-refresh.js";
 import { useManagementClient } from "./management.js";
 import { LifecycleBadge } from "./projects.js";
 import { confirmDestructiveAction } from "./safety.js";
@@ -82,14 +70,13 @@ type Navigate = (path: string, replace?: boolean) => void;
 const PROJECT_DESTINATIONS: readonly {
   readonly id: ProjectSection;
   readonly label: string;
-  readonly icon: LucideIcon;
 }[] = [
-  { id: "overview", label: "Overview", icon: LayoutDashboard },
-  { id: "usage", label: "Usage", icon: Gauge },
-  { id: "billing", label: "Billing", icon: Receipt },
-  { id: "activity", label: "Activity", icon: Activity },
-  { id: "domains", label: "Domains", icon: Globe },
-  { id: "settings", label: "Settings", icon: Settings },
+  { id: "overview", label: "Overview" },
+  { id: "usage", label: "Usage" },
+  { id: "billing", label: "Billing" },
+  { id: "activity", label: "Activity" },
+  { id: "domains", label: "Domains" },
+  { id: "settings", label: "Settings" },
 ];
 
 // The transfer target that names the caller's personal space; the API
@@ -310,7 +297,6 @@ export function ProjectHome({
                 path={`/projects/${projectId}/environments/${selectedEnvironment.id}/${destination}`}
                 navigate={navigate}
               >
-                <Database className="size-4 text-muted-foreground" aria-hidden="true" />
                 {label}
               </ConsoleLink>
             ))}
@@ -319,7 +305,6 @@ export function ProjectHome({
         <nav aria-label="Project destinations">
           <ul className="m-0 grid list-none gap-0.5 p-0">
             {PROJECT_DESTINATIONS.map((destination) => {
-              const Icon = destination.icon;
               const active = section === destination.id;
               return (
                 <li key={destination.id}>
@@ -336,7 +321,6 @@ export function ProjectHome({
                     }
                     navigate={navigate}
                   >
-                    <Icon aria-hidden="true" className="size-4 shrink-0" />
                     {destination.label}
                   </ConsoleLink>
                 </li>
@@ -421,12 +405,10 @@ function ProjectOverview({
                 {selectedEnvironment.name}
               </h2>
               <p className="m-0 text-sm text-muted-foreground">
-                Each summary loads on its own and names when it was observed. An unavailable summary
-                never hides a healthy one.
+                Summaries update every minute. Each shows when its information was last updated.
               </p>
             </div>
             <Button variant="outline" size="sm" onClick={() => setRefreshKey((value) => value + 1)}>
-              <RefreshCw aria-hidden="true" />
               Refresh summaries
             </Button>
           </div>
@@ -507,10 +489,7 @@ function EnvironmentsPanel({
       <CardContent className="grid gap-4">
         <ApiFailureNotice failure={failure} />
         {environments.length === 0 ? (
-          <EmptyState
-            icon={<Layers aria-hidden="true" />}
-            title="This project has no environments yet. Create one to start connecting clients."
-          />
+          <EmptyState title="This project has no environments yet. Create one to start connecting clients." />
         ) : (
           <div className="overflow-hidden rounded-lg border">
             <Table>
@@ -542,7 +521,6 @@ function EnvironmentsPanel({
         )}
         <details>
           <summary className="flex w-fit cursor-pointer list-none items-center gap-1.5 text-sm font-medium text-primary hover:underline [&::-webkit-details-marker]:hidden">
-            <Plus aria-hidden="true" className="size-4" />
             Create environment
           </summary>
           <form
@@ -723,18 +701,23 @@ function EnvironmentReadiness({
       </div>
     );
   }
-  const detail = readinessDetail(section.payload);
+  const detail = section.status === "unavailable" ? null : readinessDetail(section.payload);
   const counts = summaryCounts(summary.value);
   return (
     <div className="grid gap-1">
       <span className="flex flex-wrap items-center gap-2">
-        <StatusBadge state={section.status} />
+        {section.status === "unavailable" ? <StatusBadge state="unavailable" /> : null}
         {detail === null ? null : <span>{detail}</span>}
       </span>
       {counts === null ? null : <small className="block text-xs">{counts}</small>}
       <small className={OBSERVED}>
-        Observed {formatUnixSeconds(section.observedAtUnixSeconds)}
+        {section.status === "unavailable" ? null : (
+          <UpdatedAt at={section.observedAtUnixSeconds * 1000} />
+        )}
       </small>
+      {summary.refreshFailure ? (
+        <small className={OBSERVED}>Unable to refresh. Showing the last successful update.</small>
+      ) : null}
       {section.remediationCode === null || section.remediationCode === undefined ? null : (
         <small className={OBSERVED}>{humanize(section.remediationCode)}</small>
       )}
@@ -840,7 +823,6 @@ function ConnectDetails({ metadata }: { readonly metadata: ConnectMetadata }) {
             className="absolute top-2 right-2"
             onClick={() => void navigator.clipboard.writeText(snippet)}
           >
-            <Copy aria-hidden="true" />
             Copy
           </Button>
           <pre className="m-0 overflow-x-auto p-4 pr-24 font-mono text-xs leading-relaxed break-words whitespace-pre-wrap">
@@ -1413,28 +1395,12 @@ function TransferProjectPanel({
   );
 }
 
-type SummaryState<T> =
-  | { readonly status: "loading" }
-  | { readonly status: "ready"; readonly value: T; readonly observedAt: Date }
-  | { readonly status: "unavailable"; readonly failure: ConsoleApiFailure };
+type SummaryState<T> = DashboardState<T>;
 
-/// One independent fetch per summary. Callers memoize `load`; a change of
-/// environment remounts the panel through its key, so the state starts over.
 function useSummary<T>(load: (client: MakoManagementClient) => Promise<T>): SummaryState<T> {
   const client = useManagementClient();
-  const [state, setState] = useState<SummaryState<T>>({ status: "loading" });
-  useEffect(() => {
-    let active = true;
-    void load(client).then(
-      (value) => active && setState({ status: "ready", value, observedAt: new Date() }),
-      (error: unknown) =>
-        active && setState({ status: "unavailable", failure: toConsoleApiFailure(error) }),
-    );
-    return () => {
-      active = false;
-    };
-  }, [client, load]);
-  return state;
+  const request = useCallback(() => load(client), [client, load]);
+  return useDashboardResource(request).state;
 }
 
 function SummaryPanel<T>({
@@ -1454,15 +1420,13 @@ function SummaryPanel<T>({
   readonly actions?: ReactNode;
   readonly children: (value: T) => ReactNode;
 }) {
-  const badge =
-    state.status === "ready" ? "current" : state.status === "loading" ? "loading" : "unavailable";
   return (
     <Card aria-labelledby={`${id}-summary-title`} data-status={state.status} className="gap-4">
       <CardHeader>
         <CardTitle id={`${id}-summary-title`}>{title}</CardTitle>
         <CardDescription>{description}</CardDescription>
         <CardAction>
-          <StatusBadge state={badge} />
+          {state.status === "ready" ? null : <StatusBadge state={state.status} />}
         </CardAction>
       </CardHeader>
       <CardContent className="grid gap-3">
@@ -1479,9 +1443,17 @@ function SummaryPanel<T>({
           </>
         ) : (
           <>
+            {state.refreshFailure ? (
+              <>
+                <p role="status" className="m-0 text-sm">
+                  Unable to refresh. Showing the last successful update.
+                </p>
+                <ApiFailureNotice failure={state.refreshFailure} />
+              </>
+            ) : null}
             {children(state.value)}
             <small className={OBSERVED}>
-              Observed {observedAt(state.value, state.observedAt).toLocaleString()}
+              <UpdatedAt at={observedAt(state.value, state.observedAt)} />
             </small>
           </>
         )}
@@ -1548,11 +1520,11 @@ function ConsoleLink({
   );
 }
 
-/// A summary's freshness or an environment's readiness as one word. The
+/// An environment's lifecycle or a summary's loading/error state. The
 /// `status-badge` class is the hook the browser suites select it by.
 function StatusBadge({ state }: { readonly state: string }) {
   const variant =
-    state === "current" || state === "ready" || state === "active"
+    state === "ready" || state === "active"
       ? "positive"
       : state === "unavailable" || state === "failed"
         ? "destructive"
@@ -1648,10 +1620,6 @@ function formatQuantity(resource: string, value: number): string {
 function humanize(value: string): string {
   const spaced = value.replace(/([a-z])([A-Z])/gu, "$1 $2").replaceAll("_", " ");
   return `${spaced.charAt(0).toUpperCase()}${spaced.slice(1)}`;
-}
-
-function formatUnixSeconds(value: number): string {
-  return new Date(value * 1000).toLocaleString();
 }
 
 function idempotencyKey(): string {

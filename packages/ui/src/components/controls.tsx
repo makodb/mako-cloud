@@ -1,4 +1,3 @@
-import { CheckIcon } from "lucide-react";
 import {
   Checkbox as CheckboxPrimitive,
   Progress as ProgressPrimitive,
@@ -22,7 +21,7 @@ export function Checkbox({ className, ...props }: ComponentProps<typeof Checkbox
         data-slot="checkbox-indicator"
         className="flex items-center justify-center text-current transition-none"
       >
-        <CheckIcon className="size-3.5" />
+        <span className="size-2 rounded-[1px] bg-current [[data-state=indeterminate]_&]:h-0.5" />
       </CheckboxPrimitive.Indicator>
     </CheckboxPrimitive.Root>
   );

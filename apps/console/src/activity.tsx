@@ -4,6 +4,13 @@
 // actor, action, target, outcome, and time rendered. A project's feed unions
 // its environments' feeds client-side and is bounded; an environment's feed
 // pages through its cursor. Record details are rendered as text only.
+
+import type {
+  Environment,
+  MakoManagementClient,
+  ObservabilityPage,
+  ObservabilityPayload,
+} from "@mako-cloud/management-sdk";
 import {
   Alert,
   AlertDescription,
@@ -30,14 +37,8 @@ import {
 } from "@mako-cloud/ui";
 import { useCallback, useEffect, useId, useMemo, useState } from "react";
 
-import type {
-  Environment,
-  MakoManagementClient,
-  ObservabilityPage,
-  ObservabilityPayload,
-} from "@mako-cloud/management-sdk";
-
 import { ApiFailureNotice, type ConsoleApiFailure, toConsoleApiFailure } from "./api-error.js";
+import { UpdatedAt } from "./dashboard-refresh.js";
 import { useManagementClient } from "./management.js";
 
 type AuditPayload = Extract<ObservabilityPayload, { readonly kind: "audit" }>;
@@ -256,13 +257,12 @@ export function ActivityScreen({
   );
 }
 
-/** Whether the feed is current, still loading, or could not be read. */
+/** Only loading and failed reads need a status badge. */
 function FeedStateBadge({ state }: { readonly state: FeedState["status"] }) {
+  if (state === "ready") return null;
   return (
-    <Badge
-      variant={state === "ready" ? "positive" : state === "loading" ? "secondary" : "destructive"}
-    >
-      {state === "ready" ? "Current" : state === "loading" ? "Loading" : "Unavailable"}
+    <Badge variant={state === "loading" ? "secondary" : "destructive"}>
+      {state === "loading" ? "Loading" : "Unavailable"}
     </Badge>
   );
 }
@@ -275,7 +275,7 @@ function FeedProvenance({ feed, project }: { readonly feed: Feed; readonly proje
           "No retained audit records were observed."
         ) : (
           <>
-            Observed at <time dateTime={feed.observedAt}>{localTime(feed.observedAt)}</time>
+            <UpdatedAt at={feed.observedAt} />
             {feed.retainedFrom === null ? null : (
               <>
                 {" "}

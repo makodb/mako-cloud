@@ -16,7 +16,6 @@
     "@mako-cloud/management-sdk": "*",
     "@mako-cloud/rxdb": "*",
     "@mako-cloud/ui": "*",
-    "lucide-react": "1.41.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1"
   },

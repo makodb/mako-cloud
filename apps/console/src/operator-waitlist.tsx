@@ -23,7 +23,7 @@ import {
   TableRow,
   Textarea,
 } from "@mako-cloud/ui";
-import { ChevronLeft, ChevronRight, RefreshCw, Users, X } from "lucide-react";
+
 import {
   type FormEvent,
   type ReactNode,
@@ -255,7 +255,6 @@ export function OperatorWaitListPanel() {
             disabled={batchPending}
             onClick={() => void load(cursor)}
           >
-            <RefreshCw aria-hidden="true" />
             Refresh
           </Button>
         </CardAction>
@@ -294,10 +293,7 @@ export function OperatorWaitListPanel() {
             Loading a bounded page of applicants…
           </p>
         ) : applicants.length === 0 ? (
-          <EmptyState
-            icon={<Users aria-hidden="true" />}
-            title="No matching wait-listed applicants are on this page."
-          />
+          <EmptyState title="No matching wait-listed applicants are on this page." />
         ) : (
           <>
             <Card
@@ -437,7 +433,6 @@ export function OperatorWaitListPanel() {
               void load(prior);
             }}
           >
-            <ChevronLeft aria-hidden="true" />
             Previous page
           </Button>
           <span className="text-xs text-muted-foreground">
@@ -453,7 +448,6 @@ export function OperatorWaitListPanel() {
             }}
           >
             Next page
-            <ChevronRight aria-hidden="true" />
           </Button>
         </nav>
         {selected === null ? null : (
@@ -513,7 +507,6 @@ function ApplicantDecisionPanel({
           </p>
         </div>
         <Button variant="outline" size="sm" onClick={onClose}>
-          <X aria-hidden="true" />
           Close detail
         </Button>
       </div>

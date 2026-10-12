@@ -17,7 +17,7 @@ import {
   Input,
   Textarea,
 } from "@mako-cloud/ui";
-import { CircleCheck } from "lucide-react";
+
 import { useCallback, useEffect, useState } from "react";
 
 import { ApiFailureNotice, type ConsoleApiFailure, toConsoleApiFailure } from "./api-error.js";
@@ -182,7 +182,6 @@ export function EmailTemplatesScreen({
       {failure === null ? null : <ApiFailureNotice failure={failure} />}
       {status === null ? null : (
         <Alert variant="positive" role="status">
-          <CircleCheck aria-hidden="true" />
           <AlertDescription>{status}</AlertDescription>
         </Alert>
       )}

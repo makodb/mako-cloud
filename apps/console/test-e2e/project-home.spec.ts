@@ -59,14 +59,14 @@ test("a project with two environments shows both with readiness and the selected
   // stamped with when it was observed.
   const environments = page.getByRole("region", { name: "Environments" });
   const developmentRow = environments.getByRole("row").filter({ hasText: "development" });
-  await expect(developmentRow.getByText("Current", { exact: true })).toBeVisible();
+  await expect(developmentRow.getByText("Current", { exact: true })).toHaveCount(0);
   await expect(developmentRow.getByText("Ready", { exact: true })).toBeVisible();
   await expect(developmentRow.getByText("2 collections · 1 functions")).toBeVisible();
-  await expect(developmentRow.getByText(/Observed /u)).toBeVisible();
+  await expect(developmentRow.getByText(/^Updated /u)).toBeVisible();
   const previewRow = environments.getByRole("row").filter({ hasText: "preview" });
-  await expect(previewRow.getByText("Stale", { exact: true })).toBeVisible();
+  await expect(previewRow.getByText("Stale", { exact: true })).toHaveCount(0);
   await expect(previewRow.getByText("Not ready", { exact: true })).toBeVisible();
-  await expect(previewRow.getByText(/Observed /u)).toBeVisible();
+  await expect(previewRow.getByText(/^Updated /u)).toBeVisible();
 
   // The first active environment is selected by default and its keys, API
   // URL, and quickstart are shown.
@@ -97,8 +97,8 @@ test("a project with two environments shows both with readiness and the selected
   await expect(events.first()).toContainText("dev_abcdefgh");
   await expect(events.nth(1)).toContainText("policy.activate");
   for (const region of [keys, usage, health, activity]) {
-    await expect(region.getByText("Current", { exact: true })).toBeVisible();
-    await expect(region.getByText(/^Observed /u)).toBeVisible();
+    await expect(region.getByText("Current", { exact: true })).toHaveCount(0);
+    await expect(region.getByText(/^Updated /u)).toBeVisible();
   }
 
   // Selecting the other environment swaps every selected-environment
@@ -125,16 +125,16 @@ test("a failing summary source marks only its own panel unavailable", async ({ p
   await expect(health.getByText("Unavailable", { exact: true })).toBeVisible();
   await expect(health.getByText("This summary is unavailable")).toBeVisible();
   await expect(health.getByRole("alert")).toContainText("The health source is down.");
-  await expect(health.getByText(/Observed /u)).toHaveCount(0);
+  await expect(health.getByText(/^Updated /u)).toHaveCount(0);
 
   // Keys, usage, and activity are untouched by the failing health source.
   const keys = page.getByRole("region", { name: "Keys and API URL" });
   await expect(keys.getByLabel("Public project key")).toHaveValue(PUBLIC_KEY);
   const usage = page.getByRole("region", { name: "Usage", exact: true });
-  await expect(usage.getByText("Current", { exact: true })).toBeVisible();
+  await expect(usage.getByText("Current", { exact: true })).toHaveCount(0);
   await expect(usage.getByRole("cell", { name: "3.0 KiB" })).toBeVisible();
   const activity = page.getByRole("region", { name: "Recent activity" });
-  await expect(activity.getByText("Current", { exact: true })).toBeVisible();
+  await expect(activity.getByText("Current", { exact: true })).toHaveCount(0);
 
   // One environment's failing workspace summary marks that row alone.
   const environments = page.getByRole("region", { name: "Environments" });

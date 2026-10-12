@@ -12,7 +12,6 @@ import {
 } from "@mako-cloud/ui";
 import { type FormEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import { useDeveloperAuth } from "./auth.js";
-import { MakoMark } from "./mako-mark.js";
 
 type Navigate = (path: string, replace?: boolean) => void;
 
@@ -521,10 +520,7 @@ function PublicAuthShell({
     >
       <Card className="w-full max-w-md" aria-labelledby="public-auth-title">
         <CardHeader className="gap-2">
-          <div className="flex items-center gap-3">
-            <MakoMark />
-            <Eyebrow className="tracking-[0.18em] text-primary">Mako Cloud</Eyebrow>
-          </div>
+          <Eyebrow className="tracking-[0.18em] text-primary">Mako Cloud</Eyebrow>
           <h1 id="public-auth-title" className="text-2xl">
             {title}
           </h1>

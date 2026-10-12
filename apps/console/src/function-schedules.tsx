@@ -22,7 +22,7 @@ import {
   Textarea,
   cn,
 } from "@mako-cloud/ui";
-import { TriangleAlert } from "lucide-react";
+
 import { type FormEvent, type ReactNode, useCallback, useEffect, useId, useState } from "react";
 
 import type {
@@ -226,7 +226,6 @@ export function FunctionSchedulesPanel({
       <CardContent className="grid gap-5">
         {activeVersion === null ? (
           <Alert variant="warning" role="note">
-            <TriangleAlert aria-hidden="true" />
             <AlertDescription className="block">
               This function has no active deployment; a schedule is refused until a version is
               promoted.

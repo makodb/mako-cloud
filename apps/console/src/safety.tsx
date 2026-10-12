@@ -1,5 +1,5 @@
 import { Button } from "@mako-cloud/ui";
-import { KeyRound } from "lucide-react";
+
 import { useEffect, useRef, useState } from "react";
 
 const AUTO_DISMISS_MILLISECONDS = 5 * 60 * 1_000;
@@ -69,7 +69,6 @@ export function OneTimeSecretValue({
       aria-labelledby="one-time-title"
     >
       <div className="flex items-start gap-3">
-        <KeyRound aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-warning" />
         <div className="grid gap-1">
           <strong
             id="one-time-title"

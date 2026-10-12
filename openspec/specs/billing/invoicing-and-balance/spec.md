@@ -21,6 +21,27 @@ Closing a billing period SHALL rate the period's ledger into invoice line items,
 - **WHEN** a period that spanned a plan change is rated
 - **THEN** each plan's stretch is rated under its own terms with base fees and allowances prorated by time, and an unchanged plan rates identically to the unsegmented arithmetic
 
+### Requirement: Project costs are allocated under the owner's shared plan
+An authorized member SHALL be able to read a project's current-period usage and resource cost breakdown across all its environments. The personal account or owning team SHALL retain one shared plan and shared allowances. Each resource's rated usage charge SHALL be allocated among that owner's projects in proportion to their measured quantity for that resource. Allocation MUST be deterministic, preserve the rated resource charge through rounding, and assign no cost to a project with zero measured use of that resource. The plan's base fee, credits, and balance MUST remain at the owner level and MUST NOT be included in project cost totals.
+
+The response SHALL identify the project, owner, shared plan, period, earliest retained evidence, observation time, allocation method, resource quantities, allocated amounts, and project total. It MUST contain only the requested project's breakdown and the informational non-payable notice. Reading the project breakdown MUST NOT finalize an invoice or change a plan, credit, or payment state. Unavailable evidence MUST produce an explicit failure, and partial retained coverage MUST be identified.
+
+#### Scenario: Two projects share a metered resource charge
+- **WHEN** two projects account for one quarter and three quarters of a resource's measured use and the owner's rated usage charge for that resource is one dollar
+- **THEN** their allocated resource costs are 25 cents and 75 cents, while the owner's base fee and credits remain outside both project totals
+
+#### Scenario: Allocated costs require rounding
+- **WHEN** a resource charge cannot be divided exactly in micro-dollars according to project quantities
+- **THEN** the allocation is deterministic, the project shares sum to the owner's resource charge, and zero-use projects receive no rounding remainder
+
+#### Scenario: Project billing is read without mutation
+- **WHEN** an authorized member requests a project's current bill
+- **THEN** the result reports that project's retained usage and allocated costs without returning another project's breakdown or changing invoice, credit, or plan state
+
+#### Scenario: Caller lacks developer access
+- **WHEN** an anonymous caller or an application credential requests a project bill
+- **THEN** the request is denied without disclosing project usage, costs, or the owner's billing information
+
 ### Requirement: A team has a running balance that may be negative
 Each team SHALL have an account balance equal to its credits minus its finalized charges. A balance MUST be permitted to go negative, meaning the team has accrued more use than credit, and MUST be derivable from the retained invoices and credit entries that produced it.
 

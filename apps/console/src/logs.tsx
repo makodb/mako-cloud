@@ -18,7 +18,7 @@ import {
   TableHeader,
   TableRow,
 } from "@mako-cloud/ui";
-import { ScrollText } from "lucide-react";
+
 import { type FormEvent, useEffect, useId, useMemo, useState } from "react";
 
 import type {
@@ -274,14 +274,12 @@ export function LogsScreen({
           ) : lines.length === 0 ? (
             <EmptyState
               role="status"
-              icon={<ScrollText aria-hidden="true" />}
               title="No log lines are retained for this window."
               description="Widen the time range, or check that the environment has served traffic."
             />
           ) : visible.length === 0 ? (
             <EmptyState
               role="status"
-              icon={<ScrollText aria-hidden="true" />}
               title="No loaded lines match the level and source filters."
               description="Clear a filter or load more lines from the retention window."
             />

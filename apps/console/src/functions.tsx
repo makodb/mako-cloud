@@ -24,7 +24,7 @@ import {
   TableRow,
   Textarea,
 } from "@mako-cloud/ui";
-import { CircleCheck, Zap } from "lucide-react";
+
 import { type FormEvent, type ReactNode, useCallback, useEffect, useId, useState } from "react";
 
 import type {
@@ -110,7 +110,7 @@ export function FunctionsScreen({
   return (
     <section aria-labelledby="functions-title" className="grid gap-6">
       <div className="grid gap-2">
-        <BackLink onClick={onBack}>← Project</BackLink>
+        <BackLink onClick={onBack}>Project</BackLink>
         <div className="grid gap-1">
           <Eyebrow>Environment {environmentId}</Eyebrow>
           <h1 id="functions-title" className="text-2xl">
@@ -128,11 +128,7 @@ export function FunctionsScreen({
             {functions === null ? (
               <p className="m-0 text-sm text-muted-foreground">Loading functions…</p>
             ) : functions.length === 0 ? (
-              <EmptyState
-                icon={<Zap aria-hidden="true" />}
-                title="No functions have been created."
-                className="border-0 py-8"
-              />
+              <EmptyState title="No functions have been created." className="border-0 py-8" />
             ) : (
               <ul className="m-0 grid list-none gap-1 p-0">
                 {functions.map((item) => (
@@ -380,7 +376,7 @@ export function FunctionScreen({
   return (
     <section aria-labelledby="function-title" className="grid gap-6">
       <div className="grid gap-2">
-        <BackLink onClick={onBack}>← Functions</BackLink>
+        <BackLink onClick={onBack}>Functions</BackLink>
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="grid gap-1">
             <Eyebrow>Edge function</Eyebrow>
@@ -660,7 +656,6 @@ function BundleUploadPanel({
         )}
         {artifact === null ? null : (
           <Alert variant="positive" role="status">
-            <CircleCheck aria-hidden="true" />
             <AlertTitle>Immutable bundle ready</AlertTitle>
             <AlertDescription className="block">
               <p className="m-0">

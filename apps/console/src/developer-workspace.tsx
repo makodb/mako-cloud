@@ -37,35 +37,7 @@ import {
   TableRow,
   Textarea,
 } from "@mako-cloud/ui";
-import {
-  Activity,
-  BookOpen,
-  Box,
-  CalendarClock,
-  ChevronRight,
-  Copy,
-  Database,
-  DatabaseBackup,
-  FolderOpen,
-  Gauge,
-  Globe,
-  HardDrive,
-  KeyRound,
-  LayoutDashboard,
-  type LucideIcon,
-  Mail,
-  Plug,
-  Radar,
-  RefreshCw,
-  ScrollText,
-  Settings,
-  ShieldCheck,
-  SquareFunction,
-  Table2,
-  TriangleAlert,
-  Users,
-  Webhook,
-} from "lucide-react";
+
 import { type FormEvent, type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 
 import { AllowedOriginsSection } from "./allowed-origins.js";
@@ -185,32 +157,6 @@ function consoleDestinations(projectId: string, environmentId: string): Workspac
   ];
 }
 
-/** One icon per destination the sidebar can list; an unknown id gets a plain box. */
-const DESTINATION_ICONS: Readonly<Record<string, LucideIcon>> = {
-  overview: LayoutDashboard,
-  data: Database,
-  collections: Table2,
-  sync: RefreshCw,
-  users: Users,
-  policies: ShieldCheck,
-  functions: SquareFunction,
-  observability: Radar,
-  backups: DatabaseBackup,
-  connect: Plug,
-  settings: Settings,
-  credentials: KeyRound,
-  storage: HardDrive,
-  webhooks: Webhook,
-  "auth-providers": KeyRound,
-  "email-templates": Mail,
-  "api-docs": BookOpen,
-  logs: ScrollText,
-  usage: Gauge,
-  activity: Activity,
-  schedules: CalendarClock,
-  domains: Globe,
-};
-
 export function EnvironmentWorkspaceLayout({
   projectId,
   environmentId,
@@ -316,7 +262,7 @@ export function EnvironmentWorkspaceLayout({
               navigate("/");
             }}
           >
-            ← All projects
+            All projects
           </a>
           <Eyebrow>Database workspace</Eyebrow>
           <Button
@@ -325,7 +271,6 @@ export function EnvironmentWorkspaceLayout({
             className="h-auto min-w-0 items-start justify-start gap-2 whitespace-normal px-0 py-0 text-left text-base font-semibold hover:bg-transparent hover:underline"
             onClick={() => navigate(`/projects/${projectId}`)}
           >
-            <FolderOpen aria-hidden="true" className="mt-1 size-4 shrink-0 text-muted-foreground" />
             {projectLoading ? (
               <Skeleton className="h-5 w-36" />
             ) : (
@@ -409,7 +354,6 @@ export function EnvironmentWorkspaceLayout({
                   {allDestinations
                     .filter((destination) => group.ids.includes(destination.id))
                     .map((destination) => {
-                      const Icon = DESTINATION_ICONS[destination.id] ?? Box;
                       return (
                         <li key={destination.id}>
                           <a
@@ -433,7 +377,6 @@ export function EnvironmentWorkspaceLayout({
                               navigate(destination.path);
                             }}
                           >
-                            <Icon aria-hidden="true" className="size-4 shrink-0" />
                             {destination.label}
                           </a>
                         </li>
@@ -459,9 +402,6 @@ export function EnvironmentWorkspaceLayout({
           >
             Projects
           </a>
-          <span aria-hidden="true" className="flex text-muted-foreground/60">
-            <ChevronRight className="size-3.5" />
-          </span>
           <a
             href={`/projects/${projectId}`}
             onClick={(event) => {
@@ -477,9 +417,6 @@ export function EnvironmentWorkspaceLayout({
               </span>
             )}
           </a>
-          <span aria-hidden="true" className="flex text-muted-foreground/60">
-            <ChevronRight className="size-3.5" />
-          </span>
           <strong className="font-medium text-foreground">
             {projectLoading ? (
               <Skeleton className="inline-block h-4 w-24 align-middle" />
@@ -532,7 +469,6 @@ function PageHeader({
 function WarningNote({ children, className }: { children: ReactNode; className?: string }) {
   return (
     <Alert variant="warning" role="note" className={className}>
-      <TriangleAlert aria-hidden="true" />
       <AlertDescription className="block">{children}</AlertDescription>
     </Alert>
   );
@@ -660,7 +596,6 @@ function ConnectPage({
               className="absolute top-2 right-2"
               onClick={() => void navigator.clipboard.writeText(snippet)}
             >
-              <Copy aria-hidden="true" />
               Copy
             </Button>
             <pre className="m-0 overflow-x-auto p-4 pr-24 font-mono text-xs leading-relaxed whitespace-pre-wrap break-words">
@@ -848,7 +783,6 @@ function RemediationHelp({ summary }: { readonly summary: SyncSummary }) {
   ].filter((item) => (item.count ?? 0) > 0);
   return issues.length === 0 ? null : (
     <aside className="flex items-start gap-3 rounded-lg border border-warning/40 bg-warning/10 px-4 py-3 text-sm">
-      <TriangleAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-warning" />
       <div className="grid gap-1">
         <strong className="font-medium">Recommended action</strong>
         <ul className="m-0 grid gap-1 pl-5 text-foreground/85">
@@ -926,10 +860,7 @@ function BackupAndRestore({
       />
       <ApiFailureNotice failure={failure} />
       {backups.length === 0 ? (
-        <EmptyState
-          icon={<DatabaseBackup aria-hidden="true" />}
-          title="No tenant-verified recovery point is available."
-        />
+        <EmptyState title="No tenant-verified recovery point is available." />
       ) : (
         <Card className="gap-0 overflow-hidden py-0">
           <Table>
@@ -1180,7 +1111,6 @@ function CollectionPolicies({
                           )
                         }
                       >
-                        <ShieldCheck aria-hidden="true" />
                         Manage policy
                       </Button>
                     </TableCell>

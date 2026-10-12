@@ -724,7 +724,8 @@ test("overview preserves healthy sections when a provider is unavailable", async
   await page.goto(`/projects/${PROJECT_ID}/environments/${ENVIRONMENT_ID}/overview`);
   const environment = page.getByRole("article", { name: "Environment", exact: true });
   await expect(environment.getByText("Active", { exact: true })).toBeVisible();
-  await expect(environment.getByText("Stale", { exact: true })).toBeVisible();
+  await expect(environment.getByText("Stale", { exact: true })).toHaveCount(0);
+  await expect(environment.getByText(/^Updated /u)).toBeVisible();
   await expect(page.getByText("Sync error records")).toBeVisible();
   await expect(
     page

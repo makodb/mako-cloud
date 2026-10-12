@@ -27,10 +27,8 @@ import {
   NativeSelect,
   Textarea,
 } from "@mako-cloud/ui";
-import { ChevronDown, CircleCheck, ShieldCheck } from "lucide-react";
 import { type FormEvent, type ReactNode, useId, useState } from "react";
 import { ApiFailureNotice, type ConsoleApiFailure, toConsoleApiFailure } from "./api-error.js";
-import { MakoMark } from "./mako-mark.js";
 import { useOperatorAuth } from "./operator-auth.js";
 import { useOperatorClient } from "./operator-management.js";
 import { OperatorWaitListPanel } from "./operator-waitlist.js";
@@ -188,7 +186,6 @@ export function OperatorConsoleScreen({ onExit }: { readonly onExit: () => void 
       </a>
       <header className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b bg-card px-4 py-3 sm:px-6">
         <div className="flex min-w-0 items-center gap-3">
-          <MakoMark />
           <div className="grid min-w-0 leading-tight">
             <Eyebrow>Restricted surface</Eyebrow>
             <strong className="truncate text-sm">Mako Cloud Operator Console</strong>
@@ -787,12 +784,7 @@ function Result({ value, label }: { readonly value: unknown; readonly label: str
   return (
     <details className="group m-0 rounded-lg border border-positive/30 bg-positive/5 text-sm">
       <summary className="m-0 flex cursor-pointer list-none items-center gap-2 px-4 py-3 font-medium [&::-webkit-details-marker]:hidden">
-        <CircleCheck aria-hidden="true" className="size-4 shrink-0 text-positive" />
         {label}
-        <ChevronDown
-          aria-hidden="true"
-          className="ml-auto size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180"
-        />
       </summary>
       <pre className="m-0 max-h-80 overflow-auto border-t border-positive/30 px-4 py-3 font-mono text-xs leading-relaxed">
         {JSON.stringify(value, null, 2)}
@@ -812,10 +804,7 @@ function OperatorCentered({
     <main className="flex min-h-screen items-center justify-center bg-background px-4 py-10 text-foreground">
       <Card className="w-full max-w-md">
         <CardHeader>
-          <Eyebrow className="flex items-center gap-2">
-            <ShieldCheck aria-hidden="true" className="size-4 text-primary" />
-            Restricted operator route
-          </Eyebrow>
+          <Eyebrow className="flex items-center gap-2">Restricted operator route</Eyebrow>
           <CardTitle as="h1" className="text-xl">
             {title}
           </CardTitle>

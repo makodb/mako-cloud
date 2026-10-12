@@ -44,7 +44,6 @@ import {
   TabsTrigger,
   Textarea,
 } from "@mako-cloud/ui";
-import { AlertTriangle, CheckCircle2, Info, RefreshCw, Search, Table2 } from "lucide-react";
 import {
   type FormEvent,
   type ReactNode,
@@ -406,7 +405,6 @@ export function DataExplorer({
         className="grid min-w-0 gap-3 rounded-lg border bg-card p-3 xl:sticky xl:top-4"
       >
         <div className="flex items-center gap-2 text-sm font-semibold">
-          <Table2 aria-hidden="true" className="size-4 text-primary" />
           Collections
           {collections === null ? (
             <Skeleton className="ml-auto h-5 w-6 rounded-full" />
@@ -417,16 +415,12 @@ export function DataExplorer({
           )}
         </div>
         <div className="relative">
-          <Search
-            aria-hidden="true"
-            className="absolute top-2.5 left-2 size-3.5 text-muted-foreground"
-          />
           <Input
             aria-label="Search collections"
             value={collectionSearch}
             onChange={(event) => setCollectionSearch(event.currentTarget.value)}
             placeholder="Find a collection…"
-            className="pl-7 text-xs"
+            className="text-xs"
           />
         </div>
         <nav
@@ -452,7 +446,6 @@ export function DataExplorer({
                   collection.id === collectionId && "bg-primary/10 text-primary",
                 )}
               >
-                <Table2 aria-hidden="true" className="size-3.5" />
                 <span className="truncate">{collection.id}</span>
               </Button>
             ))}
@@ -508,7 +501,6 @@ export function DataExplorer({
           </>
         ) : collections.length === 0 ? (
           <Alert>
-            <Info aria-hidden="true" />
             <AlertDescription>
               Create and activate a collection schema before opening the explorer.
             </AlertDescription>
@@ -572,7 +564,6 @@ export function DataExplorer({
             <TabsContent value="documents" className="grid gap-4">
               <div className="flex flex-wrap items-end gap-3 rounded-lg border bg-card p-3">
                 <Button disabled={loading} onClick={() => void browse(null, false)}>
-                  <RefreshCw aria-hidden="true" />
                   Refresh documents
                 </Button>
                 {grant.mode === "administrative" ? (
@@ -631,7 +622,6 @@ export function DataExplorer({
                 ) : (
                   <div className="grid min-h-48 place-items-center rounded-lg border border-dashed bg-card p-6 text-center text-sm text-muted-foreground">
                     <div>
-                      <Table2 aria-hidden="true" className="mx-auto mb-3 size-7" />
                       <p>Browse documents or run a query to load this collection.</p>
                     </div>
                   </div>
@@ -665,7 +655,6 @@ export function DataExplorer({
                 ) : null}
                 {auditReference !== null ? (
                   <Alert>
-                    <Info aria-hidden="true" />
                     <AlertDescription className="block">
                       Audit reference <code className={CODE}>{auditReference}</code>
                     </AlertDescription>
@@ -799,7 +788,6 @@ function QueryBuilder({
         {plan !== null ? (
           plan.supported ? (
             <Alert variant="positive">
-              <CheckCircle2 aria-hidden="true" />
               <AlertDescription className="block">
                 Using index <strong className="font-mono">{plan.indexName}</strong>; effective limit{" "}
                 {plan.effectiveLimit}.
@@ -807,7 +795,6 @@ function QueryBuilder({
             </Alert>
           ) : (
             <Alert variant="warning">
-              <AlertTriangle aria-hidden="true" />
               <AlertDescription>
                 <p className="m-0">
                   This query needs an active index. No collection scan was attempted.
@@ -1181,7 +1168,6 @@ function MutationEditor({
         </form>
         {simulation !== null ? (
           <Alert variant={accepted ? "positive" : "warning"}>
-            {accepted ? <CheckCircle2 aria-hidden="true" /> : <AlertTriangle aria-hidden="true" />}
             <AlertTitle>{accepted ? "Simulation allowed" : "Simulation rejected"}</AlertTitle>
             <AlertDescription>
               {simulation.schemaValid ? null : (
@@ -1222,7 +1208,6 @@ function ConflictComparison({
     <Card role="alert" className="border-destructive/40">
       <CardHeader>
         <CardTitle as="h3" className="flex items-center gap-2 leading-snug text-destructive">
-          <AlertTriangle aria-hidden="true" className="size-4 shrink-0" />
           Revision conflict—no automatic merge was attempted
         </CardTitle>
       </CardHeader>
@@ -1510,7 +1495,6 @@ function DataJobs({
         {pendingConfirmation === null ? null : (
           <aside>
             <Alert variant="warning">
-              <AlertTriangle aria-hidden="true" />
               <h4 className="col-start-2 m-0 text-sm font-medium tracking-tight">
                 Confirm import execution
               </h4>
@@ -1741,7 +1725,6 @@ function DataJobDetail({
           </h4>
           <div className="flex flex-wrap items-center gap-2">
             <Button variant="outline" size="sm" onClick={onRefresh}>
-              <RefreshCw aria-hidden="true" />
               Refresh
             </Button>
             <Button variant="outline" size="sm" onClick={onClose}>
@@ -1803,7 +1786,6 @@ function DataJobDetail({
         ) : null}
         {diagnostics.length > 0 ? (
           <Alert variant="destructive" role="status">
-            <AlertTriangle aria-hidden="true" />
             <AlertTitle>
               {job.state === "awaiting_confirmation"
                 ? "Rows the dry run found the schema refuses"
@@ -1821,7 +1803,6 @@ function DataJobDetail({
           </Alert>
         ) : failed ? (
           <Alert variant="destructive" role="status">
-            <AlertTriangle aria-hidden="true" />
             <AlertDescription>The job failed without a retained diagnostic.</AlertDescription>
           </Alert>
         ) : null}
@@ -1849,7 +1830,6 @@ function DataJobDetail({
         </div>
         {uploadGrant === null ? null : (
           <Alert role="status">
-            <Info aria-hidden="true" />
             <AlertDescription className="block">
               Upload grant: <code className={CODE}>{uploadGrant.method}</code>{" "}
               <code className={CODE}>{uploadGrant.url}</code>, expires{" "}

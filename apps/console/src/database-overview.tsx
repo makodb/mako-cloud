@@ -1,4 +1,4 @@
-import type { Collection, WorkspaceSummary } from "@mako-cloud/management-sdk";
+import type { WorkspaceSummary } from "@mako-cloud/management-sdk";
 import {
   Badge,
   Button,
@@ -15,23 +15,26 @@ import {
   TableHeader,
   TableRow,
 } from "@mako-cloud/ui";
-import {
-  Activity,
-  ArrowRight,
-  Database,
-  DatabaseBackup,
-  Plus,
-  RefreshCw,
-  SquareFunction,
-  Table2,
-} from "lucide-react";
-import { useEffect, useState } from "react";
-import { ApiFailureNotice, type ConsoleApiFailure, toConsoleApiFailure } from "./api-error.js";
+
+import { useCallback } from "react";
+import { ApiFailureNotice } from "./api-error.js";
+import { type DashboardState, UpdatedAt, useDashboardResource } from "./dashboard-refresh.js";
 import { useManagementClient } from "./management.js";
 
 type Section = WorkspaceSummary["sections"][string];
-type Resource<T> = { value: T | null; loading: boolean; error: ConsoleApiFailure | null };
-const initial = <T,>(): Resource<T> => ({ value: null, loading: true, error: null });
+function resource<T>(state: DashboardState<T>) {
+  return {
+    value: state.status === "ready" ? state.value : null,
+    loading: state.status === "loading",
+    refreshing: state.status === "loading" || (state.status === "ready" && state.refreshing),
+    error:
+      state.status === "unavailable"
+        ? state.failure
+        : state.status === "ready"
+          ? state.refreshFailure
+          : null,
+  };
+}
 
 export function DatabaseOverview({
   projectId,
@@ -44,34 +47,18 @@ export function DatabaseOverview({
 }) {
   const client = useManagementClient();
   const base = `/projects/${projectId}/environments/${environmentId}`;
-  const [version, setVersion] = useState(0);
-  const [summary, setSummary] = useState(initial<WorkspaceSummary>);
-  const [collections, setCollections] = useState(initial<Collection[]>);
-  const [now, setNow] = useState(() => Date.now() / 1000);
-  useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now() / 1000), 10_000);
-    return () => window.clearInterval(timer);
-  }, []);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: version explicitly refreshes both independent providers.
-  useEffect(() => {
-    let active = true;
-    setSummary(initial());
-    setCollections(initial());
-    void client.getWorkspaceSummary(projectId, environmentId).then(
-      (value) => active && setSummary({ value, loading: false, error: null }),
-      (error: unknown) =>
-        active && setSummary({ value: null, loading: false, error: toConsoleApiFailure(error) }),
-    );
-    void client.listCollections(projectId, environmentId).then(
-      (value) => active && setCollections({ value, loading: false, error: null }),
-      (error: unknown) =>
-        active &&
-        setCollections({ value: null, loading: false, error: toConsoleApiFailure(error) }),
-    );
-    return () => {
-      active = false;
-    };
-  }, [client, projectId, environmentId, version]);
+  const loadSummary = useCallback(
+    () => client.getWorkspaceSummary(projectId, environmentId),
+    [client, projectId, environmentId],
+  );
+  const loadCollections = useCallback(
+    () => client.listCollections(projectId, environmentId),
+    [client, projectId, environmentId],
+  );
+  const summaryResource = useDashboardResource(loadSummary);
+  const collectionsResource = useDashboardResource(loadCollections);
+  const summary = resource(summaryResource.state);
+  const collections = resource(collectionsResource.state);
   const sections = summary.value?.sections ?? {};
   const lifecycle = payload(sections.lifecycle);
   const activity = records(payload(sections.activity).events);
@@ -80,7 +67,6 @@ export function DatabaseOverview({
     {
       id: "lifecycle",
       title: "Environment",
-      icon: Database,
       value: lifecycle.ready === true ? "Active" : text(lifecycle.environment, "Not ready"),
       detail: "Project and environment lifecycle",
       path: "settings",
@@ -88,7 +74,6 @@ export function DatabaseOverview({
     {
       id: "collections",
       title: "Collections",
-      icon: Table2,
       value: count(payload(sections.collections), "count"),
       detail: "Versioned document schemas",
       path: "collections",
@@ -96,7 +81,6 @@ export function DatabaseOverview({
     {
       id: "functions",
       title: "Functions",
-      icon: SquareFunction,
       value: count(payload(sections.functions), "count"),
       detail: "Functions defined in this environment",
       path: "functions",
@@ -104,7 +88,6 @@ export function DatabaseOverview({
     {
       id: "backups",
       title: "Recovery points",
-      icon: DatabaseBackup,
       value: count(payload(sections.backups), "verifiedCount"),
       detail: "Verified backups for this environment",
       path: "backups",
@@ -117,24 +100,28 @@ export function DatabaseOverview({
           <Eyebrow>Environment overview</Eyebrow>
           <h1 className="text-2xl">Database overview</h1>
           <p className="m-0 text-sm text-muted-foreground">
-            Your collections, database activity, and application services.
+            Your collections, database activity, and application services. Updates every minute.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button
             variant="outline"
-            disabled={summary.loading || collections.loading}
-            onClick={() => setVersion((value) => value + 1)}
+            disabled={summary.refreshing || collections.refreshing}
+            onClick={() => {
+              summaryResource.refresh();
+              collectionsResource.refresh();
+            }}
           >
-            <RefreshCw aria-hidden="true" />
             Refresh
           </Button>
-          <Button onClick={() => navigate(`${base}/connect`)}>
-            Connect application
-            <ArrowRight aria-hidden="true" />
-          </Button>
+          <Button onClick={() => navigate(`${base}/connect`)}>Connect application</Button>
         </div>
       </header>
+      {summary.error && summary.value ? (
+        <p role="status" className="m-0 text-sm text-muted-foreground">
+          Unable to refresh. Showing the last successful update.
+        </p>
+      ) : null}
       <ApiFailureNotice failure={summary.error} />
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {metrics.map((metric) => (
@@ -143,7 +130,6 @@ export function DatabaseOverview({
               <CardTitle as="h2" className="text-sm font-medium text-muted-foreground">
                 {metric.title}
               </CardTitle>
-              <metric.icon aria-hidden="true" className="size-4 text-muted-foreground" />
             </CardHeader>
             <CardContent className="grid gap-3 px-4">
               <strong className="text-3xl font-semibold tracking-tight">
@@ -154,13 +140,13 @@ export function DatabaseOverview({
                     : "Unavailable"}
               </strong>
               <p className="m-0 text-xs text-muted-foreground">{metric.detail}</p>
-              <Observation section={sections[metric.id]} now={now} loading={summary.loading} />
+              <Observation section={sections[metric.id]} loading={summary.loading} />
               <a
                 href={`${base}/${metric.path}`}
                 className="text-xs"
                 onClick={(event) => follow(event, `${base}/${metric.path}`, navigate)}
               >
-                View {metric.title.toLowerCase()} →
+                View {metric.title.toLowerCase()}
               </a>
             </CardContent>
           </Card>
@@ -176,7 +162,6 @@ export function DatabaseOverview({
               </p>
             </div>
             <Button size="sm" variant="outline" onClick={() => navigate(`${base}/collections`)}>
-              <Plus aria-hidden="true" />
               Create collection
             </Button>
           </CardHeader>
@@ -190,7 +175,6 @@ export function DatabaseOverview({
               <EmptyState
                 title="Create your first collection"
                 description="Define a document schema, then add data and connect your application."
-                icon={<Database aria-hidden="true" />}
                 action={
                   <Button onClick={() => navigate(`${base}/collections`)}>
                     Define a collection
@@ -221,10 +205,6 @@ export function DatabaseOverview({
                               follow(event, `${base}/collections/${collection.id}`, navigate)
                             }
                           >
-                            <Table2
-                              aria-hidden="true"
-                              className="size-4 shrink-0 text-muted-foreground"
-                            />
                             {collection.id}
                           </a>
                         </TableCell>
@@ -241,7 +221,6 @@ export function DatabaseOverview({
                             onClick={() => navigate(`${base}/collections/${collection.id}`)}
                           >
                             Schema
-                            <ArrowRight aria-hidden="true" />
                           </Button>
                         </TableCell>
                       </TableRow>
@@ -252,7 +231,6 @@ export function DatabaseOverview({
             ) : null}
             {collections.value !== null && collections.value.length > 0 ? (
               <Button className="justify-self-start" onClick={() => navigate(`${base}/data`)}>
-                <Database aria-hidden="true" />
                 Explore data
               </Button>
             ) : null}
@@ -279,10 +257,6 @@ export function DatabaseOverview({
                   <strong className="text-sm font-medium">{label}</strong>
                   <span className="text-xs text-muted-foreground">{description}</span>
                 </span>
-                <ArrowRight
-                  aria-hidden="true"
-                  className="size-4 shrink-0 text-muted-foreground group-hover:text-primary"
-                />
               </a>
             ))}
           </CardContent>
@@ -297,11 +271,11 @@ export function DatabaseOverview({
               onClick={(event) => follow(event, `${base}/usage`, navigate)}
               className="text-xs"
             >
-              Usage & quotas →
+              Usage & quotas
             </a>
           </CardHeader>
           <CardContent className="grid gap-4">
-            <Observation section={sections.usage} now={now} loading={summary.loading} />
+            <Observation section={sections.usage} loading={summary.loading} />
             {readable(sections.usage) ? (
               <>
                 {samples.length === 0 ? (
@@ -344,14 +318,14 @@ export function DatabaseOverview({
                     ? count(payload(sections.sync), "recordCount")
                     : "Unavailable"}
                 </strong>
-                <Observation section={sections.sync} now={now} loading={summary.loading} />
+                <Observation section={sections.sync} loading={summary.loading} />
                 <WindowNote value={payload(sections.sync)} />
                 <a
                   href={`${base}/sync`}
                   className="text-xs"
                   onClick={(event) => follow(event, `${base}/sync`, navigate)}
                 >
-                  Inspect sync →
+                  Inspect sync
                 </a>
               </div>
               <div>
@@ -361,7 +335,7 @@ export function DatabaseOverview({
                     ? count(payload(sections.dataJobs), "active")
                     : "Unavailable"}
                 </strong>
-                <Observation section={sections.dataJobs} now={now} loading={summary.loading} />
+                <Observation section={sections.dataJobs} loading={summary.loading} />
               </div>
             </div>
           </CardContent>
@@ -369,10 +343,9 @@ export function DatabaseOverview({
         <Card aria-label="Recent database activity">
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle>Recent activity</CardTitle>
-            <Activity aria-hidden="true" className="size-4 text-muted-foreground" />
           </CardHeader>
           <CardContent className="grid gap-4">
-            <Observation section={sections.activity} now={now} loading={summary.loading} />
+            <Observation section={sections.activity} loading={summary.loading} />
             {readable(sections.activity) ? (
               <>
                 {activity.length === 0 ? (
@@ -412,7 +385,7 @@ export function DatabaseOverview({
               className="text-xs"
               onClick={(event) => follow(event, `${base}/activity`, navigate)}
             >
-              View audit activity →
+              View audit activity
             </a>
           </CardContent>
         </Card>
@@ -423,31 +396,20 @@ export function DatabaseOverview({
 
 function Observation({
   section,
-  now,
   loading,
 }: {
   readonly section: Section | undefined;
-  readonly now: number;
   readonly loading: boolean;
 }) {
-  const status = loading
-    ? "Loading"
-    : !readable(section)
-      ? "Unavailable"
-      : section?.status === "stale" || (section?.freshUntilUnixSeconds ?? 0) <= now
-        ? "Stale"
-        : "Current";
   return (
-    <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
-      <Badge
-        variant={status === "Current" ? "outline" : status === "Loading" ? "secondary" : "warning"}
-        className="text-[10px]"
-      >
-        {status}
-      </Badge>
-      {section ? (
-        <span>Observed {new Date(section.observedAtUnixSeconds * 1000).toLocaleTimeString()}</span>
-      ) : null}
+    <div className="text-[11px] text-muted-foreground">
+      {loading ? (
+        "Loading…"
+      ) : !readable(section) ? (
+        "Unavailable"
+      ) : (
+        <UpdatedAt at={section ? section.observedAtUnixSeconds * 1000 : null} />
+      )}
     </div>
   );
 }

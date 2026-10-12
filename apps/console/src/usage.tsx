@@ -29,10 +29,11 @@ import {
   TableHeader,
   TableRow,
 } from "@mako-cloud/ui";
-import { Info } from "lucide-react";
-import { useEffect, useState } from "react";
 
-import { ApiFailureNotice, type ConsoleApiFailure, toConsoleApiFailure } from "./api-error.js";
+import { useCallback, useState } from "react";
+
+import { ApiFailureNotice } from "./api-error.js";
+import { type DashboardState, UpdatedAt, useDashboardResource } from "./dashboard-refresh.js";
 import { useManagementClient } from "./management.js";
 
 type TeamBill = Awaited<ReturnType<MakoManagementClient["getTeamBill"]>>;
@@ -88,10 +89,7 @@ interface MonthUsage {
   readonly truncated: boolean;
 }
 
-type SectionState<T> =
-  | { readonly status: "loading" }
-  | { readonly status: "ready"; readonly value: T }
-  | { readonly status: "unavailable"; readonly failure: ConsoleApiFailure };
+type SectionState<T> = DashboardState<T>;
 
 /** Aggregate one environment's usage records the way the bill rates them. */
 export function aggregateUsage(records: readonly ObservabilityRecord[]): ResourceUsage[] {
@@ -200,23 +198,11 @@ async function readMonthUsage(
 
 function useTeamBill(projectId: string): SectionState<TeamBill> {
   const client = useManagementClient();
-  const [state, setState] = useState<SectionState<TeamBill>>({ status: "loading" });
-  useEffect(() => {
-    let active = true;
-    setState({ status: "loading" });
-    void client
-      .getProject(projectId)
-      .then((project) => client.getTeamBill(project.teamId))
-      .then(
-        (bill) => active && setState({ status: "ready", value: bill }),
-        (error: unknown) =>
-          active && setState({ status: "unavailable", failure: toConsoleApiFailure(error) }),
-      );
-    return () => {
-      active = false;
-    };
-  }, [client, projectId]);
-  return state;
+  const load = useCallback(
+    () => client.getProject(projectId).then((project) => client.getTeamBill(project.teamId)),
+    [client, projectId],
+  );
+  return useDashboardResource(load).state;
 }
 
 function useMonthUsage(
@@ -225,38 +211,17 @@ function useMonthUsage(
   from: string,
 ): SectionState<MonthUsage> {
   const client = useManagementClient();
-  const [state, setState] = useState<SectionState<MonthUsage>>({ status: "loading" });
-  useEffect(() => {
-    let active = true;
-    setState({ status: "loading" });
-    void readMonthUsage(client, projectId, environmentId, from).then(
-      (usage) => active && setState({ status: "ready", value: usage }),
-      (error: unknown) =>
-        active && setState({ status: "unavailable", failure: toConsoleApiFailure(error) }),
-    );
-    return () => {
-      active = false;
-    };
-  }, [client, environmentId, from, projectId]);
-  return state;
+  const load = useCallback(
+    () => readMonthUsage(client, projectId, environmentId, from),
+    [client, projectId, environmentId, from],
+  );
+  return useDashboardResource(load).state;
 }
 
 function useEnvironments(projectId: string): SectionState<Environment[]> {
   const client = useManagementClient();
-  const [state, setState] = useState<SectionState<Environment[]>>({ status: "loading" });
-  useEffect(() => {
-    let active = true;
-    setState({ status: "loading" });
-    void client.listEnvironments(projectId).then(
-      (environments) => active && setState({ status: "ready", value: environments }),
-      (error: unknown) =>
-        active && setState({ status: "unavailable", failure: toConsoleApiFailure(error) }),
-    );
-    return () => {
-      active = false;
-    };
-  }, [client, projectId]);
-  return state;
+  const load = useCallback(() => client.listEnvironments(projectId), [client, projectId]);
+  return useDashboardResource(load).state;
 }
 
 export function UsageScreen({
@@ -350,6 +315,7 @@ function ProjectEnvironmentsUsage({
       <Card data-state="ready" aria-labelledby="usage-environments-title">
         <SectionHeading id="usage-environments-title" title="Environments" state="ready" />
         <CardContent>
+          <ApiFailureNotice failure={environments.refreshFailure} />
           <p className="m-0 text-sm text-muted-foreground">
             This project has no environments yet, so nothing has been metered.
           </p>
@@ -359,6 +325,7 @@ function ProjectEnvironmentsUsage({
   }
   return (
     <>
+      <ApiFailureNotice failure={environments.refreshFailure} />
       {environments.value.map((environment) => (
         <EnvironmentUsageSection
           key={environment.id}
@@ -403,9 +370,17 @@ function EnvironmentUsageSection({
         {usage.status === "unavailable" ? <ApiFailureNotice failure={usage.failure} /> : null}
         {usage.status === "ready" ? (
           <>
+            {usage.refreshFailure ? (
+              <>
+                <p role="status" className="m-0 text-sm">
+                  Unable to refresh usage. Showing the last successful update.
+                </p>
+                <ApiFailureNotice failure={usage.refreshFailure} />
+              </>
+            ) : null}
             <p className="m-0 text-sm text-muted-foreground">
-              {usage.value.records.toLocaleString("en-US")} records observed at{" "}
-              <time dateTime={usage.value.observedAt}>{localTime(usage.value.observedAt)}</time>
+              {usage.value.records.toLocaleString("en-US")} records ·{" "}
+              <UpdatedAt at={usage.value.observedAt} />
               {new Date(usage.value.retainedFrom).getTime() > monthStart.getTime() ? (
                 <>
                   {" "}
@@ -532,6 +507,14 @@ function PlanAllowanceSection({ bill }: { readonly bill: SectionState<TeamBill> 
         {bill.status === "unavailable" ? <ApiFailureNotice failure={bill.failure} /> : null}
         {bill.status === "ready" ? (
           <>
+            {bill.refreshFailure ? (
+              <>
+                <p role="status" className="m-0 text-sm">
+                  Unable to refresh plan allowances. Showing the last successful update.
+                </p>
+                <ApiFailureNotice failure={bill.refreshFailure} />
+              </>
+            ) : null}
             <BillNotice bill={bill.value} />
             <BillPeriod bill={bill.value} />
             <p className="m-0 text-sm">
@@ -550,7 +533,6 @@ function PlanAllowanceSection({ bill }: { readonly bill: SectionState<TeamBill> 
 function BillNotice({ bill }: { readonly bill: TeamBill }) {
   return (
     <Alert role="note">
-      <Info aria-hidden="true" />
       <AlertDescription className="block text-foreground">{bill.notice}</AlertDescription>
     </Alert>
   );
@@ -562,8 +544,7 @@ function BillPeriod({ bill }: { readonly bill: TeamBill }) {
       Plan <strong className="text-foreground">{bill.planId}</strong> · period{" "}
       <time dateTime={bill.periodStart}>{bill.periodStart.slice(0, 10)}</time> to{" "}
       <time dateTime={bill.periodEnd}>{bill.periodEnd.slice(0, 10)}</time>
-      {bill.finalized ? " (closed)" : " (live)"} · observed at{" "}
-      <time dateTime={bill.observedAt}>{localTime(bill.observedAt)}</time>
+      {bill.finalized ? " (closed)" : " (live)"} · <UpdatedAt at={bill.observedAt} />
     </p>
   );
 }
@@ -581,13 +562,11 @@ function SectionHeading({
     <CardHeader>
       <CardTitle id={id}>{title}</CardTitle>
       <CardAction>
-        <Badge
-          variant={
-            state === "ready" ? "positive" : state === "loading" ? "secondary" : "destructive"
-          }
-        >
-          {state === "ready" ? "Current" : state === "loading" ? "Loading" : "Unavailable"}
-        </Badge>
+        {state === "ready" ? null : (
+          <Badge variant={state === "loading" ? "secondary" : "destructive"}>
+            {state === "loading" ? "Loading" : "Unavailable"}
+          </Badge>
+        )}
       </CardAction>
     </CardHeader>
   );

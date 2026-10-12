@@ -14,7 +14,7 @@ import {
   Input,
   Textarea,
 } from "@mako-cloud/ui";
-import { AlertTriangle, CheckCircle2, ShieldCheck, XCircle } from "lucide-react";
+
 import { type FormEvent, type ReactNode, useCallback, useEffect, useState } from "react";
 
 import type {
@@ -260,7 +260,7 @@ export function PolicyScreen({
             className="-ml-2 text-muted-foreground hover:text-foreground"
             onClick={onBack}
           >
-            ← Collection
+            Collection
           </Button>
         </div>
         <div className="flex flex-wrap items-end justify-between gap-4">
@@ -353,10 +353,7 @@ export function PolicyScreen({
             <PolicyVersionCard policy={selected} />
             {selected === null ? null : (
               <div className="flex flex-wrap items-center gap-2">
-                <Button onClick={() => void validate()}>
-                  <ShieldCheck aria-hidden="true" />
-                  Validate against schema
-                </Button>
+                <Button onClick={() => void validate()}>Validate against schema</Button>
                 <Button
                   variant="outline"
                   disabled={selected.state !== "validated"}
@@ -418,11 +415,6 @@ function DefaultDenyNotice({ active }: { readonly active: ActivePolicy | null })
   }
   return (
     <Alert variant={active.defaultDeny ? "warning" : "positive"} role="status">
-      {active.defaultDeny ? (
-        <AlertTriangle aria-hidden="true" />
-      ) : (
-        <CheckCircle2 aria-hidden="true" />
-      )}
       <AlertTitle>
         {active.defaultDeny ? "Default deny is active." : "An active policy is installed."}
       </AlertTitle>
@@ -460,7 +452,6 @@ function ValidationResult({ validation }: { readonly validation: PolicyValidatio
   }
   return (
     <Alert variant={validation.valid ? "positive" : "destructive"} role="status">
-      {validation.valid ? <CheckCircle2 aria-hidden="true" /> : <XCircle aria-hidden="true" />}
       <AlertTitle>
         {validation.valid ? "Schema-aware validation passed." : "Validation failed."}
       </AlertTitle>
