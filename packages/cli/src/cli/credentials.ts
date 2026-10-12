@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { CliError, EXIT } from "./errors.js";
 
-export const REFRESH_COOKIE_NAME = "__Host-mako_developer_refresh";
+export const REFRESH_COOKIE_NAME = "__Secure-mako_developer_refresh";
 
 export interface StoredSession {
   readonly accessToken: string;

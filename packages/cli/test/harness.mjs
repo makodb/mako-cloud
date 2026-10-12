@@ -8,7 +8,7 @@ import { Readable } from "node:stream";
 
 import { commands as allCommands, run } from "../dist/index.js";
 
-export const REFRESH_COOKIE = "__Host-mako_developer_refresh";
+export const REFRESH_COOKIE = "__Secure-mako_developer_refresh";
 export const NOW = "2026-08-06T12:00:00.000Z";
 export const TEAM_ID = "org_abcdefgh";
 export const PERSONAL_TEAM_ID = "org_personal";
@@ -184,14 +184,14 @@ export function authHandler(options = {}) {
       return {
         status: 200,
         json: session(options.session ?? {}),
-        headers: { "set-cookie": `${REFRESH_COOKIE}=refresh-cookie-0001; Path=/; Secure; HttpOnly; SameSite=Strict` },
+        headers: { "set-cookie": `${REFRESH_COOKIE}=refresh-cookie-0001; Path=/v1/developer-auth/sessions; Secure; HttpOnly; SameSite=Strict` },
       };
     }
     if (request.method === "POST" && request.path === "/v1/developer-auth/sessions/refresh") {
       return {
         status: 200,
         json: session({ accessToken: "developer-session-token-0002" }),
-        headers: { "set-cookie": `${REFRESH_COOKIE}=refresh-cookie-0002; Path=/; Secure; HttpOnly; SameSite=Strict` },
+        headers: { "set-cookie": `${REFRESH_COOKIE}=refresh-cookie-0002; Path=/v1/developer-auth/sessions; Secure; HttpOnly; SameSite=Strict` },
       };
     }
     if (request.method === "DELETE" && request.path === "/v1/developer-auth/sessions/current") {
