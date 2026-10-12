@@ -494,9 +494,8 @@ pub async fn restore_backup(
 async fn inspect_checkpoint_recovery(path: &Path) -> StorageResult<SequencerRecoveryReport> {
     let mut config = RocksDbConfig::new(path);
     config.create_if_missing = false;
-    let page_size = config.maximum_scan_items;
     let adapter = RocksDbAdapter::open(config)?;
-    let report = recover_all_sequencers(&adapter, page_size).await?;
+    let report = recover_all_sequencers(&adapter).await?;
     drop(adapter);
     Ok(report)
 }
@@ -507,9 +506,8 @@ async fn verify_restored_database(
 ) -> StorageResult<SequencerRecoveryReport> {
     let mut config = RocksDbConfig::new(path);
     config.create_if_missing = false;
-    let page_size = config.maximum_scan_items;
     let adapter = RocksDbAdapter::open(config)?;
-    let recovery = recover_all_sequencers(&adapter, page_size).await?;
+    let recovery = recover_all_sequencers(&adapter).await?;
     verify_recovery_against_manifest(&recovery, manifest)?;
     drop(adapter);
     Ok(recovery)

@@ -1000,7 +1000,7 @@ Alert on the configured warning reserve and stop discretionary writes before the
 
 #### Graceful shutdown and same-volume restart
 
-Remove the owner from routing and wait for in-flight mutations. Let the service complete synchronous writes and graceful shutdown before terminating the process. Reattach the same claim to exactly one replacement. Readiness waits for RocksDB recovery, ownership/format checks, semantic checks, sequencer gap recovery, and acknowledged-high-water verification. If the old process may still run, fence it at the orchestrator and node level before attaching the volume.
+Remove the owner from routing and wait for in-flight mutations. Let the service complete synchronous writes and graceful shutdown before terminating the process. Reattach the same claim to exactly one replacement. Readiness waits for RocksDB recovery, ownership/format checks, semantic checks, sequencer gap recovery, and acknowledged-high-water verification. Recovery finds the tenants by reading one key per tenant and then checks each tenant's acknowledged positions, so its cost follows tenants and positions, not stored bytes; the release operation allows each service 60 seconds to become ready. If the old process may still run, fence it at the orchestrator and node level before attaching the volume.
 
 #### Checkpoint backup
 

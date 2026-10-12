@@ -13,7 +13,8 @@ use crate::{
     AtomicWrite, CompareAndWriteResult, Durability, KeyCondition, KeyRange, KvAdapter,
     RocksDbAdapter, RocksDbConfig, ScanDirection, ScanRequest, SequencerKeyKind, StorageError,
     StorageErrorKind, StorageReadiness, StorageResult, TenantKeyspace, WriteBatch,
-    check_storage_readiness, key_codec::decode_tenant_identity,
+    check_storage_readiness,
+    key_codec::{TenantIdentity, decode_tenant_span, tenant_namespace_range},
 };
 
 pub const MARKER_VERSION: u32 = 1;
@@ -164,7 +165,7 @@ impl ProductionRocksDb {
         rocks_config.transaction_lock_timeout = config.transaction_lock_timeout;
         rocks_config.transaction_expiration = config.transaction_expiration;
         let adapter = RocksDbAdapter::open(rocks_config)?;
-        let recovery = recover_all_sequencers(&adapter, config.maximum_scan_items).await?;
+        let recovery = recover_all_sequencers(&adapter).await?;
         let readiness = check_storage_readiness(&adapter, Durability::Sync).await;
         if !readiness.is_ready() {
             return Err(StorageError::new(
@@ -243,41 +244,8 @@ impl ProductionRocksDb {
 
 pub(crate) async fn recover_all_sequencers(
     adapter: &RocksDbAdapter,
-    page_size: NonZeroUsize,
 ) -> StorageResult<SequencerRecoveryReport> {
-    let mut tenants = BTreeSet::new();
-    let mut start = vec![0];
-    let end = vec![0xff];
-    loop {
-        let entries = adapter
-            .scan(ScanRequest::new(
-                KeyRange::new(start.clone(), end.clone())?,
-                ScanDirection::Forward,
-                page_size,
-            ))
-            .await?;
-        for entry in &entries {
-            if let Some(identity) = decode_tenant_identity(&entry.key).map_err(|_| {
-                StorageError::new(
-                    StorageErrorKind::Corruption,
-                    "sequencer_recovery",
-                    false,
-                    "tenant key prefix is corrupt",
-                )
-            })? {
-                tenants.insert(identity);
-            }
-        }
-        if entries.len() < page_size.get() {
-            break;
-        }
-        let Some(last) = entries.last() else {
-            break;
-        };
-        start = last.key.clone();
-        start.push(0);
-    }
-
+    let tenants = discover_tenants(adapter).await?;
     let mut report = SequencerRecoveryReport::default();
     for (project, environment) in tenants {
         let keyspace = TenantKeyspace::new(project.clone(), environment.clone()).map_err(|_| {
@@ -296,6 +264,51 @@ pub(crate) async fn recover_all_sequencers(
         });
     }
     Ok(report)
+}
+
+/// Every tenant that owns at least one key, found by reading one key per
+/// tenant.
+///
+/// The keys are the only record of which tenants exist. This used to read
+/// every key and value in the store to collect them, on every open, so opening
+/// the beta's 8.5 GB data plane took about 90 seconds and outlasted the
+/// release operation's readiness wait. All of a tenant's keys share its
+/// encoded prefix, so the walk now seeks past that prefix as soon as it meets
+/// it. It still decodes every key that is not inside an already-found tenant,
+/// so a corrupt tenant prefix is refused exactly as before.
+async fn discover_tenants(adapter: &dyn KvAdapter) -> StorageResult<BTreeSet<TenantIdentity>> {
+    let namespace = tenant_namespace_range().map_err(|_| corrupt_tenant_prefix())?;
+    let end = namespace.end_exclusive;
+    let mut start = namespace.start_inclusive;
+    let mut tenants = BTreeSet::new();
+    while start < end {
+        let entries = adapter
+            .scan(ScanRequest::new(
+                KeyRange::new(start, end.clone())?,
+                ScanDirection::Forward,
+                NonZeroUsize::MIN,
+            ))
+            .await?;
+        let Some(entry) = entries.into_iter().next() else {
+            break;
+        };
+        start = match decode_tenant_span(&entry.key).map_err(|_| corrupt_tenant_prefix())? {
+            Some((identity, after)) => {
+                tenants.insert(identity);
+                after
+            }
+            None => {
+                let mut next = entry.key;
+                next.push(0);
+                next
+            }
+        };
+    }
+    Ok(tenants)
+}
+
+fn corrupt_tenant_prefix() -> StorageError {
+    corrupt_recovery("tenant key prefix is corrupt")
 }
 
 async fn recover_tenant_sequencer(
@@ -650,4 +663,209 @@ fn sync_directory(path: &Path) -> StorageResult<()> {
 
 fn safe_io(operation: &'static str, retryable: bool, message: &'static str) -> StorageError {
     StorageError::new(StorageErrorKind::Io, operation, retryable, message)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use async_trait::async_trait;
+    use futures::executor::block_on;
+
+    use super::*;
+    use crate::{
+        AdapterCapabilities, HealthReport, KeyValue, KvSnapshot, KvTransaction, MemoryAdapter,
+        TransactionMode,
+    };
+
+    /// A memory adapter that counts the entries its scans return.
+    struct CountingAdapter {
+        inner: MemoryAdapter,
+        scanned: AtomicUsize,
+    }
+
+    #[async_trait]
+    impl KvAdapter for CountingAdapter {
+        async fn get(&self, key: &[u8]) -> StorageResult<Option<Vec<u8>>> {
+            self.inner.get(key).await
+        }
+
+        async fn scan(&self, request: ScanRequest) -> StorageResult<Vec<KeyValue>> {
+            let entries = self.inner.scan(request).await?;
+            self.scanned.fetch_add(entries.len(), Ordering::Relaxed);
+            Ok(entries)
+        }
+
+        async fn snapshot(&self) -> StorageResult<Box<dyn KvSnapshot>> {
+            self.inner.snapshot().await
+        }
+
+        async fn write(&self, batch: WriteBatch, durability: Durability) -> StorageResult<()> {
+            self.inner.write(batch, durability).await
+        }
+
+        async fn compare_and_write(
+            &self,
+            request: AtomicWrite,
+        ) -> StorageResult<CompareAndWriteResult> {
+            self.inner.compare_and_write(request).await
+        }
+
+        async fn begin_transaction(
+            &self,
+            mode: TransactionMode,
+        ) -> StorageResult<Box<dyn KvTransaction>> {
+            self.inner.begin_transaction(mode).await
+        }
+
+        async fn stored_bytes(&self, range: KeyRange) -> StorageResult<u64> {
+            self.inner.stored_bytes(range).await
+        }
+
+        async fn count_keys(&self, range: KeyRange) -> StorageResult<u64> {
+            self.inner.count_keys(range).await
+        }
+
+        async fn health(&self) -> StorageResult<HealthReport> {
+            self.inner.health().await
+        }
+
+        fn capabilities(&self) -> AdapterCapabilities {
+            self.inner.capabilities()
+        }
+    }
+
+    fn store(keys: impl IntoIterator<Item = Vec<u8>>) -> CountingAdapter {
+        let inner = MemoryAdapter::with_limits(
+            NonZeroUsize::new(1_000).expect("non-zero"),
+            NonZeroUsize::new(1_000_000).expect("non-zero"),
+        );
+        let keys: Vec<Vec<u8>> = keys.into_iter().collect();
+        for chunk in keys.chunks(1_000) {
+            let mut batch = WriteBatch::new();
+            for key in chunk {
+                batch.put(key, b"value");
+            }
+            block_on(inner.write(batch, Durability::Memory)).expect("write keys");
+        }
+        CountingAdapter {
+            inner,
+            scanned: AtomicUsize::new(0),
+        }
+    }
+
+    fn tenant(project: &[u8], environment: &[u8]) -> TenantKeyspace {
+        TenantKeyspace::new(project.to_vec(), environment.to_vec()).expect("tenant keyspace")
+    }
+
+    /// The walk this replaced: decode every key in the store.
+    fn decode_every_key(adapter: &CountingAdapter) -> Option<BTreeSet<TenantIdentity>> {
+        let everything = block_on(adapter.inner.scan(ScanRequest::new(
+            KeyRange::new(vec![0], vec![0xff]).expect("range"),
+            ScanDirection::Forward,
+            NonZeroUsize::new(1_000_000).expect("non-zero"),
+        )));
+        let mut tenants = BTreeSet::new();
+        for entry in everything.expect("scan the whole store") {
+            match decode_tenant_span(&entry.key) {
+                Ok(Some((identity, _))) => {
+                    tenants.insert(identity);
+                }
+                Ok(None) => {}
+                Err(_) => return None,
+            }
+        }
+        Some(tenants)
+    }
+
+    #[test]
+    fn tenant_discovery_reads_one_key_per_tenant() {
+        let large = tenant(b"prj_large", b"env_live");
+        let sibling = tenant(b"prj_large", b"env_dev");
+        // A zero byte is escaped inside a segment; this tenant sorts right
+        // after one whose environment it extends, and must not be skipped.
+        let escaped = tenant(b"prj_large", b"env_dev\0x");
+        let other = tenant(b"prj_other", b"env_live");
+        let mut keys = vec![
+            TenantKeyspace::system_key(b"domain", b"item").expect("system key"),
+            TenantKeyspace::project_metadata_key(b"prj_large").expect("project key"),
+            TenantKeyspace::project_metadata_key(b"prj_other").expect("project key"),
+            sibling.sequencer_key(SequencerKeyKind::Lease),
+            escaped.environment_metadata_key(),
+            other.sequencer_key(SequencerKeyKind::HighWater),
+        ];
+        keys.extend(
+            (1..=5_000).map(|position| {
+                large.sequencer_position_key(SequencerKeyKind::Committed, position)
+            }),
+        );
+        let adapter = store(keys);
+
+        let tenants = block_on(discover_tenants(&adapter)).expect("discover tenants");
+
+        let expected: BTreeSet<TenantIdentity> = [&large, &sibling, &escaped, &other]
+            .into_iter()
+            .map(|keyspace| (keyspace.project().to_vec(), keyspace.environment().to_vec()))
+            .collect();
+        assert_eq!(tenants, expected);
+        assert_eq!(decode_every_key(&adapter), Some(expected));
+        // Four tenants and two project records: none of the 5,000 keys under
+        // the large tenant after its first, and nothing outside the project
+        // namespace.
+        assert_eq!(adapter.scanned.load(Ordering::Relaxed), 6);
+    }
+
+    #[test]
+    fn tenant_discovery_agrees_with_decoding_every_key() {
+        let identities: [(&[u8], &[u8]); 5] = [
+            (b"p", b"e"),
+            (b"p", b"e\0"),
+            (b"p\0", b"e"),
+            (b"p\xff", b"\xff\0\xff"),
+            (b"q", b"e"),
+        ];
+        let mut state: u64 = 0x9e37_79b9_7f4a_7c15;
+        let mut next = move || {
+            state = state
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            state >> 33
+        };
+        let mut refused = 0;
+        for _ in 0..300 {
+            let count = 1 + next() % 40;
+            let keys: Vec<Vec<u8>> = (0..count)
+                .map(|_| match next() % 6 {
+                    0..=2 => {
+                        let (project, environment) = identities[(next() % 5) as usize];
+                        tenant(project, environment)
+                            .sequencer_position_key(SequencerKeyKind::Committed, next())
+                    }
+                    3 => TenantKeyspace::project_metadata_key(identities[(next() % 5) as usize].0)
+                        .expect("project key"),
+                    // Raw bytes in the project namespace: some decode, some are
+                    // malformed and must be refused as corrupt.
+                    4 => {
+                        let mut key = vec![1, 0x20];
+                        key.extend(
+                            (0..next() % 8).map(|_| [0, 0x30, b'p', 0xff][(next() % 4) as usize]),
+                        );
+                        key
+                    }
+                    _ => (0..1 + next() % 4).map(|_| (next() % 256) as u8).collect(),
+                })
+                .collect();
+            let adapter = store(keys);
+            let discovered = block_on(discover_tenants(&adapter));
+            match decode_every_key(&adapter) {
+                Some(expected) => assert_eq!(discovered.expect("no corrupt key"), expected),
+                None => {
+                    let error = discovered.expect_err("a corrupt key is refused");
+                    assert_eq!(error.kind, StorageErrorKind::Corruption);
+                    refused += 1;
+                }
+            }
+        }
+        assert!(refused > 0, "the generator never produced a corrupt key");
+    }
 }

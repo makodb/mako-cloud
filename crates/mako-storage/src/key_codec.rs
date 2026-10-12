@@ -1014,7 +1014,21 @@ impl TenantKeyspace {
 
 pub(crate) type TenantIdentity = (Vec<u8>, Vec<u8>);
 
-pub(crate) fn decode_tenant_identity(key: &[u8]) -> Result<Option<TenantIdentity>, KeyCodecError> {
+/// Every key that can belong to a tenant: the project namespace. Keys outside
+/// it never decode to a tenant identity.
+pub(crate) fn tenant_namespace_range() -> Result<KeyRange, KeyCodecError> {
+    prefix_range(&[FORMAT_VERSION, PROJECT_NAMESPACE])
+}
+
+/// The tenant a key belongs to, with the first key after every key that tenant
+/// owns.
+///
+/// Segments are self-delimiting, so every key under a tenant's encoded prefix
+/// decodes to that same tenant; a walk that only needs to know which tenants
+/// exist can seek straight to the returned key instead of reading the rest.
+pub(crate) fn decode_tenant_span(
+    key: &[u8],
+) -> Result<Option<(TenantIdentity, Vec<u8>)>, KeyCodecError> {
     if key.get(..2) != Some(&[FORMAT_VERSION, PROJECT_NAMESPACE]) {
         return Ok(None);
     }
@@ -1025,7 +1039,8 @@ pub(crate) fn decode_tenant_identity(key: &[u8]) -> Result<Option<TenantIdentity
     }
     offset += 1;
     let environment = decode_segment(key, &mut offset)?;
-    Ok(Some((project, environment)))
+    let after = prefix_successor(&key[..offset]).ok_or(KeyCodecError::PrefixHasNoSuccessor)?;
+    Ok(Some(((project, environment), after)))
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
