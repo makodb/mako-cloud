@@ -2376,7 +2376,7 @@ mako-cloud data jobs get job_… --wait
 mako-cloud data jobs cancel job_… --yes
 ```
 
-Limits are 1 MiB per document, 512 MiB per import upload, at most 4096 bounded parts per export, four active jobs per tenant, one hour of execution, 24 hours of artifact retention, and five minutes per upload/download grant. Job progress reports exact processed, committed, failed, skipped, exported, and byte counts. Object-store outages defer cleanup or job execution rather than silently publishing incomplete output.
+Limits are 1 MiB per document, 512 MiB per import upload, at most 4096 bounded parts per export, four active jobs per tenant, job and artifact expiry 24 hours after job creation, and five minutes per upload/download grant. Job progress reports exact processed, committed, failed, skipped, exported, and byte counts. Object-store outages defer cleanup or job execution rather than silently publishing incomplete output.
 
 Large exports use manifest format 2 with ordered SHA-256-verified parts, each at most 20 MiB. The worker checkpoints after each part and renews its snapshot while reading; a lost snapshot restarts the entire capture, never mixes snapshots. Use an updated CLI for multipart exports. Repeat `mako-cloud data export --job <job-id> --output ./collection.jsonl` with the same tenant flags to resume: the CLI verifies the saved prefix in the protected `.part` file, downloads the remaining parts using fresh grants, verifies the full digest, then atomically publishes the output. Keep the matching `.mako-export.json` sidecar until completion. The console provides the CLI command for multipart exports. Long-running CLI management calls renew the stored developer session before polling or requesting another grant; concurrent requests in one process share renewal. The 512 MiB import limit and per-request authorization remain unchanged.
 
@@ -2661,7 +2661,7 @@ When you contact support, quote the `requestId` from the error envelope (or `req
 | Allowed origins | 16 per environment, ≤ 262 characters each |
 | Custom domains | 20 per project; one project per hostname |
 | Email template | subject 200 bytes, body 32 KiB |
-| Data jobs | 512 MiB per import; exports up to 4096 parts, 4 active per tenant, 1 h execution, 24 h retention, 5 min grants |
+| Data jobs | 512 MiB per import; exports up to 4096 parts, 4 active per tenant, 24 h job/artifact expiry from creation, 5 min grants |
 | Explorer grant | ≤ 300 s |
 | User search / sessions listed | 100 / 100 |
 | Team name / project name / environment name | 120 / 120 / 100 characters |
