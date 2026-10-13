@@ -260,6 +260,17 @@ pub struct DataJobManifest {
     pub byte_count: u64,
     pub digest: String,
     pub finalized_at_unix_seconds: u64,
+    /// Ordered immutable NDJSON parts. Empty for legacy, single-object exports.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub parts: Vec<DataJobExportPart>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct DataJobExportPart {
+    pub digest: String,
+    pub row_count: u64,
+    pub byte_count: u64,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

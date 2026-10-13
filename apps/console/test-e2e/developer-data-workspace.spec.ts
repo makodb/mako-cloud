@@ -564,7 +564,7 @@ test("direct access preserves audited conflicts, history, tombstones, and data j
       return json(route, {
         items: [
           importJob(confirmedImport ? "queued" : "awaiting_confirmation"),
-          exportJob(),
+          { ...exportJob(), manifest: { ...exportJob().manifest, formatVersion: 2, parts: [] } },
           ...(exportCreated ? [{ ...exportJob(), jobId: "djob_export02", state: "queued" }] : []),
         ],
         nextCursor: null,
@@ -597,6 +597,8 @@ test("direct access preserves audited conflicts, history, tombstones, and data j
   await expect(page.getByText("audit_admin_mutation01")).toBeVisible();
 
   await page.getByRole("tab", { name: "Import / export" }).click();
+  await page.getByRole("button", { name: "Download and verify" }).click();
+  await expect(page.getByText(/mako-cloud data export --job djob_export01/u)).toBeVisible();
   await page.getByRole("button", { name: "Review execution" }).click();
   await expect(page.getByText("Confirm import execution")).toBeVisible();
   await page
