@@ -605,7 +605,17 @@ impl DataPlaneGraph {
             ),
             (
                 GatewayQuotaResource::ReplicationRequests,
-                hard_and_rate_limit(100_000, ONE_DAY_MILLISECONDS, 120, ONE_MINUTE_MILLISECONDS),
+                // Initial sync fans out across collections and pages. Count it
+                // against the daily allowance, but do not throttle small pulls
+                // by request count; the byte-rate limit bounds their volume.
+                GatewayQuotaLimit {
+                    hard: Some(GatewayQuotaWindow {
+                        limit: NonZeroU64::new(100_000).expect("positive daily allowance"),
+                        window_milliseconds: NonZeroU64::new(ONE_DAY_MILLISECONDS)
+                            .expect("positive daily window"),
+                    }),
+                    rate: None,
+                },
             ),
             (
                 GatewayQuotaResource::ReplicationBytes,
@@ -1705,6 +1715,65 @@ mod tests {
         test_support::{config_for, local_tempdir, tenant},
         *,
     };
+
+    #[test]
+    fn replication_initial_sync_can_exceed_120_requests_in_one_minute() {
+        use mako_gateway::{GatewayQuotaCharge, GatewayQuotaDecision};
+
+        let directory = local_tempdir("data-plane-replication-burst");
+        let config = config_for(directory.path(), DeploymentEnvironment::Local);
+        let graph = DataPlaneGraph::open(&config).expect("graph");
+        let tenant = tenant();
+        block_on(async {
+            for index in 0..130 {
+                assert_eq!(
+                    graph
+                        .quota_engine()
+                        .check_and_reserve(
+                            &tenant,
+                            &format!("req_initial_sync_{index:04}"),
+                            &[
+                                GatewayQuotaCharge {
+                                    resource: GatewayQuotaResource::ReplicationRequests,
+                                    amount: NonZeroU64::MIN,
+                                },
+                                GatewayQuotaCharge {
+                                    resource: GatewayQuotaResource::ReplicationBytes,
+                                    amount: NonZeroU64::new(1_024).expect("positive bytes"),
+                                },
+                            ],
+                            graph.quota_policy(),
+                            1_000,
+                        )
+                        .await
+                        .expect("decision"),
+                    GatewayQuotaDecision::Allowed,
+                    "initial sync request {index} was throttled"
+                );
+            }
+            assert!(matches!(
+                graph
+                    .quota_engine()
+                    .check_and_reserve(
+                        &tenant,
+                        "req_initial_sync_large",
+                        &[GatewayQuotaCharge {
+                            resource: GatewayQuotaResource::ReplicationBytes,
+                            amount: NonZeroU64::new(64 * 1024 * 1024).expect("positive bytes"),
+                        }],
+                        graph.quota_policy(),
+                        1_000,
+                    )
+                    .await
+                    .expect("byte limit decision"),
+                GatewayQuotaDecision::Throttled {
+                    resource: GatewayQuotaResource::ReplicationBytes,
+                    ..
+                }
+            ));
+            graph.shutdown().await.expect("shutdown");
+        });
+    }
 
     /// A request that arrived on a custom hostname is served only for the
     /// environment that hostname is installed for, and the installed list
