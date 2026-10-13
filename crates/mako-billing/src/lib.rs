@@ -165,10 +165,6 @@ pub fn platform_rate_limits() -> Vec<(GatewayQuotaResource, GatewayQuotaWindow)>
             window(50 * 1024 * 1024, MINUTE),
         ),
         (
-            GatewayQuotaResource::ReplicationRequests,
-            window(120, MINUTE),
-        ),
-        (
             GatewayQuotaResource::ReplicationBytes,
             window(64 * 1024 * 1024, MINUTE),
         ),
@@ -396,6 +392,25 @@ mod tests {
             pro().entitlement(resource).expect("entitlement").cap(),
             None
         );
+    }
+
+    #[test]
+    fn plans_do_not_throttle_replication_by_request_count() {
+        for plan in catalog() {
+            let policy = enforcement_policy(&plan.entitlements).expect("policy");
+            assert!(
+                policy
+                    .limit(GatewayQuotaResource::ReplicationRequests)
+                    .is_none_or(|limit| limit.rate.is_none()),
+                "plan {} reinstated the replication request-rate cap",
+                plan.id
+            );
+            assert!(
+                policy
+                    .limit(GatewayQuotaResource::ReplicationBytes)
+                    .is_some_and(|limit| limit.rate.is_some())
+            );
+        }
     }
 
     #[test]
