@@ -21,7 +21,7 @@ Non-goals: remove import size limits, weaken authorization, change source applic
 - Snapshot loss restarts collection capture → report progress reset; pin only while active, preserve one-snapshot integrity, bounded failure/restart policy.
 - Manifest and per-pass work remain bounded → explicit capacity errors, cleanup and no partial publication.
 - Cancellation races with object upload → durable intent plus serialized worker; expiry cleans intent and committed parts idempotently.
-- An existing older control-plane binary cannot parse new private fields → rollback requires draining/retiring new-format jobs or a compatible release, never restore an old data snapshot. Keep prior source/build evidence; deploy all services coherently.
+- An existing older control-plane binary cannot parse new private fields → after new-format records are created, rollback requires a compatible release (even terminal records retain their shape); never restore an old data snapshot. Keep prior source/build evidence; deploy all services coherently.
 
 ## Migration Plan
 
