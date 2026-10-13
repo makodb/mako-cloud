@@ -1761,7 +1761,15 @@ async fn execute_export_page(
                     && entry.job_id == input.job_id
                     && entry.snapshot.snapshot_id() == cursor.snapshot_id
             })
-            .ok_or_else(|| auth_http::invalid(request, "data-job cursor expired"))?;
+            .ok_or_else(|| {
+                HttpApiError::new(
+                    409,
+                    ErrorCode::CheckpointExpired,
+                    "data-job snapshot expired; restart the export generation",
+                    request.request_id(),
+                    RetryAdvice::Never,
+                )
+            })?;
         entry.last_used = now;
         let after = DocumentId::parse(cursor.after_document_id)
             .map_err(|_| auth_http::invalid(request, "data-job cursor is invalid"))?;

@@ -610,3 +610,37 @@ test("data import needs a real input file and a known strategy before anything i
   assert.match(otherVersion.stderr, /is at schema version 3; --schema-version 2 does not match it/u);
   assert.equal(api.find(JOBS, "POST").length, 0, "no job is left behind by a refused command");
 });
+
+test("multipart export obtains scoped grants per part and preserves the JSON digest contract", async (t) => {
+  const chunks = ['{"id":"a"}\n', '{"id":"b"}\n'];
+  const fullDigest = `sha256:${sha256(chunks.join(""))}`;
+  const api = await startMockApi(authHandler({ fallback: (request) => {
+    if (request.method === "GET" && request.path === JOB) return { status: 200, json: dataJob({ state: "succeeded", manifest: manifest({
+      formatVersion: 2, digest: fullDigest, byteCount: Buffer.byteLength(chunks.join("")), rowCount: 2,
+      parts: chunks.map((part) => ({ digest: `sha256:${sha256(part)}`, byteCount: Buffer.byteLength(part), rowCount: 1 })),
+    }) }) };
+    if (request.method === "POST" && request.path === `${JOB}/artifact-grants/download`) return { status: 201, json: {
+      jobId: JOB_ID, method: "GET", url: `${JOB}/artifact?grant=${ARTIFACT_GRANT}`, digest: fullDigest, expiresAtUnixSeconds: 1_700_000_300,
+    } };
+    if (request.method === "GET" && request.path === `${JOB}/artifact`) {
+      assert.equal(request.query.grant, ARTIFACT_GRANT);
+      assert.equal(request.headers.authorization, "Bearer developer-session-token-0001");
+      const body = chunks[Number(request.query.part)];
+      assert.ok(body);
+      return { status: 200, text: body, headers: { Digest: `sha-256=${sha256(body)}` } };
+    }
+    return undefined;
+  } }));
+  t.after(() => api.close());
+  const directory = await signedIn(t, api);
+  const output = join(directory, "multipart.jsonl");
+  const result = await runCli(["data", "export", "--job", JOB_ID, "--output", output, ...TENANT, "--json"], { configDir: directory });
+  assert.equal(result.code, 0, result.stderr);
+  assert.equal(JSON.parse(result.stdout).digest, fullDigest);
+  assert.equal(await readFile(output, "utf8"), chunks.join(""));
+  assert.equal(api.find(`${JOB}/artifact-grants/download`, "POST").length, 2);
+  neverPrinted(result, ARTIFACT_GRANT);
+  const stdout = await runCli(["data", "export", "--job", JOB_ID, "--output", "-", ...TENANT], { configDir: directory });
+  assert.equal(stdout.code, 0, stdout.stderr);
+  assert.equal(stdout.stdout, chunks.join(""));
+});

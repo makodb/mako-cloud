@@ -6085,9 +6085,18 @@ paths:
       tags: [Developer Workspace]
       operationId: downloadDataJobArtifact
       summary: Consume a short-lived tenant- and digest-bound export download grant
+      parameters:
+        - name: part
+          in: query
+          description: Zero-based finalized manifest part index; required for format 2, forbidden for format 1.
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 4095
       responses:
         "200":
-          description: Complete verified JSON Lines export; partial artifacts are never served
+          description: Verified JSON Lines export (format 1) or one selected part of a completed export (format 2). Incomplete jobs never serve artifacts.
           headers:
             Digest:
               schema:
@@ -6995,7 +7004,7 @@ components:
       properties:
         formatVersion:
           type: integer
-          enum: [1]
+          enum: [1, 2]
         tenant:
           $ref: "#/components/schemas/TenantScope"
         collectionId:
@@ -7011,13 +7020,33 @@ components:
         byteCount:
           type: integer
           minimum: 0
-          maximum: 536870912
         digest:
           type: string
           pattern: "^sha256:[a-f0-9]{64}$"
         finalizedAtUnixSeconds:
           type: integer
           minimum: 0
+        parts:
+          description: Ordered immutable parts for format 2; absent for legacy format 1. digest remains the SHA-256 of their concatenated JSON Lines bytes.
+          type: array
+          maxItems: 4096
+          items:
+            $ref: "#/components/schemas/DataJobExportPart"
+    DataJobExportPart:
+      type: object
+      additionalProperties: false
+      required: [digest, rowCount, byteCount]
+      properties:
+        digest:
+          type: string
+          pattern: "^sha256:[a-f0-9]{64}$"
+        rowCount:
+          type: integer
+          minimum: 0
+        byteCount:
+          type: integer
+          minimum: 1
+          maximum: 20971520
     DataJobCreateRequest:
       type: object
       additionalProperties: false

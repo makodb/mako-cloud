@@ -3705,7 +3705,7 @@ export interface components {
         };
         DataJobManifest: {
             /** @enum {integer} */
-            formatVersion: 1;
+            formatVersion: 1 | 2;
             tenant: components["schemas"]["TenantScope"];
             collectionId: components["schemas"]["CollectionId"];
             schemaVersion: number;
@@ -3714,6 +3714,13 @@ export interface components {
             byteCount: number;
             digest: string;
             finalizedAtUnixSeconds: number;
+            /** @description Ordered immutable parts for format 2; absent for legacy format 1. digest remains the SHA-256 of their concatenated JSON Lines bytes. */
+            parts?: components["schemas"]["DataJobExportPart"][];
+        };
+        DataJobExportPart: {
+            digest: string;
+            rowCount: number;
+            byteCount: number;
         };
         DataJobCreateRequest: {
             /** @enum {string} */
@@ -12690,6 +12697,8 @@ export interface operations {
         parameters: {
             query: {
                 grant: string;
+                /** @description Zero-based finalized manifest part index; required for format 2, forbidden for format 1. */
+                part?: number;
             };
             header?: never;
             path: {
@@ -12701,7 +12710,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Complete verified JSON Lines export; partial artifacts are never served */
+            /** @description Verified JSON Lines export (format 1) or one selected part of a completed export (format 2). Incomplete jobs never serve artifacts. */
             200: {
                 headers: {
                     Digest?: string;

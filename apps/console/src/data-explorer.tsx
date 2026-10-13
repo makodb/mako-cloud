@@ -1380,6 +1380,11 @@ function DataJobs({
   };
   const download = async (job: DataJob) => {
     try {
+      if (job.manifest?.formatVersion === 2) {
+        throw new Error(
+          `This large export downloads in resumable parts. Use the updated mako-cloud CLI: mako-cloud data export --job ${job.jobId} --project ${projectId} --env ${environmentId} --output ${collectionId}.jsonl`,
+        );
+      }
       const grant = await client.createDataJobDownloadGrant(projectId, environmentId, job.jobId);
       const response = await fetch(new URL(grant.url, window.location.origin), {
         headers: {

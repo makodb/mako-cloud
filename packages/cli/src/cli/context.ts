@@ -104,6 +104,7 @@ export class CommandContext {
   readonly io: CommandIo;
   readonly globals: GlobalValues;
   #management: MakoManagementClient | undefined;
+  #credentialRequest: Promise<ManagementCredential> | undefined;
   #resolvedEndpoint: string | undefined;
 
   constructor(io: CommandIo, globals: GlobalValues) {
@@ -209,7 +210,14 @@ export class CommandContext {
   }
 
   /** The bearer credential for management calls; renews a stored session when due. */
-  async credential(): Promise<ManagementCredential> {
+  credential(): Promise<ManagementCredential> {
+    this.#credentialRequest ??= this.#resolveCredential().finally(() => {
+      this.#credentialRequest = undefined;
+    });
+    return this.#credentialRequest;
+  }
+
+  async #resolveCredential(): Promise<ManagementCredential> {
     const token = this.io.env.MAKO_TOKEN;
     if (token !== undefined && token !== "") {
       if (token.length < 16 || /\s/u.test(token)) {
@@ -272,10 +280,18 @@ export class CommandContext {
     if (this.#management !== undefined) return this.#management;
     const endpoint = await this.endpoint();
     const credential = await this.credential();
+    const fetch = this.#originFetch(endpoint, undefined);
     this.#management = new MakoManagementClient({
       endpoint,
       credential,
-      fetch: this.#originFetch(endpoint, undefined),
+      fetch: async (input, init) => {
+        // Long-running jobs outlive one access token. Resolve the current
+        // credential for every poll/grant, sharing an in-flight renewal.
+        const current = await this.credential();
+        const request = new Request(input, init);
+        request.headers.set("Authorization", `Bearer ${current.accessToken}`);
+        return fetch(request);
+      },
     });
     return this.#management;
   }

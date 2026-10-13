@@ -279,13 +279,34 @@ fn download_artifact(
     graph: &Arc<ControlPlaneGraph>,
     request: &HttpRequest,
 ) -> Result<HttpResponse, HttpApiError> {
-    let grant = only_grant_query(request)?.to_owned();
+    let mut grant = None;
+    let mut part_index = None;
+    for (key, value) in request.query() {
+        match key.as_str() {
+            "grant"
+                if grant.is_none()
+                    && value.len() <= 8_192
+                    && !value.chars().any(char::is_whitespace) =>
+            {
+                grant = Some(value.clone())
+            }
+            "part" if part_index.is_none() => {
+                part_index = Some(
+                    value
+                        .parse::<usize>()
+                        .map_err(|_| invalid(request, "export part is invalid"))?,
+                )
+            }
+            _ => return Err(invalid(request, "artifact query is invalid")),
+        }
+    }
+    let grant = grant.ok_or_else(|| invalid(request, "artifact grant query is required"))?;
     let tenant = tenant(request)?;
     let job_id = job_id(request)?.to_owned();
     with_developer(graph, request, |actor, now| async move {
         let bytes = graph
             .data_job_service()
-            .download_export(&actor, &tenant, &job_id, &grant, now)
+            .download_export(&actor, &tenant, &job_id, &grant, part_index, now)
             .await
             .map_err(|error| data_job_error(request, error))?;
         let digest = format!("sha-256={:x}", Sha256::digest(&bytes));
@@ -315,6 +336,10 @@ fn job_id(request: &HttpRequest) -> Result<&str, HttpApiError> {
 
 fn data_job_error(request: &HttpRequest, error: DataJobError) -> HttpApiError {
     match error {
+        DataJobError::MultipartDownloadRequired => invalid(
+            request,
+            "multipart export requires an updated mako-cloud CLI or a manifest part selection",
+        ),
         DataJobError::InvalidRequest
         | DataJobError::InvalidArtifact
         | DataJobError::InvalidArtifactGrant => invalid(request, "data-job input is invalid"),

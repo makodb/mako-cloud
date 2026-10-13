@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import { createReadStream, createWriteStream } from "node:fs";
-import { rename, stat, unlink } from "node:fs/promises";
+import { mkdtemp, rename, rm, stat, unlink } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { Readable, Transform, Writable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { ReadableStream as WebReadableStream } from "node:stream/web";
@@ -20,6 +22,7 @@ import { CLI_NAME } from "../cli/name.js";
 import type { TableColumn } from "../cli/output.js";
 import type { Command, CommandArgs, OptionSpec } from "../cli/registry.js";
 import { TENANT_OPTIONS, type Tenant, tenantFrom } from "./shared.js";
+import { downloadMultipart } from "./export-download.js";
 
 type JobState = DataJob["state"];
 type ConflictStrategy = NonNullable<DataJobCreateRequest["conflictStrategy"]>;
@@ -348,12 +351,34 @@ async function exportData(context: CommandContext, args: CommandArgs): Promise<v
   }
   job = await settle(context, client, tenant, job);
   if (job.state !== "succeeded") throw jobFailed(job);
-  const grant = await client.createDataJobDownloadGrant(
-    tenant.projectId,
-    tenant.environmentId,
-    job.jobId,
-  );
-  const { bytes, digest } = await downloadArtifact(context, grant, output);
+  let transfer: { bytes: number; digest: string };
+  if (job.manifest?.formatVersion === 2) {
+    const directory = output === "-" ? await mkdtemp(join(tmpdir(), "mako-export-")) : undefined;
+    const destination = directory === undefined ? output : join(directory, "export.jsonl");
+    try {
+      transfer = await downloadMultipart(job, destination, async (index) => {
+        const grant = await client.createDataJobDownloadGrant(
+          tenant.projectId,
+          tenant.environmentId,
+          job.jobId,
+        );
+        const url = new URL(grant.url, await context.endpoint());
+        url.searchParams.set("part", String(index));
+        return artifactRequest(context, { ...grant, url: url.toString() }, { method: "GET" });
+      });
+      if (output === "-") await pipeline(createReadStream(destination), stdoutSink(context));
+    } finally {
+      if (directory !== undefined) await rm(directory, { recursive: true, force: true });
+    }
+  } else {
+    const grant = await client.createDataJobDownloadGrant(
+      tenant.projectId,
+      tenant.environmentId,
+      job.jobId,
+    );
+    transfer = await downloadArtifact(context, grant, output);
+  }
+  const { bytes, digest } = transfer;
   context.info(
     `artifact for job ${job.jobId} written to ${output === "-" ? "stdout" : output} (${bytes} bytes, ${digest})`,
   );

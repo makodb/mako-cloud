@@ -12,8 +12,8 @@ use std::{
 
 use base64::Engine as _;
 use mako_api::{
-    ArtifactGrantView, DataJobCreateRequest, DataJobKind, DataJobManifest, DataJobProgress,
-    DataJobState, DataJobView, EXPLORER_ARTIFACT_GRANT_SECONDS,
+    ArtifactGrantView, DataJobCreateRequest, DataJobExportPart, DataJobKind, DataJobManifest,
+    DataJobProgress, DataJobState, DataJobView, EXPLORER_ARTIFACT_GRANT_SECONDS,
     EXPLORER_ARTIFACT_RETENTION_SECONDS, EXPLORER_MAX_ACTIVE_JOBS_PER_TENANT,
     EXPLORER_MAX_DOCUMENT_BYTES,
 };
@@ -52,7 +52,27 @@ struct DataJobRecord {
     /// After a retryable worker failure, the job waits until this time.
     #[serde(default)]
     retry_not_before_unix_seconds: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    export_checkpoint: Option<ExportCheckpoint>,
 }
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct ExportCheckpoint {
+    cursor: Option<String>,
+    snapshot: Option<String>,
+    schema_version: Option<u64>,
+    page_number: u64,
+    parts: Vec<DataJobExportPart>,
+    /// Durable upload intent: cleanup can find an object even if its put
+    /// succeeded but the subsequent cursor checkpoint did not.
+    pending_digest: Option<String>,
+    complete: bool,
+}
+
+const EXPORT_PART_TARGET_BYTES: usize = 16 * 1024 * 1024;
+const EXPORT_PAGES_PER_PASS: usize = 32;
+const EXPORT_MAX_PARTS: usize = 4096;
 
 const DATA_JOB_STATE_COUNT: usize = 10;
 const WORKER_SCAN_LIMIT: usize = 1_000;
@@ -115,6 +135,7 @@ pub struct DataJobService {
     audit: Arc<dyn ControlAuditSink>,
     metrics: Arc<DataJobMetrics>,
     worker_scan_after: Arc<futures::lock::Mutex<Option<Vec<u8>>>>,
+    worker_gate: Arc<futures::lock::Mutex<()>>,
 }
 
 impl fmt::Debug for DataJobService {
@@ -159,6 +180,7 @@ impl DataJobService {
             data_plane,
             audit,
             worker_scan_after: Arc::new(futures::lock::Mutex::new(None)),
+            worker_gate: Arc::new(futures::lock::Mutex::new(())),
             metrics: Arc::new(DataJobMetrics {
                 transitions_by_state: array::from_fn(|_| AtomicU64::new(0)),
             }),
@@ -248,6 +270,7 @@ impl DataJobService {
             execution_attempt: 0,
             worker_failures: 0,
             retry_not_before_unix_seconds: 0,
+            export_checkpoint: None,
         };
         let key =
             ControlKeyspace::data_job_key(tenant.project_id(), tenant.environment_id(), &job_id)?;
@@ -434,12 +457,14 @@ impl DataJobService {
         Ok(record.view)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn download_export(
         &self,
         actor: &DeveloperPrincipal,
         tenant: &mako_api::TenantScope,
         job_id: &str,
         grant: &str,
+        part_index: Option<usize>,
         now_unix_seconds: u64,
     ) -> Result<Arc<[u8]>, DataJobError> {
         self.authorize(actor, tenant, ProjectDataPermission::Export)
@@ -460,20 +485,26 @@ impl DataJobService {
         {
             return Err(DataJobError::InvalidState);
         }
-        let address = ObjectAddress::data_job_artifact(
-            tenant.clone(),
-            job_id,
-            DataJobArtifactKind::ExportOutput,
-            &digest,
-        )?;
-        let bytes = self
-            .objects
-            .get(tenant, &address)
-            .await?
+        let manifest = record
+            .view
+            .manifest
+            .as_ref()
             .ok_or(DataJobError::InvalidArtifact)?;
-        if sha256_digest(&bytes) != digest {
-            return Err(DataJobError::InvalidArtifact);
-        }
+        let part = match (manifest.format_version, part_index) {
+            (1, None) => DataJobExportPart {
+                digest,
+                row_count: manifest.row_count,
+                byte_count: manifest.byte_count,
+            },
+            (2, Some(index)) => manifest
+                .parts
+                .get(index)
+                .cloned()
+                .ok_or(DataJobError::InvalidRequest)?,
+            (2, None) => return Err(DataJobError::MultipartDownloadRequired),
+            _ => return Err(DataJobError::InvalidRequest),
+        };
+        let bytes = self.read_export_part(&record, &part).await?;
         self.audit_success(
             actor,
             tenant,
@@ -553,6 +584,7 @@ impl DataJobService {
                     byte_count,
                     digest: digest.to_owned(),
                     finalized_at_unix_seconds: now_unix_seconds,
+                    parts: Vec::new(),
                 });
                 record.view.updated_at_unix_seconds = now_unix_seconds;
                 Ok(())
@@ -655,12 +687,13 @@ impl DataJobService {
     }
 
     /// Execute a bounded pass over queued jobs. Running imports resume from
-    /// durable row progress; running exports restart from a new snapshot and
-    /// publish only after the complete immutable artifact is finalized.
+    /// durable row progress; exports resume immutable parts and their snapshot.
+    /// Only completed, verified artifacts become downloadable.
     pub async fn run_worker_once(
         &self,
         now_unix_seconds: u64,
     ) -> Result<DataJobWorkerReport, DataJobError> {
+        let _worker_guard = self.worker_gate.lock().await;
         let mut report = DataJobWorkerReport::default();
         let records = self.next_worker_records(now_unix_seconds).await?;
         for record in records {
@@ -681,6 +714,10 @@ impl DataJobService {
                 continue;
             }
             if record.view.state == DataJobState::Cancelling || record.cancel_requested {
+                if self.cleanup_artifacts(&record).await.is_err() {
+                    report.deferred = report.deferred.saturating_add(1);
+                    continue;
+                }
                 self.mark_cancelled(&record.view.tenant, &record.view.job_id, now_unix_seconds)
                     .await?;
                 report.cancelled = report.cancelled.saturating_add(1);
@@ -698,17 +735,22 @@ impl DataJobService {
                         return Err(DataJobError::Conflict);
                     }
                     record.view.state = DataJobState::Running;
-                    record.execution_attempt = record.execution_attempt.saturating_add(1);
+                    if record.export_checkpoint.is_none() {
+                        record.execution_attempt = record.execution_attempt.saturating_add(1);
+                    }
                     record.view.updated_at_unix_seconds = now_unix_seconds;
                     Ok(())
                 })
                 .await?
-            } else if record.view.kind == DataJobKind::Export {
+            } else if record.view.kind == DataJobKind::Export && record.export_checkpoint.is_none()
+            {
                 self.update_record(&record.view.tenant, &record.view.job_id, |record| {
                     if record.view.state != DataJobState::Running {
                         return Err(DataJobError::Conflict);
                     }
-                    record.execution_attempt = record.execution_attempt.saturating_add(1);
+                    if record.export_checkpoint.is_none() {
+                        record.execution_attempt = record.execution_attempt.saturating_add(1);
+                    }
                     record.view.updated_at_unix_seconds = now_unix_seconds;
                     Ok(())
                 })
@@ -751,6 +793,23 @@ impl DataJobService {
     }
 
     async fn cleanup_artifacts(&self, record: &DataJobRecord) -> Result<(), DataJobError> {
+        if let Some(checkpoint) = &record.export_checkpoint {
+            let digests: BTreeSet<_> = checkpoint
+                .parts
+                .iter()
+                .map(|part| &part.digest)
+                .chain(checkpoint.pending_digest.iter())
+                .collect();
+            for digest in digests {
+                let address = ObjectAddress::data_job_artifact(
+                    record.view.tenant.clone(),
+                    &record.view.job_id,
+                    DataJobArtifactKind::ExportOutput,
+                    digest,
+                )?;
+                self.objects.delete(&record.view.tenant, &address).await?;
+            }
+        }
         if let Some(digest) = record.upload_digest.as_deref() {
             let address = ObjectAddress::data_job_artifact(
                 record.view.tenant.clone(),
@@ -907,121 +966,260 @@ impl DataJobService {
         Ok(DataJobState::Succeeded)
     }
 
+    async fn interrupt_export(
+        &self,
+        record: &DataJobRecord,
+        now: u64,
+    ) -> Result<Option<DataJobState>, DataJobError> {
+        let latest = self
+            .get_record(&record.view.tenant, &record.view.job_id)
+            .await?;
+        let state = if now >= latest.view.expires_at_unix_seconds {
+            Some(DataJobState::Expired)
+        } else if latest.cancel_requested || latest.view.state == DataJobState::Cancelling {
+            Some(DataJobState::Cancelled)
+        } else {
+            None
+        };
+        if let Some(state) = state {
+            self.cleanup_artifacts(&latest).await?;
+            self.update_record(&latest.view.tenant, &latest.view.job_id, |record| {
+                record.view.state = state;
+                record.view.updated_at_unix_seconds = now;
+                Ok(())
+            })
+            .await?;
+        }
+        Ok(state)
+    }
+
     async fn execute_export(
         &self,
         record: &DataJobRecord,
         now_unix_seconds: u64,
     ) -> Result<DataJobState, DataJobError> {
+        let started = std::time::Instant::now();
+        let now = || now_unix_seconds.saturating_add(started.elapsed().as_secs());
+        let mut checkpoint = record.export_checkpoint.clone().unwrap_or_default();
         let mut bytes = Vec::new();
-        let mut cursor = None;
-        let mut row_count = 0_u64;
-        let mut snapshot = None;
-        let mut schema_version = None;
-        let mut page_number = 0_u64;
-        loop {
-            let latest = self
-                .get_record(&record.view.tenant, &record.view.job_id)
-                .await?;
-            if latest.cancel_requested || latest.view.state == DataJobState::Cancelling {
-                self.mark_cancelled(&record.view.tenant, &record.view.job_id, now_unix_seconds)
-                    .await?;
-                return Ok(DataJobState::Cancelled);
+        let mut rows = 0_u64;
+        for _ in 0..EXPORT_PAGES_PER_PASS {
+            if let Some(state) = self.interrupt_export(record, now()).await? {
+                return Ok(state);
+            }
+            if checkpoint.complete {
+                break;
+            }
+            if checkpoint.page_number >= 100_000 || checkpoint.parts.len() >= EXPORT_MAX_PARTS {
+                return Err(DataJobError::QuotaExceeded);
             }
             let input = DataJobExportPageInput {
                 job_id: record.view.job_id.clone(),
                 collection_id: record.view.collection_id.as_str().to_owned(),
-                cursor: cursor.clone(),
+                cursor: checkpoint.cursor.clone(),
                 limit: 64,
             };
-            let page: DataJobExportPageOutput = self.data_plane.administer(
-                &record.view.tenant,
-                &worker_request_id(
-                    &format!(
-                        "{}:attempt:{}",
-                        record.view.job_id, record.execution_attempt
-                    ),
-                    page_number,
-                ),
-                &worker_idempotency_key(
-                    &format!(
-                        "{}:attempt:{}",
-                        record.view.job_id, record.execution_attempt
-                    ),
-                    page_number,
-                ),
-                &IdentityAdminCommand {
-                    operation: IdentityAdminOperation::ExportDataJobPage,
-                    actor_id: "system/data-job-worker".to_owned(),
-                    permissions: BTreeSet::from([IdentityAdminPermission::ExecuteDataJobs]),
-                    input: serde_json::to_value(input)?,
-                },
-            )?;
-            if snapshot
+            let identity = format!(
+                "{}:attempt:{}",
+                record.view.job_id, record.execution_attempt
+            );
+            let response: Result<DataJobExportPageOutput, InternalClientError> =
+                self.data_plane.administer(
+                    &record.view.tenant,
+                    &worker_request_id(&identity, checkpoint.page_number),
+                    &worker_idempotency_key(&identity, checkpoint.page_number),
+                    &IdentityAdminCommand {
+                        operation: IdentityAdminOperation::ExportDataJobPage,
+                        actor_id: "system/data-job-worker".to_owned(),
+                        permissions: BTreeSet::from([IdentityAdminPermission::ExecuteDataJobs]),
+                        input: serde_json::to_value(input)?,
+                    },
+                );
+            let page = match response {
+                Ok(page) => page,
+                Err(InternalClientError::Remote { ref envelope, .. })
+                    if envelope.error.code == mako_api::ErrorCode::CheckpointExpired =>
+                {
+                    // Pins are process-local. Discard the entire old generation,
+                    // including any uploaded-but-uncheckpointed part, before
+                    // acquiring a fresh snapshot on the next worker pass.
+                    let latest = self
+                        .get_record(&record.view.tenant, &record.view.job_id)
+                        .await?;
+                    self.cleanup_artifacts(&latest).await?;
+                    self.update_record(&record.view.tenant, &record.view.job_id, |record| {
+                        record.export_checkpoint = None;
+                        record.view.progress = empty_progress();
+                        record.view.updated_at_unix_seconds = now();
+                        Ok(())
+                    })
+                    .await?;
+                    return Err(DataJobError::Conflict);
+                }
+                Err(error) => return Err(error.into()),
+            };
+            if checkpoint
+                .snapshot
                 .as_ref()
                 .is_some_and(|value| value != &page.snapshot)
-                || schema_version.is_some_and(|value| value != page.schema_version)
+                || checkpoint
+                    .schema_version
+                    .is_some_and(|value| value != page.schema_version)
+                || page.next_cursor.is_some() && page.next_cursor == checkpoint.cursor
             {
                 return Err(DataJobError::InvalidState);
             }
-            snapshot.get_or_insert(page.snapshot.clone());
-            schema_version.get_or_insert(page.schema_version);
+            checkpoint.snapshot.get_or_insert(page.snapshot);
+            checkpoint.schema_version.get_or_insert(page.schema_version);
             for row in page.rows {
                 serde_json::to_writer(&mut bytes, &row)?;
                 bytes.push(b'\n');
-                row_count = row_count.saturating_add(1);
-                if bytes.len() > mako_object_store::MAX_DATA_JOB_ARTIFACT_BYTES {
-                    return Err(DataJobError::QuotaExceeded);
-                }
+                rows = rows.checked_add(1).ok_or(DataJobError::QuotaExceeded)?;
             }
-            cursor = page.next_cursor;
-            if cursor.is_none() {
+            checkpoint.cursor = page.next_cursor;
+            checkpoint.page_number += 1;
+            checkpoint.complete = checkpoint.cursor.is_none();
+            if checkpoint.complete || bytes.len() >= EXPORT_PART_TARGET_BYTES {
                 break;
             }
-            page_number = page_number
-                .checked_add(1)
-                .ok_or(DataJobError::QuotaExceeded)?;
-            if page_number > 100_000 {
-                return Err(DataJobError::QuotaExceeded);
-            }
         }
-        if bytes.is_empty() {
-            bytes.extend_from_slice(b"\n");
+        if checkpoint.complete && checkpoint.parts.is_empty() && bytes.is_empty() {
+            bytes.push(b'\n');
         }
-        let digest = sha256_digest(&bytes);
-        let address = ObjectAddress::data_job_artifact(
-            record.view.tenant.clone(),
-            &record.view.job_id,
-            DataJobArtifactKind::ExportOutput,
-            &digest,
-        )?;
-        self.objects
-            .put_immutable(&record.view.tenant, &address, Arc::from(bytes.clone()))
+        if bytes.len() > 20 * 1024 * 1024 {
+            return Err(DataJobError::QuotaExceeded);
+        }
+        if !bytes.is_empty() {
+            let digest = sha256_digest(&bytes);
+            let part = DataJobExportPart {
+                digest: digest.clone(),
+                row_count: rows,
+                byte_count: bytes.len() as u64,
+            };
+            // Record the intent before put: every object is discoverable for
+            // cancellation/expiry, including a crash after the store accepts it.
+            self.update_record(&record.view.tenant, &record.view.job_id, |record| {
+                if record.view.state != DataJobState::Running || record.cancel_requested {
+                    return Err(DataJobError::InvalidState);
+                }
+                record
+                    .export_checkpoint
+                    .get_or_insert_with(ExportCheckpoint::default)
+                    .pending_digest = Some(digest.clone());
+                Ok(())
+            })
             .await?;
+            let address = ObjectAddress::data_job_artifact(
+                record.view.tenant.clone(),
+                &record.view.job_id,
+                DataJobArtifactKind::ExportOutput,
+                &digest,
+            )?;
+            self.objects
+                .put_immutable(&record.view.tenant, &address, Arc::from(bytes))
+                .await?;
+            checkpoint.parts.push(part);
+        }
+        checkpoint.pending_digest = None;
+        let row_count = checkpoint.parts.iter().map(|part| part.row_count).sum();
+        let byte_count = checkpoint.parts.iter().map(|part| part.byte_count).sum();
+        if !record
+            .export_checkpoint
+            .as_ref()
+            .is_some_and(|saved| saved.complete)
+        {
+            self.update_record(&record.view.tenant, &record.view.job_id, |record| {
+                if record.view.state != DataJobState::Running || record.cancel_requested {
+                    return Err(DataJobError::InvalidState);
+                }
+                record.export_checkpoint = Some(checkpoint.clone());
+                record.view.progress.processed = row_count;
+                record.view.progress.exported = row_count;
+                record.view.progress.bytes = byte_count;
+                record.worker_failures = 0;
+                record.retry_not_before_unix_seconds = 0;
+                record.view.updated_at_unix_seconds = now();
+                Ok(())
+            })
+            .await?;
+        }
+        if !checkpoint.complete {
+            return Ok(DataJobState::Running);
+        }
+
+        // Finalization reads only one bounded object at a time. Its inputs are
+        // now durable, so a restart can repeat hashing without any live snapshot.
+        let mut hash = Sha256::new();
+        for part in &checkpoint.parts {
+            if let Some(state) = self.interrupt_export(record, now()).await? {
+                return Ok(state);
+            }
+            let bytes = self.read_export_part(record, part).await?;
+            hash.update(&bytes);
+        }
+        let digest = format!("sha256:{:x}", hash.finalize());
+        if let Some(state) = self.interrupt_export(record, now()).await? {
+            return Ok(state);
+        }
         self.update_record(&record.view.tenant, &record.view.job_id, |record| {
             if record.view.state != DataJobState::Running || record.cancel_requested {
                 return Err(DataJobError::InvalidState);
             }
             record.output_digest = Some(digest.clone());
             record.view.state = DataJobState::Succeeded;
-            record.view.progress.processed = row_count;
-            record.view.progress.exported = row_count;
-            record.view.progress.bytes = bytes.len() as u64;
             record.view.manifest = Some(DataJobManifest {
-                format_version: 1,
+                format_version: if checkpoint.parts.len() == 1 { 1 } else { 2 },
                 tenant: record.view.tenant.clone(),
                 collection_id: record.view.collection_id.clone(),
-                schema_version: schema_version.unwrap_or(1),
-                snapshot,
+                schema_version: checkpoint
+                    .schema_version
+                    .ok_or(DataJobError::InvalidState)?,
+                snapshot: checkpoint.snapshot.clone(),
                 row_count,
-                byte_count: bytes.len() as u64,
+                byte_count,
                 digest: digest.clone(),
-                finalized_at_unix_seconds: now_unix_seconds,
+                finalized_at_unix_seconds: now(),
+                parts: if checkpoint.parts.len() == 1 {
+                    Vec::new()
+                } else {
+                    checkpoint.parts.clone()
+                },
             });
-            record.view.updated_at_unix_seconds = now_unix_seconds;
+            record.view.updated_at_unix_seconds = now();
             Ok(())
         })
         .await?;
         Ok(DataJobState::Succeeded)
+    }
+
+    async fn read_export_part(
+        &self,
+        record: &DataJobRecord,
+        part: &DataJobExportPart,
+    ) -> Result<Arc<[u8]>, DataJobError> {
+        let address = ObjectAddress::data_job_artifact(
+            record.view.tenant.clone(),
+            &record.view.job_id,
+            DataJobArtifactKind::ExportOutput,
+            &part.digest,
+        )?;
+        let bytes = self
+            .objects
+            .get(&record.view.tenant, &address)
+            .await?
+            .ok_or(DataJobError::InvalidArtifact)?;
+        let rows = if bytes.as_ref() == b"\n" {
+            0
+        } else {
+            bytes.iter().filter(|&&byte| byte == b'\n').count() as u64
+        };
+        if bytes.len() as u64 != part.byte_count
+            || sha256_digest(&bytes) != part.digest
+            || rows != part.row_count
+        {
+            return Err(DataJobError::InvalidArtifact);
+        }
+        Ok(bytes)
     }
 
     async fn mark_cancelled(
@@ -1052,7 +1250,7 @@ impl DataJobService {
         error: &DataJobError,
     ) -> Result<bool, DataJobError> {
         self.update_record(tenant, job_id, |record| {
-            if !job_is_terminal(record.view.state) {
+            if !job_is_terminal(record.view.state) && !record.cancel_requested {
                 record.worker_failures = record.worker_failures.saturating_add(1);
                 let terminal = non_retryable || record.worker_failures >= WORKER_FAILURE_LIMIT;
                 record.retry_not_before_unix_seconds = if terminal {
@@ -1575,6 +1773,7 @@ fn worker_failure_code(error: &DataJobError) -> String {
             InternalClientError::Authentication(_) => "internal_authentication",
             InternalClientError::Remote { .. } => unreachable!("handled above"),
         },
+        DataJobError::MultipartDownloadRequired => "multipart_download_required",
         DataJobError::InvalidConfiguration => "configuration",
         DataJobError::InvalidRequest => "request",
         DataJobError::InvalidState => "state",
@@ -1624,6 +1823,7 @@ fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
 
 #[derive(Debug)]
 pub enum DataJobError {
+    MultipartDownloadRequired,
     InvalidConfiguration,
     InvalidRequest,
     InvalidState,
@@ -1766,6 +1966,7 @@ mod tests {
             execution_attempt: 0,
             worker_failures: 0,
             retry_not_before_unix_seconds: 0,
+            export_checkpoint: None,
         }
     }
 
@@ -1894,6 +2095,412 @@ mod tests {
             assert_eq!(manifest.byte_count, bytes.len() as u64);
         });
         response.join().expect("data-plane stub");
+    }
+
+    fn reply_export(request: tiny_http::Request, page: &DataJobExportPageOutput) {
+        let correlation = request
+            .headers()
+            .iter()
+            .find(|header| header.field.equiv("x-mako-request-id"))
+            .unwrap()
+            .value
+            .to_string();
+        request
+            .respond(
+                tiny_http::Response::from_data(serde_json::to_vec(page).unwrap()).with_header(
+                    tiny_http::Header::from_bytes("x-mako-request-id", correlation).unwrap(),
+                ),
+            )
+            .unwrap();
+    }
+
+    async fn seed_export_part(
+        service: &DataJobService,
+        record: &DataJobRecord,
+        bytes: &[u8],
+        rows: u64,
+    ) -> DataJobExportPart {
+        let part = DataJobExportPart {
+            digest: sha256_digest(bytes),
+            row_count: rows,
+            byte_count: bytes.len() as u64,
+        };
+        let address = ObjectAddress::data_job_artifact(
+            record.view.tenant.clone(),
+            &record.view.job_id,
+            DataJobArtifactKind::ExportOutput,
+            &part.digest,
+        )
+        .unwrap();
+        service
+            .objects
+            .put_immutable(&record.view.tenant, &address, Arc::from(bytes))
+            .await
+            .unwrap();
+        part
+    }
+
+    #[test]
+    fn export_checkpoints_survive_worker_recreation_and_finish_the_same_snapshot() {
+        let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
+        let service = worker_fixture_at(server.server_addr().to_ip().unwrap());
+        let response = std::thread::spawn(move || {
+            for index in 0..33 {
+                let mut request = server
+                    .recv_timeout(std::time::Duration::from_secs(10))
+                    .unwrap()
+                    .unwrap();
+                let command: IdentityAdminCommand =
+                    serde_json::from_reader(request.as_reader()).unwrap();
+                assert_eq!(
+                    command.input["cursor"],
+                    if index == 0 {
+                        Value::Null
+                    } else {
+                        serde_json::json!(format!("cursor-{index}"))
+                    }
+                );
+                reply_export(
+                    request,
+                    &DataJobExportPageOutput {
+                        rows: vec![serde_json::json!({"id": index})],
+                        next_cursor: (index < 32).then(|| format!("cursor-{}", index + 1)),
+                        snapshot: "one-snapshot".into(),
+                        schema_version: 1,
+                    },
+                );
+            }
+        });
+        futures::executor::block_on(async {
+            let mut record = worker_record(71, DataJobState::Running);
+            record.view.kind = DataJobKind::Export;
+            store_worker_records(&service, &[record.clone()]).await;
+            assert_eq!(
+                service.execute_export(&record, 10).await.unwrap(),
+                DataJobState::Running
+            );
+            let saved = service
+                .get_record(&record.view.tenant, &record.view.job_id)
+                .await
+                .unwrap();
+            assert_eq!(saved.view.progress.exported, 32);
+            assert!(saved.view.manifest.is_none());
+            assert_eq!(saved.export_checkpoint.as_ref().unwrap().parts.len(), 1);
+            // Deserialize the durable record, without retaining worker-local payload state.
+            let restored: DataJobRecord =
+                serde_json::from_slice(&serde_json::to_vec(&saved).unwrap()).unwrap();
+            assert_eq!(
+                service.execute_export(&restored, 11).await.unwrap(),
+                DataJobState::Succeeded
+            );
+            let finished = service
+                .get_record(&record.view.tenant, &record.view.job_id)
+                .await
+                .unwrap();
+            let manifest = finished.view.manifest.unwrap();
+            assert_eq!(manifest.format_version, 2);
+            assert_eq!(manifest.row_count, 33);
+            assert_eq!(manifest.parts.len(), 2);
+            assert_eq!(manifest.snapshot.as_deref(), Some("one-snapshot"));
+        });
+        response.join().unwrap();
+    }
+
+    #[test]
+    fn snapshot_loss_discards_all_old_parts_and_upload_intents() {
+        let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
+        let service = worker_fixture_at(server.server_addr().to_ip().unwrap());
+        let response = std::thread::spawn(move || {
+            let request = server
+                .recv_timeout(std::time::Duration::from_secs(10))
+                .unwrap()
+                .unwrap();
+            let correlation = request
+                .headers()
+                .iter()
+                .find(|h| h.field.equiv("x-mako-request-id"))
+                .unwrap()
+                .value
+                .to_string();
+            let envelope = mako_api::ApiErrorEnvelope::new(mako_api::ApiError::new(
+                mako_api::ErrorCode::CheckpointExpired,
+                "snapshot expired",
+                correlation.clone(),
+                mako_api::RetryAdvice::Never,
+            ));
+            request
+                .respond(
+                    tiny_http::Response::from_data(serde_json::to_vec(&envelope).unwrap())
+                        .with_status_code(409)
+                        .with_header(
+                            tiny_http::Header::from_bytes("x-mako-request-id", correlation)
+                                .unwrap(),
+                        ),
+                )
+                .unwrap();
+        });
+        futures::executor::block_on(async {
+            let mut record = worker_record(72, DataJobState::Running);
+            record.view.kind = DataJobKind::Export;
+            let part = seed_export_part(&service, &record, b"{}\n", 1).await;
+            let pending = seed_export_part(&service, &record, b"{\"x\":1}\n", 1).await;
+            record.export_checkpoint = Some(ExportCheckpoint {
+                parts: vec![part.clone()],
+                pending_digest: Some(pending.digest.clone()),
+                cursor: Some("lost-cursor".into()),
+                snapshot: Some("old".into()),
+                schema_version: Some(1),
+                page_number: 32,
+                complete: false,
+            });
+            store_worker_records(&service, &[record.clone()]).await;
+            assert!(matches!(
+                service.execute_export(&record, 10).await,
+                Err(DataJobError::Conflict)
+            ));
+            let saved = service
+                .get_record(&record.view.tenant, &record.view.job_id)
+                .await
+                .unwrap();
+            assert!(saved.export_checkpoint.is_none());
+            assert!(saved.view.manifest.is_none());
+            for part in [part, pending] {
+                assert!(matches!(
+                    service.read_export_part(&record, &part).await,
+                    Err(DataJobError::InvalidArtifact)
+                ));
+            }
+        });
+        response.join().unwrap();
+    }
+
+    #[test]
+    fn finalization_exceeds_512_mib_without_combining_payloads_in_memory() {
+        futures::executor::block_on(async {
+            let service = worker_fixture();
+            let mut record = worker_record(73, DataJobState::Running);
+            record.view.kind = DataJobKind::Export;
+            record.view.expires_at_unix_seconds = 10_000;
+            // Repeated immutable content shares an object in the memory adapter.
+            // The logical artifact is 528 MiB and must hash every ordered part.
+            let bytes = [
+                b"{\"v\":\"".as_slice(),
+                vec![b'a'; 16 * 1024 * 1024 - 9].as_slice(),
+                b"\"}\n".as_slice(),
+            ]
+            .concat();
+            let part = seed_export_part(&service, &record, &bytes, 1).await;
+            let mut hash = Sha256::new();
+            for _ in 0..33 {
+                hash.update(&bytes);
+            }
+            record.export_checkpoint = Some(ExportCheckpoint {
+                parts: vec![part; 33],
+                complete: true,
+                snapshot: Some("durable-snapshot".into()),
+                schema_version: Some(1),
+                ..ExportCheckpoint::default()
+            });
+            store_worker_records(&service, &[record.clone()]).await;
+            assert_eq!(
+                service.execute_export(&record, 10).await.unwrap(),
+                DataJobState::Succeeded
+            );
+            let saved = service
+                .get_record(&record.view.tenant, &record.view.job_id)
+                .await
+                .unwrap();
+            let manifest = saved.view.manifest.unwrap();
+            assert_eq!(manifest.byte_count, 33 * 16 * 1024 * 1024);
+            assert_eq!(manifest.digest, format!("sha256:{:x}", hash.finalize()));
+            assert_eq!(manifest.format_version, 2);
+        });
+    }
+
+    #[test]
+    fn cancelling_export_cleans_pending_and_committed_parts_before_publication() {
+        futures::executor::block_on(async {
+            let service = worker_fixture();
+            let mut record = worker_record(74, DataJobState::Running);
+            record.view.kind = DataJobKind::Export;
+            let part = seed_export_part(&service, &record, b"{}\n", 1).await;
+            record.export_checkpoint = Some(ExportCheckpoint {
+                pending_digest: Some(part.digest.clone()),
+                ..ExportCheckpoint::default()
+            });
+            record.cancel_requested = true;
+            store_worker_records(&service, &[record.clone()]).await;
+            assert_eq!(
+                service.execute_export(&record, 10).await.unwrap(),
+                DataJobState::Cancelled
+            );
+            assert!(service.read_export_part(&record, &part).await.is_err());
+            let saved = service
+                .get_record(&record.view.tenant, &record.view.job_id)
+                .await
+                .unwrap();
+            assert!(saved.view.manifest.is_none());
+        });
+    }
+
+    #[test]
+    fn multipart_download_requires_current_authority_and_a_bound_unexpired_grant() {
+        futures::executor::block_on(async {
+            use crate::{
+                DeveloperIdentityId, EnvironmentRecord, MembershipRecord, OrganizationId,
+                OrganizationRecord, OrganizationRole, ProjectRecord,
+            };
+            let service = worker_fixture();
+            let mut record = worker_record(75, DataJobState::Running);
+            record.view.kind = DataJobKind::Export;
+            let org = OrganizationId::parse("org_abcdefgh").unwrap();
+            let owner = DeveloperIdentityId::parse("dev_abcdefgh").unwrap();
+            service
+                .organizations
+                .create_organization(
+                    &OrganizationRecord::new(org.clone(), "Test", 1).unwrap(),
+                    &MembershipRecord::new(org.clone(), owner.clone(), OrganizationRole::Owner, 1),
+                )
+                .await
+                .unwrap();
+            let mut project = ProjectRecord::new(
+                record.view.tenant.project_id().clone(),
+                org,
+                "Test",
+                "local",
+                1,
+            )
+            .unwrap();
+            project.transition(LifecycleState::Active, 2, None).unwrap();
+            service.projects.create_project(&project).await.unwrap();
+            let mut environment = EnvironmentRecord::new(
+                record.view.tenant.environment_id().clone(),
+                record.view.tenant.project_id().clone(),
+                "Test",
+                1,
+            )
+            .unwrap();
+            environment
+                .transition(LifecycleState::Active, 2, None)
+                .unwrap();
+            service
+                .projects
+                .create_environment(&environment)
+                .await
+                .unwrap();
+            let part = seed_export_part(&service, &record, b"{}\n", 1).await;
+            record.export_checkpoint = Some(ExportCheckpoint {
+                parts: vec![part.clone(), part.clone()],
+                complete: true,
+                snapshot: Some("snapshot".into()),
+                schema_version: Some(1),
+                ..ExportCheckpoint::default()
+            });
+            store_worker_records(&service, &[record.clone()]).await;
+            service.execute_export(&record, 10).await.unwrap();
+            let actor = DeveloperPrincipal::for_test(owner, "owner@example.test");
+            let grant = service
+                .artifact_grant(
+                    &actor,
+                    &record.view.tenant,
+                    &record.view.job_id,
+                    ArtifactMethod::Download,
+                    11,
+                )
+                .await
+                .unwrap();
+            let url = url::Url::parse(&grant.url).unwrap();
+            let token = url
+                .query_pairs()
+                .find(|(key, _)| key == "grant")
+                .unwrap()
+                .1
+                .to_string();
+            assert_eq!(
+                service
+                    .download_export(
+                        &actor,
+                        &record.view.tenant,
+                        &record.view.job_id,
+                        &token,
+                        Some(1),
+                        12
+                    )
+                    .await
+                    .unwrap()
+                    .as_ref(),
+                b"{}\n"
+            );
+            assert!(matches!(
+                service
+                    .download_export(
+                        &actor,
+                        &record.view.tenant,
+                        &record.view.job_id,
+                        &token,
+                        None,
+                        12
+                    )
+                    .await,
+                Err(DataJobError::MultipartDownloadRequired)
+            ));
+            assert!(matches!(
+                service
+                    .download_export(
+                        &actor,
+                        &record.view.tenant,
+                        &record.view.job_id,
+                        &token,
+                        Some(2),
+                        12
+                    )
+                    .await,
+                Err(DataJobError::InvalidRequest)
+            ));
+            assert!(
+                service
+                    .download_export(
+                        &actor,
+                        &record.view.tenant,
+                        "djob_00000000000000000000000000000076",
+                        &token,
+                        Some(0),
+                        12
+                    )
+                    .await
+                    .is_err()
+            );
+            assert!(
+                service
+                    .download_export(
+                        &actor,
+                        &record.view.tenant,
+                        &record.view.job_id,
+                        &token,
+                        Some(0),
+                        1000
+                    )
+                    .await
+                    .is_err()
+            );
+            let outsider = DeveloperPrincipal::for_test(
+                DeveloperIdentityId::parse("dev_outsider").unwrap(),
+                "outsider@example.test",
+            );
+            assert!(
+                service
+                    .download_export(
+                        &outsider,
+                        &record.view.tenant,
+                        &record.view.job_id,
+                        &token,
+                        Some(0),
+                        12
+                    )
+                    .await
+                    .is_err()
+            );
+        });
     }
 
     #[test]
