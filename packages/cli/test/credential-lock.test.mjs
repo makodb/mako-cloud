@@ -82,3 +82,13 @@ test("logout waits for renewal and revokes the freshly rotated cookie", async (t
   assert.equal((await ctx.loadProfile()).session, undefined);
   await assert.rejects(ctx.credential(), /not signed in/);
 });
+
+test("a long-lived client refuses a profile moved to another endpoint", async (t) => {
+  const api = await startMockApi(authHandler()); t.after(() => api.close());
+  const directory = await signedIn(t, api), ctx = context(directory, undefined);
+  const client = await ctx.management();
+  await client.listTeams();
+  await ctx.saveProfile({ ...(await ctx.loadProfile()), endpoint: "https://other.invalid" });
+  await assert.rejects(client.listTeams(), /signed in to https:\/\/other.invalid/);
+  assert.equal(api.find("/v1/teams", "GET").length, 1);
+});

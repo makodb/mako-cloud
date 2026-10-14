@@ -247,7 +247,7 @@ export class CommandContext {
         `not signed in (profile "${this.globals.profile}"): run \`${CLI_NAME} auth login\` or set MAKO_TOKEN`,
       );
     }
-    const explicit = this.globals.endpoint;
+    const explicit = this.globals.endpoint ?? this.#resolvedEndpoint;
     if (explicit !== undefined && normalize(explicit) !== normalize(profile.endpoint)) {
       throw authError(
         `profile "${this.globals.profile}" is signed in to ${profile.endpoint}, not ${explicit}; use another --profile or MAKO_TOKEN`,
