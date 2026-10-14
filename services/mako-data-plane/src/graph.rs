@@ -756,6 +756,7 @@ impl DataPlaneGraph {
             .quota_checkpoints
             .checkpoint_due(
                 &self.components.quotas,
+                &self.components.quota_policy,
                 self.components.quota_policies.as_ref(),
                 &self.components.telemetry,
                 now_unix_milliseconds,
@@ -1771,6 +1772,68 @@ mod tests {
                     ..
                 }
             ));
+            graph.shutdown().await.expect("shutdown");
+        });
+    }
+
+    #[test]
+    fn replication_checkpoint_uses_the_enforced_policy_not_a_stale_plan() {
+        use mako_gateway::GatewayQuotaCharge;
+
+        let directory = local_tempdir("data-plane-replication-checkpoint-policy");
+        let config = config_for(directory.path(), DeploymentEnvironment::Local);
+        let graph = DataPlaneGraph::open(&config).expect("graph");
+        let tenant = tenant();
+        block_on(async {
+            // A plan installed before request throttling was removed remains
+            // persisted, but replication admission uses the deployment policy.
+            let stale = GatewayQuotaPolicy::new([
+                (
+                    GatewayQuotaResource::ReplicationRequests,
+                    rate_limit(120, 60_000),
+                ),
+                (
+                    GatewayQuotaResource::ReplicationBytes,
+                    rate_limit(64 * 1024 * 1024, 60_000),
+                ),
+            ])
+            .expect("stale plan");
+            let mut batch = WriteBatch::new();
+            batch.put(
+                PersistentQuotaPolicySource::policy_key(&tenant).expect("policy key"),
+                serde_json::to_vec(&stale).expect("policy json"),
+            );
+            graph
+                .storage_adapter()
+                .write(batch, Durability::Sync)
+                .await
+                .expect("install plan");
+            graph
+                .quota_engine()
+                .check_and_reserve(
+                    &tenant,
+                    "req_checkpoint_policy_001",
+                    &[
+                        GatewayQuotaCharge {
+                            resource: GatewayQuotaResource::ReplicationRequests,
+                            amount: NonZeroU64::MIN,
+                        },
+                        GatewayQuotaCharge {
+                            resource: GatewayQuotaResource::ReplicationBytes,
+                            amount: NonZeroU64::new(32).expect("bytes"),
+                        },
+                    ],
+                    graph.quota_policy(),
+                    60_000,
+                )
+                .await
+                .expect("admit replication");
+            graph.quota_checkpoints().mark(&tenant, 60_000);
+            assert_eq!(
+                graph.checkpoint_quota_counters(130_000).await,
+                1,
+                "only the enforced byte rate has a minute counter; a stale request limit would report a false zero"
+            );
             graph.shutdown().await.expect("shutdown");
         });
     }

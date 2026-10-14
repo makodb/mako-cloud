@@ -2463,6 +2463,8 @@ Usage is observed in the plane that serves the work and shipped to the telemetry
 
 Flows sum; levels average. Twelve samples of the same nine stored gigabytes are one overage, not twelve, and a mid-period delete halves the storage charge. The usage ledger is cross-checked against the gateway's quota counters minute by minute; a material difference is reported as a degraded health record for the tenant, so billing and enforcement cannot silently drift apart.
 
+Quota checkpoints use the policy that admits each resource: the deployment policy for replication and the installed tenant policy for object egress. A removed replication request-rate cap has no minute counter and produces no rate-limit checkpoint, even when an older stored plan still contains that cap. Replication usage remains recorded, and the enforced byte-rate counters continue to be cross-checked.
+
 ### Plans
 
 Two plans exist. An **included amount** is what the price covers. On the **free** plan exceeding it is refused (`429 quota_exceeded`, `retry: never`); on **pro** the excess is billed and never blocked, because capping there would stop a customer at the moment they started paying more.
