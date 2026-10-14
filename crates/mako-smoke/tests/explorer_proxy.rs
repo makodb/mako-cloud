@@ -12,8 +12,8 @@ use std::{
 };
 
 use mako_smoke::{
-    await_readiness, binary_directory, free_ports, mint_developer_session, raw_request, request,
-    run_bootstrap, scratch_root, service_environment, start_service,
+    ObjectStoreStub, await_readiness, binary_directory, free_ports, mint_developer_session,
+    raw_request, request, run_bootstrap, scratch_root, service_environment, start_service,
 };
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -35,6 +35,11 @@ fn console_explorer_works_through_the_public_proxy() {
         .unwrap();
     let root = workspace.path();
     let mut environment = service_environment(root);
+    let object_store = ObjectStoreStub::start();
+    environment.insert(
+        "MAKO_OBJECT_STORE_ENDPOINT".into(),
+        object_store.endpoint.clone(),
+    );
     run_bootstrap(&binaries, &environment);
     let [data_port, control_port, proxy_port, custom_port] = free_ports::<4>();
     environment.insert(
