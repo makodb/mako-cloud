@@ -46,25 +46,31 @@ async function login(context: CommandContext, args: CommandArgs): Promise<void> 
 }
 
 async function logout(context: CommandContext): Promise<void> {
-  const profile = await context.loadProfile();
-  if (profile?.session === undefined) {
-    context.info("Not signed in.");
-    return;
-  }
-  if (profile.session.refreshCookie !== undefined) {
-    const { client } = context.developerAuth(profile.endpoint, profile.session.refreshCookie);
-    try {
-      await client.signOut();
-    } catch (error) {
-      if (
-        !(error instanceof ManagementApiError && (error.status === 401 || error.status === 403))
-      ) {
-        throw error;
+  let signedOut = false;
+  await context.updateProfile(async (profile) => {
+    if (profile?.session === undefined) {
+      return profile;
+    }
+    if (profile.session.refreshCookie !== undefined) {
+      const { client } = context.developerAuth(profile.endpoint, profile.session.refreshCookie);
+      try {
+        await client.signOut();
+      } catch (error) {
+        if (
+          !(error instanceof ManagementApiError && (error.status === 401 || error.status === 403))
+        ) {
+          throw error;
+        }
       }
     }
-  }
-  await context.saveProfile({ endpoint: profile.endpoint });
-  context.info("Signed out; the session was revoked and removed from this machine.");
+    signedOut = true;
+    return { endpoint: profile.endpoint };
+  });
+  context.info(
+    signedOut
+      ? "Signed out; the session was revoked and removed from this machine."
+      : "Not signed in.",
+  );
 }
 
 async function status(context: CommandContext): Promise<void> {

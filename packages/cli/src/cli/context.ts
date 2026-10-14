@@ -3,10 +3,10 @@ import { readFile } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
 
 import {
-  type ManagementCredential,
   MakoDeveloperAuthClient,
   MakoManagementClient,
   ManagementApiError,
+  type ManagementCredential,
 } from "@mako-cloud/management-sdk";
 
 import {
@@ -15,9 +15,10 @@ import {
   REFRESH_COOKIE_NAME,
   refreshCookieFrom,
   resolveConfigDir,
-  saveStore,
   type StoredSession,
+  saveStore,
   withProfile,
+  withStoreLock,
 } from "./credentials.js";
 import { authError, CliError, EXIT, usageError } from "./errors.js";
 import { CLI_NAME } from "./name.js";
@@ -199,8 +200,19 @@ export class CommandContext {
   }
 
   async saveProfile(profile: Profile | undefined): Promise<void> {
-    const store = await loadStore(this.globals.configDir);
-    await saveStore(this.globals.configDir, withProfile(store, this.globals.profile, profile));
+    await this.updateProfile(async () => profile);
+  }
+
+  async updateProfile(
+    update: (profile: Profile | undefined) => Promise<Profile | undefined>,
+  ): Promise<void> {
+    await withStoreLock(this.globals.configDir, async () => {
+      const store = await loadStore(this.globals.configDir);
+      const profile = await update(store.profiles[this.globals.profile]);
+      if (profile !== store.profiles[this.globals.profile]) {
+        await saveStore(this.globals.configDir, withProfile(store, this.globals.profile, profile));
+      }
+    });
   }
 
   /** Whether the credential comes from the environment rather than the store. */
@@ -235,7 +247,7 @@ export class CommandContext {
         `not signed in (profile "${this.globals.profile}"): run \`${CLI_NAME} auth login\` or set MAKO_TOKEN`,
       );
     }
-    const explicit = this.globals.endpoint;
+    const explicit = this.globals.endpoint ?? this.#resolvedEndpoint;
     if (explicit !== undefined && normalize(explicit) !== normalize(profile.endpoint)) {
       throw authError(
         `profile "${this.globals.profile}" is signed in to ${profile.endpoint}, not ${explicit}; use another --profile or MAKO_TOKEN`,
@@ -243,12 +255,32 @@ export class CommandContext {
     }
     let session = profile.session;
     if (Date.parse(session.expiresAt) - Date.now() < REFRESH_MARGIN_MS) {
-      session = await this.#renew(profile, session);
+      session = await this.#renew(profile);
     }
     return { kind: "developer_session", accessToken: session.accessToken };
   }
 
-  async #renew(profile: Profile, session: StoredSession): Promise<StoredSession> {
+  async #renew(profile: Profile): Promise<StoredSession> {
+    return withStoreLock(this.globals.configDir, async () => {
+      // A different process may have consumed the same rotating cookie while
+      // this process waited. Re-read before deciding whether to renew at all.
+      const store = await loadStore(this.globals.configDir);
+      const current = store.profiles[this.globals.profile];
+      if (!current?.session || normalize(current.endpoint) !== normalize(profile.endpoint)) {
+        throw authError("the signed-in profile changed while waiting to renew; retry the command");
+      }
+      if (Date.parse(current.session.expiresAt) - Date.now() >= REFRESH_MARGIN_MS) {
+        return current.session;
+      }
+      return this.#renewLocked(current, current.session, store);
+    });
+  }
+
+  async #renewLocked(
+    profile: Profile,
+    session: StoredSession,
+    store: Awaited<ReturnType<typeof loadStore>>,
+  ): Promise<StoredSession> {
     if (session.refreshCookie === undefined) {
       throw authError(
         `the stored session has expired and cannot be renewed: run \`${CLI_NAME} auth login\``,
@@ -271,7 +303,10 @@ export class CommandContext {
       ...(session.email !== undefined ? { email: session.email } : {}),
       ...(jar.value !== undefined ? { refreshCookie: jar.value } : {}),
     };
-    await this.saveProfile({ ...profile, session: next });
+    await saveStore(
+      this.globals.configDir,
+      withProfile(store, this.globals.profile, { ...profile, session: next }),
+    );
     return next;
   }
 

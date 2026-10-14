@@ -353,6 +353,14 @@ The session is stored per **profile** in a credential file readable only by you:
 
 Developer-auth calls (sign-in, refresh, sign-out, step-up) carry the endpoint as their `Origin` header because the API's cross-site check requires it; the CLI holds the refresh cookie deliberately, which is exactly what that check exists to prevent a foreign site from doing.
 
+Concurrent CLI processes share a private `credentials.lock` beside the credential
+file. A process re-reads the session after taking the lock, so only one process
+rotates an expiring cookie and the others reuse its saved session. Profile updates
+use the same lock. Lock waits are bounded to 30 seconds; a process never steals a
+lock based on its age. If a crashed process leaves an abandoned lock, the CLI
+reports `CLI_CREDENTIAL_LOCK`: verify no command is using that credential store,
+remove only the named lock file, and retry. The credential file remains intact.
+
 ### Running in CI
 
 Set `MAKO_TOKEN` and `MAKO_ENDPOINT`. The token is used as given and never written to disk. Automation tokens (`mako-cloud auth token create`) are the intended credential: they are team-scoped, optionally narrowed to one project or environment, and carry a fixed permission list — `project_read`, `project_write`, `environment_read`, `environment_write`, `collection_write`, `policy_write`, `function_deploy`, `audit_read`, `organization_read`. A command the token's permissions do not allow fails with exit code 3 and the API's message naming the permission (`automation token lacks the environment_read permission this request needs`), or saying the request lies outside the project or environment the token is scoped to. Commands read before they write: `functions deploy` reads the function first, so a deploy token needs `environment_read` as well as `function_deploy`. A developer session token can be supplied the same way with `MAKO_TOKEN_KIND=developer_session`.
