@@ -651,8 +651,20 @@ function validateCustomDomainInfrastructure({ caddyTemplate, guestFirewall, serv
     !/access-control-/iu.test(caddyTemplate),
     "Caddy emits its own Access-Control header; CORS is the services' decision",
   );
+  // These exact matchers select body ceilings only; the Caddy validator checks
+  // their path equivalence and limits. They must never select upstream routes.
+  const routingMatchers = caddyTemplate
+    .replace(
+      /@data_job_upload \{\n\t\tmethod PUT\n\t\tpath_regexp data_job_upload [^\n]+\n\t\}/u,
+      "",
+    )
+    .replace(
+      /@ordinary_request \{\n\t\tnot \{\n\t\t\tmethod PUT\n\t\t\tpath_regexp ordinary_request [^\n]+\n\t\t\}\n\t\}/u,
+      "",
+    );
   assert(
-    !/^\t*(?:@\w+ )?(?:not )?method\s/mu.test(caddyTemplate),
+    !/reverse_proxy @(?:data_job_upload|ordinary_request)\b/u.test(caddyTemplate) &&
+      !/^\t*(?:@\w+ )?(?:not )?method\s/mu.test(routingMatchers),
     "a site filters by method, which would drop OPTIONS preflights",
   );
   // The verifier's resolver is the host's stub resolver on loopback by

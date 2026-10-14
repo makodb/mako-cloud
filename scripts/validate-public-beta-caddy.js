@@ -59,6 +59,39 @@ const edge = matcher("edge_function");
 const operatorAuth = matcher("operator_auth");
 const openapiPaths = [...openapi.matchAll(/^ {2}(\/[^:]+):$/gm)].map((match) => match[1]);
 assert(openapiPaths.length > 70, "unexpectedly small OpenAPI route inventory");
+const uploadBody = caddy.match(
+  /@data_job_upload \{\n\t\tmethod PUT\n\t\tpath_regexp data_job_upload ([^\n]+)\n\t\}/,
+);
+const ordinaryBody = caddy.match(
+  /@ordinary_request \{\n\t\tnot \{\n\t\t\tmethod PUT\n\t\t\tpath_regexp ordinary_request ([^\n]+)\n\t\t\}\n\t\}/,
+);
+assert(uploadBody && ordinaryBody, "upload size exemption must require PUT and an exact path");
+assert(
+  uploadBody[1] === ordinaryBody[1],
+  "normal body limit must exclude exactly artifact uploads",
+);
+const uploadPath = new RegExp(uploadBody[1]);
+const artifactPath =
+  "/v1/projects/prj_example0001/environments/env_example0001/data-jobs/djob_example0001/artifact";
+assert(uploadPath.test(artifactPath), "bulk artifact upload is outside its body-size contract");
+for (const path of [
+  artifactPath + "/private",
+  artifactPath.replace("/artifact", "/artifact-grants/upload"),
+  artifactPath.replace("/djob_example0001/", "//"),
+  "/v1/projects/prj_example0001/environments/env_example0001/function-bundles",
+  "/prj_example0001/functions/v1/import",
+]) {
+  assert(!uploadPath.test(path), `${path} must retain the ordinary request limit`);
+}
+assert(
+  caddy.includes("request_body @data_job_upload {\n\t\tmax_size 512MiB\n\t}") &&
+    caddy.includes("request_body @ordinary_request {\n\t\tmax_size 32MB\n\t}"),
+  "bulk upload and ordinary request limits differ from their contracts",
+);
+assert(
+  (caddy.match(/max_size 512MiB/g) ?? []).length === 1,
+  "only platform artifact uploads may use the large body limit",
+);
 const consoleRoute = matcher("console_route");
 const userBook = matcher("user_book");
 assert(userBook.test("/docs/user-book"), "the public User Book route is not served");
@@ -370,13 +403,18 @@ for (const [name, site] of [
 // Preflights have to reach the services to be answered from the environment's
 // allowlist, and they arrive on both names: every application route on either
 // site is matched by path alone, so OPTIONS is forwarded exactly like the
-// request it precedes.
+// request it precedes. The validated upload matchers change body limits only.
+assert(
+  !/reverse_proxy @(?:data_job_upload|ordinary_request)\b/u.test(caddy),
+  "body-size matchers must not restrict upstream routing",
+);
 for (const [name, site] of [
   ["platform hostname", platformSite],
   ["custom-domain", customDomainSite],
 ]) {
+  const routingSite = site.replace(uploadBody[0], "").replace(ordinaryBody[0], "");
   assert(
-    !/^\t*(?:@\w+ )?(?:not )?method\s/mu.test(site),
+    !/^\t*(?:@\w+ )?(?:not )?method\s/mu.test(routingSite),
     `${name} site filters by method, which would drop OPTIONS preflights`,
   );
 }

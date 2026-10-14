@@ -818,6 +818,11 @@ impl ObjectStoreStub {
                     }
                     Err(_) => break,
                 };
+                // Accepted sockets can inherit the listener's nonblocking mode.
+                // Large bodies arrive in several reads, so wait for every chunk.
+                stream
+                    .set_nonblocking(false)
+                    .expect("blocking object-store connection");
                 let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
                 let mut raw = Vec::new();
                 let mut buffer = [0u8; 8192];
