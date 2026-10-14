@@ -1,6 +1,7 @@
-import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 
 import { CliError, EXIT } from "./errors.js";
 
@@ -27,6 +28,59 @@ export interface CredentialStore {
 
 const EMPTY: CredentialStore = { version: 1, profiles: {} };
 const FILE_NAME = "credentials.json";
+
+/** Serialize refresh rotation and store read/modify/write across CLI processes. */
+export async function withStoreLock<T>(configDir: string, action: () => Promise<T>): Promise<T> {
+  await mkdir(configDir, { recursive: true, mode: 0o700 });
+  const path = join(configDir, "credentials.lock");
+  const deadline = Date.now() + 30_000;
+  let lock: Awaited<ReturnType<typeof open>>;
+  while (true) {
+    try {
+      lock = await open(path, "wx", 0o600);
+      break;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    }
+    // Never steal an old lock by age: a suspended process can still own a
+    // rotation. Fail explicitly on an abandoned lock instead of risking reuse.
+    try {
+      if (await assertPrivate(path)) {
+        const pid = Number(await readFile(path, "utf8"));
+        if (Number.isSafeInteger(pid) && pid > 0) {
+          try {
+            process.kill(pid, 0);
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code === "ESRCH") {
+              throw new CliError(
+                `abandoned credential lock ${path}; verify no CLI command is running, then remove this lock and retry`,
+                EXIT.auth,
+                "CLI_CREDENTIAL_LOCK",
+              );
+            }
+          }
+        }
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+    if (Date.now() >= deadline) {
+      throw new CliError(
+        `another CLI process is updating credentials (${path}); retry when it finishes`,
+        EXIT.auth,
+        "CLI_CREDENTIAL_LOCK",
+      );
+    }
+    await delay(50);
+  }
+  try {
+    await lock.writeFile(String(process.pid));
+    return await action();
+  } finally {
+    await lock.close();
+    await unlink(path);
+  }
+}
 
 /** `MAKO_CONFIG_DIR`, else `$XDG_CONFIG_HOME/mako-cloud`, else `~/.config/mako-cloud`. */
 export function resolveConfigDir(env: Readonly<Record<string, string | undefined>>): string {
