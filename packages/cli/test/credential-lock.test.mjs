@@ -61,3 +61,24 @@ test("an abandoned lock fails explicitly without stealing it or attempting authe
   await assert.rejects(withStoreLock(directory, async () => assert.fail("must not enter")), e => e.code === "CLI_CREDENTIAL_LOCK" && e.message.includes("abandoned"));
   assert.equal(await readFile(path, "utf8"), String(child.pid));
 });
+
+test("logout waits for renewal and revokes the freshly rotated cookie", async (t) => {
+  let started;
+  const refreshing = new Promise(resolve => { started = resolve; });
+  const handler = authHandler();
+  const api = await startMockApi(async request => {
+    if (request.path.endsWith("/sessions/refresh")) { started(); await delay(400); }
+    return handler(request);
+  });
+  t.after(() => api.close());
+  const directory = await signedIn(t, api), ctx = context(directory, api.endpoint), profile = await ctx.loadProfile();
+  await ctx.saveProfile({ ...profile, session: { ...profile.session, expiresAt: "2000-01-01T00:00:00.000Z" } });
+  const options = { env: { ...process.env, MAKO_TOKEN: "", MAKO_PROFILE: "default", MAKO_ENDPOINT: api.endpoint } };
+  const first = execute(process.execPath, [entry, "teams", "list", "--config-dir", directory], options);
+  await refreshing;
+  const second = execute(process.execPath, [entry, "auth", "logout", "--config-dir", directory], options);
+  await Promise.all([first, second]);
+  assert.equal(api.find("/v1/developer-auth/sessions/current", "DELETE")[0].headers.cookie, "__Secure-mako_developer_refresh=refresh-cookie-0002");
+  assert.equal((await ctx.loadProfile()).session, undefined);
+  await assert.rejects(ctx.credential(), /not signed in/);
+});

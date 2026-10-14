@@ -200,9 +200,18 @@ export class CommandContext {
   }
 
   async saveProfile(profile: Profile | undefined): Promise<void> {
+    await this.updateProfile(async () => profile);
+  }
+
+  async updateProfile(
+    update: (profile: Profile | undefined) => Promise<Profile | undefined>,
+  ): Promise<void> {
     await withStoreLock(this.globals.configDir, async () => {
       const store = await loadStore(this.globals.configDir);
-      await saveStore(this.globals.configDir, withProfile(store, this.globals.profile, profile));
+      const profile = await update(store.profiles[this.globals.profile]);
+      if (profile !== store.profiles[this.globals.profile]) {
+        await saveStore(this.globals.configDir, withProfile(store, this.globals.profile, profile));
+      }
     });
   }
 
