@@ -34,7 +34,22 @@
 	respond @outside_qualification_sources 403
 {% endif %}
 
-	request_body {
+	# Import artifacts have their own bounded upload contract. Keep the normal
+	# request ceiling on every other method/path, including custom domains.
+	@data_job_upload {
+		method PUT
+		path_regexp data_job_upload ^/v1/projects/[^/]+/environments/[^/]+/data-jobs/[^/]+/artifact$
+	}
+	@ordinary_request {
+		not {
+			method PUT
+			path_regexp ordinary_request ^/v1/projects/[^/]+/environments/[^/]+/data-jobs/[^/]+/artifact$
+		}
+	}
+	request_body @data_job_upload {
+		max_size 512MiB
+	}
+	request_body @ordinary_request {
 		max_size 32MB
 	}
 	header {

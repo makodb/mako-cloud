@@ -12,10 +12,11 @@ use std::{
 };
 
 use mako_smoke::{
-    await_readiness, binary_directory, free_ports, mint_developer_session, request, run_bootstrap,
-    scratch_root, service_environment, start_service,
+    await_readiness, binary_directory, free_ports, mint_developer_session, raw_request, request,
+    run_bootstrap, scratch_root, service_environment, start_service,
 };
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 
 struct Proxy(Child);
 impl Drop for Proxy {
@@ -198,6 +199,59 @@ fn exercise_project(
         }),
         "collection",
     );
+    if team_id.is_none() {
+        let job = create(
+            &format!("{scope}/data-jobs"),
+            json!({"kind": "import", "collectionId": "todos", "conflictStrategy": "create_only"}),
+            "large-upload",
+        );
+        let job_id = job["jobId"].as_str().unwrap();
+        let (status, body) = request(
+            proxy_port,
+            "POST",
+            &format!("{scope}/data-jobs/{job_id}/artifact-grants/upload"),
+            authenticated,
+            None,
+        );
+        assert_eq!(status, 201, "upload grant: {body}");
+        let grant: Value = serde_json::from_str(&body).unwrap();
+        // A normal migration chunk is 32 MiB, larger than the proxy's former
+        // global 32 MB ceiling. Each synthetic document stays below 1 MiB.
+        let title = "x".repeat(700_000);
+        let mut artifact = Vec::new();
+        for index in 0..48 {
+            serde_json::to_writer(
+                &mut artifact,
+                &json!({"id": format!("large-{index}"), "title": title}),
+            )
+            .unwrap();
+            artifact.push(b'\n');
+        }
+        assert!(artifact.len() > 32_000_000 && artifact.len() < 512 * 1024 * 1024);
+        let mut headers = authenticated.clone();
+        headers.insert("content-type".into(), "application/x-ndjson".into());
+        headers.insert(
+            "digest".into(),
+            format!("sha-256={:x}", Sha256::digest(&artifact)),
+        );
+        let (status, body, _) = raw_request(
+            proxy_port,
+            "PUT",
+            grant["url"].as_str().unwrap(),
+            &headers,
+            &artifact,
+        );
+        assert_eq!(
+            status,
+            202,
+            "large artifact upload: {}",
+            String::from_utf8_lossy(&body)
+        );
+        let uploaded: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(uploaded["state"], "dry_run");
+        assert_eq!(uploaded["progress"]["committed"], 0);
+        // Upload alone never writes collection rows; this test does not confirm it.
+    }
     let base = format!("{scope}/explorer");
     let collection = format!("{base}/collections/todos");
     let grant_request = json!({
