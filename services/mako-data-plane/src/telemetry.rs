@@ -315,6 +315,7 @@ impl QuotaCheckpointer {
     pub async fn checkpoint_due(
         &self,
         engine: &GatewayQuotaEngine,
+        replication_policy: &mako_gateway::GatewayQuotaPolicy,
         policies: &dyn GatewayQuotaPolicySource,
         emitter: &TelemetryEmitter,
         now_unix_milliseconds: u64,
@@ -327,13 +328,16 @@ impl QuotaCheckpointer {
                 continue;
             };
             let tenant = TenantScope::new(project, environment);
-            // The tenant's installed policy names the limit the counters were
-            // held to; without it the counter cannot be read, because the
-            // window length is part of the counter's identity.
+            // Object egress uses the tenant's installed policy. Replication
+            // admission uses the deployment policy passed by the graph; an
+            // older installed plan may still name a removed request-rate cap.
+            // Check each counter against the policy that actually charged it.
             let Ok(policy) = policies.policy_for(&tenant).await else {
                 continue;
             };
-            for record in checkpoint_records(engine, &policy, &tenant, &windows).await {
+            for record in
+                checkpoint_records(engine, replication_policy, &policy, &tenant, &windows).await
+            {
                 emitter.record(record);
                 emitted += 1;
             }
@@ -347,13 +351,19 @@ impl QuotaCheckpointer {
 /// the records themselves rather than count buffer entries.
 async fn checkpoint_records(
     engine: &GatewayQuotaEngine,
-    policy: &mako_gateway::GatewayQuotaPolicy,
+    replication_policy: &mako_gateway::GatewayQuotaPolicy,
+    tenant_policy: &mako_gateway::GatewayQuotaPolicy,
     tenant: &TenantScope,
     windows: &[u64],
 ) -> Vec<ObservabilityRecord> {
     let mut records = Vec::new();
     for window_start in windows {
         for (gateway_resource, resource) in CHECKPOINTED_RESOURCES {
+            let policy = match gateway_resource {
+                GatewayQuotaResource::ReplicationRequests
+                | GatewayQuotaResource::ReplicationBytes => replication_policy,
+                _ => tenant_policy,
+            };
             let Some(rate) = policy.limit(gateway_resource).and_then(|limit| limit.rate) else {
                 continue;
             };
@@ -515,6 +525,82 @@ mod tests {
         .expect("policy")
     }
 
+    #[test]
+    fn checkpoints_keep_replication_bytes_and_tenant_egress_under_their_enforced_limits() {
+        block_on(async {
+            let adapter: Arc<dyn KvAdapter> = Arc::new(MemoryAdapter::new());
+            let engine = quota_engine(&adapter);
+            let rate = |limit| GatewayQuotaLimit {
+                hard: None,
+                rate: Some(GatewayQuotaWindow {
+                    limit: NonZeroU64::new(limit).expect("limit"),
+                    window_milliseconds: NonZeroU64::new(60_000).expect("window"),
+                }),
+            };
+            let replication = GatewayQuotaPolicy::new([
+                (GatewayQuotaResource::ReplicationBytes, rate(1_024)),
+                // This unused egress limit must not replace the tenant's limit.
+                (GatewayQuotaResource::EgressBytes, rate(99)),
+            ])
+            .expect("replication policy");
+            let installed = GatewayQuotaPolicy::new([
+                (GatewayQuotaResource::ReplicationRequests, rate(120)),
+                (GatewayQuotaResource::ReplicationBytes, rate(99)),
+                (GatewayQuotaResource::EgressBytes, rate(4_096)),
+            ])
+            .expect("installed policy");
+            for (request, resource, amount, policy) in [
+                (
+                    "req_checkpoint_replication",
+                    GatewayQuotaResource::ReplicationBytes,
+                    32,
+                    &replication,
+                ),
+                (
+                    "req_checkpoint_egress",
+                    GatewayQuotaResource::EgressBytes,
+                    8,
+                    &installed,
+                ),
+            ] {
+                engine
+                    .check_and_reserve(
+                        &tenant(),
+                        request,
+                        &[GatewayQuotaCharge {
+                            resource,
+                            amount: NonZeroU64::new(amount).expect("amount"),
+                        }],
+                        policy,
+                        60_000,
+                    )
+                    .await
+                    .expect("charge");
+            }
+            let records =
+                checkpoint_records(&engine, &replication, &installed, &tenant(), &[60_000]).await;
+            let actual: Vec<_> = records
+                .iter()
+                .map(|record| match record.payload {
+                    ObservabilityPayload::Quota {
+                        resource,
+                        limit,
+                        consumed,
+                        ..
+                    } => (resource, limit, consumed),
+                    _ => panic!("expected quota checkpoint"),
+                })
+                .collect();
+            assert_eq!(
+                actual,
+                vec![
+                    (QuotaResource::ReplicationBytesPerMonth, 1_024, 32),
+                    (QuotaResource::ObjectEgressBytesPerMonth, 4_096, 8),
+                ]
+            );
+        });
+    }
+
     /// The checkpoint must say exactly what the counters hold for the window
     /// it names, and must not be taken before the window has settled: a
     /// summary racing the requests it summarizes would cry divergence where
@@ -561,14 +647,20 @@ mod tests {
             // The window closes at 120s but must settle before it is read.
             assert_eq!(
                 checkpoints
-                    .checkpoint_due(&engine, &policies, &emitter, 125_000)
+                    .checkpoint_due(&engine, &replication_policy(), &policies, &emitter, 125_000)
                     .await,
                 0,
                 "a window was summarized before requests straddling its edge could land"
             );
 
-            let records =
-                checkpoint_records(&engine, &replication_policy(), &tenant(), &[60_000]).await;
+            let records = checkpoint_records(
+                &engine,
+                &replication_policy(),
+                &replication_policy(),
+                &tenant(),
+                &[60_000],
+            )
+            .await;
             let consumed: Vec<_> = records
                 .iter()
                 .map(|record| match record.payload {
@@ -589,7 +681,7 @@ mod tests {
 
             assert_eq!(
                 checkpoints
-                    .checkpoint_due(&engine, &policies, &emitter, 130_000)
+                    .checkpoint_due(&engine, &replication_policy(), &policies, &emitter, 130_000)
                     .await,
                 2,
                 "a settled window was not summarized"
@@ -598,7 +690,7 @@ mod tests {
             // Once summarized, the window is done; nothing repeats it.
             assert_eq!(
                 checkpoints
-                    .checkpoint_due(&engine, &policies, &emitter, 200_000)
+                    .checkpoint_due(&engine, &replication_policy(), &policies, &emitter, 200_000)
                     .await,
                 0
             );
@@ -626,6 +718,7 @@ mod tests {
                 checkpoints
                     .checkpoint_due(
                         &engine,
+                        &replication_policy(),
                         &policies,
                         &emitter,
                         60_000 + QUOTA_CHECKPOINT_HORIZON
