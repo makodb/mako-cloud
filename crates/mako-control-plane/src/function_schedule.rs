@@ -66,7 +66,8 @@ pub const MAXIMUM_BODY_BYTES: usize = 64 * 1024;
 /// A function may carry at most this many schedules.
 pub const MAXIMUM_SCHEDULES_PER_FUNCTION: usize = 100;
 /// The gateway has this long to answer a scheduled invocation.
-pub const INVOCATION_TIMEOUT_SECONDS: u64 = 60;
+pub const INVOCATION_TIMEOUT_SECONDS: u64 =
+    mako_edge_runtime_protocol::RUNTIME_RESPONSE_TIMEOUT_SECONDS + 30;
 /// A lease outlives the timeout by this much before an abandoned run (a
 /// worker that died mid-invocation) stops blocking the schedule.
 pub const LEASE_GRACE_SECONDS: u64 = 30;
