@@ -15,6 +15,9 @@ use serde::{Deserialize, Serialize};
 pub const PROTOCOL_VERSION_HEADER: &str = "x-mako-runtime-protocol";
 /// Current major version of the internal runtime protocol.
 pub const PROTOCOL_VERSION: u16 = 1;
+/// Transport allowance for the supervisor's maximum 300-second worker wall
+/// limit plus startup/response grace. Tenant execution limits remain separate.
+pub const RUNTIME_RESPONSE_TIMEOUT_SECONDS: u64 = 330;
 /// Correlation header that is safe to include in diagnostics.
 pub const REQUEST_ID_HEADER: &str = "x-mako-request-id";
 /// Trace propagation header used alongside W3C `traceparent`.

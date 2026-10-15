@@ -9,7 +9,9 @@ use mako_edge_gateway::{
     FunctionRuntimeInvoker, RuntimeFunctionInvocation, RuntimeFunctionResponse,
     RuntimeInvocationError,
 };
-use mako_edge_runtime_protocol::{CALLER_AUTHORIZATION_HEADER, RuntimeErrorCode};
+use mako_edge_runtime_protocol::{
+    CALLER_AUTHORIZATION_HEADER, RUNTIME_RESPONSE_TIMEOUT_SECONDS, RuntimeErrorCode,
+};
 
 const MAX_RESPONSE_HEADER_BYTES: usize = 32 * 1024;
 const STREAM_CHUNK_BYTES: usize = 16 * 1024;
@@ -39,7 +41,7 @@ impl FunctionRuntimeInvoker for LoopbackRuntimeInvoker {
         let mut stream = TcpStream::connect_timeout(&self.endpoint, Duration::from_secs(2))
             .map_err(|_| runtime_unavailable())?;
         stream
-            .set_read_timeout(Some(Duration::from_secs(30)))
+            .set_read_timeout(Some(Duration::from_secs(RUNTIME_RESPONSE_TIMEOUT_SECONDS)))
             .and_then(|()| stream.set_write_timeout(Some(Duration::from_secs(5))))
             .map_err(|_| runtime_unavailable())?;
         let target = format!(
@@ -314,5 +316,77 @@ const fn response_too_large() -> RuntimeInvocationError {
     RuntimeInvocationError {
         code: RuntimeErrorCode::ResponseTooLarge,
         retryable: false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use futures::{StreamExt, executor::block_on};
+    use mako_api::{EnvironmentId, ProjectId, TenantScope};
+    use mako_edge_gateway::{
+        FunctionHttpMethod, FunctionInvocationActor, FunctionInvocationAuditContext,
+    };
+    use std::{net::TcpListener, thread};
+
+    #[test]
+    fn runtime_response_after_thirty_seconds_reaches_the_caller() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("listener");
+        let endpoint = listener.local_addr().expect("address");
+        let server = thread::spawn(move || {
+            let (mut socket, _) = listener.accept().expect("accept");
+            read_response_header(&mut socket).expect("request headers");
+            // Exercise the real gateway socket past the previous hard-coded
+            // deadline. The supervisor owns the tenant's execution timeout.
+            thread::sleep(Duration::from_secs(32));
+            socket
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok")
+                .expect("response");
+        });
+        let tenant = TenantScope::new(
+            ProjectId::parse("prj_d2b2dcc3f5acbcc2105200bafbde2134".to_owned()).expect("project"),
+            EnvironmentId::parse("env_4cfece7ecdaeba1f83064208c1cd84d6".to_owned())
+                .expect("environment"),
+        );
+        let context = FunctionInvocationAuditContext {
+            tenant: tenant.clone(),
+            organization_id: "org_test".to_owned(),
+            function_name: "delayed-response".to_owned(),
+            version: 1,
+            region: "test".to_owned(),
+            regional_failover: false,
+            request_id: "req_test".to_owned(),
+            trace_id: "trace_test".to_owned(),
+            actor: FunctionInvocationActor::PublicWebhook,
+        };
+        let response = block_on(LoopbackRuntimeInvoker::new(endpoint).invoke(
+            RuntimeFunctionInvocation {
+                tenant,
+                function_name: context.function_name.clone(),
+                version: 1,
+                region: context.region.clone(),
+                method: FunctionHttpMethod::Get,
+                path_and_query: "/".to_owned(),
+                headers: Vec::new(),
+                body: Vec::new(),
+                response_limit_bytes: 1024,
+                request_id: context.request_id.clone(),
+                trace_id: context.trace_id.clone(),
+                caller: None,
+                caller_token: None,
+                audit_context: context,
+            },
+        ))
+        .expect("response survives transport wait");
+        assert_eq!(response.status, 200);
+        let chunks = block_on(response.body.collect::<Vec<_>>());
+        assert_eq!(
+            chunks
+                .into_iter()
+                .flat_map(Result::unwrap)
+                .collect::<Vec<_>>(),
+            b"ok"
+        );
+        server.join().expect("server");
     }
 }
