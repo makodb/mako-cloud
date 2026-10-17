@@ -111,6 +111,12 @@ impl<'a> PullService<'a> {
                     }
                 }
             }
+            // The storage page can be exhausted while this response stopped
+            // partway through it: earlier pages may contain policy/filter-hidden
+            // changes. A full response acknowledges only the last scanned change.
+            if documents.len() == request.batch_size {
+                break;
+            }
             if page.is_exhausted() {
                 scanned_through = captured_high_water;
                 break;
@@ -553,6 +559,121 @@ mod tests {
             assert_eq!(deletion.documents[0]["id"], "todo-delete");
             assert_eq!(deletion.documents[0]["_deleted"], true);
             assert_eq!(deletion.documents[0]["_rev"], deleted.revision.as_str());
+        });
+    }
+
+    #[test]
+    fn a_full_filtered_batch_does_not_skip_the_final_storage_pages_tombstone() {
+        futures::executor::block_on(async {
+            let tenant = tenant();
+            let engine = DocumentEngine::new(Arc::new(MemoryAdapter::new()));
+            let collection = engine
+                .scope_collection(
+                    &tenant,
+                    CollectionScope::new(
+                        tenant.clone(),
+                        CollectionId::parse("todos").expect("collection"),
+                    ),
+                )
+                .expect("collection");
+            let sequencer = engine
+                .scope_sequencer(&tenant, &tenant, Durability::Memory)
+                .expect("sequencer");
+            let validator = visibility_validator();
+            let mut lease = sequencer
+                .lease(NonZeroU64::new(4).expect("lease"))
+                .await
+                .expect("lease");
+            let mut deleted_revision = None;
+            for (id, team) in [("hidden", "red"), ("deleted", "blue"), ("retained", "blue")] {
+                let MutationCommitOutcome::Applied(created) = collection
+                    .create_document(visibility_input(
+                        &validator,
+                        lease.issue().expect("position"),
+                        &format!("create-{id}"),
+                        json!({"id":id,"team":team,"secret":"fixture"}),
+                    ))
+                    .await
+                    .expect("create")
+                else {
+                    panic!("create must apply")
+                };
+                if id == "deleted" {
+                    deleted_revision = Some(created.revision);
+                }
+            }
+            collection
+                .delete_document(
+                    deleted_revision.expect("revision"),
+                    visibility_input(
+                        &validator,
+                        lease.issue().expect("position"),
+                        "delete-visible",
+                        json!({"id":"deleted","team":"blue","secret":"fixture"}),
+                    ),
+                )
+                .await
+                .expect("delete");
+            sequencer.recover_high_water().await.expect("high water");
+            let context = context();
+            let key = ReplicationTokenKey::from_bytes([17; 32]);
+            let service = PullService::new(
+                &collection,
+                ReplicationTokenCodec::new(&key),
+                SchemaVersion::new(1).expect("schema"),
+            );
+            let first = service
+                .initial_pull(
+                    &context,
+                    &PullRequest {
+                        checkpoint: None,
+                        schema_version: 1,
+                        batch_size: 2,
+                        filter: None,
+                    },
+                    &BlueTeam,
+                )
+                .await
+                .expect("first page");
+            assert_eq!(first.documents.len(), 2);
+            assert_eq!(
+                ReplicationTokenCodec::new(&key)
+                    .decode_checkpoint(&first.checkpoint, &context, 1, None)
+                    .expect("checkpoint")
+                    .scanned_position(),
+                3,
+                "the unread tombstone at position 4 must not be acknowledged"
+            );
+            let second = service
+                .pull_authorized(
+                    &context,
+                    &PullRequest {
+                        checkpoint: Some(first.checkpoint),
+                        schema_version: 1,
+                        batch_size: 2,
+                        filter: None,
+                    },
+                    &BlueTeam,
+                )
+                .await
+                .expect("second page");
+            assert_eq!(second.documents.len(), 1);
+            assert_eq!(second.documents[0]["id"], "deleted");
+            assert_eq!(second.documents[0]["_deleted"], true);
+            let final_page = service
+                .pull_authorized(
+                    &context,
+                    &PullRequest {
+                        checkpoint: Some(second.checkpoint),
+                        schema_version: 1,
+                        batch_size: 2,
+                        filter: None,
+                    },
+                    &BlueTeam,
+                )
+                .await
+                .expect("final page");
+            assert!(final_page.documents.is_empty());
         });
     }
 
