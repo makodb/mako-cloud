@@ -1,0 +1,88 @@
+{
+  "recordedAt": "2026-10-18T05:11:32.848195+00:00",
+  "scope": "cloud-test.makodb.com; single deployed Mako data-plane instance; authenticated loopback benchmark",
+  "sourceCommit": "e28a125",
+  "release": "3a6916fddcef807d97a038a7538c9a3e0124897b3cf3ff18d40db0e7c7f9af95",
+  "previousRelease": "6606e73fc4c4e4f9625b807c414d765d437aa46670c7fc0c14bd81ccedde44d2",
+  "changedArtifacts": [
+    "bin/mako-data-plane"
+  ],
+  "validation": {
+    "rustChecksPassed": 198,
+    "linuxOptimizedAccountingTestsPassed": 6,
+    "clippy": "passed",
+    "format": "passed",
+    "documentation": "passed",
+    "traceability": "passed",
+    "openSpec": {
+      "passed": 36,
+      "failed": 0
+    }
+  },
+  "deployment": {
+    "immutableReleaseVerification": "passed",
+    "readinessHttpStatus": {
+      "8080": 200,
+      "8081": 200,
+      "8082": 200,
+      "9465": 200
+    },
+    "schedulesRestored": [
+      "robinlab-jobs",
+      "institution-sync"
+    ],
+    "scheduleCron": "0 * * * *",
+    "liveSyntheticDocuments": 8,
+    "createUpdateConflictReadDelete": "passed",
+    "syntheticCleanup": "verified",
+    "temporaryCredential": "retired; local and guest secret files removed",
+    "browserSmoke": "Published Rational reloaded, populated transaction list and showed active synchronization"
+  },
+  "benchmark": {
+    "requestsPerSample": 16,
+    "transport": "Authenticated service HTTP on VM loopback; sequential then 8 concurrent requests; same record",
+    "before": {
+      "sequential": {
+        "medianMs": 178.05,
+        "p95Ms": 267.23,
+        "wallSeconds": 2.925
+      },
+      "concurrency8": {
+        "medianMs": 537.605,
+        "p95Ms": 1743.28,
+        "wallSeconds": 1.748
+      }
+    },
+    "after": {
+      "sequential": {
+        "medianMs": 52.21,
+        "p95Ms": 320.85,
+        "wallSeconds": 1.263
+      },
+      "concurrency8": {
+        "medianMs": 167.33,
+        "p95Ms": 681.75,
+        "wallSeconds": 0.683
+      }
+    },
+    "allRequestsHttp200": true,
+    "limitations": "Small sequential before/after samples, not a sustained load qualification. Sequential tail latency did not improve. Cache, background load and sync-write latency may affect results."
+  },
+  "ioObservation": {
+    "sampleSeconds": 12.01,
+    "physicalReadMiBPerSecond": 0.046,
+    "logicalReadMiBPerSecond": 27.182,
+    "limitation": "Observation after deployment, not a controlled comparison against the earlier busy full-scan incident."
+  },
+  "accountingReconciliation": {
+    "state": "pending at final verification",
+    "mode": "Bounded incremental bootstrap; prior recorded usage retained until ready",
+    "globalBudget": {
+      "maxBytesPerPage": 2097152,
+      "maxEntriesPerPage": 8192,
+      "softMaxMillisecondsPerPage": 20,
+      "minimumSecondsBetweenPages": 2
+    },
+    "note": "Single I/O or large value can exceed the soft time/byte budget. Reconciliation yields to active writers."
+  }
+}

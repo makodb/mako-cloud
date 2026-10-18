@@ -6,5 +6,5 @@
 - [x] 2.1 Integrate pending samples and fix dirty-mark/cooldown scheduling with regression coverage.
 - [x] 2.2 Document behavior and update traceability; run relevant Rust and specification checks.
 ## 3. Release
-- [ ] 3.1 Build matching Linux artifacts and install a verified immutable release.
-- [ ] 3.2 Deploy, verify readiness, restore schedules and compare live I/O and request timing.
+- [x] 3.1 Build matching Linux artifacts and install a verified immutable release.
+- [x] 3.2 Deploy, verify readiness, restore schedules and compare live I/O and request timing.
