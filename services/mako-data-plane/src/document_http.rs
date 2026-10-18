@@ -201,9 +201,7 @@ fn handle_mutation(
             Some(verify_bearer(graph, &tenant, request, now).await?)
         };
         charge_document(graph, &tenant, request, now).await?;
-        // A write is the only thing that changes stored size, so it is what
-        // makes the tenant due for another measurement.
-        graph.storage_sampler().mark(&tenant);
+        let _storage_write = graph.storage_sampler().watch_write(&tenant);
         validate_mutation_wire(request, &body)?;
         let idempotency = request
             .header(IDEMPOTENCY_HEADER)

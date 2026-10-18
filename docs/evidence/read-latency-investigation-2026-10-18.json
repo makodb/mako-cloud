@@ -1,0 +1,93 @@
+{
+  "recordedAt": "2026-10-18T05:32:42.744603+00:00",
+  "scope": "Read-only authenticated document GET on deployed cloud-test data-plane; loopback HTTP; existing small record; no financial payloads retained",
+  "release": "3a6916fddcef807d97a038a7538c9a3e0124897b3cf3ff18d40db0e7c7f9af95",
+  "method": {
+    "tracing": "bpftrace syscall entry/exit probes for fsync and fdatasync filtered to data-plane PID; monotonic timestamps correlated to sequential HTTP requests",
+    "quietRepeatRequests": 60,
+    "allHttp200": true,
+    "requestSpacingMs": 50,
+    "warmSubset": "Exclude first request and intervals containing more than two process flushes; 50 requests remain",
+    "limitations": [
+      "Request-level flush correlation uses time windows, not instrumented stage spans. Stage names follow verified call flow in source.",
+      "Ordinary cloud background activity remained enabled. No restart or durability/configuration change was made.",
+      "Short samples explain current latency, not a sustained workload qualification."
+    ]
+  },
+  "all60Requests": {
+    "medianMs": 45.826,
+    "p95Ms": 118.115,
+    "maxMs": 301.275
+  },
+  "warmTwoFlushSubset": {
+    "count": 50,
+    "requestMedianMs": 44.367,
+    "sumOfFlushesMedianMs": 42.128,
+    "remainingTimeMedianMs": 2.164,
+    "medianFractionOfRequestTimeInFlushes": 0.9525,
+    "note": "Medians are computed separately and need not sum exactly."
+  },
+  "flushTarget": "RocksDB data-plane write-ahead log on /srv/mako-data",
+  "codePath": [
+    {
+      "stage": "Service credential validation and mandatory service-bypass audit",
+      "source": "services/mako-data-plane/src/document_http.rs:108",
+      "durabilitySource": "services/mako-data-plane/src/graph.rs:632"
+    },
+    {
+      "stage": "Quota reservation",
+      "source": "services/mako-data-plane/src/document_http.rs:755",
+      "durabilitySource": "services/mako-data-plane/src/graph.rs:587"
+    },
+    {
+      "stage": "Authorized document lookup and JSON response",
+      "source": "services/mako-data-plane/src/document_http.rs:108"
+    }
+  ],
+  "storageTopology": {
+    "guestDataDisk": "QEMU scsi1, SSD flag enabled",
+    "proxmoxVolume": "qnas-lun-lvm:vm-124-disk-2",
+    "backingStorage": "LVM on QNAP iSCSI LUN",
+    "physicalDriveType": "Not verified; virtual SSD flag does not establish physical media type"
+  },
+  "controls": {
+    "networkToNas": {
+      "icmpRequests": 12,
+      "meanRoundTripMs": 0.238,
+      "lossPercent": 0
+    },
+    "guestReadinessHttp": {
+      "requests": 24,
+      "medianMs": 1.925,
+      "p95Ms": 2.25
+    },
+    "guestDataVolume4KiBWrites": {
+      "samplesPerMode": 24,
+      "overwriteFsyncMedianMs": 17.344,
+      "overwriteFdatasyncMedianMs": 17.122,
+      "appendFsyncMedianMs": 17.251
+    },
+    "hostLocalFilesystem4KiBOverwriteFsync": {
+      "samples": 24,
+      "medianMs": 0.032,
+      "p95Ms": 0.043,
+      "limitation": "Different storage path; not a like-for-like database benchmark or power-loss qualification."
+    }
+  },
+  "findings": [
+    "Two serial durable side-effect writes dominate this read endpoint.",
+    "Slow flush acknowledgment on the QNAP-backed storage path accounts for most observed latency; the lookup/authorization/HTTP remainder is about 2 ms.",
+    "The previous full-scan accounting fix does not remove the durable-write latency floor.",
+    "Changing fsync to fdatasync alone did not materially improve the raw-file control."
+  ],
+  "recommendedNextWork": [
+    "Inspect QNAP LUN backing pool, physical media, synchronous write/cache behavior and contention, or benchmark a suitable low-latency SSD/NVMe volume before migrating database storage.",
+    "Consider committing audit and quota admission together with preserved authorization, idempotency and crash semantics to reduce serial flushes.",
+    "Do not remove synchronous durability merely to improve reported latency."
+  ],
+  "cleanup": {
+    "temporaryCredential": "retired",
+    "temporaryRawBenchmarkFiles": "removed",
+    "applicationRecordsModified": false
+  }
+}

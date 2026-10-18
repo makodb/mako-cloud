@@ -183,6 +183,7 @@ fn handle_push(
     let now = now_unix_seconds(request.request_id())?;
     let started = Instant::now();
     block_on(async {
+        let _storage_write = graph.storage_sampler().watch_write(&tenant);
         let authorized = authorize(
             graph,
             request,
@@ -878,11 +879,6 @@ async fn authorize(
                 HttpApiError::from_envelope(status_for(envelope.error.code), envelope)
             }
         })?;
-
-    // A push changes stored size; a pull does not.
-    if matches!(operation, ReplicationOperation::Push) {
-        graph.storage_sampler().mark(tenant);
-    }
 
     // Authorization is where replication is metered, so it is also where the
     // work becomes reportable. Only what the gateway actually charged for is

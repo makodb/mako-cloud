@@ -56,6 +56,11 @@ Run `npm run validate:traceability` whenever a scenario or row changes. The vali
 | BM-05 | An idle tenant is not resampled | `services/mako-data-plane/src/telemetry.rs::a_marked_tenant_is_sampled_once_and_not_again_until_the_interval_passes` | Automated |
 | BM-06 | A developer reads their usage | `crates/mako-smoke/tests/telemetry_pipeline.rs::observed_events_and_usage_reach_the_management_api` (end-to-end) | Automated |
 | BM-07 | The two disagree | `services/mako-telemetry-query/src/main.rs::a_checkpoint_is_compared_against_the_ledger_and_material_divergence_alerts` and `services/mako-telemetry-query/src/main.rs::a_replayed_checkpoint_batch_does_not_alert_twice` | Automated |
+| BM-08 | Concurrent writes during reconciliation | `crates/mako-storage/src/rocks/accounting.rs::reconciliation_tracks_writes_on_both_sides_of_cursor` | Automated |
+| BM-09 | Failed and repeated operations | `crates/mako-storage/src/rocks/accounting.rs::atomic_accounting_handles_failed_cas_duplicate_keys_and_tenants` | Automated |
+| BM-10 | Restart after accounting progress | `crates/mako-storage/src/rocks/accounting.rs::clean_restart_resumes_and_old_writer_invalidates_derived_totals` | Automated |
+| BM-11 | Writes arrive during sampling cooldown | `services/mako-data-plane/src/telemetry.rs::in_flight_and_cooldown_marks_wait_without_being_lost` | Automated |
+| BM-12 | Large environment initialization | `crates/mako-storage/src/rocks/accounting.rs::reconciliation_is_bounded_throttled_and_steady_samples_do_not_advance` | Automated |
 
 ## Billing / plans and entitlements
 

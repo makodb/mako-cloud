@@ -1,0 +1,77 @@
+{
+  "recordedAt": "2026-10-18T14:25:50.545626+00:00",
+  "state": "complete",
+  "vmid": 124,
+  "node": "zoo000",
+  "method": "Proxmox live block mirror; data, OS, then EFI; original volumes retained unused",
+  "startedAt": "2026-10-18T05:41:55.919597+00:00",
+  "completedAt": "2026-10-18T06:41:37.787513+00:00",
+  "durationSeconds": 3581.87,
+  "execution": {
+    "owner": "systemd on zoo000, independent of laptop and SSH session",
+    "unit": "mako-vm124-ceph-migration-20261018.service",
+    "receiptDirectory": "/var/lib/mako-vm124-ceph-migration-20261018",
+    "exitStatus": 0
+  },
+  "diskConfig": {
+    "efidisk0": "zoo-ceph-vm:vm-124-disk-2,efitype=4m,ms-cert=2023k,pre-enrolled-keys=1,size=1M",
+    "scsi0": "zoo-ceph-vm:vm-124-disk-1,discard=on,iothread=1,size=64G,ssd=1",
+    "scsi1": "zoo-ceph-vm:vm-124-disk-0,discard=on,iothread=1,size=256G,ssd=1",
+    "unused0": "qnas-lun-lvm:vm-124-disk-2",
+    "unused1": "qnas-lun-lvm:vm-124-disk-1",
+    "unused2": "qnas-lun-lvm:vm-124-disk-0"
+  },
+  "vmStatus": "status: running",
+  "verification": {
+    "readiness": {
+      "8080": 200,
+      "8081": 200,
+      "8082": 200,
+      "9465": 200
+    },
+    "release": "3a6916fddcef807d97a038a7538c9a3e0124897b3cf3ff18d40db0e7c7f9af95",
+    "filesystemIdentitiesPreserved": true,
+    "mode": "Live migration; no VM reboot test",
+    "temporaryReadCredential": "retired; guest and laptop secret files removed"
+  },
+  "capacity": {
+    "at": "2026-10-18T06:41:21.219328+00:00",
+    "health": "HEALTH_WARN",
+    "existingWarnings": [
+      "MON_DISK_LOW",
+      "OSD_NEARFULL",
+      "POOL_NEARFULL"
+    ],
+    "poolAvailableBytes": 1004424855552,
+    "highestOsdUsedPercent": 87.57916718662666,
+    "remainingVirtualBytes": 4194304
+  },
+  "durable4KiBWrite": {
+    "beforeMedianMs": 17.344,
+    "afterMedianMs": 3.07,
+    "afterP95Ms": 5.04,
+    "samplesPerMeasurement": 24
+  },
+  "authenticatedReadBenchmark": {
+    "requestsPerSample": 16,
+    "scope": "Same small existing import record, authenticated loopback service GET; sequential then concurrency eight; all HTTP 200",
+    "beforeOnQnap": {
+      "sequentialMedianMs": 52.21,
+      "sequentialP95Ms": 320.85,
+      "concurrency8MedianMs": 167.33,
+      "concurrency8P95Ms": 681.75
+    },
+    "afterOnCeph": {
+      "sequentialMedianMs": 9.6,
+      "sequentialP95Ms": 44.78,
+      "concurrency8MedianMs": 20.605,
+      "concurrency8P95Ms": 97.11
+    },
+    "limitations": "Small before/after samples, not sustained-load qualification. Cache and ordinary background activity were not controlled."
+  },
+  "retainedSourceVolumes": "Unused QNAP copies are stale after cutover; do not restore them over newer accepted writes.",
+  "remainingInfrastructureWarnings": [
+    "Existing Ceph MON_DISK_LOW, OSD_NEARFULL and POOL_NEARFULL warnings remain.",
+    "Migration does not change public-beta release/capacity gates or establish application high availability."
+  ]
+}

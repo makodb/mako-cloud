@@ -941,6 +941,8 @@ Developer-registration releases are installed with registration disabled. Apply 
 
 The current beta target is the single Ubuntu 24.04 VM `124` at `130.245.173.11` on a Proxmox host, with the exact public origin `https://cloud-test.makodb.com`. It uses a service-owned control SQLite path and distinct service-owned tenant RocksDB paths on the VM data disk (`/srv/mako-data`). Authenticated SQLite backups and signed RocksDB checkpoints are copied to a destination outside the VM failure domain every five minutes. This deployment is not a Kubernetes or distributed-KV deployment and does not provide HA.
 
+**Current VM storage (2026-10-18).** VM `124` uses the `zoo-ceph-vm` RBD storage for its 256 GiB data disk (`scsi1`), 64 GiB OS disk (`scsi0`), and EFI disk. The [live migration evidence](evidence/public-beta-ceph-storage-migration.json) supersedes the QNAP placement in historical provisioning receipts. The migration ran under systemd on `zoo000`, preserved guest filesystem identities, and verified readiness after each disk move. The original QNAP volumes remain detached as unused historical copies; they are stale after cutover and must not be restored over later accepted writes. Ceph block replication does not add application failover. Existing Ceph capacity warnings remain, and release-gate thresholds are unchanged.
+
 The pieces:
 
 | Piece | Where | Does |
@@ -999,6 +1001,37 @@ Use `--dry-run` first. `--accept-matching-marker` makes deployment initializatio
 Alert on the configured warning reserve and stop discretionary writes before the critical reserve. Check pending compaction bytes, delayed write rate, and backup headroom together, and measure each btrfs subvolume separately (`du -x` stops at subvolume boundaries): the backup staging and publish roots are on the same disk as the databases, and a leak there starves the data plane exactly as data growth would. Expand the existing retained claim through the CSI provider; do not replace its path. Confirm the filesystem sees the expansion, the critical alert clears, compaction pressure drains, and a new verified backup completes. Do not delete SST or WAL files manually.
 
 #### Graceful shutdown and same-volume restart
+
+Storage usage accounting maintains logical key-plus-value byte totals in the same
+RocksDB commit as each tenant mutation. Sixty-four counter shards avoid a single
+counter bottleneck; writes sharing a shard serialize before their transaction,
+while unrelated shards can group-commit. Accounting metadata lives outside tenant
+ranges and is not included in billed tenant bytes.
+
+Existing tenants initialize through a durable cursor. Each background pass admits
+at most one reconciliation page globally, with soft bounds of 2 MiB, 8,192 entries,
+and 20 ms, at least two seconds apart. A single record or storage read can exceed
+a soft bound. The pass yields if a mutation already holds the operation lock;
+while it reads its bounded page, new mutations briefly wait. Reconciliation does
+not populate the request block cache or use automatic readahead. The RocksDB block
+cache has an explicit 256 MiB capacity per adapter.
+
+Until reconciliation finishes, no partial or zero usage sample is published; the
+ledger retains its last successful sample. Large pre-existing tenants may take
+hours to initialize. Subsequent samples use counters, independent of data size.
+The journal logs reconciliation registration and completion without document
+contents. Dirty marks survive cooldown, and queued tenants rotate fairly through
+the reconciliation budget. Mutation scopes mark after work completes, including
+partial-error paths.
+
+A clean-close sequence fence allows verified counters and reconciliation cursors
+to survive restart. An unclean stop, restore without that fence, or intervening
+writes by an older binary invalidate only derived accounting metadata and trigger
+bounded reconciliation. Never restore an older tenant snapshot to roll back this
+change. The previous binary can still read the ordinary database format; rolling
+forward after its writes automatically invalidates stale counters. Explicit exact
+size scans remain available for diagnostics and conformance, but telemetry must
+use the incremental sampling method.
 
 Remove the owner from routing and wait for in-flight mutations. Let the service complete synchronous writes and graceful shutdown before terminating the process. Reattach the same claim to exactly one replacement. Readiness waits for RocksDB recovery, ownership/format checks, semantic checks, sequencer gap recovery, and acknowledged-high-water verification. Recovery finds the tenants by reading one key per tenant and then checks each tenant's acknowledged positions, so its cost follows tenants and positions, not stored bytes; the release operation allows each service 60 seconds to become ready. If the old process may still run, fence it at the orchestrator and node level before attaching the volume.
 
