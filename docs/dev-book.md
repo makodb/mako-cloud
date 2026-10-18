@@ -1000,6 +1000,37 @@ Alert on the configured warning reserve and stop discretionary writes before the
 
 #### Graceful shutdown and same-volume restart
 
+Storage usage accounting maintains logical key-plus-value byte totals in the same
+RocksDB commit as each tenant mutation. Sixty-four counter shards avoid a single
+counter bottleneck; writes sharing a shard serialize before their transaction,
+while unrelated shards can group-commit. Accounting metadata lives outside tenant
+ranges and is not included in billed tenant bytes.
+
+Existing tenants initialize through a durable cursor. Each background pass admits
+at most one reconciliation page globally, with soft bounds of 2 MiB, 8,192 entries,
+and 20 ms, at least two seconds apart. A single record or storage read can exceed
+a soft bound. The pass yields if a mutation already holds the operation lock;
+while it reads its bounded page, new mutations briefly wait. Reconciliation does
+not populate the request block cache or use automatic readahead. The RocksDB block
+cache has an explicit 256 MiB capacity per adapter.
+
+Until reconciliation finishes, no partial or zero usage sample is published; the
+ledger retains its last successful sample. Large pre-existing tenants may take
+hours to initialize. Subsequent samples use counters, independent of data size.
+The journal logs reconciliation registration and completion without document
+contents. Dirty marks survive cooldown, and queued tenants rotate fairly through
+the reconciliation budget. Mutation scopes mark after work completes, including
+partial-error paths.
+
+A clean-close sequence fence allows verified counters and reconciliation cursors
+to survive restart. An unclean stop, restore without that fence, or intervening
+writes by an older binary invalidate only derived accounting metadata and trigger
+bounded reconciliation. Never restore an older tenant snapshot to roll back this
+change. The previous binary can still read the ordinary database format; rolling
+forward after its writes automatically invalidates stale counters. Explicit exact
+size scans remain available for diagnostics and conformance, but telemetry must
+use the incremental sampling method.
+
 Remove the owner from routing and wait for in-flight mutations. Let the service complete synchronous writes and graceful shutdown before terminating the process. Reattach the same claim to exactly one replacement. Readiness waits for RocksDB recovery, ownership/format checks, semantic checks, sequencer gap recovery, and acknowledged-high-water verification. Recovery finds the tenants by reading one key per tenant and then checks each tenant's acknowledged positions, so its cost follows tenants and positions, not stored bytes; the release operation allows each service 60 seconds to become ready. If the old process may still run, fence it at the orchestrator and node level before attaching the volume.
 
 #### Checkpoint backup

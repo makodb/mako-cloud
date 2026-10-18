@@ -23,7 +23,7 @@ use mako_telemetry_client::TelemetryEmitter;
 /// Stored size only moves when a tenant writes, so nothing is gained by
 /// sampling one that is idle: its last sample is still true. Writes mark a
 /// tenant due and the sample is taken off the request path, because measuring
-/// walks the tenant's range and a document write must not pay for that.
+/// may advance bounded reconciliation and a request must not run that work.
 const STORAGE_SAMPLE_INTERVAL: Duration = Duration::from_secs(300);
 /// Bounded so a burst across many tenants cannot grow this without limit.
 const MAX_PENDING_SAMPLES: usize = 4_096;
@@ -33,7 +33,7 @@ const MAX_PENDING_SAMPLES: usize = 4_096;
 /// Both are levels rather than counts of events, so both are sampled rather
 /// than emitted per request, and each is marked by the events that can change
 /// it: writes move stored size, and identity lifecycle moves the user count.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Measurement {
     StoredBytes,
     ApplicationUsers,
@@ -50,6 +50,19 @@ pub struct StorageSampler {
     region: String,
     due: Mutex<HashMap<SampleKey, Instant>>,
     last_sampled: Mutex<HashMap<SampleKey, Instant>>,
+    last_started: Mutex<Option<SampleKey>>,
+}
+
+/// Marks after the mutation scope ends, including an error after a partial
+/// sequence of durable operations. Admission-time marks alone can race a sample.
+pub(crate) struct StorageWriteGuard<'a> {
+    sampler: &'a StorageSampler,
+    tenant: &'a TenantScope,
+}
+impl Drop for StorageWriteGuard<'_> {
+    fn drop(&mut self) {
+        self.sampler.mark(self.tenant);
+    }
 }
 
 impl StorageSampler {
@@ -59,6 +72,14 @@ impl StorageSampler {
             region: region.into(),
             due: Mutex::new(HashMap::new()),
             last_sampled: Mutex::new(HashMap::new()),
+            last_started: Mutex::new(None),
+        }
+    }
+
+    pub(crate) fn watch_write<'a>(&'a self, tenant: &'a TenantScope) -> StorageWriteGuard<'a> {
+        StorageWriteGuard {
+            sampler: self,
+            tenant,
         }
     }
 
@@ -79,13 +100,6 @@ impl StorageSampler {
 
     fn mark_measurement(&self, measurement: Measurement, tenant: &TenantScope) {
         let key = (measurement, tenant_key(tenant));
-        if let Ok(last) = self.last_sampled.lock()
-            && last
-                .get(&key)
-                .is_some_and(|at| at.elapsed() < STORAGE_SAMPLE_INTERVAL)
-        {
-            return;
-        }
         let Ok(mut due) = self.due.lock() else {
             return;
         };
@@ -96,10 +110,45 @@ impl StorageSampler {
     }
 
     fn take_due(&self) -> Vec<SampleKey> {
+        let Ok(last) = self.last_sampled.lock() else {
+            return Vec::new();
+        };
         let Ok(mut due) = self.due.lock() else {
             return Vec::new();
         };
-        due.drain().map(|(key, _)| key).collect()
+        let mut eligible = Vec::new();
+        due.retain(|key, at| {
+            if last
+                .get(key)
+                .is_some_and(|sample| sample.elapsed() < STORAGE_SAMPLE_INTERVAL)
+            {
+                true
+            } else {
+                eligible.push((key.clone(), *at));
+                false
+            }
+        });
+        // Fairness matters when a global reconciliation budget admits one page.
+        eligible.sort_by(|(a, _), (b, _)| a.cmp(b));
+        if let Ok(mut last_started) = self.last_started.lock() {
+            if let Some(previous) = last_started.as_ref() {
+                let start = eligible
+                    .iter()
+                    .position(|(key, _)| key > previous)
+                    .unwrap_or(0);
+                eligible.rotate_left(start);
+            }
+            *last_started = eligible.first().map(|(key, _)| key.clone());
+        }
+        eligible.into_iter().map(|(key, _)| key).collect()
+    }
+
+    fn retry(&self, key: SampleKey) {
+        if let Ok(mut due) = self.due.lock()
+            && due.len() < MAX_PENDING_SAMPLES
+        {
+            due.entry(key).or_insert_with(Instant::now);
+        }
     }
 
     fn record_sampled(&self, key: SampleKey) {
@@ -109,7 +158,8 @@ impl StorageSampler {
     }
 
     /// Measure every tenant marked since the last pass and report each as
-    /// usage. Returns how many were sampled.
+    /// usage. Pending reconciliation retains its dirty mark without publishing a
+    /// partial total. Returns how many complete samples were published.
     pub async fn sample_due(
         &self,
         adapter: &Arc<dyn KvAdapter>,
@@ -124,7 +174,16 @@ impl StorageSampler {
             };
             let measured = match measurement {
                 Measurement::StoredBytes => match keyspace.tenant_range() {
-                    Ok(range) => adapter.stored_bytes(range).await.ok(),
+                    Ok(range) => match adapter.sample_stored_bytes(range).await {
+                        Ok(Some(bytes)) => Some(bytes),
+                        Ok(None) => {
+                            // Initial reconciliation is pending, not zero usage
+                            // or an unhealthy store. Keep the last ledger sample.
+                            self.retry(key);
+                            continue;
+                        }
+                        Err(_) => None,
+                    },
                     Err(_) => None,
                 },
                 // One entry per user, so counting the range counts the users.
@@ -180,8 +239,7 @@ impl StorageSampler {
                 },
             });
             let Some(quantity) = measured else {
-                // Left unmarked, so the next change marks it again rather than
-                // recording a sample that never happened.
+                self.retry(key);
                 continue;
             };
             let (resource, unit) = match measurement {
@@ -493,6 +551,88 @@ mod tests {
             // Each sample carries a health record with its measurement.
             assert_eq!(emitter.buffered(), 2);
         });
+    }
+
+    #[test]
+    fn in_flight_and_cooldown_marks_wait_without_being_lost() {
+        let sampler = StorageSampler::new("local");
+        let key = (Measurement::StoredBytes, tenant_key(&tenant()));
+        sampler.mark(&tenant());
+        assert_eq!(sampler.take_due(), vec![key.clone()]);
+        // A writer queues another mark while the first sample is in flight.
+        sampler.mark(&tenant());
+        sampler.record_sampled(key.clone());
+        assert!(
+            sampler.take_due().is_empty(),
+            "queued work bypassed cooldown"
+        );
+        sampler.mark(&tenant());
+        assert!(sampler.due.lock().unwrap().contains_key(&key));
+        sampler
+            .last_sampled
+            .lock()
+            .unwrap()
+            .insert(key.clone(), Instant::now() - STORAGE_SAMPLE_INTERVAL);
+        assert_eq!(sampler.take_due(), vec![key]);
+    }
+
+    #[test]
+    fn pending_storage_reconciliation_does_not_publish_zero_usage() {
+        block_on(async {
+            let directory = tempfile::TempDir::new().unwrap();
+            let adapter: Arc<dyn KvAdapter> = Arc::new(
+                mako_storage::RocksDbAdapter::open(mako_storage::RocksDbConfig::new(
+                    directory.path(),
+                ))
+                .unwrap(),
+            );
+            let keyspace = TenantKeyspace::new(
+                tenant().project_id().as_str().as_bytes(),
+                tenant().environment_id().as_str().as_bytes(),
+            )
+            .unwrap();
+            let mut batch = WriteBatch::new();
+            for i in 0..4 {
+                let mut key = keyspace.environment_prefix().to_vec();
+                key.push(i);
+                batch.put(key, vec![0; 1024 * 1024]);
+            }
+            adapter.write(batch, Durability::Sync).await.unwrap();
+            let sampler = StorageSampler::new("local");
+            let emitter = emitter();
+            sampler.mark(&tenant());
+            assert_eq!(sampler.sample_due(&adapter, &emitter, 1).await, 0);
+            assert_eq!(
+                emitter.buffered(),
+                0,
+                "partial totals must not enter the ledger"
+            );
+            assert_eq!(sampler.due.lock().unwrap().len(), 1);
+            assert!(sampler.last_sampled.lock().unwrap().is_empty());
+        });
+    }
+
+    #[test]
+    fn pending_tenants_take_turns_at_the_global_reconciliation_budget() {
+        let sampler = StorageSampler::new("local");
+        let a = (Measurement::StoredBytes, ("a".to_owned(), "env".to_owned()));
+        let b = (Measurement::StoredBytes, ("b".to_owned(), "env".to_owned()));
+        sampler.retry(a.clone());
+        sampler.retry(b.clone());
+        assert_eq!(sampler.take_due()[0], a);
+        sampler.retry(a.clone());
+        sampler.retry(b.clone());
+        assert_eq!(sampler.take_due()[0], b);
+    }
+
+    #[test]
+    fn mutation_guard_marks_after_work_finishes() {
+        let sampler = StorageSampler::new("local");
+        let tenant = tenant();
+        let guard = sampler.watch_write(&tenant);
+        assert!(sampler.take_due().is_empty());
+        drop(guard);
+        assert_eq!(sampler.take_due().len(), 1);
     }
 
     fn quota_engine(adapter: &Arc<dyn KvAdapter>) -> GatewayQuotaEngine {

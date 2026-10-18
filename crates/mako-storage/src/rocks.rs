@@ -1,4 +1,7 @@
+mod accounting;
+
 use std::{
+    collections::{BTreeMap, BTreeSet},
     num::NonZeroUsize,
     path::{Path, PathBuf},
     sync::{
@@ -13,9 +16,10 @@ use std::{
 use async_trait::async_trait;
 use futures::channel::oneshot;
 use rocksdb::{
-    DBAccess, DBRawIteratorWithThreadMode, Error as RocksError, ErrorKind as RocksErrorKind,
-    OptimisticTransactionDB, OptimisticTransactionOptions, Options, ReadOptions,
-    SnapshotWithThreadMode, WriteBatchWithTransaction, WriteOptions, checkpoint::Checkpoint,
+    BlockBasedOptions, Cache, DBAccess, DBRawIteratorWithThreadMode, Error as RocksError,
+    ErrorKind as RocksErrorKind, OptimisticTransactionDB, OptimisticTransactionOptions, Options,
+    ReadOptions, SnapshotWithThreadMode, WriteBatchWithTransaction, WriteOptions,
+    checkpoint::Checkpoint,
 };
 
 use crate::{
@@ -77,6 +81,7 @@ pub struct RocksDbAdapter {
     next_snapshot_id: Arc<AtomicU64>,
     error_counters: Arc<RocksErrorCounters>,
     operation_lock: Arc<RwLock<()>>,
+    accounting: Arc<accounting::Accounting>,
 }
 
 #[derive(Debug, Default)]
@@ -115,12 +120,19 @@ impl RocksDbAdapter {
         options.set_use_fsync(true);
         options.set_paranoid_checks(true);
         options.set_track_and_verify_wals_in_manifest(true);
+        let cache = Cache::new_lru_cache(256 * 1024 * 1024);
+        let mut table = BlockBasedOptions::default();
+        table.set_block_cache(&cache);
+        options.set_block_based_table_factory(&table);
 
         let db = OptimisticTransactionDB::open(&options, &config.path)
             .map_err(|error| map_rocks_error("rocksdb_open", error, None))?;
 
+        let db = Arc::new(db);
+        let accounting = Arc::new(accounting::Accounting::open(Arc::clone(&db))?);
         Ok(Self {
-            db: Arc::new(db),
+            db,
+            accounting,
             config: Arc::new(config),
             next_snapshot_id: Arc::new(AtomicU64::new(1)),
             error_counters: Arc::new(RocksErrorCounters::default()),
@@ -218,6 +230,119 @@ impl RocksDbAdapter {
         Ok(())
     }
 
+    fn commit_atomic(&self, request: AtomicWrite) -> StorageResult<CompareAndWriteResult> {
+        request.validate()?;
+        self.validate_batch(&request.batch)?;
+        let accounting =
+            self.accounting.ranges.read().map_err(|_| {
+                StorageError::invalid("accounting", "accounting lock is unavailable")
+            })?;
+        // Serialize only shared accounting shards. This prevents a hot counter
+        // (or unconditional writes to the same key) from exhausting optimistic
+        // retries, while unrelated shards still group-commit concurrently.
+        let mut shards = BTreeSet::new();
+        for operation in request.batch.operations() {
+            let key = operation.key();
+            if let Some((_, range)) = accounting.range(..=key.to_vec()).next_back()
+                && range.counter_for(key).is_some()
+            {
+                shards.insert(accounting::shard_for(key));
+            }
+        }
+        let _shards = shards
+            .iter()
+            .map(|shard| {
+                self.accounting.write_shards[*shard]
+                    .lock()
+                    .map_err(|_| StorageError::invalid("accounting", "counter lock is unavailable"))
+            })
+            .collect::<StorageResult<Vec<_>>>()?;
+        let write_options = write_options(self.effective_durability(request.durability));
+        let transaction_options = self.transaction_options()?;
+        for attempt in 0..=16 {
+            let transaction = self
+                .db
+                .transaction_opt(&write_options, &transaction_options);
+
+            for (index, condition) in request.conditions.iter().enumerate() {
+                let actual = transaction
+                    .get_for_update(condition.key(), true)
+                    .map_err(|error| self.map_error("condition_read", error))?;
+                let matches = match condition {
+                    KeyCondition::Missing { .. } => actual.is_none(),
+                    KeyCondition::Present { .. } => actual.is_some(),
+                    KeyCondition::ValueEquals { value, .. } => actual.as_ref() == Some(value),
+                };
+                if !matches {
+                    transaction
+                        .rollback()
+                        .map_err(|error| self.map_error("transaction_rollback", error))?;
+                    return Ok(CompareAndWriteResult::Conflict {
+                        failed_condition: index,
+                        actual_value: actual,
+                    });
+                }
+            }
+
+            let mut deltas: BTreeMap<Vec<u8>, i128> = BTreeMap::new();
+            for operation in request.batch.operations() {
+                let key = operation.key();
+                if let Some((_, range)) = accounting.range(..=key.to_vec()).next_back()
+                    && let Some(counter) = range.counter_for(key)
+                {
+                    let before = transaction
+                        .get_for_update(key, true)
+                        .map_err(|error| self.map_error("accounting_previous", error))?;
+                    let old = before.as_ref().map_or(0, |value| key.len() + value.len()) as i128;
+                    let new = match operation {
+                        WriteOperation::Put { value, .. } => (key.len() + value.len()) as i128,
+                        WriteOperation::Delete { .. } => 0,
+                    };
+                    *deltas.entry(counter).or_default() += new - old;
+                }
+                match operation {
+                    WriteOperation::Put { key, value } => transaction
+                        .put(key, value)
+                        .map_err(|error| self.map_error("transaction_put", error))?,
+                    WriteOperation::Delete { key } => transaction
+                        .delete(key)
+                        .map_err(|error| self.map_error("transaction_delete", error))?,
+                }
+            }
+            for (key, delta) in deltas {
+                if delta == 0 {
+                    continue;
+                }
+                let previous = transaction
+                    .get_for_update(&key, true)
+                    .map_err(|error| self.map_error("accounting_counter", error))?;
+                let total = accounting::decode_counter(previous.as_deref())?
+                    .checked_add(delta)
+                    .ok_or_else(|| StorageError::invalid("accounting", "counter overflow"))?;
+                transaction
+                    .put(key, total.to_be_bytes())
+                    .map_err(|error| self.map_error("accounting_counter", error))?;
+            }
+            match transaction.commit() {
+                Ok(()) => return Ok(CompareAndWriteResult::Applied),
+                // Optimistic commit conflicts mean nothing was written. Start a
+                // fresh transaction and re-evaluate every condition: a competing
+                // writer normally makes this a logical CAS conflict. Do not retry
+                // ambiguous I/O or other failures, nor reuse the stale transaction.
+                Err(error)
+                    if matches!(
+                        error.kind(),
+                        RocksErrorKind::Busy | RocksErrorKind::TryAgain
+                    ) && attempt < 16 =>
+                {
+                    thread::yield_now();
+                }
+                Err(error) => return Err(self.map_error("transaction_commit", error)),
+            }
+        }
+        unreachable!("the final attempt returns its commit result")
+    }
+
     fn transaction_options(&self) -> StorageResult<OptimisticTransactionOptions> {
         duration_millis(
             self.config.transaction_lock_timeout,
@@ -285,6 +410,20 @@ impl KvAdapter for RocksDbAdapter {
             )
         })?;
         self.validate_batch(&batch)?;
+        if !self
+            .accounting
+            .ranges
+            .read()
+            .map_err(|_| StorageError::invalid("accounting", "accounting lock is unavailable"))?
+            .is_empty()
+        {
+            return match self.commit_atomic(AtomicWrite::unconditional(batch, durability))? {
+                CompareAndWriteResult::Applied => Ok(()),
+                CompareAndWriteResult::Conflict { .. } => {
+                    unreachable!("unconditional transaction has no conditions")
+                }
+            };
+        }
         let rocks_batch = build_rocks_batch(&batch);
         let options = write_options(self.effective_durability(durability));
         self.db
@@ -304,63 +443,7 @@ impl KvAdapter for RocksDbAdapter {
                 "storage operation lock is unavailable",
             )
         })?;
-        request.validate()?;
-        self.validate_batch(&request.batch)?;
-        let write_options = write_options(self.effective_durability(request.durability));
-        let transaction_options = self.transaction_options()?;
-        for attempt in 0..=16 {
-            let transaction = self
-                .db
-                .transaction_opt(&write_options, &transaction_options);
-
-            for (index, condition) in request.conditions.iter().enumerate() {
-                let actual = transaction
-                    .get_for_update(condition.key(), true)
-                    .map_err(|error| self.map_error("condition_read", error))?;
-                let matches = match condition {
-                    KeyCondition::Missing { .. } => actual.is_none(),
-                    KeyCondition::Present { .. } => actual.is_some(),
-                    KeyCondition::ValueEquals { value, .. } => actual.as_ref() == Some(value),
-                };
-                if !matches {
-                    transaction
-                        .rollback()
-                        .map_err(|error| self.map_error("transaction_rollback", error))?;
-                    return Ok(CompareAndWriteResult::Conflict {
-                        failed_condition: index,
-                        actual_value: actual,
-                    });
-                }
-            }
-
-            for operation in request.batch.operations() {
-                match operation {
-                    WriteOperation::Put { key, value } => transaction
-                        .put(key, value)
-                        .map_err(|error| self.map_error("transaction_put", error))?,
-                    WriteOperation::Delete { key } => transaction
-                        .delete(key)
-                        .map_err(|error| self.map_error("transaction_delete", error))?,
-                }
-            }
-            match transaction.commit() {
-                Ok(()) => return Ok(CompareAndWriteResult::Applied),
-                // Optimistic commit conflicts mean nothing was written. Start a
-                // fresh transaction and re-evaluate every condition: a competing
-                // writer normally makes this a logical CAS conflict. Do not retry
-                // ambiguous I/O or other failures, nor reuse the stale transaction.
-                Err(error)
-                    if matches!(
-                        error.kind(),
-                        RocksErrorKind::Busy | RocksErrorKind::TryAgain
-                    ) && attempt < 16 =>
-                {
-                    thread::yield_now();
-                }
-                Err(error) => return Err(self.map_error("transaction_commit", error)),
-            }
-        }
-        unreachable!("the final attempt returns its commit result")
+        self.commit_atomic(request)
     }
 
     async fn begin_transaction(
@@ -373,15 +456,30 @@ impl KvAdapter for RocksDbAdapter {
         ))
     }
 
+    async fn sample_stored_bytes(&self, range: KeyRange) -> StorageResult<Option<u64>> {
+        let _exclusive = match self.operation_lock.try_write() {
+            Ok(guard) => guard,
+            Err(std::sync::TryLockError::WouldBlock) => return Ok(None),
+            Err(std::sync::TryLockError::Poisoned(_)) => {
+                return Err(StorageError::invalid(
+                    "accounting",
+                    "operation lock is unavailable",
+                ));
+            }
+        };
+        self.accounting.sample(&range)
+    }
+
     async fn stored_bytes(&self, range: KeyRange) -> StorageResult<u64> {
         // get_approximate_sizes was the obvious answer and is the wrong one: it
         // reads table statistics that exclude the memtable, so it reported zero
         // for thirty-two kilobytes of freshly written data. A tenant would be
         // measured as holding nothing until a flush happened to occur.
         //
-        // So this walks the range instead. It is the reason this is a sampled
-        // measurement rather than one taken per request.
+        // Keep this explicit exact walk for diagnostics/conformance. Production
+        // telemetry uses sample_stored_bytes and its incremental counters.
         let mut options = ReadOptions::default();
+        options.fill_cache(false);
         options.set_iterate_lower_bound(range.start_inclusive.clone());
         options.set_iterate_upper_bound(range.end_exclusive.clone());
         let mut iterator = self.db.raw_iterator_opt(options);
@@ -407,6 +505,7 @@ impl KvAdapter for RocksDbAdapter {
 
     async fn count_keys(&self, range: KeyRange) -> StorageResult<u64> {
         let mut options = ReadOptions::default();
+        options.fill_cache(false);
         options.set_iterate_lower_bound(range.start_inclusive.clone());
         options.set_iterate_upper_bound(range.end_exclusive.clone());
         let mut iterator = self.db.raw_iterator_opt(options);

@@ -378,6 +378,12 @@ pub trait KvAdapter: Send + Sync {
         mode: TransactionMode,
     ) -> StorageResult<Box<dyn KvTransaction>>;
 
+    /// Exact logical bytes for a complete tenant, or pending while bounded
+    /// reconciliation initializes an incremental total. Call off the request path.
+    async fn sample_stored_bytes(&self, range: KeyRange) -> StorageResult<Option<u64>> {
+        self.stored_bytes(range).await.map(Some)
+    }
+
     /// Stored bytes held in a half-open key range.
     ///
     /// Sums the stored length of every entry in the range, so it walks it. That
