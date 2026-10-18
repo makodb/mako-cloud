@@ -470,8 +470,13 @@ fn application_tenant(path: &str) -> Option<TenantScope> {
         return None;
     }
     let environment_id = segments.next()?;
-    if !matches!(segments.next()?, "auth" | "collections" | "storage") {
-        return None;
+    match segments.next()? {
+        "auth" | "collections" | "storage" => {}
+        // The grouped stream is an application route just like each
+        // collection's pull/push/stream routes. Keep the match exact so
+        // future management replication routes do not inherit CORS.
+        "replication" if segments.next() == Some("stream") && segments.next().is_none() => {}
+        _ => return None,
     }
     TenantScope::require(Some(project_id), Some(environment_id)).ok()
 }
@@ -2013,6 +2018,28 @@ mod tests {
             Some(mako_service_runtime::CORS_ALLOW_METHODS)
         );
         assert_eq!(preflight.header_for_test("vary"), Some("Origin"));
+
+        let stream = format!("{scope}/replication/stream");
+        let preflight =
+            router.respond_for_test(request(HttpMethod::Options, stream.clone(), from(LISTED)));
+        assert_eq!(preflight.status_for_test(), 204);
+        assert_eq!(
+            preflight.header_for_test("access-control-allow-origin"),
+            Some(LISTED)
+        );
+        let refused = router.respond_for_test(request(
+            HttpMethod::Options,
+            stream.clone(),
+            from("https://other.example"),
+        ));
+        assert_eq!(refused.header_for_test("access-control-allow-origin"), None);
+        let posted = router.respond_for_test(request(HttpMethod::Post, stream, from(LISTED)));
+        assert_eq!(
+            posted.header_for_test("access-control-allow-origin"),
+            Some(LISTED)
+        );
+        assert!(application_tenant(&format!("{scope}/replication/admin")).is_none());
+        assert!(application_tenant(&format!("{scope}/replication/stream/extra")).is_none());
 
         // An unlisted origin's preflight is not answered here at all: it
         // routes, and the route has no `OPTIONS`.
