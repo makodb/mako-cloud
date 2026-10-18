@@ -941,6 +941,8 @@ Developer-registration releases are installed with registration disabled. Apply 
 
 The current beta target is the single Ubuntu 24.04 VM `124` at `130.245.173.11` on a Proxmox host, with the exact public origin `https://cloud-test.makodb.com`. It uses a service-owned control SQLite path and distinct service-owned tenant RocksDB paths on the VM data disk (`/srv/mako-data`). Authenticated SQLite backups and signed RocksDB checkpoints are copied to a destination outside the VM failure domain every five minutes. This deployment is not a Kubernetes or distributed-KV deployment and does not provide HA.
 
+**Current VM storage (2026-10-18).** VM `124` uses the `zoo-ceph-vm` RBD storage for its 256 GiB data disk (`scsi1`), 64 GiB OS disk (`scsi0`), and EFI disk. The [live migration evidence](evidence/public-beta-ceph-storage-migration.json) supersedes the QNAP placement in historical provisioning receipts. The migration ran under systemd on `zoo000`, preserved guest filesystem identities, and verified readiness after each disk move. The original QNAP volumes remain detached as unused historical copies; they are stale after cutover and must not be restored over later accepted writes. Ceph block replication does not add application failover. Existing Ceph capacity warnings remain, and release-gate thresholds are unchanged.
+
 The pieces:
 
 | Piece | Where | Does |
