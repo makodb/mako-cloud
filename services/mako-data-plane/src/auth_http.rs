@@ -407,8 +407,21 @@ fn handle_refresh(
         {
             return Err(invalid(request, "refresh token is invalid"));
         }
+        if body.request_id.as_ref().is_some_and(|id| {
+            !(32..=128).contains(&id.len())
+                || !id
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
+        }) {
+            return Err(invalid(request, "refresh request id is invalid"));
+        }
         match graph
-            .refresh_application_session(&tenant, &body.refresh_token, now)
+            .refresh_application_session_with_request_id(
+                &tenant,
+                &body.refresh_token,
+                body.request_id.as_deref(),
+                now,
+            )
             .await
             .map_err(|_| unavailable(request, "session refresh is unavailable"))?
         {
@@ -435,10 +448,32 @@ fn handle_refresh(
             DataPlaneRefreshOutcome::Invalid => {
                 Err(unauthenticated(request, "refresh credential is invalid"))
             }
-            DataPlaneRefreshOutcome::ReplayDetected => Err(unauthenticated(
-                request,
-                "refresh credential replay revoked the session",
-            )),
+            DataPlaneRefreshOutcome::ReplayDetected {
+                user_id,
+                session_id,
+            } => {
+                append_audit(
+                    graph,
+                    &tenant,
+                    AuditCategory::Authentication,
+                    ActorIdentity::ApplicationUser {
+                        actor_id: user_id.as_str().to_owned(),
+                        session_id: session_id.as_str().to_owned(),
+                    },
+                    "application_session",
+                    session_id.as_str(),
+                    "application_session_refresh",
+                    AuditOutcome::Denied,
+                    "refresh_replay_revoked_session",
+                    request.request_id(),
+                    now,
+                )
+                .await?;
+                Err(unauthenticated(
+                    request,
+                    "refresh credential replay revoked the session",
+                ))
+            }
         }
     })
 }
@@ -1079,6 +1114,8 @@ struct PasswordSignInWire {
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct RefreshWire {
     refresh_token: String,
+    #[serde(default)]
+    request_id: Option<String>,
 }
 
 #[derive(Serialize)]

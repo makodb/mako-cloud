@@ -1061,7 +1061,7 @@ Application users belong to exactly one project environment. Their identities, s
 POST /v1/projects/{p}/environments/{e}/auth/signup       { email, password (8–1024 chars), redirectUrl? } → 202 { accepted: true, verificationRequired }
 POST /v1/projects/{p}/environments/{e}/auth/verify-email { token } → 200 { verified: true }
 POST /v1/projects/{p}/environments/{e}/auth/signin       { email, password } → AuthSession
-POST /v1/projects/{p}/environments/{e}/auth/token        { refreshToken } → AuthSession (rotated)
+POST /v1/projects/{p}/environments/{e}/auth/token        { refreshToken, requestId? } → AuthSession (rotated)
 POST /v1/projects/{p}/environments/{e}/auth/signout      (bearer) → 204
 GET  /v1/projects/{p}/environments/{e}/auth/user         (bearer) → AuthUser
 GET  /v1/projects/{p}/environments/{e}/auth/jwks         → JsonWebKeySet
@@ -1070,6 +1070,8 @@ POST /v1/projects/{p}/environments/{e}/auth/password-recovery/redeem { token, pa
 ```
 
 A **forgotten password** is recovered by mail. `password-recovery` answers the same whether or not the address has an account; for an active or invited user it mails the environment's `recovery` template with a single-use link to the registered `redirectUrl`, carrying `#password_reset_token=<token>` and valid for an hour. The app reads the token (`MakoAuthClient.passwordLinkFragment(location.hash)`), asks for the new password, and sends both to `password-recovery/redeem` (`redeemPasswordLink(token, password)`), which replaces the password, revokes every earlier session, and signs the user in. Opening the mailed link proves the address, so a user still pending verification becomes active.
+
+A refresh client should save a random `requestId` (32–128 letters, digits, hyphens or underscores) before sending a rotation and reuse it with the same refresh token until the replacement is saved. This lets a lost response be recovered even after a sleeping browser resumes. The matching retry returns the already-issued replacement; unrelated reuse still triggers replay detection. Explicit sign-out, disabled users, and revoked sessions cannot be recovered this way. Legacy clients retain the five-second concurrency grace.
 
 All take `X-Mako-Key`. An `AuthSession` is `{ accessToken, refreshToken, expiresIn, user }`; an `AuthUser` is `{ id, email, status, authorizationEpoch }` with `status` one of `unverified`/`pending_verification`, `active`, `disabled`, `deleted`. Provider and magic-link routes are in the [next chapter](#sign-in-providers-and-magic-links).
 
@@ -1154,6 +1156,8 @@ The environment's settings are one document, replaced whole:
 - `emailVerification` (optional; left out means off): whether a password sign-up must confirm its address before it can sign in. Turning it on needs at least one redirect URL. See [Email verification](#email-verification).
 
 Register the provider's side with the callback URL `https://<your api origin>/v1/projects/{projectId}/environments/{environmentId}/auth/providers/{name}/callback`.
+
+Set `persistentSessions: true` in the environment's auth settings to keep application sign-in until the user signs out or an administrator revokes access. Access JWTs still expire and refresh credentials still rotate with replay detection. The setting applies to new sessions and promotes still-valid existing sessions at their next renewal; it never revives an expired or revoked session. The user/session inventory reports `expiresAt: null` for these sessions. The default is false. Omitting the field preserves the installed policy, so older settings clients cannot silently change it. Turning it off changes future sessions; revoke existing persistent sessions explicitly if needed.
 
 `PUT …/auth-settings` (`updateAuthSettings`, with an `Idempotency-Key`) installs the document and answers with the installed view; `GET …/auth-settings` reads it. Owners and administrators may replace the settings; the read needs the same credential-reading permission as the environment's keys. Every replacement advances `version` by one; the management API numbers the new version after the one it read, so a client never has to track it.
 
@@ -2660,7 +2664,7 @@ When you contact support, quote the `requestId` from the error envelope (or `req
 | Query predicates / sort fields / page | 16 / 16 / 1000 (explorer: 16 / 4 / 200) |
 | Pull or push batch | 1000 rows |
 | Live-stream buffer | 1000 events, then `resync` |
-| Refresh family lifetime / concurrency grace | 30 days / 5 s |
+| Refresh family lifetime / concurrency grace | 30 days by default; optional persistent sessions / 5 s |
 | Credential rotation overlap | ≤ 30 days |
 | Policy rule expression | 16 KiB |
 | Bucket object | 16 MiB ceiling; object attributes ≤ 8, values ≤ 128 bytes; path ≤ 512 bytes |

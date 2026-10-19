@@ -470,8 +470,13 @@ fn application_tenant(path: &str) -> Option<TenantScope> {
         return None;
     }
     let environment_id = segments.next()?;
-    if !matches!(segments.next()?, "auth" | "collections" | "storage") {
-        return None;
+    match segments.next()? {
+        "auth" | "collections" | "storage" => {}
+        // The grouped stream is an application route just like each
+        // collection's pull/push/stream routes. Keep the match exact so
+        // future management replication routes do not inherit CORS.
+        "replication" if segments.next() == Some("stream") && segments.next().is_none() => {}
+        _ => return None,
     }
     TenantScope::require(Some(project_id), Some(environment_id)).ok()
 }
@@ -1085,8 +1090,16 @@ impl DataPlaneGraph {
         now_unix_seconds: u64,
     ) -> Result<DataPlaneSessionGrant, DataPlaneIdentityError> {
         let identity = self.identity_store(trusted_tenant, trusted_tenant)?;
+        let persistent = crate::auth_provider_http::AuthProviderSettingsStore::new(Arc::clone(
+            self.storage_adapter(),
+        ))
+        .load(trusted_tenant)
+        .await
+        .map_err(|()| DataPlaneIdentityError::SessionPolicyUnavailable)?
+        .is_some_and(|settings| settings.persistent_sessions);
         let grant =
             ApplicationSessionStore::new(&identity, &self.components.session_protection_key)
+                .with_persistent_sessions(persistent)
                 .create(user_id, now_unix_seconds)
                 .await?;
         self.complete_session_grant(grant, now_unix_seconds).await
@@ -1098,9 +1111,33 @@ impl DataPlaneGraph {
         presented_refresh: &str,
         now_unix_seconds: u64,
     ) -> Result<DataPlaneRefreshOutcome, DataPlaneIdentityError> {
+        self.refresh_application_session_with_request_id(
+            trusted_tenant,
+            presented_refresh,
+            None,
+            now_unix_seconds,
+        )
+        .await
+    }
+
+    pub async fn refresh_application_session_with_request_id(
+        &self,
+        trusted_tenant: &TenantScope,
+        presented_refresh: &str,
+        request_id: Option<&str>,
+        now_unix_seconds: u64,
+    ) -> Result<DataPlaneRefreshOutcome, DataPlaneIdentityError> {
         let identity = self.identity_store(trusted_tenant, trusted_tenant)?;
+        let persistent = crate::auth_provider_http::AuthProviderSettingsStore::new(Arc::clone(
+            self.storage_adapter(),
+        ))
+        .load(trusted_tenant)
+        .await
+        .map_err(|()| DataPlaneIdentityError::SessionPolicyUnavailable)?
+        .is_some_and(|settings| settings.persistent_sessions);
         match ApplicationSessionStore::new(&identity, &self.components.session_protection_key)
-            .refresh(presented_refresh, now_unix_seconds)
+            .with_persistent_sessions(persistent)
+            .refresh_with_request_id(presented_refresh, request_id, now_unix_seconds)
             .await?
         {
             RefreshSessionOutcome::Rotated(grant) => self
@@ -1109,7 +1146,13 @@ impl DataPlaneGraph {
                 .map(Box::new)
                 .map(DataPlaneRefreshOutcome::Rotated),
             RefreshSessionOutcome::Invalid => Ok(DataPlaneRefreshOutcome::Invalid),
-            RefreshSessionOutcome::ReplayDetected => Ok(DataPlaneRefreshOutcome::ReplayDetected),
+            RefreshSessionOutcome::ReplayDetected {
+                user_id,
+                session_id,
+            } => Ok(DataPlaneRefreshOutcome::ReplayDetected {
+                user_id,
+                session_id,
+            }),
         }
     }
 
@@ -1233,7 +1276,10 @@ pub struct DataPlaneSessionGrant {
 pub enum DataPlaneRefreshOutcome {
     Rotated(Box<DataPlaneSessionGrant>),
     Invalid,
-    ReplayDetected,
+    ReplayDetected {
+        user_id: AppUserId,
+        session_id: SessionId,
+    },
 }
 
 /// Route readiness is the conjunction of storage and every constructed domain
@@ -1500,6 +1546,7 @@ impl From<RateLimitError> for DataPlaneGraphError {
 
 #[derive(Debug)]
 pub enum DataPlaneIdentityError {
+    SessionPolicyUnavailable,
     Identity(IdentityStoreError),
     Signing(ProjectSigningKeyStoreError),
     Authorization(AuthorizationEpochError),
@@ -1516,6 +1563,7 @@ pub enum DataPlaneIdentityError {
 impl fmt::Display for DataPlaneIdentityError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(match self {
+            Self::SessionPolicyUnavailable => "data-plane session policy is unavailable",
             Self::Identity(_) => "data-plane identity storage operation failed",
             Self::Signing(_) => "data-plane signing-key storage operation failed",
             Self::Authorization(_) => "data-plane authorization-epoch operation failed",
@@ -1534,6 +1582,7 @@ impl fmt::Display for DataPlaneIdentityError {
 impl Error for DataPlaneIdentityError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         Some(match self {
+            Self::SessionPolicyUnavailable => return None,
             Self::Identity(error) => error,
             Self::Signing(error) => error,
             Self::Authorization(error) => error,
@@ -2013,6 +2062,28 @@ mod tests {
             Some(mako_service_runtime::CORS_ALLOW_METHODS)
         );
         assert_eq!(preflight.header_for_test("vary"), Some("Origin"));
+
+        let stream = format!("{scope}/replication/stream");
+        let preflight =
+            router.respond_for_test(request(HttpMethod::Options, stream.clone(), from(LISTED)));
+        assert_eq!(preflight.status_for_test(), 204);
+        assert_eq!(
+            preflight.header_for_test("access-control-allow-origin"),
+            Some(LISTED)
+        );
+        let refused = router.respond_for_test(request(
+            HttpMethod::Options,
+            stream.clone(),
+            from("https://other.example"),
+        ));
+        assert_eq!(refused.header_for_test("access-control-allow-origin"), None);
+        let posted = router.respond_for_test(request(HttpMethod::Post, stream, from(LISTED)));
+        assert_eq!(
+            posted.header_for_test("access-control-allow-origin"),
+            Some(LISTED)
+        );
+        assert!(application_tenant(&format!("{scope}/replication/admin")).is_none());
+        assert!(application_tenant(&format!("{scope}/replication/stream/extra")).is_none());
 
         // An unlisted origin's preflight is not answered here at all: it
         // routes, and the route has no `OPTIONS`.

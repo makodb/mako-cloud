@@ -28,12 +28,16 @@ pub struct ApplicationSessionGrant {
 pub enum RefreshSessionOutcome {
     Rotated(Box<ApplicationSessionGrant>),
     Invalid,
-    ReplayDetected,
+    ReplayDetected {
+        user_id: AppUserId,
+        session_id: SessionId,
+    },
 }
 
 pub struct ApplicationSessionStore<'a> {
     identity: &'a IdentityStore,
     protection_key: &'a KeyEncryptionKey,
+    persistent: bool,
 }
 
 impl<'a> ApplicationSessionStore<'a> {
@@ -42,7 +46,14 @@ impl<'a> ApplicationSessionStore<'a> {
         Self {
             identity,
             protection_key,
+            persistent: false,
         }
+    }
+
+    #[must_use]
+    pub const fn with_persistent_sessions(mut self, enabled: bool) -> Self {
+        self.persistent = enabled;
+        self
     }
 
     pub async fn create(
@@ -58,9 +69,13 @@ impl<'a> ApplicationSessionStore<'a> {
         if user.status() != AppUserStatus::Active {
             return Err(ApplicationSessionStoreError::InvalidUser);
         }
-        let expires_at = now_unix_seconds
-            .checked_add(SESSION_LIFETIME_SECONDS)
-            .ok_or(ApplicationSessionStoreError::TimeOverflow)?;
+        let expires_at = if self.persistent {
+            0
+        } else {
+            now_unix_seconds
+                .checked_add(SESSION_LIFETIME_SECONDS)
+                .ok_or(ApplicationSessionStoreError::TimeOverflow)?
+        };
         let session = SessionRecord::new(
             self.identity.tenant.clone(),
             SessionId::parse(random_id("ses"))?,
@@ -165,6 +180,19 @@ impl<'a> ApplicationSessionStore<'a> {
         presented: &str,
         now_unix_seconds: u64,
     ) -> Result<RefreshSessionOutcome, ApplicationSessionStoreError> {
+        self.refresh_with_request_id(presented, None, now_unix_seconds)
+            .await
+    }
+
+    /// Recover the same rotation after a lost response without treating a
+    /// new use of an already-consumed credential as an idempotent retry.
+    pub async fn refresh_with_request_id(
+        &self,
+        presented: &str,
+        request_id: Option<&str>,
+        now_unix_seconds: u64,
+    ) -> Result<RefreshSessionOutcome, ApplicationSessionStoreError> {
+        let request_digest = request_id.map(|id| *blake3::hash(id.as_bytes()).as_bytes());
         if !valid_presented_refresh(presented) {
             return Ok(RefreshSessionOutcome::Invalid);
         }
@@ -191,7 +219,8 @@ impl<'a> ApplicationSessionStore<'a> {
             let family: StoredRefreshFamily = serde_json::from_slice(&family_bytes)?;
             family.validate(self.identity.tenant(), &family_id)?;
             if family.status != TokenFamilyStatus::Active
-                || now_unix_seconds >= family.expires_at_unix_seconds
+                || (family.expires_at_unix_seconds != 0
+                    && now_unix_seconds >= family.expires_at_unix_seconds)
             {
                 return Ok(RefreshSessionOutcome::Invalid);
             }
@@ -214,6 +243,7 @@ impl<'a> ApplicationSessionStore<'a> {
                         family_key.clone(),
                         family_bytes,
                         digest_key.clone(),
+                        request_digest,
                         now_unix_seconds,
                     )
                     .await?
@@ -225,10 +255,13 @@ impl<'a> ApplicationSessionStore<'a> {
             if let Some(previous) = family.previous
                 && previous.digest == presented_digest
             {
-                if now_unix_seconds
-                    <= previous
-                        .consumed_at_unix_seconds
-                        .saturating_add(REFRESH_CONCURRENCY_GRACE_SECONDS)
+                let same_request =
+                    request_digest.is_some() && request_digest == previous.request_digest;
+                if same_request
+                    || now_unix_seconds
+                        <= previous
+                            .consumed_at_unix_seconds
+                            .saturating_add(REFRESH_CONCURRENCY_GRACE_SECONDS)
                 {
                     return self
                         .grant_from_family(&family, now_unix_seconds)
@@ -258,7 +291,10 @@ impl<'a> ApplicationSessionStore<'a> {
                     })
                     .await?;
                 if result == CompareAndWriteResult::Applied {
-                    return Ok(RefreshSessionOutcome::ReplayDetected);
+                    return Ok(RefreshSessionOutcome::ReplayDetected {
+                        user_id: replayed.user_id,
+                        session_id: replayed.session_id,
+                    });
                 }
                 continue;
             }
@@ -273,6 +309,7 @@ impl<'a> ApplicationSessionStore<'a> {
         family_key: Vec<u8>,
         family_bytes: Vec<u8>,
         presented_digest_key: Vec<u8>,
+        request_digest: Option<[u8; 32]>,
         now_unix_seconds: u64,
     ) -> Result<Option<ApplicationSessionGrant>, ApplicationSessionStoreError> {
         let replacement = RefreshCredential::generate();
@@ -290,11 +327,17 @@ impl<'a> ApplicationSessionStore<'a> {
             .protection_key
             .encrypt_secret(replacement.expose_for_token_response().as_bytes(), &aad)?;
         let updated = StoredRefreshFamily {
+            expires_at_unix_seconds: if self.persistent {
+                0
+            } else {
+                family.expires_at_unix_seconds
+            },
             generation,
             current_digest: replacement_digest,
             previous: Some(ConsumedDigest {
                 digest: family.current_digest,
                 consumed_at_unix_seconds: now_unix_seconds,
+                request_digest,
             }),
             encrypted_current_credential,
             encryption_nonce,
@@ -313,7 +356,32 @@ impl<'a> ApplicationSessionStore<'a> {
                 key: replacement_digest_key.clone(),
             },
         ];
-        let mut batch = WriteBatch::with_capacity(3);
+        let mut batch = WriteBatch::with_capacity(4);
+        if self.persistent && family.expires_at_unix_seconds != 0 {
+            // Promote an accepted existing session atomically with rotation.
+            // A concurrent sign-out must win, never be overwritten.
+            let session_key = self
+                .identity
+                .keyspace
+                .application_session_key(family.session_id.as_str())?;
+            let Some(bytes) = self.identity.adapter.get(&session_key).await? else {
+                return Ok(None);
+            };
+            let session: SessionRecord = serde_json::from_slice(&bytes)?;
+            if session.scope() != self.identity.tenant()
+                || session.user_id() != &family.user_id
+                || session.id() != &family.session_id
+                || session.status() != crate::SessionStatus::Active
+                || session.is_expired(now_unix_seconds)
+            {
+                return Ok(None);
+            }
+            conditions.push(KeyCondition::ValueEquals {
+                key: session_key.clone(),
+                value: bytes,
+            });
+            batch.put(session_key, serde_json::to_vec(&session.without_expiry())?);
+        }
         batch.put(&family_key, serde_json::to_vec(&updated)?);
         batch.put(&replacement_digest_key, family.family_id.as_str());
         if let Some(previous) = family.previous {
@@ -432,6 +500,8 @@ impl StoredRefreshFamily {
 struct ConsumedDigest {
     digest: [u8; 32],
     consumed_at_unix_seconds: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    request_digest: Option<[u8; 32]>,
 }
 
 fn credential_digest(credential: &RefreshCredential) -> [u8; 32] {
@@ -539,83 +609,179 @@ mod tests {
 
     #[test]
     fn refresh_state_persists_rotates_and_revokes_on_replay() {
-        block_on(async {
-            let tenant = TenantScope::new(
-                ProjectId::parse("prj_abcdefgh").expect("project"),
-                EnvironmentId::parse("env_abcdefgh").expect("environment"),
-            );
-            let adapter = Arc::new(MemoryAdapter::new());
-            let store = IdentityStore::new(adapter.clone(), &tenant, &tenant, Durability::Memory)
-                .expect("store");
-            let email = NormalizedEmail::parse("person@example.com").expect("email");
-            let user_id = AppUserId::parse("usr_abcdefgh").expect("user");
-            let user = AppUserRecord::new(
-                tenant.clone(),
-                user_id.clone(),
-                AppUserStatus::Active,
-                TrustedAppMetadata::new(json!({"role":"member"})).expect("trusted metadata"),
-                UserProfileMetadata::new(json!({})).expect("profile metadata"),
-                1,
-            );
-            let identity = UserIdentityRecord::new(
-                tenant.clone(),
-                UserIdentityId::parse("idn_abcdefgh").expect("identity"),
-                user_id.clone(),
-                IdentityProvider::Email,
-                email.as_str(),
-                1,
-            )
-            .expect("identity record");
-            store
-                .create_email_user(&user, &identity, &email)
-                .await
-                .expect("create user");
-            let key = KeyEncryptionKey::generate();
-            let sessions = ApplicationSessionStore::new(&store, &key);
-            let issued = sessions.create(&user_id, 10).await.expect("session");
-            let first = issued
-                .refresh_credential
-                .expose_for_token_response()
-                .to_owned();
-            assert_eq!(issued.email.as_ref(), Some(&email));
-
-            let reopened = IdentityStore::new(adapter, &tenant, &tenant, Durability::Memory)
-                .expect("reopened store");
-            let sessions = ApplicationSessionStore::new(&reopened, &key);
-            let RefreshSessionOutcome::Rotated(rotated) =
-                sessions.refresh(&first, 11).await.expect("rotate")
-            else {
-                panic!("refresh must rotate");
-            };
-            assert_ne!(
-                rotated.refresh_credential.expose_for_token_response(),
-                first
-            );
-            let RefreshSessionOutcome::Rotated(concurrent) = sessions
-                .refresh(&first, 15)
-                .await
-                .expect("concurrent refresh")
-            else {
-                panic!("bounded concurrent refresh must succeed");
-            };
-            assert_eq!(
-                concurrent.refresh_credential.expose_for_token_response(),
-                rotated.refresh_credential.expose_for_token_response()
-            );
-            assert!(matches!(
-                sessions.refresh(&first, 17).await.expect("replay"),
-                RefreshSessionOutcome::ReplayDetected
-            ));
-            assert!(
-                !reopened
-                    .session_is_active(&user_id, issued.session.id(), 18)
+        for (persistent, request_id) in [
+            (false, None),
+            (true, None),
+            (false, Some("retry-id-persisted-before-the-request")),
+            (true, Some("retry-id-persisted-before-the-request")),
+        ] {
+            block_on(async {
+                let tenant = TenantScope::new(
+                    ProjectId::parse("prj_abcdefgh").expect("project"),
+                    EnvironmentId::parse("env_abcdefgh").expect("environment"),
+                );
+                let adapter = Arc::new(MemoryAdapter::new());
+                let store =
+                    IdentityStore::new(adapter.clone(), &tenant, &tenant, Durability::Memory)
+                        .expect("store");
+                let email = NormalizedEmail::parse("person@example.com").expect("email");
+                let user_id = AppUserId::parse("usr_abcdefgh").expect("user");
+                let user = AppUserRecord::new(
+                    tenant.clone(),
+                    user_id.clone(),
+                    AppUserStatus::Active,
+                    TrustedAppMetadata::new(json!({"role":"member"})).expect("trusted metadata"),
+                    UserProfileMetadata::new(json!({})).expect("profile metadata"),
+                    1,
+                );
+                let identity = UserIdentityRecord::new(
+                    tenant.clone(),
+                    UserIdentityId::parse("idn_abcdefgh").expect("identity"),
+                    user_id.clone(),
+                    IdentityProvider::Email,
+                    email.as_str(),
+                    1,
+                )
+                .expect("identity record");
+                store
+                    .create_email_user(&user, &identity, &email)
                     .await
-                    .expect("session state")
-            );
-        });
+                    .expect("create user");
+                let key = KeyEncryptionKey::generate();
+                let sessions =
+                    ApplicationSessionStore::new(&store, &key).with_persistent_sessions(persistent);
+                let issued = sessions.create(&user_id, 10).await.expect("session");
+                let first = issued
+                    .refresh_credential
+                    .expose_for_token_response()
+                    .to_owned();
+                assert_eq!(issued.email.as_ref(), Some(&email));
+
+                let reopened = IdentityStore::new(adapter, &tenant, &tenant, Durability::Memory)
+                    .expect("reopened store");
+                let sessions = ApplicationSessionStore::new(&reopened, &key)
+                    .with_persistent_sessions(persistent);
+                let RefreshSessionOutcome::Rotated(rotated) = sessions
+                    .refresh_with_request_id(&first, request_id, 11)
+                    .await
+                    .expect("rotate")
+                else {
+                    panic!("refresh must rotate");
+                };
+                assert_ne!(
+                    rotated.refresh_credential.expose_for_token_response(),
+                    first
+                );
+                let RefreshSessionOutcome::Rotated(concurrent) = sessions
+                    .refresh(&first, 15)
+                    .await
+                    .expect("concurrent refresh")
+                else {
+                    panic!("bounded concurrent refresh must succeed");
+                };
+                assert_eq!(
+                    concurrent.refresh_credential.expose_for_token_response(),
+                    rotated.refresh_credential.expose_for_token_response()
+                );
+                if let Some(request_id) = request_id {
+                    // Simulate the browser losing the response and restarting
+                    // two hours later with its persisted request identity.
+                    let RefreshSessionOutcome::Rotated(recovered) = sessions
+                        .refresh_with_request_id(&first, Some(request_id), 7211)
+                        .await
+                        .expect("retry after sleep")
+                    else {
+                        panic!("the same request must recover the rotated credential");
+                    };
+                    assert_eq!(
+                        recovered.refresh_credential.expose_for_token_response(),
+                        rotated.refresh_credential.expose_for_token_response()
+                    );
+                }
+                // Missing/different request identities retain replay detection.
+                assert!(matches!(
+                    sessions
+                        .refresh_with_request_id(
+                            &first,
+                            Some("another-independent-request-identity"),
+                            7220
+                        )
+                        .await
+                        .expect("replay"),
+                    RefreshSessionOutcome::ReplayDetected { .. }
+                ));
+                assert!(
+                    !reopened
+                        .session_is_active(&user_id, issued.session.id(), 7221)
+                        .await
+                        .expect("session state")
+                );
+            });
+        }
     }
     #[test]
     fn a_signed_out_session_refuses_its_refresh_credential() {
+        for persistent in [false, true] {
+            block_on(async {
+                let tenant = TenantScope::new(
+                    ProjectId::parse("prj_abcdefgh").expect("project"),
+                    EnvironmentId::parse("env_abcdefgh").expect("environment"),
+                );
+                let store = IdentityStore::new(
+                    Arc::new(MemoryAdapter::new()),
+                    &tenant,
+                    &tenant,
+                    Durability::Memory,
+                )
+                .expect("store");
+                let email = NormalizedEmail::parse("person@example.com").expect("email");
+                let user_id = AppUserId::parse("usr_abcdefgh").expect("user");
+                let user = AppUserRecord::new(
+                    tenant.clone(),
+                    user_id.clone(),
+                    AppUserStatus::Active,
+                    TrustedAppMetadata::new(json!({})).expect("trusted metadata"),
+                    UserProfileMetadata::new(json!({})).expect("profile metadata"),
+                    1,
+                );
+                let identity = UserIdentityRecord::new(
+                    tenant.clone(),
+                    UserIdentityId::parse("idn_abcdefgh").expect("identity"),
+                    user_id.clone(),
+                    IdentityProvider::Email,
+                    email.as_str(),
+                    1,
+                )
+                .expect("identity record");
+                store
+                    .create_email_user(&user, &identity, &email)
+                    .await
+                    .expect("create user");
+                let key = KeyEncryptionKey::generate();
+                let sessions =
+                    ApplicationSessionStore::new(&store, &key).with_persistent_sessions(persistent);
+                let issued = sessions.create(&user_id, 10).await.expect("session");
+                let credential = issued
+                    .refresh_credential
+                    .expose_for_token_response()
+                    .to_owned();
+                store
+                    .sign_out_session(&user_id, issued.session.id(), 11)
+                    .await
+                    .expect("sign out");
+                // Refused, not an error the service would report as unavailable,
+                // and nothing was rotated: a second attempt is refused the same way.
+                for now in [12, 13] {
+                    assert!(matches!(
+                        sessions.refresh(&credential, now).await.expect("refresh"),
+                        RefreshSessionOutcome::Invalid
+                    ));
+                }
+            });
+        }
+    }
+    #[test]
+    fn persistent_sessions_survive_time_and_rotation_but_not_revocation() {
         block_on(async {
             let tenant = TenantScope::new(
                 ProjectId::parse("prj_abcdefgh").expect("project"),
@@ -658,13 +824,71 @@ mod tests {
                 .refresh_credential
                 .expose_for_token_response()
                 .to_owned();
+            let expired = sessions
+                .create(&user_id, 1)
+                .await
+                .expect("ordinary session");
+            let expired_credential = expired
+                .refresh_credential
+                .expose_for_token_response()
+                .to_owned();
+            let persistent =
+                ApplicationSessionStore::new(&store, &key).with_persistent_sessions(true);
+            assert!(matches!(
+                persistent
+                    .refresh(&expired_credential, SESSION_LIFETIME_SECONDS + 2)
+                    .await
+                    .expect("expired"),
+                RefreshSessionOutcome::Invalid
+            ));
+            // Enabling persistence promotes a valid existing session on renewal.
+            let sessions =
+                ApplicationSessionStore::new(&store, &key).with_persistent_sessions(true);
+            let RefreshSessionOutcome::Rotated(promoted) =
+                sessions.refresh(&credential, 12).await.expect("promote")
+            else {
+                panic!("promotion");
+            };
+            assert_eq!(promoted.session.expires_at_unix_seconds(), 0);
+            let credential = promoted
+                .refresh_credential
+                .expose_for_token_response()
+                .to_owned();
+            let later = 10 * 365 * 24 * 60 * 60;
+            assert!(
+                store
+                    .session_is_active(&user_id, issued.session.id(), later)
+                    .await
+                    .expect("active")
+            );
+            let RefreshSessionOutcome::Rotated(renewed) = sessions
+                .refresh(&credential, later)
+                .await
+                .expect("renew years later")
+            else {
+                panic!("renewal");
+            };
+            let credential = renewed
+                .refresh_credential
+                .expose_for_token_response()
+                .to_owned();
+            // New persistent sessions also have no fixed expiry.
+            assert_eq!(
+                sessions
+                    .create(&user_id, later)
+                    .await
+                    .expect("new persistent")
+                    .session
+                    .expires_at_unix_seconds(),
+                0
+            );
             store
-                .sign_out_session(&user_id, issued.session.id(), 11)
+                .sign_out_session(&user_id, issued.session.id(), later + 1)
                 .await
                 .expect("sign out");
             // Refused, not an error the service would report as unavailable,
             // and nothing was rotated: a second attempt is refused the same way.
-            for now in [12, 13] {
+            for now in [later + 2, later + 3] {
                 assert!(matches!(
                     sessions.refresh(&credential, now).await.expect("refresh"),
                     RefreshSessionOutcome::Invalid

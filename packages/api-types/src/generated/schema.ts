@@ -4593,8 +4593,11 @@ export interface components {
             status: "active" | "revoked" | "expired";
             /** Format: date-time */
             createdAt: string;
-            /** Format: date-time */
-            expiresAt: string;
+            /**
+             * Format: date-time
+             * @description Null for a persistent session; explicit revocation still applies.
+             */
+            expiresAt: string | null;
             /** Format: date-time */
             revokedAt?: string;
         };
@@ -4834,6 +4837,8 @@ export interface components {
             emailVerification: components["schemas"]["EmailVerificationSettings"];
             /** Format: int64 */
             version: number;
+            /** @description Opt in to application refresh sessions without a fixed time limit. Access tokens remain short-lived. Sign-out, user disablement, session revocation, and refresh replay detection still apply. New sessions and still-valid sessions renewed while enabled acquire this policy. Omitted preserves the installed policy; false is the default. */
+            persistentSessions?: boolean;
         };
         AuthProviderUpdate: {
             name: components["schemas"]["ProviderName"];
@@ -4851,6 +4856,8 @@ export interface components {
             magicLinks: components["schemas"]["MagicLinkSettings"];
             /** @description Omitted means verification is off. */
             emailVerification?: components["schemas"]["EmailVerificationSettings"];
+            /** @description Opt in to application refresh sessions without a fixed time limit. Access tokens remain short-lived. Sign-out, user disablement, session revocation, and refresh replay detection still apply. New sessions and still-valid sessions renewed while enabled acquire this policy. Omitted preserves the installed policy; false is the default. */
+            persistentSessions?: boolean;
         };
         ProviderSignInStartRequest: {
             /** Format: uri */
@@ -9176,6 +9183,8 @@ export interface operations {
             content: {
                 "application/json": {
                     refreshToken: string;
+                    /** @description Random identity saved before sending this rotation. Retry the same identity and refresh token after a lost response; a different identity does not bypass replay detection. */
+                    requestId?: string;
                 };
             };
         };

@@ -465,7 +465,9 @@ function SessionsPanel({
                     {new Date(session.createdAt).toLocaleString()}
                   </TableCell>
                   <TableCell className="text-muted-foreground">
-                    {new Date(session.expiresAt).toLocaleString()}
+                    {session.expiresAt === null
+                      ? "Until signed out"
+                      : new Date(session.expiresAt).toLocaleString()}
                   </TableCell>
                   <TableCell>
                     <Button
