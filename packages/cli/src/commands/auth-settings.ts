@@ -111,13 +111,17 @@ async function updateFrom(context: CommandContext, args: CommandArgs): Promise<A
       "--input must be a JSON object {providers, redirectUrls, magicLinks, emailVerification?}",
     );
   }
-  const { providers, redirectUrls, magicLinks, emailVerification } = value;
+  const { providers, redirectUrls, magicLinks, emailVerification, persistentSessions } = value;
+  if (persistentSessions !== undefined && typeof persistentSessions !== "boolean") {
+    throw usageError("--input.persistentSessions must be a boolean");
+  }
   if (!Array.isArray(providers)) throw usageError("--input.providers must be an array");
   if (!Array.isArray(redirectUrls) || !redirectUrls.every(isNonEmptyString)) {
     throw usageError("--input.redirectUrls must be an array of absolute URLs");
   }
   return {
     providers: providers.map(providerFrom),
+    ...(persistentSessions !== undefined ? { persistentSessions } : {}),
     redirectUrls: redirectUrls as string[],
     magicLinks: magicLinksFrom(magicLinks),
     ...(emailVerification !== undefined

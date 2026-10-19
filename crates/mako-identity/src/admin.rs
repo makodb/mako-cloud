@@ -250,7 +250,7 @@ pub struct AdminSessionSummary {
     id: SessionId,
     status: SessionStatus,
     created_at_unix_seconds: u64,
-    expires_at_unix_seconds: u64,
+    expires_at_unix_seconds: Option<u64>,
     revoked_at_unix_seconds: Option<u64>,
 }
 
@@ -774,7 +774,8 @@ impl<'a> AdminUserService<'a> {
                 id: session.id().clone(),
                 status: session.status(),
                 created_at_unix_seconds: session.created_at_unix_seconds(),
-                expires_at_unix_seconds: session.expires_at_unix_seconds(),
+                expires_at_unix_seconds: (session.expires_at_unix_seconds() != 0)
+                    .then_some(session.expires_at_unix_seconds()),
                 revoked_at_unix_seconds: session.revoked_at_unix_seconds(),
             });
         }

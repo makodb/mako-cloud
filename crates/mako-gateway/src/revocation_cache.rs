@@ -454,8 +454,7 @@ impl RevocationSource for IdentityStore {
         }
         Ok(AuthoritativeSessionState::new(
             true,
-            session.status() == SessionStatus::Active
-                && now_unix_seconds < session.expires_at_unix_seconds(),
+            session.status() == SessionStatus::Active && !session.is_expired(now_unix_seconds),
             session.user_session_epoch(),
             user.status() == AppUserStatus::Active,
             user.session_epoch(),

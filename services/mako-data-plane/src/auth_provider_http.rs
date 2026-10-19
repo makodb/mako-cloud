@@ -94,6 +94,7 @@ fn public_view(settings: &AuthProviderSettings) -> serde_json::Value {
         "redirectUrls": settings.redirect_urls,
         "magicLinks": settings.magic_links,
         "emailVerification": settings.email_verification,
+        "persistentSessions": settings.persistent_sessions,
         "version": settings.version,
     })
 }
@@ -179,6 +180,7 @@ pub(crate) async fn execute_auth_provider_operation(
                     redirect_urls: Vec::new(),
                     magic_links: mako_auth_providers::MagicLinkSettings::default(),
                     email_verification: mako_auth_providers::EmailVerificationSettings::default(),
+                    persistent_sessions: false,
                     version: 0,
                 }),
             }

@@ -178,7 +178,7 @@ impl IdentityStore {
         };
         if session.user_id() != user_id
             || session.status() != SessionStatus::Active
-            || now_unix_seconds >= session.expires_at_unix_seconds()
+            || session.is_expired(now_unix_seconds)
         {
             return Ok(false);
         }

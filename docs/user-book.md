@@ -1155,6 +1155,8 @@ The environment's settings are one document, replaced whole:
 
 Register the provider's side with the callback URL `https://<your api origin>/v1/projects/{projectId}/environments/{environmentId}/auth/providers/{name}/callback`.
 
+Set `persistentSessions: true` in the environment's auth settings to keep application sign-in until the user signs out or an administrator revokes access. Access JWTs still expire and refresh credentials still rotate with replay detection. The setting applies to new sessions and promotes still-valid existing sessions at their next renewal; it never revives an expired or revoked session. The user/session inventory reports `expiresAt: null` for these sessions. The default is false. Omitting the field preserves the installed policy, so older settings clients cannot silently change it. Turning it off changes future sessions; revoke existing persistent sessions explicitly if needed.
+
 `PUT …/auth-settings` (`updateAuthSettings`, with an `Idempotency-Key`) installs the document and answers with the installed view; `GET …/auth-settings` reads it. Owners and administrators may replace the settings; the read needs the same credential-reading permission as the environment's keys. Every replacement advances `version` by one; the management API numbers the new version after the one it read, so a client never has to track it.
 
 ```bash
@@ -2660,7 +2662,7 @@ When you contact support, quote the `requestId` from the error envelope (or `req
 | Query predicates / sort fields / page | 16 / 16 / 1000 (explorer: 16 / 4 / 200) |
 | Pull or push batch | 1000 rows |
 | Live-stream buffer | 1000 events, then `resync` |
-| Refresh family lifetime / concurrency grace | 30 days / 5 s |
+| Refresh family lifetime / concurrency grace | 30 days by default; optional persistent sessions / 5 s |
 | Credential rotation overlap | ≤ 30 days |
 | Policy rule expression | 16 KiB |
 | Bucket object | 16 MiB ceiling; object attributes ≤ 8, values ≤ 128 bytes; path ≤ 512 bytes |

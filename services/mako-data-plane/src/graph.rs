@@ -1090,8 +1090,16 @@ impl DataPlaneGraph {
         now_unix_seconds: u64,
     ) -> Result<DataPlaneSessionGrant, DataPlaneIdentityError> {
         let identity = self.identity_store(trusted_tenant, trusted_tenant)?;
+        let persistent = crate::auth_provider_http::AuthProviderSettingsStore::new(Arc::clone(
+            self.storage_adapter(),
+        ))
+        .load(trusted_tenant)
+        .await
+        .map_err(|()| DataPlaneIdentityError::SessionPolicyUnavailable)?
+        .is_some_and(|settings| settings.persistent_sessions);
         let grant =
             ApplicationSessionStore::new(&identity, &self.components.session_protection_key)
+                .with_persistent_sessions(persistent)
                 .create(user_id, now_unix_seconds)
                 .await?;
         self.complete_session_grant(grant, now_unix_seconds).await
@@ -1104,7 +1112,15 @@ impl DataPlaneGraph {
         now_unix_seconds: u64,
     ) -> Result<DataPlaneRefreshOutcome, DataPlaneIdentityError> {
         let identity = self.identity_store(trusted_tenant, trusted_tenant)?;
+        let persistent = crate::auth_provider_http::AuthProviderSettingsStore::new(Arc::clone(
+            self.storage_adapter(),
+        ))
+        .load(trusted_tenant)
+        .await
+        .map_err(|()| DataPlaneIdentityError::SessionPolicyUnavailable)?
+        .is_some_and(|settings| settings.persistent_sessions);
         match ApplicationSessionStore::new(&identity, &self.components.session_protection_key)
+            .with_persistent_sessions(persistent)
             .refresh(presented_refresh, now_unix_seconds)
             .await?
         {
@@ -1505,6 +1521,7 @@ impl From<RateLimitError> for DataPlaneGraphError {
 
 #[derive(Debug)]
 pub enum DataPlaneIdentityError {
+    SessionPolicyUnavailable,
     Identity(IdentityStoreError),
     Signing(ProjectSigningKeyStoreError),
     Authorization(AuthorizationEpochError),
@@ -1521,6 +1538,7 @@ pub enum DataPlaneIdentityError {
 impl fmt::Display for DataPlaneIdentityError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(match self {
+            Self::SessionPolicyUnavailable => "data-plane session policy is unavailable",
             Self::Identity(_) => "data-plane identity storage operation failed",
             Self::Signing(_) => "data-plane signing-key storage operation failed",
             Self::Authorization(_) => "data-plane authorization-epoch operation failed",
@@ -1539,6 +1557,7 @@ impl fmt::Display for DataPlaneIdentityError {
 impl Error for DataPlaneIdentityError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         Some(match self {
+            Self::SessionPolicyUnavailable => return None,
             Self::Identity(error) => error,
             Self::Signing(error) => error,
             Self::Authorization(error) => error,

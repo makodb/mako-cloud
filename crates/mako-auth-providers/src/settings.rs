@@ -88,6 +88,9 @@ pub struct AuthProviderSettings {
     pub magic_links: MagicLinkSettings,
     #[serde(default)]
     pub email_verification: EmailVerificationSettings,
+    /// Keep application refresh sessions until explicit revocation.
+    #[serde(default)]
+    pub persistent_sessions: bool,
     pub version: u64,
 }
 
@@ -328,6 +331,7 @@ pub fn sealed_settings_from_plain(
         redirect_urls,
         magic_links,
         email_verification: EmailVerificationSettings::default(),
+        persistent_sessions: false,
         version,
     };
     settings.validate()?;

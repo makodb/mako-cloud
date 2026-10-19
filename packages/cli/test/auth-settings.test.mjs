@@ -211,3 +211,17 @@ test("auth-settings set surfaces the API's refusal with its message and exit cod
   assert.match(refused.stderr, /error invalid_request: provider github has no installed client secret/u);
   assert.doesNotMatch(refused.stderr, /GOCSPX/u);
 });
+
+
+test("auth-settings forwards an explicit persistent-session policy", async (t) => {
+  const body = { ...update(), persistentSessions: true };
+  const { cli } = await tenantCli(t, {
+    [`PUT ${SETTINGS}`]: (request) => {
+      assert.equal(request.body.persistentSessions, true);
+      return { status: 200, json: installed({ persistentSessions: true }) };
+    },
+  });
+  const result = await cli(["auth-settings", "set", "--input", JSON.stringify(body), "--json"]);
+  assert.equal(result.code, 0, result.stderr);
+  assert.equal(JSON.parse(result.stdout).persistentSessions, true);
+});

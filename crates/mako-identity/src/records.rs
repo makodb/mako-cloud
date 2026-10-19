@@ -545,6 +545,17 @@ impl SessionRecord {
         self.created_at_unix_seconds
     }
 
+    /// Zero is the stored representation of a session without a time limit.
+    #[must_use]
+    pub const fn is_expired(&self, now_unix_seconds: u64) -> bool {
+        self.expires_at_unix_seconds != 0 && now_unix_seconds >= self.expires_at_unix_seconds
+    }
+
+    pub(crate) fn without_expiry(mut self) -> Self {
+        self.expires_at_unix_seconds = 0;
+        self
+    }
+
     #[must_use]
     pub const fn user_session_epoch(&self) -> u64 {
         self.user_session_epoch

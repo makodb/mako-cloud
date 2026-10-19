@@ -1689,3 +1689,8 @@ Machine-readable evidence lives in `docs/evidence/`. CI-produced files (`e2e-smo
 - **Sequencer** — the component that allocates and publishes commit positions per environment.
 - **Supervisor** — the runtime's main worker that authenticates deployments, injects capabilities, and starts user workers.
 - **Tombstone** — a document delivered as `_deleted: true`; also the synthetic record sent when a document leaves a caller's view.
+
+
+### Persistent application-session compatibility
+
+Application session and refresh-family records reserve an expiry of zero for an explicitly enabled persistent session. Other numeric expiries retain their original meaning. The management wire renders the persistent expiry as null. Install this release on the data plane and edge gateway together; the gateway must apply the same expiry predicate as the identity store. Older releases fail closed for these sessions. Before rollback, disable `persistentSessions`, revoke persistent sessions, and remove `persistentSessions` from the stored provider settings using a compatible release migration; older provider readers reject unknown fields. Never extend access JWT expiry or revive revoked sessions to recover a login.

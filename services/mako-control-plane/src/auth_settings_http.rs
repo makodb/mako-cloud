@@ -247,6 +247,8 @@ struct AuthSettingsView {
     magic_links: MagicLinkSettings,
     #[serde(default)]
     email_verification: EmailVerificationSettings,
+    #[serde(default)]
+    persistent_sessions: bool,
     version: u64,
 }
 
@@ -276,6 +278,9 @@ struct AuthSettingsUpdateWire {
     /// replaces the settings; leaving it out turns verification off.
     #[serde(default)]
     email_verification: EmailVerificationSettings,
+    /// Older clients preserve the installed session policy.
+    #[serde(default)]
+    persistent_sessions: Option<bool>,
 }
 
 impl AuthSettingsUpdateWire {
@@ -323,6 +328,9 @@ impl AuthSettingsUpdateWire {
             redirect_urls: self.redirect_urls,
             magic_links: self.magic_links,
             email_verification: self.email_verification,
+            persistent_sessions: self
+                .persistent_sessions
+                .unwrap_or(installed.persistent_sessions),
             version: installed.version.saturating_add(1),
         };
         validate_with_kept_secrets(&settings)
@@ -358,6 +366,7 @@ mod tests {
             redirect_urls: vec!["https://app.example.test/callback".to_owned()],
             magic_links: MagicLinkSettings::default(),
             email_verification: EmailVerificationSettings::default(),
+            persistent_sessions: false,
             version,
         }
     }
@@ -380,6 +389,32 @@ mod tests {
             "magicLinks": { "enabled": true, "linkTtlSeconds": 600 },
         }))
         .expect("update body")
+    }
+
+    #[test]
+    fn persistent_session_policy_is_explicit_and_preserved_for_older_clients() {
+        let mut current = installed(Vec::new(), 1);
+        assert!(
+            !update(json!([]))
+                .into_settings(&request(), &key(), &tenant(), &current)
+                .unwrap()
+                .persistent_sessions
+        );
+        current.persistent_sessions = true;
+        assert!(
+            update(json!([]))
+                .into_settings(&request(), &key(), &tenant(), &current)
+                .unwrap()
+                .persistent_sessions
+        );
+        let mut replacement = update(json!([]));
+        replacement.persistent_sessions = Some(false);
+        assert!(
+            !replacement
+                .into_settings(&request(), &key(), &tenant(), &current)
+                .unwrap()
+                .persistent_sessions
+        );
     }
 
     #[test]
@@ -628,6 +663,7 @@ mod tests {
                 "magicLinks": { "enabled": true, "linkTtlSeconds": 900 },
                 // A data plane that predates the setting reads as off.
                 "emailVerification": { "required": false },
+                "persistentSessions": false,
                 "version": 7,
             })
         );

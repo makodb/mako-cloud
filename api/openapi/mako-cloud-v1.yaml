@@ -8658,8 +8658,9 @@ components:
           type: string
           format: date-time
         expiresAt:
-          type: string
+          type: [string, "null"]
           format: date-time
+          description: Null for a persistent session; explicit revocation still applies.
         revokedAt:
           type: string
           format: date-time
@@ -9176,6 +9177,14 @@ components:
           type: integer
           format: int64
           minimum: 0
+        persistentSessions:
+          type: boolean
+          description: >-
+            Opt in to application refresh sessions without a fixed time limit.
+            Access tokens remain short-lived. Sign-out, user disablement, session
+            revocation, and refresh replay detection still apply. New sessions
+            and still-valid sessions renewed while enabled acquire this policy.
+            Omitted preserves the installed policy; false is the default.
     AuthProviderUpdate:
       type: object
       additionalProperties: false
@@ -9230,6 +9239,14 @@ components:
         emailVerification:
           $ref: "#/components/schemas/EmailVerificationSettings"
           description: Omitted means verification is off.
+        persistentSessions:
+          type: boolean
+          description: >-
+            Opt in to application refresh sessions without a fixed time limit.
+            Access tokens remain short-lived. Sign-out, user disablement, session
+            revocation, and refresh replay detection still apply. New sessions
+            and still-valid sessions renewed while enabled acquire this policy.
+            Omitted preserves the installed policy; false is the default.
     ProviderSignInStartRequest:
       type: object
       additionalProperties: false
