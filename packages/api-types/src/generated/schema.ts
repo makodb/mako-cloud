@@ -9183,6 +9183,8 @@ export interface operations {
             content: {
                 "application/json": {
                     refreshToken: string;
+                    /** @description Random identity saved before sending this rotation. Retry the same identity and refresh token after a lost response; a different identity does not bypass replay detection. */
+                    requestId?: string;
                 };
             };
         };

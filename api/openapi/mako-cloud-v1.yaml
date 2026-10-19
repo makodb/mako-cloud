@@ -2910,6 +2910,12 @@ paths:
                 refreshToken:
                   type: string
                   minLength: 32
+                requestId:
+                  type: string
+                  minLength: 32
+                  maxLength: 128
+                  pattern: '^[A-Za-z0-9_-]+$'
+                  description: Random identity saved before sending this rotation. Retry the same identity and refresh token after a lost response; a different identity does not bypass replay detection.
       responses:
         "200":
           description: Rotated session

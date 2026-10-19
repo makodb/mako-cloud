@@ -1111,6 +1111,22 @@ impl DataPlaneGraph {
         presented_refresh: &str,
         now_unix_seconds: u64,
     ) -> Result<DataPlaneRefreshOutcome, DataPlaneIdentityError> {
+        self.refresh_application_session_with_request_id(
+            trusted_tenant,
+            presented_refresh,
+            None,
+            now_unix_seconds,
+        )
+        .await
+    }
+
+    pub async fn refresh_application_session_with_request_id(
+        &self,
+        trusted_tenant: &TenantScope,
+        presented_refresh: &str,
+        request_id: Option<&str>,
+        now_unix_seconds: u64,
+    ) -> Result<DataPlaneRefreshOutcome, DataPlaneIdentityError> {
         let identity = self.identity_store(trusted_tenant, trusted_tenant)?;
         let persistent = crate::auth_provider_http::AuthProviderSettingsStore::new(Arc::clone(
             self.storage_adapter(),
@@ -1121,7 +1137,7 @@ impl DataPlaneGraph {
         .is_some_and(|settings| settings.persistent_sessions);
         match ApplicationSessionStore::new(&identity, &self.components.session_protection_key)
             .with_persistent_sessions(persistent)
-            .refresh(presented_refresh, now_unix_seconds)
+            .refresh_with_request_id(presented_refresh, request_id, now_unix_seconds)
             .await?
         {
             RefreshSessionOutcome::Rotated(grant) => self
@@ -1130,7 +1146,13 @@ impl DataPlaneGraph {
                 .map(Box::new)
                 .map(DataPlaneRefreshOutcome::Rotated),
             RefreshSessionOutcome::Invalid => Ok(DataPlaneRefreshOutcome::Invalid),
-            RefreshSessionOutcome::ReplayDetected => Ok(DataPlaneRefreshOutcome::ReplayDetected),
+            RefreshSessionOutcome::ReplayDetected {
+                user_id,
+                session_id,
+            } => Ok(DataPlaneRefreshOutcome::ReplayDetected {
+                user_id,
+                session_id,
+            }),
         }
     }
 
@@ -1254,7 +1276,10 @@ pub struct DataPlaneSessionGrant {
 pub enum DataPlaneRefreshOutcome {
     Rotated(Box<DataPlaneSessionGrant>),
     Invalid,
-    ReplayDetected,
+    ReplayDetected {
+        user_id: AppUserId,
+        session_id: SessionId,
+    },
 }
 
 /// Route readiness is the conjunction of storage and every constructed domain

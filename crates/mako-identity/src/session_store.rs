@@ -28,7 +28,10 @@ pub struct ApplicationSessionGrant {
 pub enum RefreshSessionOutcome {
     Rotated(Box<ApplicationSessionGrant>),
     Invalid,
-    ReplayDetected,
+    ReplayDetected {
+        user_id: AppUserId,
+        session_id: SessionId,
+    },
 }
 
 pub struct ApplicationSessionStore<'a> {
@@ -177,6 +180,19 @@ impl<'a> ApplicationSessionStore<'a> {
         presented: &str,
         now_unix_seconds: u64,
     ) -> Result<RefreshSessionOutcome, ApplicationSessionStoreError> {
+        self.refresh_with_request_id(presented, None, now_unix_seconds)
+            .await
+    }
+
+    /// Recover the same rotation after a lost response without treating a
+    /// new use of an already-consumed credential as an idempotent retry.
+    pub async fn refresh_with_request_id(
+        &self,
+        presented: &str,
+        request_id: Option<&str>,
+        now_unix_seconds: u64,
+    ) -> Result<RefreshSessionOutcome, ApplicationSessionStoreError> {
+        let request_digest = request_id.map(|id| *blake3::hash(id.as_bytes()).as_bytes());
         if !valid_presented_refresh(presented) {
             return Ok(RefreshSessionOutcome::Invalid);
         }
@@ -227,6 +243,7 @@ impl<'a> ApplicationSessionStore<'a> {
                         family_key.clone(),
                         family_bytes,
                         digest_key.clone(),
+                        request_digest,
                         now_unix_seconds,
                     )
                     .await?
@@ -238,10 +255,13 @@ impl<'a> ApplicationSessionStore<'a> {
             if let Some(previous) = family.previous
                 && previous.digest == presented_digest
             {
-                if now_unix_seconds
-                    <= previous
-                        .consumed_at_unix_seconds
-                        .saturating_add(REFRESH_CONCURRENCY_GRACE_SECONDS)
+                let same_request =
+                    request_digest.is_some() && request_digest == previous.request_digest;
+                if same_request
+                    || now_unix_seconds
+                        <= previous
+                            .consumed_at_unix_seconds
+                            .saturating_add(REFRESH_CONCURRENCY_GRACE_SECONDS)
                 {
                     return self
                         .grant_from_family(&family, now_unix_seconds)
@@ -271,7 +291,10 @@ impl<'a> ApplicationSessionStore<'a> {
                     })
                     .await?;
                 if result == CompareAndWriteResult::Applied {
-                    return Ok(RefreshSessionOutcome::ReplayDetected);
+                    return Ok(RefreshSessionOutcome::ReplayDetected {
+                        user_id: replayed.user_id,
+                        session_id: replayed.session_id,
+                    });
                 }
                 continue;
             }
@@ -286,6 +309,7 @@ impl<'a> ApplicationSessionStore<'a> {
         family_key: Vec<u8>,
         family_bytes: Vec<u8>,
         presented_digest_key: Vec<u8>,
+        request_digest: Option<[u8; 32]>,
         now_unix_seconds: u64,
     ) -> Result<Option<ApplicationSessionGrant>, ApplicationSessionStoreError> {
         let replacement = RefreshCredential::generate();
@@ -313,6 +337,7 @@ impl<'a> ApplicationSessionStore<'a> {
             previous: Some(ConsumedDigest {
                 digest: family.current_digest,
                 consumed_at_unix_seconds: now_unix_seconds,
+                request_digest,
             }),
             encrypted_current_credential,
             encryption_nonce,
@@ -475,6 +500,8 @@ impl StoredRefreshFamily {
 struct ConsumedDigest {
     digest: [u8; 32],
     consumed_at_unix_seconds: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    request_digest: Option<[u8; 32]>,
 }
 
 fn credential_digest(credential: &RefreshCredential) -> [u8; 32] {
@@ -582,7 +609,12 @@ mod tests {
 
     #[test]
     fn refresh_state_persists_rotates_and_revokes_on_replay() {
-        for persistent in [false, true] {
+        for (persistent, request_id) in [
+            (false, None),
+            (true, None),
+            (false, Some("retry-id-persisted-before-the-request")),
+            (true, Some("retry-id-persisted-before-the-request")),
+        ] {
             block_on(async {
                 let tenant = TenantScope::new(
                     ProjectId::parse("prj_abcdefgh").expect("project"),
@@ -629,8 +661,10 @@ mod tests {
                     .expect("reopened store");
                 let sessions = ApplicationSessionStore::new(&reopened, &key)
                     .with_persistent_sessions(persistent);
-                let RefreshSessionOutcome::Rotated(rotated) =
-                    sessions.refresh(&first, 11).await.expect("rotate")
+                let RefreshSessionOutcome::Rotated(rotated) = sessions
+                    .refresh_with_request_id(&first, request_id, 11)
+                    .await
+                    .expect("rotate")
                 else {
                     panic!("refresh must rotate");
                 };
@@ -649,13 +683,36 @@ mod tests {
                     concurrent.refresh_credential.expose_for_token_response(),
                     rotated.refresh_credential.expose_for_token_response()
                 );
+                if let Some(request_id) = request_id {
+                    // Simulate the browser losing the response and restarting
+                    // two hours later with its persisted request identity.
+                    let RefreshSessionOutcome::Rotated(recovered) = sessions
+                        .refresh_with_request_id(&first, Some(request_id), 7211)
+                        .await
+                        .expect("retry after sleep")
+                    else {
+                        panic!("the same request must recover the rotated credential");
+                    };
+                    assert_eq!(
+                        recovered.refresh_credential.expose_for_token_response(),
+                        rotated.refresh_credential.expose_for_token_response()
+                    );
+                }
+                // Missing/different request identities retain replay detection.
                 assert!(matches!(
-                    sessions.refresh(&first, 17).await.expect("replay"),
-                    RefreshSessionOutcome::ReplayDetected
+                    sessions
+                        .refresh_with_request_id(
+                            &first,
+                            Some("another-independent-request-identity"),
+                            7220
+                        )
+                        .await
+                        .expect("replay"),
+                    RefreshSessionOutcome::ReplayDetected { .. }
                 ));
                 assert!(
                     !reopened
-                        .session_is_active(&user_id, issued.session.id(), 18)
+                        .session_is_active(&user_id, issued.session.id(), 7221)
                         .await
                         .expect("session state")
                 );
