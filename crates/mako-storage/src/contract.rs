@@ -2,7 +2,7 @@ use std::{collections::BTreeSet, num::NonZeroUsize, time::Duration};
 
 use async_trait::async_trait;
 
-use crate::{CommitGroupToken, StorageError, StorageResult};
+use crate::{StorageError, StorageResult};
 
 /// A half-open lexicographic byte-key range. Unbounded scans are intentionally absent.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -402,16 +402,6 @@ pub trait KvAdapter: Send + Sync {
     async fn health(&self) -> StorageResult<HealthReport>;
 
     fn capabilities(&self) -> AdapterCapabilities;
-
-    /// Join the commit group an online checkpoint waits for.
-    ///
-    /// A writer that leases sequence positions holds the returned token until
-    /// those positions are resolved, so a checkpoint never captures a lease
-    /// half-way. Engines that take no online checkpoints return a detached
-    /// token, which costs nothing.
-    fn enter_commit_group(&self) -> StorageResult<CommitGroupToken> {
-        Ok(CommitGroupToken::detached())
-    }
 }
 
 #[cfg(test)]

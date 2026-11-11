@@ -25,8 +25,8 @@ SAFEGUARDS = (
     "emergencyAdmissionStop",
 )
 # Only benchmark-latency and alert-delivery blockers may be accepted: a latency path over its
-# budget, or one the benchmark has not measured with enough steady-state samples under online
-# backups. Keep this list identical to waivableBlockerPatterns in
+# budget, or one the benchmark has not measured with enough steady-state samples. Keep this
+# list identical to waivableBlockerPatterns in
 # scripts/public-beta-preview-approval-lib.js.
 WAIVABLE_BLOCKERS = (
     re.compile(r"authenticated SMTP relay|certificate-expiry alert delivery", re.I),
@@ -210,10 +210,10 @@ def verify_dynamic(paths, context):
                 break
             time.sleep(1)
         require(ready, f"service readiness failed on port {port}")
-    # Backup state deliberately neither opens nor closes admission. Backups run
-    # online and do not interrupt the service, so a failed or late backup is an
-    # operator alert, not an outage. The backupAndRecovery safeguard is the
-    # passing recovery drill recorded in the approval and context above.
+    # Backup state deliberately neither opens nor closes admission: a failed or
+    # late backup is an operator alert, not an outage. The backupAndRecovery
+    # safeguard is the passing recovery drill recorded in the approval and
+    # context above.
     fqdn = context.get("publicFqdn")
     require(isinstance(fqdn, str) and fqdn, "public FQDN is absent")
     tls_context = ssl.create_default_context()

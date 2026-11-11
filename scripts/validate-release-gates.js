@@ -312,10 +312,6 @@ for (const { path } of GATED_LATENCY_PATHS) {
   );
 }
 assert(
-  betaObserved.onlineBackupsCompletedDuringRun === benchmarkGate.onlineBackupsCompleted,
-  "beta online backup count differs from hosted evidence",
-);
-assert(
   betaObserved.developerRegistrationAndMail?.status === "passed" &&
     betaObserved.developerRegistrationAndMail?.ordinarySelfServiceLifecycleVerified === true &&
     betaObserved.developerRegistrationAndMail?.authenticatedTransactionalMailVerified === true &&

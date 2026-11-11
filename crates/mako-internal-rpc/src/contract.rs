@@ -32,9 +32,6 @@ pub enum InternalCaller {
     ControlPlane,
     EdgeGateway,
     OperatorAdmin,
-    /// The on-host backup worker asking the data plane for an online
-    /// checkpoint of its own database.
-    BackupWorker,
 }
 
 impl InternalCaller {
@@ -44,7 +41,6 @@ impl InternalCaller {
             Self::ControlPlane => "control-plane",
             Self::EdgeGateway => "edge-gateway",
             Self::OperatorAdmin => "operator-admin",
-            Self::BackupWorker => "backup-worker",
         }
     }
 }
@@ -63,7 +59,6 @@ impl FromStr for InternalCaller {
             "control-plane" => Ok(Self::ControlPlane),
             "edge-gateway" => Ok(Self::EdgeGateway),
             "operator-admin" => Ok(Self::OperatorAdmin),
-            "backup-worker" => Ok(Self::BackupWorker),
             _ => Err(InternalContractError),
         }
     }
@@ -85,9 +80,6 @@ pub enum InternalRoute {
     FunctionScheduleInvoke,
     OperatorEntitlementPlan,
     OperatorEntitlementApply,
-    /// The backup worker asks the data plane to checkpoint itself while it
-    /// keeps serving; the worker then finishes the backup from the copy.
-    StorageCheckpoint,
 }
 
 impl InternalRoute {
@@ -102,7 +94,6 @@ impl InternalRoute {
             Self::FunctionScheduleInvoke => "/_internal/v1/edge/function-schedule-invoke",
             Self::OperatorEntitlementPlan => "/_internal/v1/control/operator-entitlements/plan",
             Self::OperatorEntitlementApply => "/_internal/v1/control/operator-entitlements/apply",
-            Self::StorageCheckpoint => "/_internal/v1/data/storage/checkpoint",
         }
     }
 
@@ -131,7 +122,6 @@ impl InternalRoute {
             Self::OperatorEntitlementPlan | Self::OperatorEntitlementApply => {
                 InternalCaller::OperatorAdmin
             }
-            Self::StorageCheckpoint => InternalCaller::BackupWorker,
         }
     }
 
@@ -144,7 +134,6 @@ impl InternalRoute {
             Self::FunctionScheduleInvoke,
             Self::OperatorEntitlementPlan,
             Self::OperatorEntitlementApply,
-            Self::StorageCheckpoint,
         ]
         .into_iter()
         .find(|route| route.method() == method && route.path() == path)
@@ -153,26 +142,6 @@ impl InternalRoute {
 
 pub const OPERATOR_ADMIN_PROJECT_ID: &str = "prj_operator_admin";
 pub const OPERATOR_ADMIN_ENVIRONMENT_ID: &str = "env_operator_admin";
-/// The synthetic scope the backup worker signs for; it names no tenant.
-pub const BACKUP_WORKER_PROJECT_ID: &str = "prj_backup_worker";
-pub const BACKUP_WORKER_ENVIRONMENT_ID: &str = "env_backup_worker";
-
-/// Ask the data plane for one online checkpoint.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
-pub struct StorageCheckpointRequest {
-    pub backup_id: String,
-}
-
-/// Where the linked checkpoint is, and how long writes were held for it.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
-pub struct StorageCheckpointResponse {
-    pub backup_id: String,
-    pub checkpoint_path: String,
-    pub barrier_wait_milliseconds: u64,
-    pub creation_milliseconds: u64,
-}
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]

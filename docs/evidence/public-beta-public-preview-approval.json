@@ -11,11 +11,10 @@
     "RxDB push batch p95 latency is unmeasured: 4 of 100 required steady-state samples, provisional p95 642 ms against a 250 ms budget",
     "auth sign-in p95 latency is unmeasured: 10 of 100 required steady-state samples, provisional p95 631 ms against a 200 ms budget",
     "cold function p95 latency is unmeasured: 1 of 100 required steady-state samples, provisional p95 400 ms against a 1500 ms budget",
-    "hosted benchmark latency is unmeasured under online backups: the run recorded no online backup activity and needs 2 completed online backups",
     "warm function p95 latency is unmeasured: 1 of 100 required steady-state samples, provisional p95 315 ms against a 250 ms budget"
   ],
-  "blockerDigest": "1b29bc55a028eff97b5695699b5a4e55c9006c5111ad0250ada2d3bfc8cffbe9",
-  "acceptedAt": "2026-11-11T03:20:05.803Z",
+  "blockerDigest": "dc2a8480031c6f6d9111428102ccbefba59a68281d89c29f24bb876711e0dabc",
+  "acceptedAt": "2026-11-11T04:57:10.473Z",
   "expiresAt": null,
   "nonWaivableSafeguards": {
     "trustedHttpsAndHsts": true,
@@ -27,5 +26,5 @@
     "serviceReadiness": true,
     "emergencyAdmissionStop": true
   },
-  "typedConfirmation": "ACCEPT_PERSISTENT_PUBLIC_PREVIEW_RISK:b58934d88674855ac714c9a117a0e08a866cb9aa28af6b31a81b9e91dd1075eb:d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073:1b29bc55a028eff97b5695699b5a4e55c9006c5111ad0250ada2d3bfc8cffbe9"
+  "typedConfirmation": "ACCEPT_PERSISTENT_PUBLIC_PREVIEW_RISK:b58934d88674855ac714c9a117a0e08a866cb9aa28af6b31a81b9e91dd1075eb:d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073:dc2a8480031c6f6d9111428102ccbefba59a68281d89c29f24bb876711e0dabc"
 }

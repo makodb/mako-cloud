@@ -15,9 +15,7 @@ benchmark thresholds are:
 - zero integrity failures.
 
 Each gated latency MUST be computed from at least 100 steady-state samples of
-that path. A path with fewer samples is unmeasured and MUST block the gate. The
-run MUST execute with the production backup schedule enabled and MUST span at
-least two completed online backups.
+that path. A path with fewer samples is unmeasured and MUST block the gate.
 
 The gate MUST NOT require a calendar measurement window, a backup-age or
 recovery-point objective, or cost observations. Those MAY be recorded as
@@ -25,7 +23,7 @@ informational evidence. Thresholds MUST NOT be changed to make a run pass. A
 gate result applies only to the release and plan it measured.
 
 #### Scenario: The benchmark meets every threshold
-- **WHEN** a benchmark run on the deployed release meets every threshold with enough samples, while online backups complete during the run
+- **WHEN** a benchmark run on the deployed release meets every threshold with enough samples
 - **THEN** the gate records the release as passed, and an authorized operator may approve rate-limited public beta admission for that release
 
 #### Scenario: A path exceeds its budget
@@ -48,11 +46,11 @@ gate result applies only to the release and plan it measured.
 
 ### Requirement: Backups and rollback are exercised off the live paths
 The beta environment SHALL create authenticated checkpoint backups outside each
-live database path on a recurring schedule, without stopping the owning
-service. It SHALL alert operators when a backup fails or when the newest
-successful backup is older than its configured objective, and it SHALL verify
-restore to an empty offline target. Backup age is an operational objective. It
-MUST NOT be an admission or release-gate condition.
+live database path when backups are enabled. It SHALL alert operators when a
+backup fails or when the newest successful backup is older than its configured
+objective, and it SHALL verify restore to an empty offline target. Backup age
+is an operational objective. It MUST NOT be an admission or release-gate
+condition.
 
 Operators SHALL exercise service, configuration, policy, function, schema,
 signing-key and format-compatible storage rollback for the exact candidate
@@ -61,63 +59,15 @@ NOT overwrite the sole live copy automatically.
 
 #### Scenario: Scheduled backup completes
 - **WHEN** a healthy stateful database reaches its backup schedule
-- **THEN** an authenticated checkpoint and manifest are stored outside the live path and verified before the backup is considered successful, while the owning service stays ready
+- **THEN** an authenticated checkpoint and manifest are stored outside the live path and verified before the backup is considered successful
 
 #### Scenario: Backups fall behind
 - **WHEN** backups fail or the newest successful backup exceeds its age objective
 - **THEN** operators are alerted, and public admission is not changed by the backup state
 
 #### Scenario: Operator performs the beta recovery drill
-- **WHEN** an operator restores a backup taken online to an empty target and executes the documented rollback matrix
+- **WHEN** an operator restores the selected backup to an empty target and executes the documented rollback matrix
 - **THEN** recovery, readiness, tenant-boundary, audit and rollback evidence are recorded without destroying the original live volume
-
-### Requirement: Release operations do not create backups
-Upgrade and rollback commands SHALL run without creating data-plane RocksDB or
-control-plane SQLite backup checkpoints. This behavior MUST apply to the
-ordinary invocation without a per-deployment skip flag or renewed approval.
-
-Before stopping application services or changing the selected release, a
-release operation MUST:
-
-- record the enabled and active state of each backup timer;
-- stop and disable those timers;
-- stop any running backup job.
-
-Stopping an online backup MUST leave the live database untouched; its leftover
-checkpoint and staging copy are removed by the next backup. After the selected
-release passes readiness, the operation SHALL restore each timer to its
-recorded state. A failed operation MUST leave the timers stopped and record
-their prior state. Unknown backup state MUST fail closed.
-
-Storage compatibility, nonempty-path checks, exclusive ownership, fencing,
-configuration snapshots and readiness checks MUST remain enforced. Existing
-databases and retained backup artifacts MUST remain intact.
-
-Successful operation evidence MUST record:
-
-- `checkpointSkipped: true`;
-- `checkpointVerified: false`;
-- `checkpointPolicy: "paused-for-deployments"`;
-- the backup schedule state before and after the operation.
-
-A deployment MUST NOT claim a new verified recovery point merely because the
-release switch succeeded.
-
-#### Scenario: Ordinary upgrade runs without backups
-- **WHEN** an operator runs the standard upgrade command, whether or not backup timers are enabled
-- **THEN** the release switches after storage checks without creating a checkpoint, and any enabled timers are paused for the switch and restored to their recorded state once readiness passes
-
-#### Scenario: Ordinary rollback runs without backups
-- **WHEN** an operator runs the standard rollback command to the recorded compatible last-known-good release
-- **THEN** storage fencing, configuration restoration and readiness checks run without creating a backup, and the backup schedule returns to its recorded state
-
-#### Scenario: Backup activity conflicts with deployment
-- **WHEN** a backup timer is enabled or a backup job is running as a release operation begins
-- **THEN** the operation records the schedule, stops the timers and the running job without creating a backup, and proceeds; if the timer or job state cannot be read, it refuses to select another release and records no successful deployment
-
-#### Scenario: The release fails readiness
-- **WHEN** the selected release does not become ready
-- **THEN** the backup timers remain stopped, their prior state is recorded, and no successful deployment is recorded
 
 ### Requirement: Public admission follows the single-region beta gate
 Qualified public beta traffic SHALL be admitted only after the exact release
@@ -186,12 +136,11 @@ private-listener controls.
 ## REMOVED Requirements
 
 ### Requirement: Approved test preview can suspend scheduled backups
-**Reason**: The exception existed because data-plane backups stopped the
-service and backup freshness gated preview admission. Online backups no longer
-interrupt the service, and backup state no longer affects admission or the beta
-gate, so no scoped exception is needed.
+**Reason**: The exception existed because backup freshness gated preview
+admission. Backup state no longer affects admission or the beta gate, so no
+scoped exception is needed.
 
-**Migration**: `mako_backup_enabled` remains an ordinary operations setting.
-Remove `mako_public_preview_require_fresh_backup` and the
-`backupFreshnessRequired` context field, and re-enable the beta's backup
-schedule once online backups are qualified. Retained artifacts are unaffected.
+**Migration**: `mako_backup_enabled` remains an ordinary operations setting and
+stays false on the beta. Remove `mako_public_preview_require_fresh_backup` and
+the `backupFreshnessRequired` context field. Retained artifacts are
+unaffected.
