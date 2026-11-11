@@ -66,7 +66,8 @@ pub const MAXIMUM_BODY_BYTES: usize = 64 * 1024;
 /// A function may carry at most this many schedules.
 pub const MAXIMUM_SCHEDULES_PER_FUNCTION: usize = 100;
 /// The gateway has this long to answer a scheduled invocation.
-pub const INVOCATION_TIMEOUT_SECONDS: u64 = 60;
+pub const INVOCATION_TIMEOUT_SECONDS: u64 =
+    mako_edge_runtime_protocol::RUNTIME_RESPONSE_TIMEOUT_SECONDS + 30;
 /// A lease outlives the timeout by this much before an abandoned run (a
 /// worker that died mid-invocation) stops blocking the schedule.
 pub const LEASE_GRACE_SECONDS: u64 = 30;
@@ -547,7 +548,54 @@ pub struct FunctionScheduleRunRecord {
     response_status: Option<u16>,
     error: Option<String>,
     manual: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    continuation: Option<ScheduleContinuation>,
     created_at_unix_seconds: u64,
+}
+
+// Internal continuation metadata is absent on historical/manual/cron roots.
+// A chain expires before the next cron slot, preventing independent hourly
+// roots from multiplying chains. It never changes the recurring schedule.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct ScheduleContinuation {
+    depth: u16,
+    until: u64,
+    request: FunctionScheduleRequest,
+}
+
+fn continuation_delay(
+    result: &Result<FunctionScheduleInvokeResponse, FunctionScheduleInvokeError>,
+) -> Option<u64> {
+    #[derive(Deserialize)]
+    struct Envelope {
+        #[serde(rename = "makoContinuation")]
+        continuation: Option<Delay>,
+    }
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields, rename_all = "camelCase")]
+    struct Delay {
+        delay_seconds: u64,
+    }
+    let response = result.as_ref().ok()?;
+    if !(200..300).contains(&response.status)
+        || !response
+            .headers
+            .get("content-type")?
+            .split(';')
+            .next()?
+            .trim()
+            .eq_ignore_ascii_case("application/json")
+        || response.body_base64.len() > 5464
+    {
+        return None;
+    }
+    let bytes = STANDARD.decode(&response.body_base64).ok()?;
+    let delay = serde_json::from_slice::<Envelope>(&bytes)
+        .ok()?
+        .continuation?
+        .delay_seconds;
+    (5..=300).contains(&delay).then_some(delay)
 }
 
 impl FunctionScheduleRunRecord {
@@ -638,6 +686,7 @@ impl FunctionScheduleRunRecord {
             response_status: None,
             error: None,
             manual,
+            continuation: None,
             created_at_unix_seconds: now,
         }
     }
@@ -1266,14 +1315,11 @@ impl FunctionScheduleStore {
         Ok(())
     }
 
-    /// Queues a manual run: the record and a due entry naming it.
-    async fn insert_queued_run(
-        &self,
+    fn put_queued_run(
+        batch: &mut WriteBatch,
         record: &FunctionScheduleRunRecord,
     ) -> Result<(), FunctionScheduleError> {
-        let key = Self::run_key(record)?;
-        let mut batch = WriteBatch::with_capacity(2);
-        Self::put_run(&mut batch, record)?;
+        Self::put_run(batch, record)?;
         batch.put(
             ControlKeyspace::function_schedule_due_key(&due_item(
                 record.due_at_unix_seconds,
@@ -1287,6 +1333,17 @@ impl FunctionScheduleStore {
                 run_item: Some(record.item()),
             })?,
         );
+        Ok(())
+    }
+
+    /// Queues a manual run: the record and a due entry naming it.
+    async fn insert_queued_run(
+        &self,
+        record: &FunctionScheduleRunRecord,
+    ) -> Result<(), FunctionScheduleError> {
+        let key = Self::run_key(record)?;
+        let mut batch = WriteBatch::with_capacity(2);
+        Self::put_queued_run(&mut batch, record)?;
         if self
             .apply(AtomicWrite {
                 conditions: vec![KeyCondition::Missing { key }],
@@ -2192,11 +2249,15 @@ impl FunctionScheduleWorker {
         };
         let mut batch = WriteBatch::with_capacity(2);
         batch.delete(key);
-        if self
-            .store
-            .lease(&schedule.tenant, &schedule.id, now_unix_seconds)
-            .await?
-            .is_some()
+        let invalid_continuation = queued.continuation.as_ref().is_some_and(|c| {
+            !schedule.enabled || now_unix_seconds >= c.until || schedule.request != c.request
+        });
+        if invalid_continuation
+            || self
+                .store
+                .lease(&schedule.tenant, &schedule.id, now_unix_seconds)
+                .await?
+                .is_some()
         {
             let mut skipped = queued.clone();
             skipped.skip();
@@ -2247,6 +2308,29 @@ impl FunctionScheduleWorker {
             &schedule.tenant,
             &schedule.id,
         )?);
+        if let Some(delay) = continuation_delay(&result) {
+            let depth = run
+                .continuation
+                .as_ref()
+                .map_or(1, |c| c.depth.saturating_add(1));
+            let until = run
+                .continuation
+                .as_ref()
+                .map(|c| c.until)
+                .or(schedule.next_run_at_unix_seconds)
+                .unwrap_or(completed_at);
+            let due_at = completed_at.saturating_add(delay);
+            if schedule.enabled && depth <= 256 && due_at < until {
+                let mut next =
+                    FunctionScheduleRunRecord::new(schedule, due_at, false, completed_at);
+                next.continuation = Some(ScheduleContinuation {
+                    depth,
+                    until,
+                    request: schedule.request.clone(),
+                });
+                FunctionScheduleStore::put_queued_run(&mut batch, &next)?;
+            }
+        }
         self.note_last_run_with(schedule, &completed, batch).await
     }
 
@@ -2473,6 +2557,7 @@ mod tests {
     /// `hold` off the worker's clock, or fails with `failure`.
     #[derive(Default)]
     struct StubInvoker {
+        body: Mutex<Option<String>>,
         invoked: Mutex<Vec<Invoked>>,
         status: Mutex<Option<u16>>,
         failure: Mutex<Option<FunctionScheduleInvokeError>>,
@@ -2513,7 +2598,13 @@ mod tests {
                     "content-type".to_owned(),
                     "application/json".to_owned(),
                 )]),
-                body_base64: STANDARD.encode(b"{\"ok\":true}"),
+                body_base64: STANDARD.encode(
+                    self.body
+                        .lock()
+                        .expect("lock")
+                        .as_deref()
+                        .unwrap_or("{\"ok\":true}"),
+                ),
                 duration_milliseconds: 12,
             })
         }
@@ -2674,6 +2765,180 @@ mod tests {
 
     async fn pass(harness: &Harness, now: u64) -> FunctionScheduleWorkerReport {
         harness.worker.run_once(now).await.expect("worker pass")
+    }
+
+    #[test]
+    fn successful_continuation_is_durable_bounded_and_keeps_cron() {
+        let harness = harness();
+        block_on(async {
+            let created = create(&harness, "0 * * * *", START).await;
+            *harness.invoker.body.lock().expect("lock") =
+                Some(r#"{"processed":1,"makoContinuation":{"delaySeconds":5}}"#.into());
+            assert_eq!(pass(&harness, START + HOUR).await.succeeded, 1);
+            let queued = runs(&harness, created.id())
+                .await
+                .into_iter()
+                .find(|r| r.outcome.is_none())
+                .expect("durable continuation");
+            assert!(!queued.manual);
+            assert_eq!(queued.continuation.as_ref().expect("metadata").depth, 1);
+            assert_eq!(
+                reload(&harness, created.id())
+                    .await
+                    .next_run_at_unix_seconds(),
+                Some(START + 2 * HOUR)
+            );
+            assert_eq!(pass(&harness, START + HOUR + 4).await.started, 0);
+            // A cold worker recovers the persisted due entry, without an in-memory task.
+            let cold = FunctionScheduleWorker::new(
+                harness.worker.store.clone(),
+                harness.invoker.clone(),
+                FunctionScheduleWorkerConfig::default(),
+            )
+            .expect("worker");
+            assert_eq!(
+                cold.run_once(START + HOUR + 5)
+                    .await
+                    .expect("pass")
+                    .succeeded,
+                1
+            );
+            let mut queued = runs(&harness, created.id())
+                .await
+                .into_iter()
+                .find(|r| r.outcome.is_none())
+                .expect("next");
+            let original = queued.clone();
+            queued.continuation.as_mut().expect("metadata").depth = 256;
+            assert!(
+                harness
+                    .worker
+                    .store
+                    .replace_run(&original, &queued, WriteBatch::new())
+                    .await
+                    .expect("replace")
+            );
+            assert_eq!(pass(&harness, START + HOUR + 10).await.succeeded, 1);
+            assert!(
+                runs(&harness, created.id())
+                    .await
+                    .iter()
+                    .all(|r| r.outcome.is_some())
+            );
+        });
+    }
+
+    #[test]
+    fn continuation_stops_on_pause_changed_request_or_expiry() {
+        for condition in ["pause", "request", "expiry"] {
+            let harness = harness();
+            block_on(async {
+                let created = create(&harness, "0 * * * *", START).await;
+                *harness.invoker.body.lock().expect("lock") =
+                    Some(r#"{"makoContinuation":{"delaySeconds":5}}"#.into());
+                pass(&harness, START + HOUR).await;
+                let old = reload(&harness, created.id()).await;
+                let mut changed = old.clone();
+                if condition == "pause" {
+                    changed.enabled = false;
+                }
+                if condition == "request" {
+                    changed.request.path = "/different".into();
+                }
+                if condition != "expiry" {
+                    assert!(
+                        harness
+                            .worker
+                            .store
+                            .replace_schedule(&old, &changed, WriteBatch::new())
+                            .await
+                            .expect("change")
+                    );
+                }
+                let now = if condition == "expiry" {
+                    START + 2 * HOUR
+                } else {
+                    START + HOUR + 5
+                };
+                pass(&harness, now).await;
+                let history = runs(&harness, created.id()).await;
+                assert!(history.iter().any(|r| r.continuation.is_some()
+                    && r.outcome == Some(FunctionScheduleRunOutcome::SkippedOverlap)));
+                assert_eq!(
+                    harness.invoker.invocations().len(),
+                    if condition == "expiry" { 2 } else { 1 }
+                );
+            });
+        }
+    }
+
+    #[test]
+    fn continuation_envelope_is_opt_in_and_fail_closed() {
+        for (status, content_type, body, expected) in [
+            (
+                200,
+                "application/json",
+                r#"{"makoContinuation":{"delaySeconds":5}}"#,
+                Some(5),
+            ),
+            (
+                200,
+                "application/json; charset=utf-8",
+                r#"{"makoContinuation":{"delaySeconds":300}}"#,
+                Some(300),
+            ),
+            (
+                503,
+                "application/json",
+                r#"{"makoContinuation":{"delaySeconds":5}}"#,
+                None,
+            ),
+            (
+                200,
+                "text/plain",
+                r#"{"makoContinuation":{"delaySeconds":5}}"#,
+                None,
+            ),
+            (
+                200,
+                "application/json",
+                r#"{"makoContinuation":{"delaySeconds":0}}"#,
+                None,
+            ),
+            (
+                200,
+                "application/json",
+                r#"{"makoContinuation":{"delaySeconds":301}}"#,
+                None,
+            ),
+            (
+                200,
+                "application/json",
+                r#"{"makoContinuation":{"delaySeconds":5,"url":"evil"}}"#,
+                None,
+            ),
+            (
+                200,
+                "application/json",
+                r#"{"makoContinuation":null}"#,
+                None,
+            ),
+            (
+                200,
+                "application/json",
+                r#"{"makoContinuation":{"delaySeconds":5}"#,
+                None,
+            ),
+        ] {
+            let result = Ok(FunctionScheduleInvokeResponse {
+                status,
+                version: 1,
+                headers: BTreeMap::from([("content-type".into(), content_type.into())]),
+                body_base64: STANDARD.encode(body),
+                duration_milliseconds: 1,
+            });
+            assert_eq!(continuation_delay(&result), expected);
+        }
     }
 
     #[test]
