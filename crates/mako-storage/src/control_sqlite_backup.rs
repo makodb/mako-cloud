@@ -120,7 +120,11 @@ pub fn create_control_sqlite_backup(
         )
     })?;
     source
-        .backup(MAIN_DB, &backup_database, None)
+        .backup(
+            MAIN_DB,
+            &backup_database,
+            None::<fn(rusqlite::backup::Progress)>,
+        )
         .map_err(|_| unavailable("control_backup", "transactional SQLite backup failed"))?;
     let backup_inventory = inspect_control_sqlite(&backup_database, expected_identity)?;
     let durable_high_water = backup_inventory.record_count;
