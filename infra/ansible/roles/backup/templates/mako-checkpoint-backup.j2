@@ -55,11 +55,7 @@ if [[ "$component" == "control-plane" ]]; then
     "--artifact=${artifact}" \
     "--signing-key-file=${CREDENTIALS_DIRECTORY}/backup-signing-key"
 else
-  # The data plane checkpoints itself while it keeps serving; this worker
-  # finishes the backup from the linked copy and never opens the live database.
-  /opt/mako/current/bin/mako-online-backup \
-  --endpoint=127.0.0.1:8080 \
-  "--secret-file=${CREDENTIALS_DIRECTORY}/internal-auth" \
+  /opt/mako/current/bin/mako-storage-ops backup \
   "--database-path=${database_path}" \
   "--staging-root=${staging_root}" \
   "--destination=${publish_root}" \

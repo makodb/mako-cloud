@@ -291,7 +291,7 @@ prune_releases() {
 }
 
 record_operation() {
-  local kind=$1 from=$2 to=$3 started=$4 completed=$5 schedule_before=$6 schedule_after=$7 record temporary operator
+  local kind=$1 from=$2 to=$3 started=$4 completed=$5 record temporary operator
   operator=${SUDO_USER:-root}
   /usr/bin/install -d -o root -g adm -m 0750 "$operation_root"
   record="$operation_root/${completed}-${kind}-${to}.json"
@@ -303,66 +303,21 @@ record_operation() {
     --arg operator "$operator" \
     --argjson started "$started" \
     --argjson completed "$completed" \
-    --argjson scheduleBefore "$schedule_before" \
-    --argjson scheduleAfter "$schedule_after" \
-    '{schemaVersion:1,kind:$kind,from:$from,to:$to,operator:$operator,startedAtUnixSeconds:$started,completedAtUnixSeconds:$completed,durationSeconds:($completed-$started),checkpointVerified:false,checkpointSkipped:true,checkpointPolicy:"paused-for-deployments",backupScheduleBefore:$scheduleBefore,backupScheduleAfter:$scheduleAfter,storageFormatCompatible:true,configurationSnapshotBound:true,storageFencedBeforeSelection:true,allServicesReady:true,publicAdmissionEnabled:false}' >"$temporary"
+    '{schemaVersion:1,kind:$kind,from:$from,to:$to,operator:$operator,startedAtUnixSeconds:$started,completedAtUnixSeconds:$completed,durationSeconds:($completed-$started),checkpointVerified:false,checkpointSkipped:true,checkpointPolicy:"disabled-for-deployments",storageFormatCompatible:true,configurationSnapshotBound:true,storageFencedBeforeSelection:true,allServicesReady:true,publicAdmissionEnabled:false}' >"$temporary"
   /usr/bin/chown root:adm "$temporary"
   /usr/bin/chmod 0640 "$temporary"
   /usr/bin/mv --force "$temporary" "$record"
   printf 'operation evidence: %s\n' "$record"
 }
 
-# Deployment never creates a database backup. Backups are online, so a
-# release operation pauses the schedule instead of requiring it to be off:
-# it records each timer's state, disables the timers, stops any running
-# backup -- which leaves the live databases untouched; its leftover
-# checkpoint and staging copy are swept by the next backup -- and restores
-# the recorded schedule once the selected release is ready. Unknown state
-# fails closed before any application service is stopped.
-record_backup_schedule() {
-  local timer state
-  # Positional, aligned with `timers`; global so the later steps can read it.
-  backup_schedule_before=()
-  for timer in "${timers[@]}"; do
-    state=$(/usr/bin/systemctl is-enabled "$timer" 2>/dev/null || true)
-    case "$state" in
-      enabled | disabled) backup_schedule_before+=("$state") ;;
-      *)
-        echo "backup timer state is unknown: $timer" >&2
-        return 1
-        ;;
-    esac
-  done
-}
-
-backup_schedule_json() {
-  local index timer state document='{}'
-  for index in "${!timers[@]}"; do
-    timer=${timers[$index]}
-    if [[ "${1:-}" == current ]]; then
-      state=$(/usr/bin/systemctl is-enabled "$timer" 2>/dev/null || true)
-    else
-      state=${backup_schedule_before[$index]:-unknown}
-    fi
-    document=$(/usr/bin/jq -c --arg timer "$timer" --arg state "$state" '. + {($timer): $state}' <<<"$document")
-  done
-  printf '%s' "$document"
-}
-
-pause_backups() {
-  local component
-  /usr/bin/systemctl disable --now "${timers[@]}" >/dev/null
-  for component in data-plane control-plane; do
-    /usr/bin/systemctl stop "mako-checkpoint-backup-orchestrator@$component.service" "mako-checkpoint-backup@$component.service"
-  done
-}
-
-require_backups_paused() {
+# Deployment never creates a database backup or restarts backup schedules.
+# Refuse a conflicting state before stopping the application services.
+require_backups_disabled() {
   local timer component unit state
   for timer in "${timers[@]}"; do
     state=$(/usr/bin/systemctl is-enabled "$timer" 2>/dev/null || true)
     [[ "$state" == disabled ]] || {
-      echo "backup timer did not pause: $timer" >&2
+      echo "release operations require disabled backup timers: $timer" >&2
       return 1
     }
   done
@@ -370,19 +325,10 @@ require_backups_paused() {
     for unit in "mako-checkpoint-backup@$component.timer" "mako-checkpoint-backup@$component.service" "mako-checkpoint-backup-orchestrator@$component.service"; do
       state=$(/usr/bin/systemctl is-active "$unit" 2>/dev/null || true)
       [[ "$state" == inactive || "$state" == failed ]] || {
-        echo "backup unit did not stop: $unit" >&2
+        echo "release operations require stopped backup units: $unit" >&2
         return 1
       }
     done
-  done
-}
-
-restore_backup_schedule() {
-  local index
-  for index in "${!timers[@]}"; do
-    if [[ "${backup_schedule_before[$index]}" == enabled ]]; then
-      /usr/bin/systemctl enable --now "${timers[$index]}" >/dev/null
-    fi
   done
 }
 
@@ -442,22 +388,21 @@ switch_release() {
     echo "another release operation is active" >&2
     exit 1
   }
-  record_backup_schedule
   started=$(/usr/bin/date +%s)
   snapshot_current_configuration "$current"
+  for timer in "${timers[@]}"; do /usr/bin/systemctl stop "$timer"; done
   fail_closed() {
     local result=$?
     trap - EXIT
     if (( result != 0 )); then
       /usr/bin/systemctl disable --now "${timers[@]}" >/dev/null 2>&1 || true
-      echo "release operation failed closed; public admission is disabled and backup timers were stopped for operator inspection (schedule before the operation: $(backup_schedule_json))" >&2
+      echo "release operation failed closed; public admission is disabled and backup timers were stopped for operator inspection" >&2
     fi
     exit "$result"
   }
   trap fail_closed EXIT
 
-  pause_backups
-  require_backups_paused
+  require_backups_disabled
   /usr/bin/systemctl stop "${services[@]/%/.service}"
   exec 8>>"$control_lock"
   /usr/bin/flock --exclusive --wait 10 8 || {
@@ -478,9 +423,8 @@ switch_release() {
   /usr/bin/systemctl reset-failed "${services[@]/%/.service}" || true
   /usr/bin/systemctl start "${services[@]/%/.service}"
   wait_for_readiness
-  restore_backup_schedule
   completed=$(/usr/bin/date +%s)
-  record_operation "$kind" "$current" "$target" "$started" "$completed" "$(backup_schedule_json)" "$(backup_schedule_json current)"
+  record_operation "$kind" "$current" "$target" "$started" "$completed"
   trap - EXIT
   echo "$kind complete: from=$current to=$target duration_seconds=$((completed-started))"
   prune_releases || true

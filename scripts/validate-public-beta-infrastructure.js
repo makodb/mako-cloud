@@ -127,14 +127,8 @@ assert(
   backupOrchestrator.includes('lock_file="$' + '{status_root}/checkpoint-transfer.lock"') &&
     backupOrchestrator.includes("/usr/bin/flock --exclusive --wait 240 9") &&
     backupOrchestrator.indexOf("/usr/bin/flock --exclusive --wait 240 9") <
-      backupOrchestrator.indexOf('/usr/bin/systemctl start --wait "$worker"'),
-  "component checkpoint transfers are not serialized before the backup worker starts",
-);
-// Both components are backed up online: the data plane checkpoints itself
-// over the signed loopback route, so the orchestrator never stops a service.
-assert(
-  !backupOrchestrator.includes('/usr/bin/systemctl stop "$application"'),
-  "the backup orchestrator stops an application service instead of backing it up online",
+      backupOrchestrator.indexOf('/usr/bin/systemctl stop "$application"'),
+  "component checkpoint transfers are not serialized before service shutdown",
 );
 assert(
   healthCollector.includes("mako_certificate_expiry_unixtime_seconds"),

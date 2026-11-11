@@ -23,9 +23,6 @@ const MAX_SECRET_BYTES: u64 = 64 * 1024;
 const MAX_REQUEST_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_STORAGE_OPERATIONS: u64 = 1_000_000;
 const MAX_TRANSACTION_SECONDS: u64 = 600;
-/// An online checkpoint holds new commit groups at entry while it waits, so
-/// the wait is a write pause; keep it far below any request deadline.
-const MAX_CHECKPOINT_BARRIER_WAIT_MILLISECONDS: u64 = 30_000;
 const MIN_PRODUCTION_DISK_RESERVE_BYTES: u64 = 64 * 1024 * 1024;
 
 /// Identifies a deployable service and supplies its local listen default.
@@ -74,8 +71,6 @@ pub struct ProductionRocksDbSettings {
     pub backup_retention_count: NonZeroU32,
     pub disk_warning_free_bytes: u64,
     pub disk_critical_free_bytes: u64,
-    /// How long open commit groups may hold an online backup checkpoint back.
-    pub checkpoint_barrier_wait: Duration,
 }
 
 /// Server-side SQLite settings used only by the control-plane service.
@@ -469,7 +464,6 @@ struct RawConfig {
     backup_retention_count: String,
     disk_warning_free_bytes: String,
     disk_critical_free_bytes: String,
-    checkpoint_barrier_wait_milliseconds: String,
     legacy_control_rocksdb_configured: bool,
     control_sqlite_path: String,
     control_sqlite_lock_path: String,
@@ -560,7 +554,6 @@ impl RawConfig {
             backup_retention_count: "14".into(),
             disk_warning_free_bytes: (512 * 1024 * 1024_u64).to_string(),
             disk_critical_free_bytes: (256 * 1024 * 1024_u64).to_string(),
-            checkpoint_barrier_wait_milliseconds: "2000".into(),
             legacy_control_rocksdb_configured: false,
             control_sqlite_path: format!(
                 ".local/data/{}/control.sqlite3",
@@ -695,9 +688,6 @@ impl RawConfig {
         }
         if let Some(value) = overlay.storage.backup_retention_count {
             self.backup_retention_count = value.to_string();
-        }
-        if let Some(value) = overlay.storage.checkpoint_barrier_wait_milliseconds {
-            self.checkpoint_barrier_wait_milliseconds = value.to_string();
         }
         if let Some(value) = overlay.storage.disk_warning_free_bytes {
             self.disk_warning_free_bytes = value.to_string();
@@ -930,7 +920,6 @@ impl RawConfig {
             "MAKO_ROCKSDB_BACKUP_RETENTION_COUNT",
             "MAKO_ROCKSDB_DISK_WARNING_FREE_BYTES",
             "MAKO_ROCKSDB_DISK_CRITICAL_FREE_BYTES",
-            "MAKO_ROCKSDB_CHECKPOINT_BARRIER_WAIT_MILLISECONDS",
         ]
         .iter()
         .any(|name| loader.environment.contains_key(*name));
@@ -974,11 +963,6 @@ impl RawConfig {
             loader,
             "MAKO_ROCKSDB_DISK_CRITICAL_FREE_BYTES",
             &mut self.disk_critical_free_bytes,
-        )?;
-        apply_string(
-            loader,
-            "MAKO_ROCKSDB_CHECKPOINT_BARRIER_WAIT_MILLISECONDS",
-            &mut self.checkpoint_barrier_wait_milliseconds,
         )?;
         for (name, target) in [
             ("MAKO_CONTROL_SQLITE_PATH", &mut self.control_sqlite_path),
@@ -1333,12 +1317,6 @@ impl RawConfig {
                 ));
             }
         }
-        let checkpoint_barrier_wait_milliseconds = parse_u64(
-            &self.checkpoint_barrier_wait_milliseconds,
-            "storage.checkpoint_barrier_wait_milliseconds",
-            1,
-            MAX_CHECKPOINT_BARRIER_WAIT_MILLISECONDS,
-        )?;
         let maximum_batch_operations = parse_nonzero_usize(
             &self.maximum_batch_operations,
             "storage.maximum_batch_operations",
@@ -1407,7 +1385,6 @@ impl RawConfig {
             .expect("retention is positive"),
             disk_warning_free_bytes,
             disk_critical_free_bytes,
-            checkpoint_barrier_wait: Duration::from_millis(checkpoint_barrier_wait_milliseconds),
         };
         let control_sqlite = if service == ServiceKind::ControlPlane {
             if environment == DeploymentEnvironment::Production
@@ -2134,7 +2111,6 @@ struct StorageOverlay {
     backup_retention_count: Option<u64>,
     disk_warning_free_bytes: Option<u64>,
     disk_critical_free_bytes: Option<u64>,
-    checkpoint_barrier_wait_milliseconds: Option<u64>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -3272,37 +3248,6 @@ mod tests {
                 .load(ServiceKind::DataPlane)
                 .expect_err("unsafe production path must fail");
             assert_eq!(error.field, expected_field);
-        }
-    }
-
-    #[test]
-    fn online_checkpoint_barrier_wait_defaults_and_is_bounded() {
-        let config = ConfigLoader::from_environment([("MAKO_ROCKSDB_PATH", "/srv/mako/live")])
-            .load(ServiceKind::DataPlane)
-            .expect("defaults load");
-        assert_eq!(
-            config.rocksdb.checkpoint_barrier_wait,
-            Duration::from_millis(2_000)
-        );
-        let config = ConfigLoader::from_environment([
-            ("MAKO_ROCKSDB_PATH", "/srv/mako/live"),
-            ("MAKO_ROCKSDB_CHECKPOINT_BARRIER_WAIT_MILLISECONDS", "500"),
-        ])
-        .load(ServiceKind::DataPlane)
-        .expect("configured wait loads");
-        assert_eq!(
-            config.rocksdb.checkpoint_barrier_wait,
-            Duration::from_millis(500)
-        );
-        for value in ["0", "30001", "two"] {
-            let error =
-                production_loader([("MAKO_ROCKSDB_CHECKPOINT_BARRIER_WAIT_MILLISECONDS", value)])
-                    .load(ServiceKind::DataPlane)
-                    .expect_err("unsafe barrier wait must fail");
-            assert_eq!(
-                error.field, "storage.checkpoint_barrier_wait_milliseconds",
-                "{value}"
-            );
         }
     }
 

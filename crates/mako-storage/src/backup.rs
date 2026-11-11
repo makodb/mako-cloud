@@ -13,10 +13,10 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::{
-    DATABASE_FORMAT_VERSION, MARKER_VERSION, OnlineCheckpointTiming, ProductionRocksDb,
-    ProductionVolumeIdentity, RocksDbAdapter, RocksDbConfig, SequencerRecoveryReport, StorageError,
-    StorageErrorKind, StorageResult, VolumeMarker, VolumeState,
-    production::{read_volume_marker, recover_all_sequencers, write_volume_marker},
+    DATABASE_FORMAT_VERSION, MARKER_VERSION, ProductionRocksDb, ProductionVolumeIdentity,
+    RocksDbAdapter, RocksDbConfig, SequencerRecoveryReport, StorageError, StorageErrorKind,
+    StorageResult, VolumeMarker, VolumeState,
+    production::{recover_all_sequencers, write_volume_marker},
 };
 
 pub const BACKUP_MANIFEST_VERSION: u32 = 1;
@@ -24,20 +24,6 @@ const ENVELOPE_FILE_NAME: &str = "manifest-envelope.json";
 const CHECKPOINT_DIRECTORY_NAME: &str = "checkpoint";
 /// A checkpoint being staged, and any checkpoint a finished backup left behind.
 const STAGING_SUFFIX: &str = ".incomplete";
-/// One linked online checkpoint under the owner's checkpoint root.
-const ONLINE_CHECKPOINT_SUFFIX: &str = ".checkpoint";
-/// Where the owner links online checkpoints: a directory inside the live
-/// database directory, so the checkpoint is always on the database's
-/// filesystem and RocksDB links table files instead of copying them. RocksDB
-/// only reads the files it names at the top of its directory, as it already
-/// does for the volume marker beside them.
-pub const ONLINE_CHECKPOINT_DIRECTORY: &str = ".online-checkpoints";
-
-/// The online checkpoint root for a production database directory.
-#[must_use]
-pub fn online_checkpoint_root(database_path: &Path) -> PathBuf {
-    database_path.join(ONLINE_CHECKPOINT_DIRECTORY)
-}
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 #[serde(transparent)]
@@ -133,21 +119,6 @@ pub struct BackupRequest {
     pub backup_id: BackupId,
     pub created_at_unix_seconds: u64,
     pub staging_root: PathBuf,
-}
-
-/// What the owning process needs to checkpoint itself while serving.
-#[derive(Clone, Debug)]
-pub struct OnlineCheckpointRequest {
-    pub backup_id: BackupId,
-    /// How long open commit groups may hold the checkpoint back.
-    pub drain_bound: Duration,
-}
-
-/// A linked checkpoint the owner created, waiting for the backup worker.
-#[derive(Clone, Debug)]
-pub struct OnlineCheckpoint {
-    pub path: PathBuf,
-    pub timing: OnlineCheckpointTiming,
 }
 
 #[derive(Clone, Debug)]
@@ -358,205 +329,49 @@ impl ProductionRocksDb {
             let _ignored = fs::remove_dir_all(&artifact_root);
             return Err(error);
         }
-        seal_staged_checkpoint(
-            artifact_root,
-            &self.marker().identity,
-            self.marker().database_format_version,
-            request,
-            signing_key,
-        )
-        .await
-    }
 
-    /// Checkpoint this database while it keeps serving.
-    ///
-    /// Runs in the owning process. Leftover checkpoints from interrupted
-    /// backups are removed first, so at most one linked checkpoint pins table
-    /// files at a time. The backup worker finishes the backup from the
-    /// returned path with [`finalize_online_backup`] and removes it.
-    pub fn create_online_checkpoint(
-        &self,
-        request: &OnlineCheckpointRequest,
-    ) -> StorageResult<OnlineCheckpoint> {
-        let root = online_checkpoint_root(self.adapter().path());
-        match fs::symlink_metadata(&root) {
-            Ok(metadata) if metadata.is_dir() => {}
-            Ok(_) => {
-                return Err(corrupt_backup("online checkpoint root is not a directory"));
-            }
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {
-                create_private_directory(&root)?;
-            }
-            Err(_) => {
-                return Err(io_backup_error(
-                    "online checkpoint root cannot be inspected",
-                ));
-            }
-        }
-        sweep_online_checkpoints(&root)?;
-        let path = root.join(format!(
-            "{}{ONLINE_CHECKPOINT_SUFFIX}",
-            request.backup_id.as_str()
-        ));
-        match self
-            .adapter()
-            .create_online_checkpoint(&path, request.drain_bound)
-        {
-            Ok(timing) => Ok(OnlineCheckpoint { path, timing }),
+        let inspection = inspect_checkpoint_recovery(&checkpoint_path).await;
+        let recovery = match inspection {
+            Ok(recovery) => recovery,
             Err(error) => {
-                if error.kind != StorageErrorKind::Conflict {
-                    let _ignored = fs::remove_dir_all(&path);
-                }
-                Err(error)
+                let _ignored = fs::remove_dir_all(&artifact_root);
+                return Err(error);
             }
-        }
-    }
-}
-
-/// Finish a backup from a checkpoint the owner created online.
-///
-/// Runs in the backup worker, never in the owner, and never opens the live
-/// database: the identity comes from the live volume marker, the checkpoint is
-/// copied into staging and then removed, which releases the table files it
-/// pinned, and the copy is sealed exactly as an offline checkpoint would be.
-/// The manifest format is unchanged, so restore cannot tell the difference.
-pub async fn finalize_online_backup(
-    database_path: &Path,
-    expected_identity: &ProductionVolumeIdentity,
-    checkpoint: &Path,
-    request: BackupRequest,
-    signing_key: &ManifestSigningKey,
-) -> StorageResult<BackupArtifact> {
-    if !database_path.is_absolute() || !checkpoint.is_absolute() {
-        return Err(StorageError::invalid(
-            "backup_finalize",
-            "database and checkpoint paths must be absolute",
-        ));
-    }
-    let marker = read_volume_marker(database_path)?;
-    if &marker.identity != expected_identity
-        || marker.marker_version != MARKER_VERSION
-        || marker.database_format_version != DATABASE_FORMAT_VERSION
-        || !matches!(marker.state, VolumeState::Provisioned | VolumeState::Active)
-    {
-        return Err(StorageError::new(
-            StorageErrorKind::Conflict,
-            "backup_finalize",
-            false,
-            "live volume marker does not match the requested backup",
-        ));
-    }
-    let metadata = fs::symlink_metadata(checkpoint)
-        .map_err(|_| io_backup_error("online checkpoint is missing"))?;
-    if !metadata.is_dir() {
-        return Err(corrupt_backup("online checkpoint is not a directory"));
-    }
-    if !request.staging_root.is_absolute() {
-        return Err(StorageError::invalid(
-            "backup_finalize",
-            "backup staging root must be absolute",
-        ));
-    }
-    fs::create_dir_all(&request.staging_root)
-        .map_err(|_| io_backup_error("backup staging root is unavailable"))?;
-    sweep_stale_staging(&request.staging_root)?;
-    let artifact_root = request
-        .staging_root
-        .join(format!("{}{STAGING_SUFFIX}", request.backup_id.as_str()));
-    create_private_directory(&artifact_root)?;
-    let staged = artifact_root.join(CHECKPOINT_DIRECTORY_NAME);
-    let copied = create_private_directory(&staged)
-        .and_then(|()| copy_tree_contents(checkpoint, &staged))
-        .and_then(|()| sync_tree(&staged));
-    let released = fs::remove_dir_all(checkpoint)
-        .map_err(|_| io_backup_error("online checkpoint cannot be released"));
-    if let Err(error) = copied.and(released) {
-        let _ignored = fs::remove_dir_all(&artifact_root);
-        return Err(error);
-    }
-    seal_staged_checkpoint(
-        artifact_root,
-        &marker.identity,
-        marker.database_format_version,
-        request,
-        signing_key,
-    )
-    .await
-}
-
-/// Remove linked checkpoints that interrupted online backups left behind.
-/// Returns how many were removed. Only `*.checkpoint` directories are touched.
-pub fn sweep_online_checkpoints(checkpoint_root: &Path) -> StorageResult<usize> {
-    let mut removed = 0;
-    for entry in fs::read_dir(checkpoint_root)
-        .map_err(|_| io_backup_error("checkpoint root cannot be listed"))?
-    {
-        let entry = entry.map_err(|_| io_backup_error("checkpoint entry cannot be inspected"))?;
-        let leftover = entry.file_type().is_ok_and(|kind| kind.is_dir())
-            && entry
-                .file_name()
-                .to_str()
-                .is_some_and(|name| name.ends_with(ONLINE_CHECKPOINT_SUFFIX));
-        if leftover {
-            fs::remove_dir_all(entry.path())
-                .map_err(|_| io_backup_error("leftover checkpoint cannot be removed"))?;
-            removed += 1;
-        }
-    }
-    Ok(removed)
-}
-
-/// Seal a checkpoint already staged under `artifact_root`: recover its
-/// sequencers, inventory and hash it, and sign the manifest.
-async fn seal_staged_checkpoint(
-    artifact_root: PathBuf,
-    identity: &ProductionVolumeIdentity,
-    database_format_version: u32,
-    request: BackupRequest,
-    signing_key: &ManifestSigningKey,
-) -> StorageResult<BackupArtifact> {
-    let checkpoint_path = artifact_root.join(CHECKPOINT_DIRECTORY_NAME);
-    let inspection = inspect_checkpoint_recovery(&checkpoint_path).await;
-    let recovery = match inspection {
-        Ok(recovery) => recovery,
-        Err(error) => {
+        };
+        let files = inventory_files(&checkpoint_path)?;
+        if files.is_empty() {
             let _ignored = fs::remove_dir_all(&artifact_root);
-            return Err(error);
+            return Err(corrupt_backup("checkpoint contains no files"));
         }
-    };
-    let files = inventory_files(&checkpoint_path)?;
-    if files.is_empty() {
-        let _ignored = fs::remove_dir_all(&artifact_root);
-        return Err(corrupt_backup("checkpoint contains no files"));
-    }
-    let tenants = recovery
-        .tenants
-        .into_iter()
-        .map(|tenant| TenantBackupInventory {
-            project: tenant.project,
-            environment: tenant.environment,
-            acknowledged_high_water: tenant.acknowledged_high_water,
+        let tenants = recovery
+            .tenants
+            .into_iter()
+            .map(|tenant| TenantBackupInventory {
+                project: tenant.project,
+                environment: tenant.environment,
+                acknowledged_high_water: tenant.acknowledged_high_water,
+            })
+            .collect();
+        let manifest = BackupManifest {
+            manifest_version: BACKUP_MANIFEST_VERSION,
+            backup_id: request.backup_id,
+            identity: self.marker().identity.clone(),
+            database_format_version: self.marker().database_format_version,
+            created_at_unix_seconds: request.created_at_unix_seconds,
+            files,
+            tenants,
+        };
+        let envelope = BackupManifestEnvelope {
+            authentication_tag: signing_key.authenticate(&manifest)?,
+            manifest,
+        };
+        write_json_file(&artifact_root.join(ENVELOPE_FILE_NAME), &envelope, true)?;
+        sync_tree(&artifact_root)?;
+        Ok(BackupArtifact {
+            root: artifact_root,
+            envelope,
         })
-        .collect();
-    let manifest = BackupManifest {
-        manifest_version: BACKUP_MANIFEST_VERSION,
-        backup_id: request.backup_id,
-        identity: identity.clone(),
-        database_format_version,
-        created_at_unix_seconds: request.created_at_unix_seconds,
-        files,
-        tenants,
-    };
-    let envelope = BackupManifestEnvelope {
-        authentication_tag: signing_key.authenticate(&manifest)?,
-        manifest,
-    };
-    write_json_file(&artifact_root.join(ENVELOPE_FILE_NAME), &envelope, true)?;
-    sync_tree(&artifact_root)?;
-    Ok(BackupArtifact {
-        root: artifact_root,
-        envelope,
-    })
+    }
 }
 
 #[derive(Clone, Debug)]

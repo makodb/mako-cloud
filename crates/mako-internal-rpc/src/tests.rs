@@ -558,21 +558,6 @@ fn route_allowlist_is_exact() {
     assert_eq!(
         InternalRoute::from_method_path(
             mako_service_runtime::HttpMethod::Post,
-            "/_internal/v1/data/storage/checkpoint"
-        ),
-        Some(InternalRoute::StorageCheckpoint)
-    );
-    assert_eq!(
-        InternalRoute::StorageCheckpoint.caller(),
-        InternalCaller::BackupWorker
-    );
-    assert_eq!(
-        "backup-worker".parse::<InternalCaller>().expect("caller"),
-        InternalCaller::BackupWorker
-    );
-    assert_eq!(
-        InternalRoute::from_method_path(
-            mako_service_runtime::HttpMethod::Post,
             "/_internal/v1/data/identity/admin"
         ),
         Some(InternalRoute::IdentityAdmin)

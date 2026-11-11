@@ -2,8 +2,8 @@ use std::{error::Error, fmt, num::NonZeroU64, sync::Arc};
 
 use mako_api::{ScopeError, TenantScope};
 use mako_storage::{
-    AtomicWrite, CommitGroupToken, CompareAndWriteResult, Durability, KeyCodecError, KeyCondition,
-    KvAdapter, SequencerKeyKind, StorageError, TenantKeyspace, WriteBatch,
+    AtomicWrite, CompareAndWriteResult, Durability, KeyCodecError, KeyCondition, KvAdapter,
+    SequencerKeyKind, StorageError, TenantKeyspace, WriteBatch,
 };
 
 use crate::DocumentEngine;
@@ -24,30 +24,12 @@ pub enum FinalizeOutcome {
 }
 
 /// A durably reserved, half-open range of sequence positions.
-///
-/// The lease also holds the writer's place in the storage commit group, from
-/// before the positions are reserved until the lease is dropped, so an online
-/// checkpoint never captures positions that are reserved but not yet
-/// committed or aborted. Hold the lease until its positions are resolved.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SequenceLease {
     start: u64,
     end_exclusive: u64,
     next: u64,
-    /// Held only for its `Drop`, which leaves the commit group.
-    #[allow(dead_code)]
-    commit_group: Arc<CommitGroupToken>,
 }
-
-impl PartialEq for SequenceLease {
-    fn eq(&self, other: &Self) -> bool {
-        self.start == other.start
-            && self.end_exclusive == other.end_exclusive
-            && self.next == other.next
-    }
-}
-
-impl Eq for SequenceLease {}
 
 impl SequenceLease {
     #[must_use]
@@ -119,7 +101,6 @@ impl DocumentEngine {
 impl EnvironmentSequencer {
     pub async fn lease(&self, size: NonZeroU64) -> Result<SequenceLease, SequencerError> {
         let key = self.keyspace.sequencer_key(SequencerKeyKind::Lease);
-        let commit_group = Arc::new(self.adapter.enter_commit_group()?);
         loop {
             let current = self.adapter.get(&key).await?;
             let start = current
@@ -153,7 +134,6 @@ impl EnvironmentSequencer {
                     start,
                     end_exclusive,
                     next: start,
-                    commit_group,
                 });
             }
         }
@@ -463,44 +443,6 @@ mod tests {
             ProjectId::parse("prj_abcdefgh").expect("project"),
             EnvironmentId::parse("env_abcdefgh").expect("environment"),
         )
-    }
-
-    #[test]
-    fn a_lease_holds_the_commit_group_until_it_is_dropped() {
-        let directory = TempDir::new().expect("temporary directory");
-        let rocks = RocksDbAdapter::open(RocksDbConfig::new(directory.path().join("groups")))
-            .expect("open");
-        let barrier = Arc::clone(rocks.commit_group_barrier());
-        let engine = DocumentEngine::new(Arc::new(rocks));
-        let tenant = tenant();
-        let sequencer = engine
-            .scope_sequencer(&tenant, &tenant, Durability::Sync)
-            .expect("sequencer");
-        block_on(async {
-            let mut lease = sequencer
-                .lease(NonZeroU64::new(2).expect("two"))
-                .await
-                .expect("lease");
-            assert_eq!(
-                barrier.open_groups(),
-                1,
-                "a reserved lease is an open group"
-            );
-            let first = lease.issue().expect("position");
-            sequencer.mark_committed(first).await.expect("commit");
-            sequencer
-                .abort_remaining(&mut lease)
-                .await
-                .expect("abort rest");
-            sequencer.recover_high_water().await.expect("recover");
-            assert_eq!(barrier.open_groups(), 1, "resolved but still held");
-            drop(lease);
-            assert_eq!(
-                barrier.open_groups(),
-                0,
-                "dropping the lease leaves the group"
-            );
-        });
     }
 
     #[test]
