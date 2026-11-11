@@ -7,6 +7,7 @@ import { resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import { setTimeout as delay } from "node:timers/promises";
 
+import { evaluateHostedBenchmark, GATED_LATENCY_PATHS } from "./public-beta-benchmark-gate-lib.js";
 import {
   assert,
   assertSelectedRelease,
@@ -17,6 +18,15 @@ import {
   writeJson,
 } from "./public-beta-hosted-lib.js";
 
+// Usage: run-public-beta-hosted-benchmark.js [--reuse-fixture true|false] [--samples N]
+//   [--maximum-steady-state-minutes M]
+//
+// The gated latencies come from a steady-state phase: sequential rounds in which every gated
+// path is sampled once, repeated until each path has --samples samples (default: the gate's
+// minimumSteadyStateSamples, 100) and the data-plane backup schedule has completed the gate's
+// minimumOnlineBackupsDuringRun (2) online backups inside the phase, or until the time bound.
+// The run refuses to start unless the backup schedule is enabled. Recovery timings are recorded
+// separately and are not gated.
 const origin = "https://cloud-test.makodb.com";
 const options = parseOptions(process.argv.slice(2));
 const reuseFixture = options.reuseFixture === "true";
@@ -26,12 +36,33 @@ assert(
 );
 const statePath = resolve(repositoryRoot, ".local/qualification/public-beta-fixture.json");
 const manifestPath = resolve(repositoryRoot, "docs/evidence/public-beta-release-manifest.json");
+const gatesPath = resolve(repositoryRoot, "docs/release-gates.json");
 const secretPath = resolve(repositoryRoot, ".local/public-beta-secrets/internal-auth");
 const sessionBinary = resolve(repositoryRoot, "target/release/mako-control-session");
 const evidencePath = "docs/evidence/public-beta-hosted-benchmark.json";
 const targetConcurrency = 16;
 const headroomConcurrency = 24;
 const saturationProbeConcurrency = 64;
+const gateThresholds = JSON.parse(readFileSync(gatesPath, "utf8")).stages.find(
+  (stage) => stage.id === "single-region-beta",
+).thresholds;
+const steadyStateSamples = integerOption(
+  "samples",
+  gateThresholds.minimumSteadyStateSamples,
+  1,
+  100_000,
+);
+const maximumSteadyStateMinutes = integerOption("maximumSteadyStateMinutes", 45, 1, 24 * 60);
+const minimumOnlineBackups = gateThresholds.minimumOnlineBackupsDuringRun;
+assert(
+  Number.isSafeInteger(minimumOnlineBackups) && minimumOnlineBackups >= 1,
+  "the beta gate does not define minimumOnlineBackupsDuringRun",
+);
+// The edge runtime evicts an idle function before this, so the next invocation is cold.
+const coldIdleMilliseconds = 6_500;
+const pushBatchRows = 8;
+const backupService = "mako-data-plane";
+const backupTimer = "mako-checkpoint-backup@data-plane.timer";
 
 assert(existsSync(statePath), "run the public-beta streaming qualification first");
 if (!reuseFixture) {
@@ -50,16 +81,6 @@ const projectRef = `${state.projectId}--${state.environmentId}`;
 const functionPath = `/${projectRef}/functions/v1/qualification-stream`;
 const developerToken = reuseFixture ? null : issueDeveloperToken();
 
-const authSamples = [];
-let applicationSession;
-for (let index = 0; index < 10; index += 1) {
-  const started = performance.now();
-  applicationSession = await signIn();
-  authSamples.push(performance.now() - started);
-}
-assert(typeof applicationSession?.accessToken === "string", "application sign-in did not succeed");
-const accessToken = applicationSession.accessToken;
-
 const controlSamples = [];
 if (!reuseFixture) {
   for (let index = 0; index < 10; index += 1) {
@@ -72,14 +93,39 @@ if (!reuseFixture) {
   }
 }
 
+// The benchmark measures the service as it runs in production, which includes online backups.
+assertBackupScheduleEnabled();
+
+const steadyState = Object.fromEntries(GATED_LATENCY_PATHS.map(({ evidence }) => [evidence, []]));
+const rateLimitedResponses = Object.fromEntries(
+  GATED_LATENCY_PATHS.map(({ evidence }) => [evidence, 0]),
+);
+let liveEventName = null;
+
+// Warm-up: a session, a caught-up pull checkpoint and a resident function. None is a sample.
 const expectedDocuments = new Map();
 const acknowledgedDocuments = new Set();
-const pushSamples = [];
-for (let batch = 0; batch < 4; batch += 1) {
+let applicationSession = (await sampled(null, () => signInAttempt())).body;
+const initialCatchUp = await pullAll(applicationSession.accessToken, expectedDocuments);
+let pullCheckpoint = initialCatchUp.checkpoint;
+const warmUpFunction = await sampled(null, () => invokeFunction(applicationSession.accessToken));
+assert(warmUpFunction.status === 200, "function warm-up failed");
+let lastFunctionCompletedAt = performance.now();
+const functionBodySha256 = warmUpFunction.bodySha256;
+let functionResponseBytes = warmUpFunction.bodyBytes;
+
+let steadyStateIntegrityFailures = 0;
+let rounds = 0;
+const steadyStateStartedAt = hostSeconds();
+const steadyStateDeadline = performance.now() + maximumSteadyStateMinutes * 60_000;
+while (true) {
+  applicationSession = (await sampled("authSignIn", () => signInAttempt())).body;
+  const token = applicationSession.accessToken;
+
   const rows = [];
-  for (let index = 0; index < 8; index += 1) {
+  for (let index = 0; index < pushBatchRows; index += 1) {
     const id = `hosted-benchmark-${randomUUID()}`;
-    const value = `batch-${batch}-document-${index}`;
+    const value = `round-${rounds}-document-${index}`;
     const mutationId = `hosted_benchmark_mutation_${randomUUID().replaceAll("-", "")}`;
     expectedDocuments.set(id, value);
     rows.push({
@@ -88,35 +134,82 @@ for (let batch = 0; batch < 4; batch += 1) {
       newDocumentState: { id, owner_id: state.applicationUserId, value },
     });
   }
-  const started = performance.now();
-  const response = await fetchJson(`${origin}${collectionBase}/replication/push`, {
-    method: "POST",
-    headers: applicationHeaders(accessToken, {
-      "Idempotency-Key": `hosted_benchmark_batch_${randomUUID().replaceAll("-", "")}`,
+  // A retried batch reuses its idempotency key, so throttling cannot duplicate writes.
+  const idempotencyKey = `hosted_benchmark_batch_${randomUUID().replaceAll("-", "")}`;
+  const pushed = await sampled("rxdbPushBatch", () =>
+    fetchJson(`${origin}${collectionBase}/replication/push`, {
+      method: "POST",
+      headers: applicationHeaders(token, { "Idempotency-Key": idempotencyKey }),
+      body: { schemaVersion: 1, rows },
+      expected: [200, 429],
     }),
-    body: { schemaVersion: 1, rows },
-  });
-  pushSamples.push(performance.now() - started);
-  assert(response.status === 200, "RxDB push benchmark failed");
-  assert(response.body?.outcomes?.length === rows.length, "RxDB push outcomes are incomplete");
-  for (const outcome of response.body.outcomes) {
+  );
+  assert(pushed.body?.outcomes?.length === rows.length, "RxDB push outcomes are incomplete");
+  for (const outcome of pushed.body.outcomes) {
     if (outcome.status === "accepted") acknowledgedDocuments.add(outcome.mutationId);
   }
   assert(
     rows.every((row) => acknowledgedDocuments.has(row.mutationId)),
     "RxDB push did not acknowledge every benchmark mutation",
   );
+
+  // Steady-state pull: a caught-up client fetching the changes since its checkpoint.
+  const pulled = await sampled("rxdbPull", () =>
+    fetchJson(`${origin}${collectionBase}/replication/pull`, {
+      method: "POST",
+      headers: applicationHeaders(token),
+      body: { checkpoint: pullCheckpoint, schemaVersion: 1, batchSize: 100 },
+      expected: [200, 429],
+    }),
+  );
+  assert(Array.isArray(pulled.body?.documents), "RxDB pull documents are invalid");
+  assert(typeof pulled.body?.checkpoint === "string", "RxDB pull checkpoint is invalid");
+  for (const document of pulled.body.documents) {
+    const value = expectedDocuments.get(document.id);
+    if (
+      value !== undefined &&
+      (document.value !== value || document.owner_id !== state.applicationUserId)
+    ) {
+      steadyStateIntegrityFailures += 1;
+    }
+  }
+  pullCheckpoint = pulled.body.checkpoint;
+
+  await sampled("rxdbLiveFirstEvent", () => firstLiveEvent(token));
+
+  const idle = lastFunctionCompletedAt + coldIdleMilliseconds - performance.now();
+  if (idle > 0) await delay(idle);
+  const cold = await sampled("coldFunction", () => invokeFunction(token));
+  const warm = await sampled("warmFunction", () => invokeFunction(token));
+  lastFunctionCompletedAt = performance.now();
+  assert(cold.status === 200 && warm.status === 200, "function benchmark failed");
+  assert(
+    cold.bodySha256 === functionBodySha256 && warm.bodySha256 === functionBodySha256,
+    "cold and warm function bodies differ",
+  );
+  functionResponseBytes = warm.bodyBytes;
+
+  rounds += 1;
+  if (performance.now() >= steadyStateDeadline) break;
+  if (
+    rounds >= steadyStateSamples &&
+    observeOnlineBackups(steadyStateStartedAt).completions.length >= minimumOnlineBackups
+  ) {
+    break;
+  }
 }
+const onlineBackups = observeOnlineBackups(steadyStateStartedAt);
+const steadyStateCompletedAt = hostSeconds();
+assertBackupScheduleEnabled();
+console.log(
+  JSON.stringify({
+    steadyStateRounds: rounds,
+    onlineBackupsCompleted: onlineBackups.completions.length,
+    rateLimitedResponses,
+  }),
+);
 
-const pullBeforeRecovery = await pullAll(accessToken, expectedDocuments);
-const live = await firstLiveEvent(accessToken);
-
-await delay(6_500);
-const coldFunction = await invokeFunction(accessToken);
-const warmFunction = await invokeFunction(accessToken);
-assert(coldFunction.status === 200 && warmFunction.status === 200, "function benchmark failed");
-assert(coldFunction.bodySha256 === warmFunction.bodySha256, "cold and warm function bodies differ");
-
+const accessToken = applicationSession.accessToken;
 const targetLoad = await runConcurrentPhase(targetConcurrency, targetConcurrency * 4, accessToken);
 const headroomLoad = await runConcurrentPhase(
   headroomConcurrency,
@@ -149,11 +242,11 @@ for attempt in $(seq 1 60); do
 done
 exit 1`);
 const recoveryMilliseconds = performance.now() - recoveryStarted;
-const recoveredSession = await signIn();
+const recoveredSession = (await sampled(null, () => signInAttempt())).body;
 const pullAfterRecovery = await pullAll(recoveredSession.accessToken, expectedDocuments);
 
 const acknowledgedWriteLoss = expectedDocuments.size - pullAfterRecovery.matchedDocuments;
-const integrityFailures = pullAfterRecovery.integrityFailures;
+const integrityFailures = pullAfterRecovery.integrityFailures + steadyStateIntegrityFailures;
 const capacityHeadroomAtTargetLoadPercent =
   ((headroomConcurrency - targetConcurrency) / targetConcurrency) * 100;
 assert(acknowledgedWriteLoss === 0, "an acknowledged document was lost after recovery");
@@ -161,8 +254,8 @@ assert(integrityFailures === 0, "a recovered document failed integrity verificat
 assert(capacityHeadroomAtTargetLoadPercent >= 30, "target-load headroom is below 30 percent");
 assertSelectedRelease(manifest.releaseDigest);
 
-writeJson(evidencePath, {
-  schemaVersion: 1,
+const benchmarkEvidence = {
+  schemaVersion: 2,
   recordedAt: new Date().toISOString(),
   environment: "public-beta",
   vmId: 124,
@@ -180,23 +273,43 @@ writeJson(evidencePath, {
     saturationProbeConcurrency,
     capacityHeadroomAtTargetLoadPercent,
   },
+  // The gated steady-state paths, each summarized as samples, p50, p95 and maximum.
   latencyMilliseconds: {
-    authSignIn: summarize(authSamples),
-    rxdbPushBatch: summarize(pushSamples),
-    rxdbPullBeforeRecovery: pullBeforeRecovery.latency,
-    rxdbLiveFirstEvent: live.elapsedMilliseconds,
+    ...Object.fromEntries(
+      GATED_LATENCY_PATHS.map(({ evidence }) => [evidence, summarize(steadyState[evidence])]),
+    ),
     controlRead: controlSamples.length === 0 ? null : summarize(controlSamples),
-    coldFunction: coldFunction.elapsedMilliseconds,
-    warmFunction: warmFunction.elapsedMilliseconds,
-    recoveryToReady: recoveryMilliseconds,
-    rxdbPullAfterRecovery: pullAfterRecovery.latency,
+  },
+  steadyState: {
+    startedAt: isoFromSeconds(steadyStateStartedAt),
+    completedAt: isoFromSeconds(steadyStateCompletedAt),
+    clock: "beta host",
+    rounds,
+    requiredSamplesPerPath: steadyStateSamples,
+    coldIdleMilliseconds,
+    pushBatchRows,
+    rateLimitedResponses,
+    initialCatchUpPullMilliseconds: initialCatchUp.latency,
+  },
+  onlineBackups: {
+    service: backupService,
+    timer: backupTimer,
+    scheduleEnabled: true,
+    completedDuringRun: onlineBackups.completions.length,
+    completions: onlineBackups.completions.map(isoFromSeconds),
+    failuresDuringRun: onlineBackups.failures,
+  },
+  // Recovery belongs to the recovery drill, not the latency gate.
+  recovery: {
+    toReadyMilliseconds: recoveryMilliseconds,
+    rxdbPullAfterRecoveryMilliseconds: pullAfterRecovery.latency,
   },
   workload: {
     acknowledgedDocuments: expectedDocuments.size,
     acknowledgedWriteLoss,
     integrityFailures,
-    liveEvent: live.event,
-    functionResponseBytes: warmFunction.bodyBytes,
+    liveEvent: liveEventName,
+    functionResponseBytes,
     functionBodyStableAcrossColdAndWarm: true,
   },
   concurrentLoad: {
@@ -206,9 +319,15 @@ writeJson(evidencePath, {
     saturationConcurrencyLowerBound:
       saturationProbe.failedRequests === 0 ? saturationProbeConcurrency : headroomConcurrency,
   },
+  // The run completed with no lost write, no integrity failure and no failed target or headroom
+  // request. Whether the release passes the gate is computed from this evidence by
+  // validate-release-gates.js.
   passed: true,
-});
-console.log(`public-beta hosted benchmark passed: ${evidencePath}`);
+};
+writeJson(evidencePath, benchmarkEvidence);
+const gate = evaluateHostedBenchmark(benchmarkEvidence, gateThresholds);
+console.log(`recorded public-beta hosted benchmark: ${evidencePath}`);
+console.log(JSON.stringify({ gate: gate.status, blockers: gate.blockers }, null, 2));
 
 function issueDeveloperToken() {
   const privateRoot = resolve(repositoryRoot, ".local/qualification");
@@ -244,15 +363,114 @@ function issueDeveloperToken() {
   }
 }
 
-async function signIn() {
+// Times one served request of a path. A throttled attempt is not a latency sample of the path:
+// it is counted, the platform's retry advice is honored, and the request is retried.
+async function sampled(path, attempt) {
+  for (let tries = 0; tries < 6; tries += 1) {
+    const started = performance.now();
+    const response = await attempt();
+    const elapsed = response.elapsedMilliseconds ?? performance.now() - started;
+    if (response.status !== 429) {
+      if (path !== null) steadyState[path].push(elapsed);
+      return response;
+    }
+    if (path !== null) rateLimitedResponses[path] += 1;
+    await delay(retryDelayMilliseconds(response));
+  }
+  throw new Error(`${path ?? "warm-up request"} remained rate limited after bounded retries`);
+}
+
+function retryDelayMilliseconds(response) {
+  // A throttled request says how long to wait in its error envelope (retry.afterMs); the
+  // Retry-After header exists only on the transport's overload path. The rate window is a
+  // minute, so the wait is capped just above it.
+  const advisedMilliseconds = Number(response.body?.error?.retry?.afterMs);
+  const retryAfterSeconds = Number.isFinite(advisedMilliseconds)
+    ? advisedMilliseconds / 1_000
+    : Number(response.headers?.get("retry-after") ?? "1");
+  return Math.min(Math.max(retryAfterSeconds, 0.25), 61) * 1_000;
+}
+
+async function signInAttempt() {
   const response = await fetchJson(`${origin}${tenantBase}/auth/signin`, {
     method: "POST",
     headers: { "X-Mako-Key": state.publicProjectKey },
     body: { email: state.applicationEmail, password: state.applicationPassword },
+    expected: [200, 429],
   });
-  assert(response.status === 200, "application sign-in benchmark failed");
-  assert(typeof response.body?.accessToken === "string", "application access token is missing");
-  return response.body;
+  if (response.status === 200) {
+    assert(typeof response.body?.accessToken === "string", "application access token is missing");
+  }
+  return response;
+}
+
+function assertBackupScheduleEnabled() {
+  const [enabled, active] = ssh(
+    `systemctl is-enabled ${backupTimer} || true; systemctl is-active ${backupTimer} || true`,
+  ).split("\n");
+  assert(
+    enabled === "enabled" && active === "active",
+    `the hosted benchmark requires ${backupTimer} to be enabled and active`,
+  );
+}
+
+function hostSeconds() {
+  const seconds = Number(ssh("date +%s.%N"));
+  assert(Number.isFinite(seconds) && seconds > 0, "the beta host clock is unreadable");
+  return seconds;
+}
+
+function isoFromSeconds(seconds) {
+  return new Date(seconds * 1_000).toISOString();
+}
+
+// Reads the data-plane backup history from the beta host's Prometheus. The last-success gauge
+// holds whole seconds, so a completion counts only when its second is not before the start;
+// every value Prometheus holds was written before this query, so none is after it.
+function observeOnlineBackups(startedAtSeconds) {
+  const observed = JSON.parse(
+    ssh(`python3 - <<'PY'
+import json
+import time
+import urllib.parse
+import urllib.request
+
+started = ${startedAtSeconds.toFixed(3)}
+now = time.time()
+window = int(now - started) + 120
+
+def samples(metric):
+  query = metric + '{service="${backupService}"}[' + str(window) + 's]'
+  parameters = urllib.parse.urlencode({"query": query, "time": "%.3f" % now})
+  with urllib.request.urlopen("http://127.0.0.1:9090/api/v1/query?" + parameters, timeout=5) as response:
+    payload = json.load(response)
+  if payload.get("status") != "success":
+    raise SystemExit("Prometheus query failed: " + query)
+  return [float(value) for series in payload["data"]["result"] for _, value in series["values"]]
+
+completions = sorted({int(value) for value in samples("mako_storage_backup_last_success_unixtime_seconds") if value >= started})
+failures = samples("mako_storage_backup_failures_total")
+print(json.dumps({
+  "completions": completions,
+  "failures": (max(failures) - min(failures)) if failures else None,
+}))
+PY`),
+  );
+  assert(
+    Array.isArray(observed.completions) &&
+      observed.completions.every((value) => Number.isSafeInteger(value)),
+    "online backup observation is invalid",
+  );
+  return observed;
+}
+
+function integerOption(name, fallback, minimum, maximum) {
+  const value = options[name] === undefined ? fallback : Number(options[name]);
+  assert(
+    Number.isSafeInteger(value) && value >= minimum && value <= maximum,
+    `--${name.replace(/[A-Z]/gu, (letter) => `-${letter.toLowerCase()}`)} must be an integer from ${minimum} to ${maximum}`,
+  );
+  return value;
 }
 
 async function pullAll(token, expected) {
@@ -269,17 +487,7 @@ async function pullAll(token, expected) {
         expected: [200, 429],
       });
       if (response.status === 200) break;
-      // Honor the platform's own retry contract in full: a throttled request
-      // says how long to wait in its error envelope (retry.afterMs), which
-      // is where clients are told to look; the Retry-After header exists
-      // only on the transport's overload path. The rate window is a minute,
-      // so a wait capped below it can burn every attempt inside one
-      // exhausted window and report a healthy limiter as a failure.
-      const advisedMilliseconds = Number(response.body?.error?.retry?.afterMs);
-      const retryAfterSeconds = Number.isFinite(advisedMilliseconds)
-        ? advisedMilliseconds / 1_000
-        : Number(response.headers.get("retry-after") ?? "1");
-      await delay(Math.min(Math.max(retryAfterSeconds, 0.25), 61) * 1_000);
+      await delay(retryDelayMilliseconds(response));
     }
     assert(response?.status === 200, "RxDB pull remained rate limited after bounded retries");
     assert(Array.isArray(response.body?.documents), "RxDB pull documents are invalid");
@@ -304,6 +512,7 @@ async function pullAll(token, expected) {
   return {
     matchedDocuments: found.size,
     integrityFailures,
+    checkpoint,
     latency: performance.now() - started,
   };
 }
@@ -314,6 +523,10 @@ async function firstLiveEvent(token) {
     headers: applicationHeaders(token, { Accept: "text/event-stream" }),
     signal: AbortSignal.timeout(10_000),
   });
+  if (response.status === 429) {
+    await response.body?.cancel();
+    return { status: 429, headers: response.headers };
+  }
   assert(response.status === 200, "RxDB live benchmark failed");
   const reader = response.body?.getReader();
   assert(reader !== undefined, "RxDB live response has no body");
@@ -328,7 +541,8 @@ async function firstLiveEvent(token) {
         const frame = bytes.subarray(0, boundary + 2).toString("utf8");
         const event = /^event: ([a-z_]+)$/mu.exec(frame)?.[1] ?? null;
         assert(event !== null, "RxDB live frame has no event name");
-        return { event, elapsedMilliseconds: performance.now() - started };
+        liveEventName = event;
+        return { status: 200, event, elapsedMilliseconds: performance.now() - started };
       }
     }
   } finally {
@@ -346,6 +560,7 @@ async function invokeFunction(token) {
   const body = Buffer.from(await response.arrayBuffer());
   return {
     status: response.status,
+    headers: response.headers,
     bodyBytes: body.length,
     bodySha256: createHash("sha256").update(body).digest("hex"),
     elapsedMilliseconds: performance.now() - started,

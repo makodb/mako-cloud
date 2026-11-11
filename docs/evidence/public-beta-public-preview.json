@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "recordedAt": "2026-10-12T20:07:33Z",
+  "recordedAt": "2026-11-11T03:20:05Z",
   "label": "risk-accepted-public-preview",
   "status": "active",
   "admissionMode": "risk_accepted_preview",
@@ -8,11 +8,16 @@
   "planHash": "d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073",
   "releaseDigest": "b58934d88674855ac714c9a117a0e08a866cb9aa28af6b31a81b9e91dd1075eb",
   "acceptedBlockers": [
-    "complete the 30-day resource, capacity, availability, and cost window with provider or facility evidence",
-    "measured auth, RxDB pull, and RxDB push latency exceed their single-region beta p95 budgets"
+    "RxDB live first-event delivery p95 latency is unmeasured: 1 of 100 required steady-state samples, provisional p95 46 ms against a 250 ms budget",
+    "RxDB pull p95 latency is unmeasured: 1 of 100 required steady-state samples, provisional p95 2859 ms against a 250 ms budget",
+    "RxDB push batch p95 latency is unmeasured: 4 of 100 required steady-state samples, provisional p95 642 ms against a 250 ms budget",
+    "auth sign-in p95 latency is unmeasured: 10 of 100 required steady-state samples, provisional p95 631 ms against a 200 ms budget",
+    "cold function p95 latency is unmeasured: 1 of 100 required steady-state samples, provisional p95 400 ms against a 1500 ms budget",
+    "hosted benchmark latency is unmeasured under online backups: the run recorded no online backup activity and needs 2 completed online backups",
+    "warm function p95 latency is unmeasured: 1 of 100 required steady-state samples, provisional p95 315 ms against a 250 ms budget"
   ],
-  "blockerDigest": "b8492baa802b961ba5cd240e211e0fccc87498d7fd589370dde5f44c8ef7e6a8",
+  "blockerDigest": "1b29bc55a028eff97b5695699b5a4e55c9006c5111ad0250ada2d3bfc8cffbe9",
   "approvalEvidence": "docs/evidence/public-beta-public-preview-approval.json",
   "guardEvidence": "docs/evidence/public-beta-public-preview-guard.json",
-  "note": "The exact-release-bound risk acceptance has no calendar expiry and remains active until an operator pauses it or the recurring guard detects binding or non-waivable safeguard drift; the separate single-region beta gate remains blocked. Re-accepted on 2026-09-19 after the guard fell back to pre_gate and invalidated the 2026-09-07 acceptance when the data plane failed closed on a full data disk (leaked checkpoint staging copies); same release, plan, and blocker set."
+  "note": "The exact-release-bound risk acceptance has no calendar expiry and remains active until an operator pauses it or the recurring guard detects binding or non-waivable safeguard drift; the separate single-region beta gate remains blocked. Re-accepted on 2026-09-19 after the guard fell back to pre_gate and invalidated the 2026-09-07 acceptance when the data plane failed closed on a full data disk (leaked checkpoint staging copies); same release, plan, and blocker set. Re-accepted on 2026-11-11 after the guard fell back to pre_gate on 2026-10-26 when data-plane readiness failed on port 8080; same release, plan, and blocker set. Re-issued on 2026-11-11 for the benchmark-only beta gate (online-backups-and-benchmark-gate): the 30-day window no longer gates, so the accepted blockers are the unmeasured benchmark latency paths. This acceptance takes effect only when the convergence that installs the new guard and context installs it; until then the deployed guard keeps the previous acceptance."
 }

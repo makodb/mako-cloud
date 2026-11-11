@@ -11,7 +11,6 @@ import subprocess
 import sys
 import tempfile
 import time
-import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -25,10 +24,14 @@ SAFEGUARDS = (
     "serviceReadiness",
     "emergencyAdmissionStop",
 )
+# Only benchmark-latency and alert-delivery blockers may be accepted: a latency path over its
+# budget, or one the benchmark has not measured with enough steady-state samples under online
+# backups. Keep this list identical to waivableBlockerPatterns in
+# scripts/public-beta-preview-approval-lib.js.
 WAIVABLE_BLOCKERS = (
     re.compile(r"authenticated SMTP relay|certificate-expiry alert delivery", re.I),
     re.compile(r"latency exceed", re.I),
-    re.compile(r"30-day|capacity, availability, and cost window|provider or facility evidence", re.I),
+    re.compile(r"latency is unmeasured", re.I),
 )
 
 
@@ -123,10 +126,6 @@ class Paths:
 def verify_static(paths, now):
     approval = read_json(paths.approval)
     context = read_json(paths.context)
-    require(
-        isinstance(context.get("backupFreshnessRequired", True), bool),
-        "backup freshness policy is invalid",
-    )
     require(approval.get("schemaVersion") == 2, "approval schema is invalid")
     require(approval.get("kind") == "risk-accepted-public-preview", "approval kind is invalid")
     require(
@@ -211,15 +210,10 @@ def verify_dynamic(paths, context):
                 break
             time.sleep(1)
         require(ready, f"service readiness failed on port {port}")
-    require(prometheus_value("min(mako_storage_backup_remote_verified)") == 1, "backup verification failed")
-    # The test deployment may explicitly retain public access after its
-    # operator disables scheduled backups. Old contexts remain strict; the
-    # retained backup must still have passed verification in either mode.
-    if context.get("backupFreshnessRequired", True):
-        require(
-            prometheus_value("max(time() - mako_storage_backup_last_success_unixtime_seconds)") <= 900,
-            "backup age exceeded 15 minutes",
-        )
+    # Backup state deliberately neither opens nor closes admission. Backups run
+    # online and do not interrupt the service, so a failed or late backup is an
+    # operator alert, not an outage. The backupAndRecovery safeguard is the
+    # passing recovery drill recorded in the approval and context above.
     fqdn = context.get("publicFqdn")
     require(isinstance(fqdn, str) and fqdn, "public FQDN is absent")
     tls_context = ssl.create_default_context()
@@ -228,15 +222,6 @@ def verify_dynamic(paths, context):
             pass
     preview = (paths.config_root / "Caddyfile.risk_accepted_preview").read_text()
     require("Strict-Transport-Security" in preview and "max-age=" in preview, "preview HSTS is absent")
-
-
-def prometheus_value(query):
-    encoded = urllib.parse.urlencode({"query": query})
-    with urllib.request.urlopen(f"http://127.0.0.1:9090/api/v1/query?{encoded}", timeout=5) as response:
-        payload = json.load(response)
-    results = payload.get("data", {}).get("result", [])
-    require(len(results) == 1, f"Prometheus query has no scalar result: {query}")
-    return float(results[0]["value"][1])
 
 
 def select_mode(paths, mode, no_reload):

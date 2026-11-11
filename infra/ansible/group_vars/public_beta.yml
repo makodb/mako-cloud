@@ -33,9 +33,6 @@ mako_public_preview_trusted_https_and_hsts: false
 mako_public_preview_exact_route_allowlist: false
 mako_public_preview_application_security: false
 mako_public_preview_backup_and_recovery: false
-# Operator-approved test preview without scheduled backups. Retained-backup
-# verification and the other admission checks still apply.
-mako_public_preview_require_fresh_backup: false
 mako_public_preview_zero_acknowledged_write_loss: false
 mako_public_preview_zero_integrity_failures: false
 mako_public_preview_service_readiness: false

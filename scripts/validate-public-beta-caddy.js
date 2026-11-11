@@ -466,13 +466,25 @@ for (const required of [
   'choices=("verify", "activate", "guard", "pause")',
   '"manual operator pause"',
   'select_mode(paths, "pre_gate"',
-  "mako_storage_backup_remote_verified",
-  "mako_storage_backup_last_success_unixtime_seconds",
   "ssl.create_default_context()",
   'systemctl", "restart", "caddy.service',
 ]) {
   assert(previewGuard.includes(required), `preview guard omits ${required}`);
 }
+// Backup state never opens or closes public admission; backup failure and age are alerts only.
+for (const forbidden of [
+  "mako_storage_backup_remote_verified",
+  "mako_storage_backup_last_success_unixtime_seconds",
+  "backupFreshnessRequired",
+  "30-day",
+]) {
+  assert(!previewGuard.includes(forbidden), `preview guard still depends on ${forbidden}`);
+}
+assert(
+  !previewContext.includes("backupFreshnessRequired") &&
+    !groupVariables.includes("mako_public_preview_require_fresh_backup"),
+  "preview context still carries a backup freshness policy",
+);
 assert(
   previewGuard.includes("if changed and not no_reload:"),
   "preview guard restarts Caddy when admission mode is unchanged",
