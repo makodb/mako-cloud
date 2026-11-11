@@ -9,6 +9,7 @@
 #![forbid(unsafe_code)]
 
 mod backup;
+mod commit_group;
 mod conformance;
 mod contract;
 mod control_migration;
@@ -24,8 +25,13 @@ mod sqlite;
 pub use backup::{
     BACKUP_MANIFEST_VERSION, BackupArtifact, BackupFileInventory, BackupId, BackupManifest,
     BackupManifestEnvelope, BackupMetrics, BackupRequest, BackupTelemetry,
-    FilesystemBackupTransport, ManifestSigningKey, RestorePolicy, RestoreReport,
-    TenantBackupInventory, inspect_backup, restore_backup,
+    FilesystemBackupTransport, ManifestSigningKey, ONLINE_CHECKPOINT_DIRECTORY, OnlineCheckpoint,
+    OnlineCheckpointRequest, RestorePolicy, RestoreReport, TenantBackupInventory,
+    finalize_online_backup, inspect_backup, online_checkpoint_root, restore_backup,
+    sweep_online_checkpoints,
+};
+pub use commit_group::{
+    CommitGroupBarrier, CommitGroupToken, DEFAULT_COMMIT_GROUP_ENTRY_WAIT, QuiescedBarrier,
 };
 pub use contract::{
     AdapterCapabilities, AtomicWrite, Capability, CompareAndWriteResult, ConditionalPut,
@@ -57,7 +63,7 @@ pub use production::{
     provision_production_volume, read_volume_marker,
 };
 pub use readiness::{ReadinessFailure, ReadinessStatus, StorageReadiness, check_storage_readiness};
-pub use rocks::{RocksDbAdapter, RocksDbConfig, RocksDbHealthSignals};
+pub use rocks::{OnlineCheckpointTiming, RocksDbAdapter, RocksDbConfig, RocksDbHealthSignals};
 pub use sqlite::{CONTROL_SQLITE_FORMAT_VERSION, SqliteAdapter, SqliteConfig, SqliteHealthSignals};
 
 /// Identifies this workspace component in diagnostics.

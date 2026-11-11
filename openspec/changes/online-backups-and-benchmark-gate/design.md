@@ -90,7 +90,8 @@
 - **`create_checkpoint`**, run inside the data plane:
   1. Acquire the commit-group barrier.
   2. Take `operation_lock.write()`.
-  3. Call `Checkpoint::create_checkpoint` into `checkpoints/<backup-id>`.
+  3. Call `Checkpoint::create_checkpoint` into
+     `.online-checkpoints/<backup-id>.checkpoint`.
   4. Release both locks.
   5. Return the barrier wait and creation durations.
 - **`finalize_backup`**, run by `mako-storage-ops` as `mako-data-plane`:
@@ -116,23 +117,27 @@ Alternatives considered:
 
 ### The checkpoint stays on the live database's filesystem
 
-The data-plane live path moves inside its subvolume:
+The data plane links each checkpoint into
+`<database>/.online-checkpoints/<backup-id>.checkpoint`, a directory inside its
+own database directory. That puts it on the database's filesystem by
+construction, with no new configuration and no data migration.
 
-- `rocksdb/data-plane/` becomes `rocksdb/data-plane/live/`.
-- A sibling `rocksdb/data-plane/checkpoints/` sits in the same subvolume.
+- **Why inside the database directory is safe.** RocksDB only reads the files
+  it names at the top of its directory; it already ignores the volume marker
+  that sits there. A test proves the database reopens, keeps serving, and
+  never copies the directory into an offline checkpoint.
+- **The device check stays.** Before taking the barrier,
+  `create_online_checkpoint` compares the device of the target's parent with
+  that of the live database, so a filesystem mounted at that path would fail
+  the backup instead of turning hard links into a full copy under the write
+  lock.
 
-This mirrors the control plane's `sqlite/control-plane/live/`. The move is a
-one-time rename within the subvolume, performed during a release operation
-while the service is already stopped.
-
-Before taking the barrier, `create_checkpoint` compares the device of the
-checkpoint directory with that of the live database. On a mismatch it refuses,
-so a misconfiguration fails the backup instead of copying the database under
-the write lock.
-
-Placing `checkpoints/` inside the live RocksDB directory was rejected. It
-relies on RocksDB ignoring unknown subdirectories, and it would put non-database
-files inside the path that provisioning and nonempty checks inspect.
+The first draft moved the live database to `rocksdb/data-plane/live/` with a
+sibling `checkpoints/`. That was rejected during implementation. The
+data-plane unit's `ExecStartPre` provisions any empty database path, so if the
+new path were configured before the data moved, the service would start on a
+new, empty database. A live-data move on the production VM is not worth that
+risk when a subdirectory gives the same guarantee.
 
 ### A commit-group barrier keeps partial pushes out of checkpoints
 
@@ -167,8 +172,11 @@ is a separate primitive because a commit group spans several writes and
 - **Request and response:** the body carries the backup id. The response
   carries the checkpoint path and the two durations.
 - **Concurrency:** one checkpoint at a time. A concurrent request gets a
-  conflict. Leftover `checkpoints/*` from an interrupted backup are removed
-  before each new checkpoint and at startup.
+  conflict. Leftover `.online-checkpoints/*.checkpoint` directories from an
+  interrupted backup are removed before each new checkpoint and at startup.
+- **Where the worker lives:** `mako-online-backup` is a binary in the
+  data-plane service package. It cannot live in `mako-storage-ops`, because
+  `mako-internal-rpc` depends on `mako-storage` and that would be a cycle.
 
 The precedent is `mako-operator-admin`, which signs as `OperatorAdmin` against
 a loopback-only endpoint. A Unix signal was rejected because it gives no
@@ -251,11 +259,8 @@ age become alerts only.
   unaffected, by design.
 - **Pinned SSTs use disk.** A checkpoint holds SST files until the worker
   deletes it. There is at most one checkpoint, and leftovers are swept.
-  Monitoring must cover `checkpoints/`: the 2026-09-19 incident was exactly this
-  kind of leak, in staging.
-- **The path migration touches the live database.** It is a rename within one
-  subvolume while the service is stopped. It is reversible by renaming back, and
-  it must verify the volume marker before and after.
+  Monitoring must cover `.online-checkpoints`: the 2026-09-19 incident was
+  exactly this kind of leak, in staging.
 - **Orphaned sequencer gaps after a crash remain unclassified.** The barrier
   keeps backups from creating them, but a crash still can. This is out of scope,
   and it is worth its own change.
@@ -268,8 +273,9 @@ age become alerts only.
 
 1. Land the storage, sync, RPC and worker changes behind the existing timer
    configuration. Backups stay suspended on the beta.
-2. During a release operation, move the data-plane live path to `live/` and
-   create `checkpoints/`. Verify the marker and readiness.
+2. Deploy the release with a release operation, and converge the backup role,
+   which creates `.online-checkpoints` and installs the data-plane worker
+   drop-in.
 3. Re-enable backups on the beta (`mako_backup_enabled: true`) and run them for
    at least 24 hours. Require zero readiness failures, and record write-pause
    statistics.

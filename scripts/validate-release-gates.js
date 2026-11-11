@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { requireMarkdownTarget } from "./markdown-anchors-lib.js";
+import { evaluateHostedBenchmark, GATED_LATENCY_PATHS } from "./public-beta-benchmark-gate-lib.js";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const gates = await readJson("docs/release-gates.json");
@@ -16,7 +17,6 @@ const betaDeployment = await readJson(gates.sources?.publicBetaDeployment);
 const betaStorage = await readJson(gates.sources?.publicBetaStorage);
 const betaRecovery = await readJson(gates.sources?.publicBetaRecovery);
 const betaRollback = await readJson(gates.sources?.publicBetaRollback);
-const betaMeasurement = await readJson(gates.sources?.publicBetaMeasurementWindow);
 const betaStreaming = await readJson(gates.sources?.publicBetaStreamingQualification);
 const betaBenchmark = await readJson(gates.sources?.publicBetaHostedBenchmark);
 const betaPreview = await readJson(gates.sources?.publicBetaPreviewAdmission);
@@ -90,12 +90,48 @@ assert(
 assert(performance.results?.length === 11, "internal performance evidence must cover 11 paths");
 assert(internal.blockers?.length === 0, "a passing internal gate cannot have blockers");
 
-const beta = requireStage("single-region-beta", "blocked");
+// The single-region beta gate is decided by the hosted benchmark alone. A calendar measurement
+// window, backup age, recovery-point exposure and cost are not gate inputs.
+const beta = requireStage("single-region-beta", ["passed", "blocked"]);
 assertNonNegativeThresholds(beta.thresholds, "single-region beta");
 const betaObserved = beta.observed;
-for (const field of ["monthlyFixedInfrastructureUsd", "costPerMillionReplicationOperationsUsd"]) {
-  assert(beta.observed?.[field] === null, `beta ${field} must remain null until measured`);
+for (const field of [
+  "maximumBackupAgeSeconds",
+  "maximumRecoveryPointExposureSeconds",
+  "maximumMonthlyFixedInfrastructureUsd",
+  "maximumCostPerMillionReplicationOperationsUsd",
+]) {
+  assert(!(field in beta.thresholds), `beta gate must not require ${field}`);
 }
+for (const field of [
+  "measurementWindow",
+  "backupAgeSeconds",
+  "recoveryPointExposureSeconds",
+  "monthlyFixedInfrastructureUsd",
+  "costPerMillionReplicationOperationsUsd",
+]) {
+  assert(!(field in betaObserved), `beta gate must not observe ${field}`);
+}
+
+// The recorded result is the computed one: passed exactly when no benchmark blocker remains, and
+// blocked with exactly the failing or unmeasured benchmark paths otherwise. Alert delivery is
+// asserted as qualified below, so an alert-delivery blocker would be stale.
+const benchmarkGate = evaluateHostedBenchmark(betaBenchmark, beta.thresholds);
+assert(
+  beta.status === benchmarkGate.status,
+  `single-region beta is recorded as ${beta.status} but its hosted benchmark is ${benchmarkGate.status}`,
+);
+assert(
+  Array.isArray(beta.blockers) &&
+    JSON.stringify([...beta.blockers].sort()) ===
+      JSON.stringify([...benchmarkGate.blockers].sort()),
+  `single-region beta blockers differ from the hosted benchmark; expected ${JSON.stringify(
+    benchmarkGate.blockers,
+    null,
+    2,
+  )}`,
+);
+
 assert(betaPlan.identity?.fqdn === "cloud-test.makodb.com", "beta plan has the wrong FQDN");
 assert(betaPlan.identity?.ipv4Address === "130.245.173.11", "beta plan has the wrong address");
 assert(betaPlan.proxmox?.vmId === 124, "beta plan has the wrong VM identifier");
@@ -139,14 +175,17 @@ assert(
   "risk-accepted preview must not be recorded as qualified-beta admission",
 );
 assert(betaPreview.label === "risk-accepted-public-preview", "preview label is invalid");
-assert(betaPreview.qualifiedBetaStatus === "blocked", "preview claims a passing beta gate");
+assert(
+  betaPreview.qualifiedBetaStatus === benchmarkGate.status,
+  "preview evidence records another beta gate result",
+);
 assert(
   betaObserved.publicPreview?.status === betaPreview.status,
   "preview status differs from evidence",
 );
 assert(
-  betaObserved.publicPreview?.qualifiedBetaStatus === "blocked",
-  "release gate treats preview as qualified beta",
+  betaObserved.publicPreview?.qualifiedBetaStatus === benchmarkGate.status,
+  "release gate records another beta gate result for preview",
 );
 assert(betaPreview.planHash === betaPlan.planHash, "preview evidence uses another plan");
 assert(
@@ -243,29 +282,6 @@ assert(
 );
 assert(betaObserved.recoveryDrill?.passed === true, "beta gate omits the recovery drill");
 assert(
-  betaMeasurement.vmId === 124 && betaMeasurement.planHash === betaPlan.planHash,
-  "measurement window identity is wrong",
-);
-assert(
-  betaMeasurement.releaseDigest === betaManifest.releaseDigest,
-  "measurement window uses another release",
-);
-assert(
-  betaObserved.measurementWindow?.status === betaMeasurement.status,
-  "measurement status differs from evidence",
-);
-for (const field of ["startedAt", "expectedCompleteAt", "completedAt", "completeDays"]) {
-  assert(
-    betaObserved.measurementWindow?.[field] === betaMeasurement[field],
-    `measurement ${field} differs from evidence`,
-  );
-}
-assert(betaMeasurement.completedAt === null, "an incomplete 30-day window is marked complete");
-assert(
-  Object.values(betaMeasurement.observed ?? {}).some((value) => value === null),
-  "unproven measurement values were inferred",
-);
-assert(
   betaStreaming.passed === true &&
     betaStreaming.releaseDigest === betaManifest.releaseDigest &&
     betaStreaming.planHash === betaPlan.planHash &&
@@ -280,36 +296,25 @@ assert(
   "hosted benchmark is stale or incomplete",
 );
 assert(
-  betaBenchmark.workload?.acknowledgedWriteLoss === beta.thresholds.acknowledgedWriteLoss &&
-    betaBenchmark.workload?.integrityFailures === beta.thresholds.integrityFailures,
-  "hosted benchmark lost acknowledged data or found integrity failures",
+  betaObserved.capacityHeadroomPercent ===
+    betaBenchmark.target?.capacityHeadroomAtTargetLoadPercent,
+  "beta capacity headroom differs from hosted evidence",
 );
-assert(
-  betaBenchmark.target?.capacityHeadroomAtTargetLoadPercent >=
-    beta.thresholds.minimumCapacityHeadroomPercent &&
-    betaObserved.capacityHeadroomPercent ===
-      betaBenchmark.target?.capacityHeadroomAtTargetLoadPercent &&
-    betaBenchmark.concurrentLoad?.target?.failedRequests === 0 &&
-    betaBenchmark.concurrentLoad?.requiredHeadroom?.failedRequests === 0,
-  "hosted benchmark does not prove required target-load headroom",
-);
-const measuredLatency = {
-  auth: betaBenchmark.latencyMilliseconds?.authSignIn?.p95,
-  pull: Math.max(
-    betaBenchmark.latencyMilliseconds?.rxdbPullBeforeRecovery,
-    betaBenchmark.latencyMilliseconds?.rxdbPullAfterRecovery,
-  ),
-  push: betaBenchmark.latencyMilliseconds?.rxdbPushBatch?.p95,
-  liveDelivery: betaBenchmark.latencyMilliseconds?.rxdbLiveFirstEvent,
-  functionWarm: betaBenchmark.latencyMilliseconds?.warmFunction,
-  functionCold: betaBenchmark.latencyMilliseconds?.coldFunction,
-};
-for (const [name, value] of Object.entries(measuredLatency)) {
+for (const { path } of GATED_LATENCY_PATHS) {
+  const measured = benchmarkGate.latency[path];
   assert(
-    betaObserved.endToEndLatency?.[name] === value,
-    `beta ${name} latency differs from hosted evidence`,
+    betaObserved.endToEndLatency?.[path] === measured.p95,
+    `beta ${path} latency differs from hosted evidence`,
+  );
+  assert(
+    betaObserved.latencySamples?.[path] === measured.samples,
+    `beta ${path} sample count differs from hosted evidence`,
   );
 }
+assert(
+  betaObserved.onlineBackupsCompletedDuringRun === benchmarkGate.onlineBackupsCompleted,
+  "beta online backup count differs from hosted evidence",
+);
 assert(
   betaObserved.developerRegistrationAndMail?.status === "passed" &&
     betaObserved.developerRegistrationAndMail?.ordinarySelfServiceLifecycleVerified === true &&
@@ -320,14 +325,6 @@ assert(
     betaDeveloperRegistration.status === "passed",
   "beta developer registration or authenticated mail evidence is incomplete",
 );
-assert(
-  beta.blockers?.length === 2 &&
-    beta.blockers.some((blocker) => blocker.includes("latency exceed")) &&
-    beta.blockers.some((blocker) => blocker.includes("30-day")) &&
-    !beta.blockers.some((blocker) => blocker.includes("certificate-expiry")),
-  "blocked beta gate must retain the two unresolved environment blockers only",
-);
-
 const multiRegion = requireStage("multi-region", "unsupported");
 assertNonNegativeThresholds(multiRegion.thresholds, "multi-region");
 assert(
@@ -340,13 +337,14 @@ assert(
 );
 
 console.log(
-  "validated internal release pass, blocked single-region beta, and unsupported multi-region gate",
+  `validated internal release pass, ${beta.status} single-region beta, and unsupported multi-region gate`,
 );
 
-function requireStage(id, status) {
+function requireStage(id, statuses) {
+  const allowed = Array.isArray(statuses) ? statuses : [statuses];
   const stage = stages.get(id);
   assert(stage !== undefined, `missing ${id} release stage`);
-  assert(stage.status === status, `${id} must be ${status}`);
+  assert(allowed.includes(stage.status), `${id} must be ${allowed.join(" or ")}`);
   return stage;
 }
 

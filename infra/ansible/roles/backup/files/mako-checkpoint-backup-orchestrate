@@ -136,24 +136,19 @@ trap finish EXIT
 
 # The restricted remote rrsync target permits only one writer below its root.
 # Both component timers can become due in the same scheduling window, so hold a
-# shared local lock before either service is stopped or any transfer begins.
+# shared local lock before any transfer begins.
 exec 9>"$lock_file"
 if ! /usr/bin/flock --exclusive --wait 240 9; then
   echo "timed out waiting for the shared checkpoint transfer lock" >&2
   exit 75
 fi
 
-# SQLite's online backup API provides a transactionally consistent snapshot.
-# Keep the control authority available while the independently verified worker
-# checkpoints, publishes, transfers, and reads the artifact back. RocksDB
-# checkpoints retain their explicit stopped-owner fence below.
-if [[ "$component" == control-plane ]]; then
-  /usr/bin/systemctl reset-failed "$worker" || true
-  /usr/bin/systemctl start --wait "$worker"
-  exit 0
-fi
-
-/usr/bin/systemctl stop "$application"
-application_stopped=true
+# Both components are backed up online; neither service is stopped. SQLite's
+# online backup API snapshots the control authority, and the data plane links
+# a RocksDB checkpoint of itself behind its commit-group barrier when the
+# worker asks for one over the signed loopback route. The worker then
+# publishes, transfers, and reads the artifact back while both keep serving.
+# `application_stopped` stays false; `finish` keeps its restart path only for
+# an operator who runs an older worker by hand.
 /usr/bin/systemctl reset-failed "$worker" || true
 /usr/bin/systemctl start --wait "$worker"

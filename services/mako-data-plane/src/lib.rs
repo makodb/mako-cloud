@@ -12,6 +12,7 @@ mod graph;
 mod internal_http;
 mod replication_http;
 mod service_user_http;
+mod storage_checkpoint_http;
 mod storage_http;
 pub mod telemetry;
 
@@ -37,6 +38,7 @@ pub fn data_plane_router(graph: Arc<DataPlaneGraph>) -> Result<HttpRouter, Route
     service_user_http::add_service_user_routes(&mut router, Arc::clone(&graph))?;
     application_mail::add_application_mail_routes(&mut router, Arc::clone(&graph))?;
     internal_http::add_internal_routes(&mut router, Arc::clone(&graph))?;
+    storage_checkpoint_http::add_storage_checkpoint_routes(&mut router, Arc::clone(&graph))?;
     // Cross-origin access is decided for every request, matched or not,
     // from the allowlist the path's environment installed -- the same
     // answer on the platform's hostname and on a custom domain, and no

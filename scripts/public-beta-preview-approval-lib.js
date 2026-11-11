@@ -2,14 +2,20 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
+import { evaluateHostedBenchmark } from "./public-beta-benchmark-gate-lib.js";
+
 export const PREVIEW_KIND = "risk-accepted-public-preview";
 export const PREVIEW_PERSISTENCE = "until-manually-paused";
 
 const digestPattern = /^[a-f0-9]{64}$/;
+// Only benchmark-latency and alert-delivery blockers may be accepted. A latency path that
+// exceeds its budget, or that the benchmark has not measured with enough steady-state samples
+// under online backups, is a latency blocker; capacity, failed requests, loss and integrity are
+// not. Keep this list identical to WAIVABLE_BLOCKERS in mako-public-preview-admission.
 const waivableBlockerPatterns = [
   /authenticated SMTP relay|certificate-expiry alert delivery/i,
   /latency exceed/i,
-  /30-day|capacity, availability, and cost window|provider or facility evidence/i,
+  /latency is unmeasured/i,
 ];
 const safeguardNames = [
   "trustedHttpsAndHsts",
@@ -138,6 +144,13 @@ export function derivePreviewQualification(repositoryRoot) {
   const beta = gates.stages.find((stage) => stage.id === "single-region-beta");
 
   assert(beta?.status === "blocked", "risk acceptance is only valid for a blocked beta gate");
+  // The accepted blockers are the ones the hosted benchmark computes, not a hand-kept list.
+  const gate = evaluateHostedBenchmark(benchmark, beta.thresholds);
+  assert(gate.status === "blocked", "the hosted benchmark passes the beta gate");
+  assert(
+    stableStringify([...beta.blockers].sort()) === stableStringify([...gate.blockers].sort()),
+    "release gate blockers differ from the hosted benchmark",
+  );
   const blockers = normalizeBlockers(beta.blockers);
   assert(manifest.planHash === plan.planHash, "release manifest uses another plan");
   assert(beta.observed?.deployment?.planHash === plan.planHash, "release gate uses another plan");

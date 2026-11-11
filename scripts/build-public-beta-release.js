@@ -178,6 +178,7 @@ async function collectArtifacts() {
     "mako-qualification-fixture",
     "mako-telemetry-query",
     "mako-storage-ops",
+    "mako-online-backup",
     "mako-control-storage-ops",
   ]) {
     const sourcePath = `target/release/${binary}`;

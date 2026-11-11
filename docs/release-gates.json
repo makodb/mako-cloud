@@ -11,7 +11,6 @@
     "publicBetaStorage": "docs/evidence/public-beta-production-storage.json",
     "publicBetaRecovery": "docs/evidence/public-beta-restore-qualification.json",
     "publicBetaRollback": "docs/evidence/public-beta-release-rollback.json",
-    "publicBetaMeasurementWindow": "docs/evidence/public-beta-measurement-window.json",
     "publicBetaStreamingQualification": "docs/evidence/public-beta-streaming-qualification.json",
     "publicBetaHostedBenchmark": "docs/evidence/public-beta-hosted-benchmark.json",
     "publicBetaPreviewAdmission": "docs/evidence/public-beta-public-preview.json",
@@ -66,8 +65,6 @@
         "integrityFailures": 0,
         "minimumStorageSoakIterations": 25,
         "requiredSecuritySuites": 5,
-        "maximumBackupAgeSeconds": 900,
-        "maximumRecoveryPointExposureSeconds": 900,
         "maximumSameVolumeRecoverySeconds": 300,
         "maximumReplacementRestoreSeconds": 1800,
         "minimumCapacityHeadroomPercent": 30,
@@ -79,8 +76,8 @@
           "functionWarm": 250,
           "functionCold": 1500
         },
-        "maximumMonthlyFixedInfrastructureUsd": 2500,
-        "maximumCostPerMillionReplicationOperationsUsd": 50
+        "minimumSteadyStateSamples": 100,
+        "minimumOnlineBackupsDuringRun": 2
       },
       "observed": {
         "deployment": {
@@ -110,13 +107,6 @@
           "qualifiedBetaStatus": "blocked",
           "evidence": "docs/evidence/public-beta-public-preview.json"
         },
-        "measurementWindow": {
-          "status": "in-progress",
-          "startedAt": "2026-10-12T18:56:06Z",
-          "expectedCompleteAt": "2026-11-11T18:56:06Z",
-          "completedAt": null,
-          "completeDays": 0
-        },
         "recoveryDrill": {
           "passed": true,
           "backupVerified": true,
@@ -142,13 +132,25 @@
           "functionWarm": 315.4356150000003,
           "functionCold": 400.42049399999996
         },
-        "capacityHeadroomPercent": 50,
-        "monthlyFixedInfrastructureUsd": null,
-        "costPerMillionReplicationOperationsUsd": null
+        "latencySamples": {
+          "auth": 10,
+          "pull": 1,
+          "push": 4,
+          "liveDelivery": 1,
+          "functionWarm": 1,
+          "functionCold": 1
+        },
+        "onlineBackupsCompletedDuringRun": null,
+        "capacityHeadroomPercent": 50
       },
       "blockers": [
-        "measured auth, RxDB pull, and RxDB push latency exceed their single-region beta p95 budgets",
-        "complete the 30-day resource, capacity, availability, and cost window with provider or facility evidence"
+        "auth sign-in p95 latency is unmeasured: 10 of 100 required steady-state samples, provisional p95 631 ms against a 200 ms budget",
+        "RxDB pull p95 latency is unmeasured: 1 of 100 required steady-state samples, provisional p95 2859 ms against a 250 ms budget",
+        "RxDB push batch p95 latency is unmeasured: 4 of 100 required steady-state samples, provisional p95 642 ms against a 250 ms budget",
+        "RxDB live first-event delivery p95 latency is unmeasured: 1 of 100 required steady-state samples, provisional p95 46 ms against a 250 ms budget",
+        "warm function p95 latency is unmeasured: 1 of 100 required steady-state samples, provisional p95 315 ms against a 250 ms budget",
+        "cold function p95 latency is unmeasured: 1 of 100 required steady-state samples, provisional p95 400 ms against a 1500 ms budget",
+        "hosted benchmark latency is unmeasured under online backups: the run recorded no online backup activity and needs 2 completed online backups"
       ]
     },
     {

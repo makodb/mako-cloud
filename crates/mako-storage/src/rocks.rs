@@ -19,10 +19,11 @@ use rocksdb::{
 };
 
 use crate::{
-    AdapterCapabilities, AtomicWrite, Capability, CompareAndWriteResult, Durability, HealthReport,
-    HealthStatus, KeyCondition, KeyRange, KeyValue, KvAdapter, KvSnapshot, KvTransaction,
-    ScanDirection, ScanRequest, SnapshotId, StorageError, StorageErrorKind, StorageResult,
-    TransactionMode, WriteBatch, WriteOperation,
+    AdapterCapabilities, AtomicWrite, Capability, CommitGroupBarrier, CommitGroupToken,
+    CompareAndWriteResult, DEFAULT_COMMIT_GROUP_ENTRY_WAIT, Durability, HealthReport, HealthStatus,
+    KeyCondition, KeyRange, KeyValue, KvAdapter, KvSnapshot, KvTransaction, ScanDirection,
+    ScanRequest, SnapshotId, StorageError, StorageErrorKind, StorageResult, TransactionMode,
+    WriteBatch, WriteOperation,
 };
 
 const DEFAULT_MAXIMUM_BATCH_OPERATIONS: usize = 10_000;
@@ -77,6 +78,16 @@ pub struct RocksDbAdapter {
     next_snapshot_id: Arc<AtomicU64>,
     error_counters: Arc<RocksErrorCounters>,
     operation_lock: Arc<RwLock<()>>,
+    commit_groups: Arc<CommitGroupBarrier>,
+}
+
+/// How long an online checkpoint held writes back.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct OnlineCheckpointTiming {
+    /// Waiting for open commit groups to drain, with new ones held at entry.
+    pub barrier_wait: Duration,
+    /// Flushing and linking the database under the exclusive operation lock.
+    pub creation: Duration,
 }
 
 #[derive(Debug, Default)]
@@ -125,6 +136,7 @@ impl RocksDbAdapter {
             next_snapshot_id: Arc::new(AtomicU64::new(1)),
             error_counters: Arc::new(RocksErrorCounters::default()),
             operation_lock: Arc::new(RwLock::new(())),
+            commit_groups: CommitGroupBarrier::new(),
         })
     }
 
@@ -168,6 +180,44 @@ impl RocksDbAdapter {
         checkpoint
             .create_checkpoint(target)
             .map_err(|error| self.map_error("checkpoint", error))
+    }
+
+    /// Checkpoint the database while it keeps serving.
+    ///
+    /// The target must be on the live database's filesystem: RocksDB links
+    /// table files when it can and silently copies them when it cannot, and a
+    /// copy made under the exclusive lock would stall every write for as long
+    /// as it takes. The device check therefore runs before any write is held.
+    /// Open commit groups get `drain` to finish; if they do not, the
+    /// checkpoint is abandoned and writers are released at once.
+    pub(crate) fn create_online_checkpoint(
+        &self,
+        target: &Path,
+        drain: Duration,
+    ) -> StorageResult<OnlineCheckpointTiming> {
+        require_same_device(&self.config.path, target)?;
+        if target.exists() {
+            return Err(StorageError::new(
+                StorageErrorKind::Conflict,
+                "checkpoint",
+                false,
+                "checkpoint target already exists",
+            ));
+        }
+        let quiesced = self.commit_groups.quiesce(drain)?;
+        let started = Instant::now();
+        self.create_checkpoint(target)?;
+        let timing = OnlineCheckpointTiming {
+            barrier_wait: quiesced.waited(),
+            creation: started.elapsed(),
+        };
+        drop(quiesced);
+        Ok(timing)
+    }
+
+    #[must_use]
+    pub fn commit_group_barrier(&self) -> &Arc<CommitGroupBarrier> {
+        &self.commit_groups
     }
 
     fn property(&self, name: &'static str) -> StorageResult<u64> {
@@ -438,6 +488,10 @@ impl KvAdapter for RocksDbAdapter {
             durability_verified: true,
             safe_diagnostic: None,
         })
+    }
+
+    fn enter_commit_group(&self) -> StorageResult<CommitGroupToken> {
+        self.commit_groups.enter(DEFAULT_COMMIT_GROUP_ENTRY_WAIT)
     }
 
     fn capabilities(&self) -> AdapterCapabilities {
@@ -738,6 +792,40 @@ fn map_rocks_error(
     StorageError::new(kind, operation, retryable, message)
 }
 
+/// Refuse a checkpoint target whose parent is on another device than the
+/// database, which would turn RocksDB's hard links into a full copy.
+fn require_same_device(database: &Path, target: &Path) -> StorageResult<()> {
+    use std::os::unix::fs::MetadataExt as _;
+
+    let parent = target.parent().ok_or_else(|| {
+        StorageError::invalid(
+            "checkpoint",
+            "checkpoint target must have a parent directory",
+        )
+    })?;
+    let device = |path: &Path| {
+        std::fs::metadata(path)
+            .map(|metadata| metadata.dev())
+            .map_err(|_| {
+                StorageError::new(
+                    StorageErrorKind::Unavailable,
+                    "checkpoint",
+                    false,
+                    "checkpoint location cannot be inspected",
+                )
+            })
+    };
+    if device(database)? != device(parent)? {
+        return Err(StorageError::new(
+            StorageErrorKind::InvalidRequest,
+            "checkpoint",
+            false,
+            "checkpoint target is not on the database filesystem",
+        ));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use futures::executor::block_on;
@@ -931,5 +1019,34 @@ mod tests {
                 Some(b"present".to_vec())
             );
         });
+    }
+
+    /// RocksDB copies instead of linking across filesystems, and a copy under
+    /// the exclusive lock stalls every write; the refusal must come first.
+    /// It needs a second filesystem, and where the host has none there is
+    /// nothing to cross.
+    #[test]
+    fn a_checkpoint_on_another_filesystem_is_refused_before_writes_pause() {
+        use std::os::unix::fs::MetadataExt as _;
+
+        let directory = TempDir::new().expect("temporary directory");
+        let adapter =
+            RocksDbAdapter::open(RocksDbConfig::new(directory.path().join("db"))).expect("open");
+        let local = std::fs::metadata(directory.path()).expect("metadata").dev();
+        let Some(foreign) = ["/dev/shm", "/run/user"]
+            .into_iter()
+            .map(Path::new)
+            .filter(|path| std::fs::metadata(path).is_ok_and(|metadata| metadata.dev() != local))
+            .find_map(|path| TempDir::new_in(path).ok())
+        else {
+            eprintln!("no second filesystem is available; cross-device refusal not exercised");
+            return;
+        };
+        let error = adapter
+            .create_online_checkpoint(&foreign.path().join("checkpoint"), Duration::from_secs(1))
+            .expect_err("cross-device checkpoint refused");
+        assert_eq!(error.kind, StorageErrorKind::InvalidRequest);
+        assert_eq!(adapter.commit_group_barrier().open_groups(), 0);
+        assert!(!foreign.path().join("checkpoint").exists());
     }
 }

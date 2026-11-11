@@ -6,11 +6,16 @@
   "planHash": "d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073",
   "releaseDigest": "b58934d88674855ac714c9a117a0e08a866cb9aa28af6b31a81b9e91dd1075eb",
   "blockers": [
-    "complete the 30-day resource, capacity, availability, and cost window with provider or facility evidence",
-    "measured auth, RxDB pull, and RxDB push latency exceed their single-region beta p95 budgets"
+    "RxDB live first-event delivery p95 latency is unmeasured: 1 of 100 required steady-state samples, provisional p95 46 ms against a 250 ms budget",
+    "RxDB pull p95 latency is unmeasured: 1 of 100 required steady-state samples, provisional p95 2859 ms against a 250 ms budget",
+    "RxDB push batch p95 latency is unmeasured: 4 of 100 required steady-state samples, provisional p95 642 ms against a 250 ms budget",
+    "auth sign-in p95 latency is unmeasured: 10 of 100 required steady-state samples, provisional p95 631 ms against a 200 ms budget",
+    "cold function p95 latency is unmeasured: 1 of 100 required steady-state samples, provisional p95 400 ms against a 1500 ms budget",
+    "hosted benchmark latency is unmeasured under online backups: the run recorded no online backup activity and needs 2 completed online backups",
+    "warm function p95 latency is unmeasured: 1 of 100 required steady-state samples, provisional p95 315 ms against a 250 ms budget"
   ],
-  "blockerDigest": "b8492baa802b961ba5cd240e211e0fccc87498d7fd589370dde5f44c8ef7e6a8",
-  "acceptedAt": "2026-10-12T20:01:54.156Z",
+  "blockerDigest": "1b29bc55a028eff97b5695699b5a4e55c9006c5111ad0250ada2d3bfc8cffbe9",
+  "acceptedAt": "2026-11-11T03:20:05.803Z",
   "expiresAt": null,
   "nonWaivableSafeguards": {
     "trustedHttpsAndHsts": true,
@@ -22,5 +27,5 @@
     "serviceReadiness": true,
     "emergencyAdmissionStop": true
   },
-  "typedConfirmation": "ACCEPT_PERSISTENT_PUBLIC_PREVIEW_RISK:b58934d88674855ac714c9a117a0e08a866cb9aa28af6b31a81b9e91dd1075eb:d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073:b8492baa802b961ba5cd240e211e0fccc87498d7fd589370dde5f44c8ef7e6a8"
+  "typedConfirmation": "ACCEPT_PERSISTENT_PUBLIC_PREVIEW_RISK:b58934d88674855ac714c9a117a0e08a866cb9aa28af6b31a81b9e91dd1075eb:d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073:1b29bc55a028eff97b5695699b5a4e55c9006c5111ad0250ada2d3bfc8cffbe9"
 }
