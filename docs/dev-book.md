@@ -517,7 +517,6 @@ Configuration accepts references, never inline secret values: `env:VARIABLE_NAME
 | `MAKO_ROCKSDB_LOCK_TIMEOUT_SECONDS`, `MAKO_ROCKSDB_TRANSACTION_EXPIRATION_SECONDS` | Positive, bounded |
 | `MAKO_ROCKSDB_BACKUP_DESTINATION`, `MAKO_ROCKSDB_BACKUP_RETENTION_COUNT` | Separate from the database path |
 | `MAKO_ROCKSDB_DISK_WARNING_FREE_BYTES`, `MAKO_ROCKSDB_DISK_CRITICAL_FREE_BYTES` | Warning must exceed critical; production minimum for critical is 64 MiB. Startup is unready below critical |
-| `MAKO_ROCKSDB_CHECKPOINT_BARRIER_WAIT_MILLISECONDS` | How long open commit groups may hold an online backup checkpoint back, 1–30 000 (default 2 000). New writers wait while it elapses, so it is a write pause bound |
 
 A production control plane rejects legacy `storage.rocksdb_path`; the other services still require it. Durability and backend kind are not configurable.
 
@@ -970,8 +969,8 @@ Beta third-party credentials and the operative copies of secrets live outside th
 2. `npm run build --workspace @mako-cloud/console`, then `npm run build:public-beta-release` to produce the candidate and its digest.
 3. Select the digest in `infra/ansible/group_vars/public_beta.yml` (`mako_release_digest`), install it immutably, and converge the pinned playbook with Caddy disabled. The normal deployment path must not recreate the VM, replace either disk, delete a release, or alter DNS.
 4. On a running stateful environment, change releases **only** through `sudo mako-release-operation upgrade DIGEST --confirm=UPGRADE_RELEASE:DIGEST` ([release operations](#release-operations-on-the-vm)); it must not overwrite `/opt/mako/current` or create an empty storage fallback.
-5. Require active volume markers, HTTP 200 from all four private readiness endpoints, the backup schedule restored to its recorded state, and the Proxmox admission-stop service after the operation. The operation record must show `checkpointSkipped: true`, `checkpointVerified: false`, and matching `backupScheduleBefore`/`backupScheduleAfter`.
-6. After deploy, probe the changed behavior as well as readiness. Deployment restarts the services but never runs a backup; it only pauses and restores the backup schedule.
+5. Require active volume markers, HTTP 200 from all four private readiness endpoints, disabled and stopped backup timers, and the Proxmox admission-stop service after the operation. The operation record must show `checkpointSkipped: true` and `checkpointVerified: false`.
+6. After deploy, probe the changed behavior as well as readiness. Deployment restarts the services but never runs a backup or restarts backup timers.
 
 The candidate carries the service binaries, the console bundle, and the edge runtime's main worker — the supervisor that authenticates deployments, supplies the SDK module to every user worker, and sets each worker's permissions. The release operation installs that worker and restarts the runtime when it differs, so what runs tenant code is named by the release digest; the provisioning role's copy is for first boot only. After SQLite accepts control writes, release selection rejects binaries that do not declare compatibility with the active control SQLite format.
 
@@ -1007,29 +1006,6 @@ Remove the owner from routing and wait for in-flight mutations. Let the service 
 
 The deployment supplies at least 32 bytes of signing material in a protected file and encryption/access control for the backup destination. The key is not a command argument and never appears in manifests or diagnostics.
 
-**Online data-plane backups.** The data plane is backed up while it serves. Only the process that owns a RocksDB database can open it, so the backup worker asks the data plane for a checkpoint of itself over the signed loopback route `POST /_internal/v1/data/storage/checkpoint` (caller `backup-worker`, synthetic scope `prj_backup_worker`/`env_backup_worker`, replay-guarded):
-
-```bash
-mako-online-backup \
-  --endpoint=127.0.0.1:8080 \
-  --secret-file=$CREDENTIALS_DIRECTORY/internal-auth \
-  --database-path=/srv/mako-data/rocksdb/data-plane \
-  --service=mako-data-plane \
-  --database-id=mako-data-plane-us-east-1-beta \
-  --backup-id=dp-20261111T120000Z \
-  --staging-root=/srv/mako-data/backup-staging/data-plane \
-  --destination=/srv/mako-data/backup-publish/data-plane \
-  --retention=14 \
-  --signing-key-file=$CREDENTIALS_DIRECTORY/backup-signing-key
-```
-
-- **Where the checkpoint goes.** The data plane links it into `<database>/.online-checkpoints/<backup-id>.checkpoint`, inside its own directory, so it is always on the database's filesystem and RocksDB hard-links table files instead of copying them. RocksDB reads only the files it names at the top of its directory, as it does for the volume marker. A target on another device is refused before any write is held.
-- **What pauses.** Every writer that leases sequence positions holds a commit-group token from the lease until the lease is dropped. The checkpoint closes the barrier, waits up to `MAKO_ROCKSDB_CHECKPOINT_BARRIER_WAIT_MILLISECONDS` for open groups to drain, then flushes and links under the exclusive operation lock. A checkpoint therefore never captures a partially committed push. If groups do not drain in time, the checkpoint is abandoned, writers resume at once, and the backup fails as retryable; the next schedule tries again.
-- **What the worker does.** It copies the checkpoint into staging, deletes the linked checkpoint (releasing the pinned table files), recovers sequencers on the copy, inventories, signs, publishes and verifies it, reading identity from the live volume marker without opening the live database. The manifest format is unchanged, so restore cannot tell an online backup from an offline one. It prints `mode=online barrier_wait_ms=… checkpoint_ms=… duration_ms=…` with the usual result line.
-- **Leftovers.** At most one linked checkpoint exists. A checkpoint an interrupted backup left behind is swept before the next one and when the data plane starts. Watch `.online-checkpoints` with the staging roots: pinned table files consume space until released.
-
-`mako-storage-ops backup` below opens the database itself and therefore needs the owner stopped. It remains for offline use: a stopped service, a restore drill, or a host without the online route.
-
 ```bash
 mako-storage-ops backup \
   --database-path=/var/lib/mako/rocksdb \
@@ -1049,7 +1025,7 @@ mako-storage-ops inspect --artifact=/var/lib/mako-backups/data-plane/DP_ID --sig
 mako-storage-ops verify  --artifact=/var/lib/mako-backups/data-plane/DP_ID --signing-key-file=/run/secrets/mako-backup-signing-key
 ```
 
-When `mako_backup_enabled` is true, both timers run every five minutes and remotely verify their artifacts; neither service is stopped. Deployment does not create checkpoints; it pauses the schedule for the switch and restores it afterwards. Backup failure and age raise alerts. Neither opens or closes public admission, and neither is a release-gate condition.
+The test preview has both backup schedules disabled. When `mako_backup_enabled` is true, the timers run every five minutes and remotely verify their artifacts; a data-plane backup opens the database itself and so stops the data plane for its whole run. Deployment does not create checkpoints or restart those schedules. Backup failure and age raise alerts; neither opens or closes public admission, and neither is a release-gate condition.
 
 #### Empty-target restore and node replacement
 
@@ -1107,11 +1083,11 @@ sudo mako-release-operation rollback DIGEST --confirm=ROLLBACK_RELEASE:DIGEST
 sudo mako-release-operation prune                                            # housekeeping; also runs after every switch
 ```
 
-Releases contain immutable binaries, the console bundle, and the runtime worker under `/opt/mako/releases/<digest>`. Every release uses the same live data volume. A switch fences and reactivates the databases in place. Upgrades and rollbacks never create database backups or start backup workers. No skip flag or per-deployment backup approval is needed. Before stopping services, the operation records each backup timer's state, disables the timers, and stops any running backup; an online backup leaves the live databases untouched, and its leftover checkpoint and staging copy are swept by the next run. Once the selected release is ready, it restores the recorded schedule. Unknown timer state fails closed before anything stops. Existing backup artifacts remain intact.
+Releases contain immutable binaries, the console bundle, and the runtime worker under `/opt/mako/releases/<digest>`. Every release uses the same live data volume. A switch fences and reactivates the databases in place. Upgrades and rollbacks never create database backups, start backup workers, or restart backup timers. No skip flag or per-deployment backup approval is needed. The operation refuses to proceed if backup timers are enabled or their state is unknown, or a backup job is still running. Existing backup artifacts remain intact.
 
 First verify Caddy is inactive and the Proxmox `mako-vm124-admission-stop.service` is active and enabled. `inspect` shows the current and last-known-good release digests. The operation rejects incompatible or empty storage, preserves the outgoing release's three service JSON configuration files under its digest, and verifies that backups are disabled. It then drains all four services, fences their storage, atomically selects the new release, installs the runtime worker, and waits for all private readiness endpoints. Rollback restores the target release's configuration before starting its binaries. Configuration snapshots contain service settings, not database copies.
 
-Successful operation evidence records `checkpointSkipped: true`, `checkpointVerified: false`, `checkpointPolicy: "paused-for-deployments"`, and the backup schedule before and after. A release switch does not establish a new recovery point. If a check fails, public admission and backup timers remain stopped for inspection, and the error names the schedule to restore. Operator keyspaces remain untouched.
+Successful operation evidence records `checkpointSkipped: true`, `checkpointVerified: false`, and `checkpointPolicy: "disabled-for-deployments"`. A release switch does not establish a new recovery point. If a check fails, public admission and backup timers remain stopped for inspection. Operator keyspaces remain untouched.
 
 After recording a successful switch, `mako-release prune --keep 5` keeps the selected release, the last-known-good release, and the five newest releases. It removes older binaries and their configuration snapshots, never the live databases or retained backups. A pruning failure is reported without undoing the completed switch. `npm run test:release-retention` checks pruning and exercises upgrade and rollback with simulated host commands, including failure paths and the no-backup policy.
 
@@ -1403,7 +1379,7 @@ npm run public-beta:preview-approval -- approve --plan .local/qualification/publ
 
 Converge with `mako_public_admission_mode: risk_accepted_preview`, the exact approval path, blocker digest, and all eight non-waivable safeguards asserted. Convergence starts Caddy in `pre_gate`; the guard checks readiness, trusted TLS/HSTS, persistent acceptance, and the plan and blocker bindings before it atomically selects the preview configuration; backup state is not checked, and its one-minute timer falls back to `pre_gate` on drift. Inspect `/var/lib/mako-public-preview/last-guard.json`. To pause manually without stopping private services: `sudo /usr/local/sbin/mako-public-preview-admission pause` — this invalidates the installed acceptance, so create a fresh one to resume. Only the full release gate may select `approved_beta`; the Proxmox emergency stop is authoritative in every mode.
 
-Scheduled backups on the test deployment were disabled at the operator's request on 2026-09-25 with `mako_backup_enabled: false`, because each data-plane backup then stopped the data plane. Data-plane backups are now online, so re-enable them with `mako_backup_enabled: true` once the online path is qualified on the host. The former `mako_public_preview_require_fresh_backup` setting and the context's `backupFreshnessRequired` field are gone: backup state never affects admission. Changing the gate's blocker set changes the blocker digest, so the convergence that installs a new guard or context must also install a matching approval, or the guard falls back to `pre_gate`.
+Scheduled backups on the test deployment were disabled at the operator's request on 2026-09-25 with `mako_backup_enabled: false`, because each data-plane backup stops the data plane, and they remain disabled. The former `mako_public_preview_require_fresh_backup` setting and the context's `backupFreshnessRequired` field are gone: backup state never affects admission. Changing the gate's blocker set changes the blocker digest, so the convergence that installs a new guard or context must also install a matching approval, or the guard falls back to `pre_gate`.
 
 **Certificate or renewal failure.** Disable Caddy and apply the Proxmox admission stop first. Do not expose a plaintext fallback. Validate DNS A/AAAA state, ACME reachability, the configured contact, staging issuance, production chain, hostname, expiry, and renewal before re-enabling restricted ingress. HSTS remains off until a trusted production certificate and external route checks pass.
 
@@ -1413,7 +1389,7 @@ Scheduled backups on the test deployment were disabled at the operator's request
 
 **Capacity and saturation.** Review the public-beta operations, production RocksDB, saturation, latency, and error dashboards. Preserve the warning and critical filesystem reserves from `group_vars/public_beta.yml`. If pressure persists, stop admission, retain the measurement window, and either reduce qualification load or make a reviewed VM sizing change. Sizing a single VM does not create HA.
 
-**Backup and restore.** Backups run online on a five-minute schedule when `mako_backup_enabled` is true; upgrades and rollbacks never create checkpoints and restore the schedule they paused. Retained artifacts remain available for verification and recovery. A failed or stale backup raises an alert and is not an admission or release-gate condition; treat it as data at risk and fix it. Restore only to a new empty offline path with service-owned credentials; verify signature, digests, format, tenant inventory, and acknowledged high water; promotion requires explicit confirmation. Never overwrite the only live path or substitute a VM snapshot for a Mako checkpoint.
+**Backup and restore.** Backup timers remain disabled on the test preview, and upgrades and rollbacks never create checkpoints or restart backup schedules. Retained artifacts remain available for verification and recovery. A failed or stale backup raises an alert and is not an admission or release-gate condition; treat it as data at risk and fix it. Restore only to a new empty offline path with service-owned credentials; verify signature, digests, format, tenant inventory, and acknowledged high water; promotion requires explicit confirmation. Never overwrite the only live path or substitute a VM snapshot for a Mako checkpoint.
 
 **Service or dependency failure.** Keep ingress off. Inspect the unit journal and request correlations. Restart only the failed system or rootless-user unit. Do not clear a RocksDB lock by deleting files. If readiness does not recover within the objective, use release rollback or restore to an empty offline target.
 
@@ -1447,12 +1423,12 @@ The machine-readable source is [`release-gates.json`](release-gates.json), valid
 | Stage | Decision | Reason |
 | --- | --- | --- |
 | Internal | Pass for the recorded qualification host | Durability, recovery, security, capacity, component latency, and zero incremental cash spend on the existing host meet the internal thresholds |
-| Single-region beta | **Blocked** | Decided by the hosted benchmark alone. Trusted HTTPS, security, and recovery/rollback drills pass, but no gated latency path yet has the 100 steady-state samples it needs, and no run has spanned online backups |
+| Single-region beta | **Blocked** | Decided by the hosted benchmark alone. Trusted HTTPS, security, and recovery/rollback drills pass, but no gated latency path yet has the 100 steady-state samples it needs |
 | Multi-region | Unsupported | One local database has one owner and no cross-region durability or automatic failover |
 
 **Internal gate.** Zero acknowledged-write loss and integrity failure, at least 25 complete storage-soak cycles, all five security qualification families, a verified backup no older than 15 minutes, backup recovery-point exposure no greater than 15 minutes, same-volume recovery within 5 minutes, replacement restore within 30 minutes, and free capacity above the 2 GiB warning reserve. The retained observations pass: 25 cycles, 2 375 storage and document executions, no loss or integrity failures, 50-second backup age, zero checkpoint high-water exposure, 1.43-second same-volume recovery, 1.72-second replacement restore, and 1.706 TB free; all 11 component performance paths pass their checked budgets; the real pinned edge-runtime image and the auth, policy, RxDB, and tenant-boundary suites pass. The cost observation is deliberately narrow — already-owned host capacity, zero incremental cash spend — and cannot satisfy a beta gate.
 
-**Single-region beta gate.** Decided by the hosted benchmark on the exact deployed release (`npm run test:public-beta-hosted`, `scripts/run-public-beta-hosted-benchmark.js`), with the one-time trusted-HTTPS, route-allowlist, security, and recovery-drill qualifications still valid. The benchmark must show end-to-end p95 within 200 ms for auth, 250 ms for RxDB pull/push/live and warm functions, and 1.5 s for a cold function, each from at least 100 steady-state samples; at least 30 % capacity headroom at the qualified traffic target with no failed requests at target and headroom concurrency; zero acknowledged-write loss; and zero integrity failures. It runs with the production backup schedule enabled and must span at least two completed online backups, so a backup that hurts latency fails the gate. A path with fewer samples is unmeasured and blocks. The gate has no calendar measurement window, no backup-age or recovery-point condition, and no cost condition; those may be recorded as informational evidence. The validator computes the result and the exact blocker list from the benchmark evidence and rejects a recorded status that disagrees.
+**Single-region beta gate.** Decided by the hosted benchmark on the exact deployed release (`npm run test:public-beta-hosted`, `scripts/run-public-beta-hosted-benchmark.js`), with the one-time trusted-HTTPS, route-allowlist, security, and recovery-drill qualifications still valid. The benchmark must show end-to-end p95 within 200 ms for auth, 250 ms for RxDB pull/push/live and warm functions, and 1.5 s for a cold function, each from at least 100 steady-state samples; at least 30 % capacity headroom at the qualified traffic target with no failed requests at target and headroom concurrency; zero acknowledged-write loss; and zero integrity failures. A path with fewer samples is unmeasured and blocks. The gate has no calendar measurement window, no backup-age or recovery-point condition, and no cost condition; those may be recorded as informational evidence. The validator computes the result and the exact blocker list from the benchmark evidence and rejects a recorded status that disagrees.
 
 **Multi-region gate.** Unsupported regardless of stateless edge routing. Before it can be evaluated, a separate OpenSpec change must provide and qualify a replicated durability design. The eventual gate requires zero acknowledged loss and integrity failures, region-loss RPO within 15 minutes, recovery within 30 minutes, cross-region p95 within 500 ms, fixed infrastructure ≤ USD 7 500/month, and replication cost ≤ USD 100 per million operations — ceilings for a future design, not claims about current capability.
 

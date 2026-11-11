@@ -20,7 +20,6 @@ const blockers = [
   "provide authenticated SMTP relay credentials and prove certificate-expiry alert delivery",
   "auth sign-in p95 latency exceeds its 200 ms single-region beta budget: 631 ms over 100 steady-state samples",
   "RxDB push batch p95 latency is unmeasured: 4 of 100 required steady-state samples",
-  "hosted benchmark latency is unmeasured under online backups: 0 of 2 required completed online backups during the run",
 ];
 const acceptedAt = "2026-08-09T08:00:00.000Z";
 const safeguards = {

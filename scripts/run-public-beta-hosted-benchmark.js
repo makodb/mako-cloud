@@ -23,9 +23,7 @@ import {
 //
 // The gated latencies come from a steady-state phase: sequential rounds in which every gated
 // path is sampled once, repeated until each path has --samples samples (default: the gate's
-// minimumSteadyStateSamples, 100) and the data-plane backup schedule has completed the gate's
-// minimumOnlineBackupsDuringRun (2) online backups inside the phase, or until the time bound.
-// The run refuses to start unless the backup schedule is enabled. Recovery timings are recorded
+// minimumSteadyStateSamples, 100), or until the time bound. Recovery timings are recorded
 // separately and are not gated.
 const origin = "https://cloud-test.makodb.com";
 const options = parseOptions(process.argv.slice(2));
@@ -53,16 +51,9 @@ const steadyStateSamples = integerOption(
   100_000,
 );
 const maximumSteadyStateMinutes = integerOption("maximumSteadyStateMinutes", 45, 1, 24 * 60);
-const minimumOnlineBackups = gateThresholds.minimumOnlineBackupsDuringRun;
-assert(
-  Number.isSafeInteger(minimumOnlineBackups) && minimumOnlineBackups >= 1,
-  "the beta gate does not define minimumOnlineBackupsDuringRun",
-);
 // The edge runtime evicts an idle function before this, so the next invocation is cold.
 const coldIdleMilliseconds = 6_500;
 const pushBatchRows = 8;
-const backupService = "mako-data-plane";
-const backupTimer = "mako-checkpoint-backup@data-plane.timer";
 
 assert(existsSync(statePath), "run the public-beta streaming qualification first");
 if (!reuseFixture) {
@@ -92,9 +83,6 @@ if (!reuseFixture) {
     controlSamples.push(performance.now() - started);
   }
 }
-
-// The benchmark measures the service as it runs in production, which includes online backups.
-assertBackupScheduleEnabled();
 
 const steadyState = Object.fromEntries(GATED_LATENCY_PATHS.map(({ evidence }) => [evidence, []]));
 const rateLimitedResponses = Object.fromEntries(
@@ -191,20 +179,12 @@ while (true) {
 
   rounds += 1;
   if (performance.now() >= steadyStateDeadline) break;
-  if (
-    rounds >= steadyStateSamples &&
-    observeOnlineBackups(steadyStateStartedAt).completions.length >= minimumOnlineBackups
-  ) {
-    break;
-  }
+  if (rounds >= steadyStateSamples) break;
 }
-const onlineBackups = observeOnlineBackups(steadyStateStartedAt);
 const steadyStateCompletedAt = hostSeconds();
-assertBackupScheduleEnabled();
 console.log(
   JSON.stringify({
     steadyStateRounds: rounds,
-    onlineBackupsCompleted: onlineBackups.completions.length,
     rateLimitedResponses,
   }),
 );
@@ -290,14 +270,6 @@ const benchmarkEvidence = {
     pushBatchRows,
     rateLimitedResponses,
     initialCatchUpPullMilliseconds: initialCatchUp.latency,
-  },
-  onlineBackups: {
-    service: backupService,
-    timer: backupTimer,
-    scheduleEnabled: true,
-    completedDuringRun: onlineBackups.completions.length,
-    completions: onlineBackups.completions.map(isoFromSeconds),
-    failuresDuringRun: onlineBackups.failures,
   },
   // Recovery belongs to the recovery drill, not the latency gate.
   recovery: {
@@ -404,16 +376,6 @@ async function signInAttempt() {
   return response;
 }
 
-function assertBackupScheduleEnabled() {
-  const [enabled, active] = ssh(
-    `systemctl is-enabled ${backupTimer} || true; systemctl is-active ${backupTimer} || true`,
-  ).split("\n");
-  assert(
-    enabled === "enabled" && active === "active",
-    `the hosted benchmark requires ${backupTimer} to be enabled and active`,
-  );
-}
-
 function hostSeconds() {
   const seconds = Number(ssh("date +%s.%N"));
   assert(Number.isFinite(seconds) && seconds > 0, "the beta host clock is unreadable");
@@ -422,46 +384,6 @@ function hostSeconds() {
 
 function isoFromSeconds(seconds) {
   return new Date(seconds * 1_000).toISOString();
-}
-
-// Reads the data-plane backup history from the beta host's Prometheus. The last-success gauge
-// holds whole seconds, so a completion counts only when its second is not before the start;
-// every value Prometheus holds was written before this query, so none is after it.
-function observeOnlineBackups(startedAtSeconds) {
-  const observed = JSON.parse(
-    ssh(`python3 - <<'PY'
-import json
-import time
-import urllib.parse
-import urllib.request
-
-started = ${startedAtSeconds.toFixed(3)}
-now = time.time()
-window = int(now - started) + 120
-
-def samples(metric):
-  query = metric + '{service="${backupService}"}[' + str(window) + 's]'
-  parameters = urllib.parse.urlencode({"query": query, "time": "%.3f" % now})
-  with urllib.request.urlopen("http://127.0.0.1:9090/api/v1/query?" + parameters, timeout=5) as response:
-    payload = json.load(response)
-  if payload.get("status") != "success":
-    raise SystemExit("Prometheus query failed: " + query)
-  return [float(value) for series in payload["data"]["result"] for _, value in series["values"]]
-
-completions = sorted({int(value) for value in samples("mako_storage_backup_last_success_unixtime_seconds") if value >= started})
-failures = samples("mako_storage_backup_failures_total")
-print(json.dumps({
-  "completions": completions,
-  "failures": (max(failures) - min(failures)) if failures else None,
-}))
-PY`),
-  );
-  assert(
-    Array.isArray(observed.completions) &&
-      observed.completions.every((value) => Number.isSafeInteger(value)),
-    "online backup observation is invalid",
-  );
-  return observed;
 }
 
 function integerOption(name, fallback, minimum, maximum) {

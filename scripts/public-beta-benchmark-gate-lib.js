@@ -1,13 +1,11 @@
 // Decides the single-region beta gate from the hosted benchmark evidence.
 //
 // The gate is the benchmark: every gated p95 within its budget, computed from enough
-// steady-state samples, over a run that spans completed online backups, with the capacity,
-// failed-request, loss and integrity thresholds met. A calendar window, backup age,
+// steady-state samples, with the capacity, failed-request, loss and integrity thresholds met. A calendar window, backup age,
 // recovery-point exposure and cost are not inputs. The validator and the preview approval
 // both derive the blocker set from here, so the recorded gate cannot drift from its evidence.
 
 export const MINIMUM_STEADY_STATE_SAMPLES = 100;
-export const MINIMUM_ONLINE_BACKUPS_DURING_RUN = 2;
 
 // Gate path, the benchmark evidence key under `latencyMilliseconds`, and the blocker label.
 export const GATED_LATENCY_PATHS = [
@@ -23,14 +21,9 @@ export function evaluateHostedBenchmark(benchmark, thresholds) {
   assert(benchmark && typeof benchmark === "object", "hosted benchmark evidence is required");
   assert([1, 2].includes(benchmark.schemaVersion), "hosted benchmark schemaVersion is invalid");
   const minimumSamples = thresholds?.minimumSteadyStateSamples;
-  const minimumBackups = thresholds?.minimumOnlineBackupsDuringRun;
   assert(
     Number.isSafeInteger(minimumSamples) && minimumSamples >= MINIMUM_STEADY_STATE_SAMPLES,
     `beta minimumSteadyStateSamples must be at least ${MINIMUM_STEADY_STATE_SAMPLES}`,
-  );
-  assert(
-    Number.isSafeInteger(minimumBackups) && minimumBackups >= MINIMUM_ONLINE_BACKUPS_DURING_RUN,
-    `beta minimumOnlineBackupsDuringRun must be at least ${MINIMUM_ONLINE_BACKUPS_DURING_RUN}`,
   );
 
   const blockers = [];
@@ -55,19 +48,6 @@ export function evaluateHostedBenchmark(benchmark, thresholds) {
           `${milliseconds(measured.p95)} ms over ${measured.samples} steady-state samples`,
       );
     }
-  }
-
-  const onlineBackupsCompleted = onlineBackupsDuringRun(benchmark);
-  if (onlineBackupsCompleted === null) {
-    blockers.push(
-      "hosted benchmark latency is unmeasured under online backups: the run recorded no online " +
-        `backup activity and needs ${minimumBackups} completed online backups`,
-    );
-  } else if (onlineBackupsCompleted < minimumBackups) {
-    blockers.push(
-      "hosted benchmark latency is unmeasured under online backups: " +
-        `${onlineBackupsCompleted} of ${minimumBackups} required completed online backups during the run`,
-    );
   }
 
   // These are not latency blockers and match no waivable pattern, so a run that records any of
@@ -102,7 +82,6 @@ export function evaluateHostedBenchmark(benchmark, thresholds) {
     status: blockers.length === 0 ? "passed" : "blocked",
     blockers,
     latency,
-    onlineBackupsCompleted,
   };
 }
 
@@ -132,36 +111,6 @@ function latencyMeasurement(benchmark, key) {
     `hosted benchmark ${key} p95 is invalid`,
   );
   return { samples: value.samples, p95: value.p95 };
-}
-
-// Completed online backups of the data plane inside the steady-state sampling window, or null
-// when the run recorded no backup activity at all.
-function onlineBackupsDuringRun(benchmark) {
-  const backups = benchmark.onlineBackups;
-  if (backups === undefined || backups === null) return null;
-  assert(backups.scheduleEnabled === true, "hosted benchmark ran without the backup schedule");
-  const completions = backups.completions;
-  assert(
-    Array.isArray(completions) &&
-      completions.every((value) => typeof value === "string") &&
-      new Set(completions).size === completions.length &&
-      backups.completedDuringRun === completions.length,
-    "hosted benchmark online backup completions are inconsistent",
-  );
-  const startedAt = Date.parse(benchmark.steadyState?.startedAt);
-  const completedAt = Date.parse(benchmark.steadyState?.completedAt);
-  assert(
-    Number.isFinite(startedAt) && Number.isFinite(completedAt) && startedAt <= completedAt,
-    "hosted benchmark steady-state window is invalid",
-  );
-  for (const completion of completions) {
-    const time = Date.parse(completion);
-    assert(
-      Number.isFinite(time) && time >= startedAt && time <= completedAt,
-      "an online backup completion lies outside the steady-state window",
-    );
-  }
-  return completions.length;
 }
 
 function milliseconds(value) {

@@ -14,7 +14,7 @@ const beta = gates.stages.find((stage) => stage.id === "single-region-beta");
 const thresholds = beta.thresholds;
 
 // A schema 2 run that meets every threshold: 100 steady-state samples per gated path, each p95
-// inside its budget, two online backups completed inside the steady-state window.
+// inside its budget.
 function passingBenchmark() {
   const latencyMilliseconds = {};
   for (const { path, evidence } of GATED_LATENCY_PATHS) {
@@ -26,11 +26,6 @@ function passingBenchmark() {
     target: { capacityHeadroomAtTargetLoadPercent: 50 },
     latencyMilliseconds,
     steadyState: { startedAt: "2026-11-10T10:00:00.000Z", completedAt: "2026-11-10T10:14:00.000Z" },
-    onlineBackups: {
-      scheduleEnabled: true,
-      completedDuringRun: 2,
-      completions: ["2026-11-10T10:04:31.000Z", "2026-11-10T10:10:02.000Z"],
-    },
     workload: { acknowledgedWriteLoss: 0, integrityFailures: 0 },
     concurrentLoad: { target: { failedRequests: 0 }, requiredHeadroom: { failedRequests: 0 } },
   };
@@ -40,7 +35,6 @@ test("the benchmark meets every threshold and the gate passes", () => {
   const gate = evaluateHostedBenchmark(passingBenchmark(), thresholds);
   assert.equal(gate.status, "passed");
   assert.deepEqual(gate.blockers, []);
-  assert.equal(gate.onlineBackupsCompleted, 2);
   assert.equal(gate.latency.functionCold.samples, 100);
 });
 
@@ -104,35 +98,6 @@ test("a path with fewer than 100 steady-state samples is unmeasured and blocks",
   assert.throws(() => evaluateHostedBenchmark(scalar, thresholds), /not a sample summary/);
 });
 
-test("the run must span two completed online backups inside its steady-state window", () => {
-  const one = passingBenchmark();
-  one.onlineBackups.completions.pop();
-  one.onlineBackups.completedDuringRun = 1;
-  assert.deepEqual(evaluateHostedBenchmark(one, thresholds).blockers, [
-    "hosted benchmark latency is unmeasured under online backups: 1 of 2 required completed " +
-      "online backups during the run",
-  ]);
-
-  const none = passingBenchmark();
-  delete none.onlineBackups;
-  assert.match(
-    evaluateHostedBenchmark(none, thresholds).blockers[0],
-    /^hosted benchmark latency is unmeasured under online backups: the run recorded no online/,
-  );
-
-  const outside = passingBenchmark();
-  outside.onlineBackups.completions[0] = "2026-11-10T09:59:59.000Z";
-  assert.throws(() => evaluateHostedBenchmark(outside, thresholds), /outside the steady-state/);
-
-  const disabled = passingBenchmark();
-  disabled.onlineBackups.scheduleEnabled = false;
-  assert.throws(() => evaluateHostedBenchmark(disabled, thresholds), /without the backup schedule/);
-
-  const miscounted = passingBenchmark();
-  miscounted.onlineBackups.completedDuringRun = 3;
-  assert.throws(() => evaluateHostedBenchmark(miscounted, thresholds), /inconsistent/);
-});
-
 test("informational window, backup-age and cost observations do not affect the gate", () => {
   for (const field of [
     "maximumBackupAgeSeconds",
@@ -154,11 +119,8 @@ test("informational window, backup-age and cost observations do not affect the g
   assert.equal(evaluateHostedBenchmark(informational, thresholds).status, "passed");
 });
 
-test("the gate thresholds cannot be lowered below the specified sample and backup floors", () => {
-  for (const [field, value] of [
-    ["minimumSteadyStateSamples", 99],
-    ["minimumOnlineBackupsDuringRun", 1],
-  ]) {
+test("the gate threshold cannot be lowered below the specified sample floor", () => {
+  for (const [field, value] of [["minimumSteadyStateSamples", 99]]) {
     assert.throws(
       () => evaluateHostedBenchmark(passingBenchmark(), { ...thresholds, [field]: value }),
       new RegExp(field),
@@ -176,8 +138,7 @@ test("the recorded beta gate is the result computed from its hosted benchmark", 
 });
 
 test("latency blockers are waivable and correctness blockers are not, in both checkers", () => {
-  // One path over budget, one with a single schema 1 observation, the rest never measured, and
-  // no online backup activity.
+  // One path over budget, one with a single schema 1 observation, the rest never measured.
   const latency = evaluateHostedBenchmark(
     {
       ...passingBenchmark(),
@@ -186,7 +147,6 @@ test("latency blockers are waivable and correctness blockers are not, in both ch
         authSignIn: { samples: 100, p50: 400, p95: 900, maximum: 950 },
         rxdbPullBeforeRecovery: 2000,
       },
-      onlineBackups: undefined,
     },
     thresholds,
   ).blockers;
@@ -199,7 +159,7 @@ test("latency blockers are waivable and correctness blockers are not, in both ch
     "hosted benchmark capacity headroom at target load is 10 percent, below the required 30 percent",
     "complete the 30-day resource, capacity, availability, and cost window with provider or facility evidence",
   ];
-  assert.equal(latency.length, GATED_LATENCY_PATHS.length + 1);
+  assert.equal(latency.length, GATED_LATENCY_PATHS.length);
   assert.deepEqual(normalizeBlockers(latency), [...latency].sort());
   for (const blocker of correctness) {
     assert.throws(() => normalizeBlockers([blocker]), /non-waivable blocker/);

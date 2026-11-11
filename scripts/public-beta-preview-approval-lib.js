@@ -9,9 +9,8 @@ export const PREVIEW_PERSISTENCE = "until-manually-paused";
 
 const digestPattern = /^[a-f0-9]{64}$/;
 // Only benchmark-latency and alert-delivery blockers may be accepted. A latency path that
-// exceeds its budget, or that the benchmark has not measured with enough steady-state samples
-// under online backups, is a latency blocker; capacity, failed requests, loss and integrity are
-// not. Keep this list identical to WAIVABLE_BLOCKERS in mako-public-preview-admission.
+// exceeds its budget, or that the benchmark has not measured with enough steady-state samples,
+// is a latency blocker; capacity, failed requests, loss and integrity are not. Keep this list identical to WAIVABLE_BLOCKERS in mako-public-preview-admission.
 const waivableBlockerPatterns = [
   /authenticated SMTP relay|certificate-expiry alert delivery/i,
   /latency exceed/i,

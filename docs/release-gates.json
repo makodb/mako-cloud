@@ -76,8 +76,7 @@
           "functionWarm": 250,
           "functionCold": 1500
         },
-        "minimumSteadyStateSamples": 100,
-        "minimumOnlineBackupsDuringRun": 2
+        "minimumSteadyStateSamples": 100
       },
       "observed": {
         "deployment": {
@@ -140,7 +139,6 @@
           "functionWarm": 1,
           "functionCold": 1
         },
-        "onlineBackupsCompletedDuringRun": null,
         "capacityHeadroomPercent": 50
       },
       "blockers": [
@@ -149,8 +147,7 @@
         "RxDB push batch p95 latency is unmeasured: 4 of 100 required steady-state samples, provisional p95 642 ms against a 250 ms budget",
         "RxDB live first-event delivery p95 latency is unmeasured: 1 of 100 required steady-state samples, provisional p95 46 ms against a 250 ms budget",
         "warm function p95 latency is unmeasured: 1 of 100 required steady-state samples, provisional p95 315 ms against a 250 ms budget",
-        "cold function p95 latency is unmeasured: 1 of 100 required steady-state samples, provisional p95 400 ms against a 1500 ms budget",
-        "hosted benchmark latency is unmeasured under online backups: the run recorded no online backup activity and needs 2 completed online backups"
+        "cold function p95 latency is unmeasured: 1 of 100 required steady-state samples, provisional p95 400 ms against a 1500 ms budget"
       ]
     },
     {
