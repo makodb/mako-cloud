@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "kind": "approved-public-beta",
+  "operatorIdentity": "msmummy@gmail.com",
+  "planHash": "d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073",
+  "releaseDigest": "b42b2bd44419280a25bc9e79fd8d6665f524cc9626b0957b45516ccce0bac8e3",
+  "approvedAt": "2026-11-11T19:47:09.421059Z",
+  "typedConfirmation": "APPROVE_PUBLIC_BETA:b42b2bd44419280a25bc9e79fd8d6665f524cc9626b0957b45516ccce0bac8e3",
+  "gateStatus": "passed",
+  "benchmarkEvidence": "docs/evidence/public-beta-hosted-benchmark.json",
+  "benchmarkRecordedAt": "2026-11-11T05:35:14.038Z",
+  "streamingEvidence": "docs/evidence/public-beta-streaming-qualification.json",
+  "hostedSecurityEvidence": "docs/evidence/public-beta-hosted-qualification.json",
+  "admission": {
+    "mode": "approved_beta",
+    "previewGuard": "disabled",
+    "caddyConfiguration": "/etc/caddy/mako-admission/Caddyfile.approved_beta"
+  },
+  "scope": "Qualified single-region beta admission for this exact release. A later release keeps admission until its own hosted benchmark decides its gate."
+}

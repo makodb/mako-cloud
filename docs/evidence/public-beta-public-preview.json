@@ -1,22 +1,15 @@
 {
   "schemaVersion": 1,
-  "recordedAt": "2026-11-11T04:57:10Z",
+  "recordedAt": "2026-11-11T19:47:09.421059Z",
   "label": "risk-accepted-public-preview",
-  "status": "active",
-  "admissionMode": "risk_accepted_preview",
-  "qualifiedBetaStatus": "blocked",
+  "status": "superseded",
+  "admissionMode": "approved_beta",
+  "qualifiedBetaStatus": "passed",
   "planHash": "d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073",
-  "releaseDigest": "b58934d88674855ac714c9a117a0e08a866cb9aa28af6b31a81b9e91dd1075eb",
-  "acceptedBlockers": [
-    "RxDB live first-event delivery p95 latency is unmeasured: 1 of 100 required steady-state samples, provisional p95 46 ms against a 250 ms budget",
-    "RxDB pull p95 latency is unmeasured: 1 of 100 required steady-state samples, provisional p95 2859 ms against a 250 ms budget",
-    "RxDB push batch p95 latency is unmeasured: 4 of 100 required steady-state samples, provisional p95 642 ms against a 250 ms budget",
-    "auth sign-in p95 latency is unmeasured: 10 of 100 required steady-state samples, provisional p95 631 ms against a 200 ms budget",
-    "cold function p95 latency is unmeasured: 1 of 100 required steady-state samples, provisional p95 400 ms against a 1500 ms budget",
-    "warm function p95 latency is unmeasured: 1 of 100 required steady-state samples, provisional p95 315 ms against a 250 ms budget"
-  ],
-  "blockerDigest": "dc2a8480031c6f6d9111428102ccbefba59a68281d89c29f24bb876711e0dabc",
-  "approvalEvidence": "docs/evidence/public-beta-public-preview-approval.json",
+  "releaseDigest": "b42b2bd44419280a25bc9e79fd8d6665f524cc9626b0957b45516ccce0bac8e3",
+  "acceptedBlockers": [],
+  "blockerDigest": null,
+  "approvalEvidence": null,
   "guardEvidence": "docs/evidence/public-beta-public-preview-guard.json",
-  "note": "The exact-release-bound risk acceptance has no calendar expiry and remains active until an operator pauses it or the recurring guard detects binding or non-waivable safeguard drift; the separate single-region beta gate remains blocked. Re-accepted on 2026-09-19 after the guard fell back to pre_gate and invalidated the 2026-09-07 acceptance when the data plane failed closed on a full data disk (leaked checkpoint staging copies); same release, plan, and blocker set. Re-accepted on 2026-11-11 after the guard fell back to pre_gate on 2026-10-26 when data-plane readiness failed on port 8080; same release, plan, and blocker set. Re-issued on 2026-11-11 for the benchmark-only beta gate (online-backups-and-benchmark-gate) and installed at 04:40Z, after a failed manual backup test set the backup verification metric to 0 and the previous guard closed admission for 63 seconds. Re-issued again the same day when online backups were withdrawn: the accepted blockers are the six unmeasured benchmark latency paths, and the online-backup blocker no longer exists."
+  "note": "The exact-release-bound risk acceptance has no calendar expiry and remains active until an operator pauses it or the recurring guard detects binding or non-waivable safeguard drift; the separate single-region beta gate remains blocked. Re-accepted on 2026-09-19 after the guard fell back to pre_gate and invalidated the 2026-09-07 acceptance when the data plane failed closed on a full data disk (leaked checkpoint staging copies); same release, plan, and blocker set. Re-accepted on 2026-11-11 after the guard fell back to pre_gate on 2026-10-26 when data-plane readiness failed on port 8080; same release, plan, and blocker set. Re-issued on 2026-11-11 for the benchmark-only beta gate (online-backups-and-benchmark-gate) and installed at 04:40Z, after a failed manual backup test set the backup verification metric to 0 and the previous guard closed admission for 63 seconds. Re-issued again the same day when online backups were withdrawn: the accepted blockers are the six unmeasured benchmark latency paths, and the online-backup blocker no longer exists. Superseded on 2026-11-11 by approved beta admission: release b42b2bd4 passed the benchmark-only single-region beta gate, so no blocker remains to accept and the preview guard is disabled."
 }

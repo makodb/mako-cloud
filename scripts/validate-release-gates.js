@@ -20,6 +20,9 @@ const betaRollback = await readJson(gates.sources?.publicBetaRollback);
 const betaStreaming = await readJson(gates.sources?.publicBetaStreamingQualification);
 const betaBenchmark = await readJson(gates.sources?.publicBetaHostedBenchmark);
 const betaPreview = await readJson(gates.sources?.publicBetaPreviewAdmission);
+const betaApproval = gates.sources?.publicBetaApproval
+  ? await readJson(gates.sources.publicBetaApproval)
+  : null;
 const betaMail = await readJson(gates.sources?.publicBetaMailQualification);
 const betaDeveloperRegistration = await readJson(gates.sources?.publicBetaDeveloperRegistration);
 
@@ -158,9 +161,14 @@ assert(
   betaDeployment.release?.digest === betaManifest.releaseDigest,
   "deployment evidence is stale",
 );
+// Qualified beta admission is the one state in which public admission is
+// unrestricted: the gate passed and an operator approved this exact release.
+const betaAdmitted = betaObserved.httpsRoute?.publicAdmissionMode === "approved_beta";
 assert(
-  betaDeployment.networkAdmission?.unrestrictedPublicAdmissionApproved === false,
-  "deployment claims unrestricted approval",
+  betaDeployment.networkAdmission?.unrestrictedPublicAdmissionApproved === betaAdmitted,
+  betaAdmitted
+    ? "approved beta deployment evidence omits its approval"
+    : "deployment claims unrestricted approval",
 );
 assert(
   betaObserved.httpsRoute?.origin === "https://cloud-test.makodb.com",
@@ -171,9 +179,39 @@ assert(
   "trusted certificate qualification is missing",
 );
 assert(
-  betaObserved.httpsRoute?.publicAdmissionEnabled === false,
-  "risk-accepted preview must not be recorded as qualified-beta admission",
+  betaObserved.httpsRoute?.publicAdmissionEnabled === betaAdmitted,
+  "only approved beta admission is recorded as qualified-beta admission",
 );
+if (betaAdmitted) {
+  assert(beta.status === "passed", "beta admission requires a passed beta gate");
+  assert(betaApproval !== null, "approved beta admission omits its approval evidence");
+  assert(
+    betaApproval.schemaVersion === 1 && betaApproval.kind === "approved-public-beta",
+    "beta approval evidence is invalid",
+  );
+  assert(betaApproval.planHash === betaPlan.planHash, "beta approval uses another plan");
+  assert(
+    betaApproval.releaseDigest === betaManifest.releaseDigest &&
+      betaApproval.releaseDigest === betaBenchmark.releaseDigest,
+    "beta approval names another release than the passing benchmark",
+  );
+  assert(
+    betaApproval.typedConfirmation === `APPROVE_PUBLIC_BETA:${betaManifest.releaseDigest}`,
+    "beta approval confirmation is invalid",
+  );
+  assert(
+    typeof betaApproval.operatorIdentity === "string" &&
+      betaApproval.operatorIdentity.length >= 3 &&
+      Number.isFinite(Date.parse(betaApproval.approvedAt)),
+    "beta approval does not identify its operator and time",
+  );
+  assert(
+    betaApproval.benchmarkEvidence === gates.sources.publicBetaHostedBenchmark,
+    "beta approval does not cite the hosted benchmark",
+  );
+} else {
+  assert(betaApproval === null, "a beta approval is recorded without beta admission");
+}
 assert(betaPreview.label === "risk-accepted-public-preview", "preview label is invalid");
 assert(
   betaPreview.qualifiedBetaStatus === benchmarkGate.status,
@@ -222,6 +260,10 @@ if (betaPreview.status === "active") {
     previewApproval.persistence === "until-manually-paused" && previewApproval.expiresAt === null,
     "preview approval is not persistent until manually paused",
   );
+} else if (betaPreview.status === "superseded") {
+  assert(betaAdmitted, "preview is superseded only by approved beta admission");
+  assert(betaPreview.admissionMode === "approved_beta", "superseded preview mode is wrong");
+  assert(betaPreview.approvalEvidence === null, "superseded preview retains an approval");
 } else {
   assert(betaPreview.status === "not-enabled", "preview status is invalid");
   assert(betaPreview.admissionMode === "pre_gate", "inactive preview is not source restricted");
