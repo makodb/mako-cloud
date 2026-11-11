@@ -711,14 +711,21 @@ function validateEvidence({
     "deployed release differs from manifest",
   );
   assert(
-    ["disabled", "pre_gate", "restricted-pre-gate", "risk_accepted_preview"].includes(
-      deploymentEvidence.networkAdmission?.mode,
-    ),
+    [
+      "disabled",
+      "pre_gate",
+      "restricted-pre-gate",
+      "risk_accepted_preview",
+      "approved_beta",
+    ].includes(deploymentEvidence.networkAdmission?.mode),
     "deployment evidence has an unsupported admission mode",
   );
+  // Only an approved beta admits unrestricted public traffic, and only for the
+  // exact release its passing gate measured (see validate-release-gates.js).
   assert(
-    deploymentEvidence.networkAdmission?.unrestrictedPublicAdmissionApproved === false,
-    "deployment evidence claims public approval",
+    deploymentEvidence.networkAdmission?.unrestrictedPublicAdmissionApproved ===
+      (deploymentEvidence.networkAdmission?.mode === "approved_beta"),
+    "deployment evidence claims public approval outside approved beta admission",
   );
   assert(admissionEvidence.status === "passed", "emergency admission stop has not passed");
   assert(admissionEvidence.proxmoxGate?.active === true, "Proxmox admission stop is inactive");

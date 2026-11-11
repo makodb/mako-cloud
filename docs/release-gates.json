@@ -15,7 +15,8 @@
     "publicBetaHostedBenchmark": "docs/evidence/public-beta-hosted-benchmark.json",
     "publicBetaPreviewAdmission": "docs/evidence/public-beta-public-preview.json",
     "publicBetaMailQualification": "docs/evidence/public-beta-mail-qualification.json",
-    "publicBetaDeveloperRegistration": "docs/evidence/public-beta-developer-registration-qualification.json"
+    "publicBetaDeveloperRegistration": "docs/evidence/public-beta-developer-registration-qualification.json",
+    "publicBetaApproval": "docs/evidence/public-beta-approval.json"
   },
   "stages": [
     {
@@ -58,7 +59,7 @@
     },
     {
       "id": "single-region-beta",
-      "status": "blocked",
+      "status": "passed",
       "scope": "one production region and one stateful owner per RocksDB database",
       "thresholds": {
         "acknowledgedWriteLoss": 0,
@@ -84,8 +85,8 @@
           "address": "130.245.173.11",
           "publicOrigin": "https://cloud-test.makodb.com",
           "planHash": "d8ec0852b37e3f163080fc4e142280800717d190fd36f08710d83b0f26a14073",
-          "releaseDigest": "b58934d88674855ac714c9a117a0e08a866cb9aa28af6b31a81b9e91dd1075eb",
-          "runtimeDigest": "d0915597d19312edabf7498e9ee8682466732e9cab861937228d460d7ef01e60"
+          "releaseDigest": "b42b2bd44419280a25bc9e79fd8d6665f524cc9626b0957b45516ccce0bac8e3",
+          "runtimeDigest": "05988cc02c70af6d7223cf6df7c7f5cce0773d495e986fa5ce63f77298021916"
         },
         "deploymentStorageQualification": {
           "passed": true,
@@ -97,13 +98,13 @@
         "httpsRoute": {
           "origin": "https://cloud-test.makodb.com",
           "trustedCertificateVerified": true,
-          "publicAdmissionEnabled": false,
-          "publicAdmissionMode": "risk_accepted_preview"
+          "publicAdmissionEnabled": true,
+          "publicAdmissionMode": "approved_beta"
         },
         "publicPreview": {
           "label": "risk-accepted-public-preview",
-          "status": "active",
-          "qualifiedBetaStatus": "blocked",
+          "status": "superseded",
+          "qualifiedBetaStatus": "passed",
           "evidence": "docs/evidence/public-beta-public-preview.json"
         },
         "recoveryDrill": {
@@ -124,31 +125,24 @@
           ]
         },
         "endToEndLatency": {
-          "auth": 631.0696949999999,
-          "pull": 2859.4179799999993,
-          "push": 641.9494219999997,
-          "liveDelivery": 45.869212999999945,
-          "functionWarm": 315.4356150000003,
-          "functionCold": 400.42049399999996
+          "auth": 100.44869400002062,
+          "pull": 55.06742799998028,
+          "push": 95.53642799996305,
+          "liveDelivery": 17.16926599999897,
+          "functionWarm": 214.5807829999976,
+          "functionCold": 211.69626300001983
         },
         "latencySamples": {
-          "auth": 10,
-          "pull": 1,
-          "push": 4,
-          "liveDelivery": 1,
-          "functionWarm": 1,
-          "functionCold": 1
+          "auth": 100,
+          "pull": 100,
+          "push": 100,
+          "liveDelivery": 100,
+          "functionWarm": 100,
+          "functionCold": 100
         },
         "capacityHeadroomPercent": 50
       },
-      "blockers": [
-        "auth sign-in p95 latency is unmeasured: 10 of 100 required steady-state samples, provisional p95 631 ms against a 200 ms budget",
-        "RxDB pull p95 latency is unmeasured: 1 of 100 required steady-state samples, provisional p95 2859 ms against a 250 ms budget",
-        "RxDB push batch p95 latency is unmeasured: 4 of 100 required steady-state samples, provisional p95 642 ms against a 250 ms budget",
-        "RxDB live first-event delivery p95 latency is unmeasured: 1 of 100 required steady-state samples, provisional p95 46 ms against a 250 ms budget",
-        "warm function p95 latency is unmeasured: 1 of 100 required steady-state samples, provisional p95 315 ms against a 250 ms budget",
-        "cold function p95 latency is unmeasured: 1 of 100 required steady-state samples, provisional p95 400 ms against a 1500 ms budget"
-      ]
+      "blockers": []
     },
     {
       "id": "multi-region",

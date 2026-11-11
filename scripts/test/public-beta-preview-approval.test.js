@@ -171,6 +171,11 @@ test("preview qualification accepts exactly the blockers the hosted benchmark co
     readFileSync(resolve(root, gates.sources.publicBetaHostedBenchmark), "utf8"),
   );
   const gate = evaluateHostedBenchmark(benchmark, beta.thresholds);
+  if (gate.status === "passed") {
+    // A passed gate has nothing to accept; preview planning must refuse it.
+    assert.throws(() => derivePreviewQualification(root), /blocked beta gate/);
+    return;
+  }
   const qualification = derivePreviewQualification(root);
   assert.deepEqual(qualification.blockers, [...gate.blockers].sort());
   assert.equal(qualification.blockerDigest, computeBlockerDigest(gate.blockers));

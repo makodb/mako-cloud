@@ -12,7 +12,7 @@
 ## 3. Cutover and documentation
 
 - [x] 3.1 With the guard timer stopped, install the new guard, the context with the new blocker digest, and a matching preview approval; verify, activate, and confirm the next guard tick keeps public admission open.
-- [ ] 3.2 Run the hosted benchmark on the deployed release and record the gate result.
+- [x] 3.2 Run the hosted benchmark on the deployed release and record the gate result. Release `b42b2bd4` passed on 2026-11-11 (streaming, hosted benchmark with 100 samples per path, and all eight hosted security suites), and the operator approved beta admission.
 - [x] 3.3 Update the dev-book: the beta gate, the admission and backup runbooks, and the removal of the test-preview suspension exception.
 
 ## 4. Validation
