@@ -57,17 +57,28 @@ const command = path.basename(process.argv[1]);
 const args = process.argv.slice(2);
 fs.appendFileSync(process.env.MAKO_TEST_ROOT + "/calls.jsonl", JSON.stringify({command, args}) + "\\n");
 if (command === "systemctl") {
+  const statePath = process.env.MAKO_TEST_ROOT + "/systemd.json";
+  const state = fs.existsSync(statePath)
+    ? JSON.parse(fs.readFileSync(statePath, "utf8"))
+    : { enabled: JSON.parse(process.env.MAKO_TEST_ENABLED), active: JSON.parse(process.env.MAKO_TEST_ACTIVE) };
+  const units = args.filter(a => !a.startsWith("-")).slice(1);
+  const save = () => fs.writeFileSync(statePath, JSON.stringify(state));
   if (args[0] === "is-enabled") {
-    const state = JSON.parse(process.env.MAKO_TEST_ENABLED)[args.at(-1)] ?? "disabled";
-    process.stdout.write(state + "\\n");
-    process.exit(state === "enabled" ? 0 : 1);
+    const value = state.enabled[args.at(-1)] ?? "disabled";
+    process.stdout.write(value + "\\n");
+    process.exit(value === "enabled" ? 0 : 1);
   }
   if (args[0] === "is-active") {
-    const state = JSON.parse(process.env.MAKO_TEST_ACTIVE)[args.at(-1)] ?? "inactive";
-    process.stdout.write(state + "\\n");
-    process.exit(state === "active" ? 0 : 3);
+    const value = state.active[args.at(-1)] ?? "inactive";
+    process.stdout.write(value + "\\n");
+    process.exit(value === "active" ? 0 : 3);
   }
-  if (["start", "restart", "enable"].includes(args[0]) && args.some(a => a.includes("backup"))) process.exit(90);
+  // A worker or orchestrator a release operation starts is a backup it ran.
+  if (["start", "restart"].includes(args[0]) && args.some(a => a.includes("backup"))) process.exit(90);
+  if (args[0] === "disable") for (const unit of units) { state.enabled[unit] = "disabled"; if (args.includes("--now")) state.active[unit] = "inactive"; }
+  if (args[0] === "enable") for (const unit of units) { state.enabled[unit] = "enabled"; if (args.includes("--now")) state.active[unit] = "active"; }
+  if (args[0] === "stop") for (const unit of units) state.active[unit] = "inactive";
+  save();
 }
 if (command === "install") fs.mkdirSync(args.at(-1), {recursive:true});
 `;
@@ -79,7 +90,16 @@ if (command === "install") fs.mkdirSync(args.at(-1), {recursive:true});
       MAKO_TEST_FAIL_STORAGE: String(failStorage),
       MAKO_TEST_FAIL_READINESS: String(failReadiness),
     };
-    let controller = ["usage", "require_backups_disabled", "record_operation", "switch_release"]
+    let controller = [
+      "usage",
+      "record_backup_schedule",
+      "backup_schedule_json",
+      "pause_backups",
+      "require_backups_paused",
+      "restore_backup_schedule",
+      "record_operation",
+      "switch_release",
+    ]
       .map(definition)
       .join("\n");
     for (const [command, hostPath] of Object.entries({
@@ -147,27 +167,36 @@ ${source.slice(source.indexOf("command_name="))}
   }
 }
 
-function assertNoBackupStarts(calls) {
+function systemctl(calls, verb) {
+  return calls.filter(({ command, args }) => command === "systemctl" && args[0] === verb);
+}
+
+/** A release operation never runs a backup: it never starts a worker or an
+ * orchestrator, and it re-enables only timers that were enabled before. */
+function assertNoBackupRuns(calls, enabledBefore = []) {
   assert.deepEqual(
-    calls.filter(
-      ({ command, args }) =>
-        command === "systemctl" &&
-        ["start", "restart", "enable"].includes(args[0]) &&
-        args.some((arg) => arg.includes("backup")),
-    ),
+    systemctl(calls, "start").filter(({ args }) => args.some((arg) => arg.includes("backup"))),
     [],
+  );
+  assert.deepEqual(
+    systemctl(calls, "enable").flatMap(({ args }) =>
+      args.filter((arg) => !arg.startsWith("-")).slice(1),
+    ),
+    enabledBefore,
   );
 }
 
+function eventIndex(calls, predicate) {
+  return calls.findIndex(predicate);
+}
+
 for (const kind of ["upgrade", "rollback"]) {
-  test(`${kind} with ordinary arguments creates no backup and leaves schedules stopped`, () => {
+  test(`${kind} with ordinary arguments creates no backup and leaves disabled schedules disabled`, () => {
     const { result, calls, operations } = runSwitch(kind);
     assert.equal(result.status, 0, result.stderr);
-    assertNoBackupStarts(calls);
+    assertNoBackupRuns(calls);
     assert.deepEqual(
-      calls
-        .filter(({ command, args }) => command === "systemctl" && args[0] === "start")
-        .flatMap(({ args }) => args.slice(1)),
+      systemctl(calls, "start").flatMap(({ args }) => args.slice(1)),
       services.map((name) => `${name}.service`),
     );
     assert.deepEqual(
@@ -188,30 +217,63 @@ for (const kind of ["upgrade", "rollback"]) {
     assert.equal(operations[0].kind, kind);
     assert.equal(operations[0].checkpointVerified, false);
     assert.equal(operations[0].checkpointSkipped, true);
-    assert.equal(operations[0].checkpointPolicy, "disabled-for-deployments");
+    assert.equal(operations[0].checkpointPolicy, "paused-for-deployments");
+    assert.deepEqual(operations[0].backupScheduleBefore, {
+      [timers[0]]: "disabled",
+      [timers[1]]: "disabled",
+    });
+    assert.deepEqual(operations[0].backupScheduleAfter, operations[0].backupScheduleBefore);
     assert.equal(operations[0].storageFencedBeforeSelection, true);
+  });
+
+  test(`${kind} pauses enabled schedules and a running backup, then restores the schedule once ready`, () => {
+    const enabled = Object.fromEntries(timers.map((timer) => [timer, "enabled"]));
+    const active = Object.fromEntries(backupUnits.map((unit) => [unit, "active"]));
+    const { result, calls, operations } = runSwitch(kind, { enabled, active });
+    assert.equal(result.status, 0, result.stderr);
+    assertNoBackupRuns(calls, timers);
+    const paused = eventIndex(
+      calls,
+      ({ command, args }) => command === "systemctl" && args[0] === "disable",
+    );
+    const stoppedWorker = eventIndex(
+      calls,
+      ({ command, args }) =>
+        command === "systemctl" &&
+        args[0] === "stop" &&
+        args.includes("mako-checkpoint-backup@data-plane.service"),
+    );
+    const stoppedServices = eventIndex(
+      calls,
+      ({ command, args }) =>
+        command === "systemctl" && args[0] === "stop" && args.includes("mako-data-plane.service"),
+    );
+    const ready = eventIndex(
+      calls,
+      ({ command, args }) => command === "event" && args[0] === "readiness",
+    );
+    const restored = eventIndex(
+      calls,
+      ({ command, args }) => command === "systemctl" && args[0] === "enable",
+    );
+    assert.ok(paused >= 0 && paused < stoppedServices, "timers pause before services stop");
+    assert.ok(stoppedWorker >= 0 && stoppedWorker < stoppedServices, "a running backup is stopped");
+    assert.ok(ready >= 0 && ready < restored, "the schedule returns only after readiness");
+    assert.equal(operations.length, 1);
+    assert.deepEqual(operations[0].backupScheduleBefore, {
+      [timers[0]]: "enabled",
+      [timers[1]]: "enabled",
+    });
+    assert.deepEqual(operations[0].backupScheduleAfter, operations[0].backupScheduleBefore);
   });
 }
 
 for (const timer of timers) {
-  for (const state of ["enabled", "unknown"]) {
-    test(`deployment refuses ${state} ${timer}`, () => {
-      const { result, calls, operations } = runSwitch("upgrade", { enabled: { [timer]: state } });
-      assert.notEqual(result.status, 0);
-      assertNoBackupStarts(calls);
-      assert.equal(
-        calls.some(({ command, args }) => command === "release" && args[0] === "select"),
-        false,
-      );
-      assert.deepEqual(operations, []);
-    });
-  }
-}
-for (const unit of backupUnits) {
-  test(`deployment refuses a running backup unit: ${unit}`, () => {
-    const { result, calls, operations } = runSwitch("upgrade", { active: { [unit]: "active" } });
+  test(`deployment refuses unknown backup state for ${timer} before stopping anything`, () => {
+    const { result, calls, operations } = runSwitch("upgrade", { enabled: { [timer]: "masked" } });
     assert.notEqual(result.status, 0);
-    assertNoBackupStarts(calls);
+    assertNoBackupRuns(calls);
+    assert.deepEqual(systemctl(calls, "stop"), []);
     assert.equal(
       calls.some(({ command, args }) => command === "release" && args[0] === "select"),
       false,
@@ -220,11 +282,15 @@ for (const unit of backupUnits) {
   });
 }
 for (const option of ["failStorage", "failReadiness"]) {
-  test(`${option} still prevents a successful deployment without checkpoints`, () => {
-    const { result, calls, operations } = runSwitch("upgrade", { [option]: true });
+  test(`${option} prevents a successful deployment and leaves the schedule paused`, () => {
+    const enabled = Object.fromEntries(timers.map((timer) => [timer, "enabled"]));
+    const { result, calls, operations } = runSwitch("upgrade", { [option]: true, enabled });
     assert.notEqual(result.status, 0);
-    assertNoBackupStarts(calls);
+    assertNoBackupRuns(calls);
     assert.deepEqual(operations, []);
+    if (option === "failReadiness") {
+      assert.match(result.stderr, /schedule before the operation: \{.*"enabled".*\}/u);
+    }
   });
 }
 test("deployment has no per-run checkpoint option", () => {

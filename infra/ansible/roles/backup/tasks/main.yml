@@ -37,6 +37,31 @@
     - mako-control-sqlite-restore@.service
   notify: Reload systemd
 
+- name: Create the data plane's online checkpoint directory
+  ansible.builtin.file:
+    path: "{{ mako_data_mount }}/rocksdb/data-plane/.online-checkpoints"
+    state: directory
+    owner: mako-data-plane
+    group: mako-data-plane
+    mode: "0700"
+
+- name: Install the data-plane online backup drop-in directory
+  ansible.builtin.file:
+    path: /etc/systemd/system/mako-checkpoint-backup@data-plane.service.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Let the data-plane backup worker request an online checkpoint
+  ansible.builtin.copy:
+    src: mako-checkpoint-backup-data-plane-online.conf
+    dest: /etc/systemd/system/mako-checkpoint-backup@data-plane.service.d/online-backup.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload systemd
+
 - name: Reload systemd before controlling checkpoint backup timers
   ansible.builtin.meta: flush_handlers
 
