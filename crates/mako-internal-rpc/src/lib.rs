@@ -22,9 +22,10 @@ pub use client::{
 pub use contract::{
     ApplicationMailAcknowledgeRequest, ApplicationMailAcknowledgeResponse,
     ApplicationMailDrainRequest, ApplicationMailDrainResponse, ApplicationMailIntent,
-    CONTROL_DATA_REQUEST_BYTES, CONTROL_DATA_RESPONSE_BYTES, ChangeFeedEntry, ChangeFeedEvent,
-    DATA_JOB_EXPORT_PAGE_BYTES, DataJobExportPageInput, DataJobExportPageOutput,
-    DataJobImportBatchInput, DataJobImportBatchOutput, DataJobRowError, DeleteBucketObjectInput,
+    BACKUP_WORKER_ENVIRONMENT_ID, BACKUP_WORKER_PROJECT_ID, CONTROL_DATA_REQUEST_BYTES,
+    CONTROL_DATA_RESPONSE_BYTES, ChangeFeedEntry, ChangeFeedEvent, DATA_JOB_EXPORT_PAGE_BYTES,
+    DataJobExportPageInput, DataJobExportPageOutput, DataJobImportBatchInput,
+    DataJobImportBatchOutput, DataJobRowError, DeleteBucketObjectInput,
     FunctionScheduleInvokeRequest, FunctionScheduleInvokeResponse, FunctionSecretResolutionRequest,
     FunctionSecretResolutionResponse, INTERNAL_PROTOCOL_VERSION, IdentityAdminCommand,
     IdentityAdminOperation, IdentityAdminPermission, IdentityVerificationOperation,
@@ -36,7 +37,8 @@ pub use contract::{
     OPERATOR_ADMIN_ENVIRONMENT_ID, OPERATOR_ADMIN_PROJECT_ID, OperatorEntitlementApplyResponse,
     OperatorEntitlementCommand, OperatorEntitlementOperation, OperatorEntitlementPlanResponse,
     ReadChangeFeedInput, ReadChangeFeedOutput, RemoveBucketInput, RemoveIndexInput,
-    ResolvedFunctionSecret, is_allowed_origin, is_exact_origin,
+    ResolvedFunctionSecret, StorageCheckpointRequest, StorageCheckpointResponse, is_allowed_origin,
+    is_exact_origin,
 };
 pub use guard::{
     GuardDecision, InternalReplayGuard, NoopReplayGuard, RocksInternalReplayGuard,

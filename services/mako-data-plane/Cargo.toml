@@ -9,6 +9,10 @@ publish.workspace = true
 name = "mako-data-plane"
 path = "src/main.rs"
 
+[[bin]]
+name = "mako-online-backup"
+path = "src/bin/mako-online-backup.rs"
+
 [dependencies]
 async-trait.workspace = true
 base64.workspace = true

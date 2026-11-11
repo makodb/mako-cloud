@@ -44,9 +44,10 @@ use mako_policy::{
 };
 use mako_service_runtime::{CrossOriginPolicy, HttpRequestHead, ReadinessProbe, ReadinessSnapshot};
 use mako_storage::{
-    Durability, KvAdapter, ProductionRocksDb, ProductionRocksDbConfig, ProductionVolumeIdentity,
-    RocksDbAdapter, RocksDbConfig, ScanDirection, ScanRequest, StorageError, StorageReadiness,
-    TenantKeyspace, WriteBatch, check_storage_readiness,
+    BackupId, Durability, KvAdapter, OnlineCheckpoint, OnlineCheckpointRequest, ProductionRocksDb,
+    ProductionRocksDbConfig, ProductionVolumeIdentity, RocksDbAdapter, RocksDbConfig,
+    ScanDirection, ScanRequest, StorageError, StorageErrorKind, StorageReadiness, TenantKeyspace,
+    WriteBatch, check_storage_readiness, online_checkpoint_root, sweep_online_checkpoints,
 };
 use mako_sync::ReplicationTokenKey;
 
@@ -482,6 +483,8 @@ fn application_tenant(path: &str) -> Option<TenantScope> {
 pub struct DataPlaneGraph {
     storage: StorageOwner,
     adapter: Arc<dyn KvAdapter>,
+    /// How long open commit groups may hold an online backup checkpoint back.
+    checkpoint_barrier_wait: Duration,
     components: DataPlaneComponents,
 }
 
@@ -581,6 +584,14 @@ impl DataPlaneGraph {
             return Err(DataPlaneGraphError::StorageNotReady);
         }
         let adapter: Arc<dyn KvAdapter> = Arc::new(storage.adapter());
+        // A checkpoint an interrupted backup left behind pins table files.
+        // Sweeping is best effort: an unreadable root must not keep the data
+        // plane from serving, and the next checkpoint request reports it.
+        let checkpoint_root = online_checkpoint_root(&config.rocksdb.path);
+        if checkpoint_root.is_dir() {
+            let _ignored = sweep_online_checkpoints(&checkpoint_root);
+        }
+        let checkpoint_barrier_wait = config.rocksdb.checkpoint_barrier_wait;
         let documents = DocumentEngine::new(Arc::clone(&adapter));
         let quotas = Arc::new(GatewayQuotaEngine::new(
             Arc::clone(&adapter),
@@ -673,6 +684,7 @@ impl DataPlaneGraph {
         Ok(Self {
             storage,
             adapter,
+            checkpoint_barrier_wait,
             components: DataPlaneComponents {
                 object_store,
                 object_key_root,
@@ -978,6 +990,27 @@ impl DataPlaneGraph {
         .map_err(Into::into)
     }
 
+    /// Checkpoint the production database while it keeps serving, for the
+    /// backup worker to finish. Only production storage takes online
+    /// checkpoints.
+    pub fn create_online_checkpoint(
+        &self,
+        backup_id: BackupId,
+    ) -> Result<OnlineCheckpoint, StorageError> {
+        let StorageOwner::Production(storage) = &self.storage else {
+            return Err(StorageError::new(
+                StorageErrorKind::Unsupported,
+                "online_checkpoint",
+                false,
+                "online checkpoints need production storage",
+            ));
+        };
+        storage.create_online_checkpoint(&OnlineCheckpointRequest {
+            backup_id,
+            drain_bound: self.checkpoint_barrier_wait,
+        })
+    }
+
     #[must_use]
     pub fn internal_authenticator(&self, caller: InternalCaller) -> InternalRequestAuthenticator {
         InternalRequestAuthenticator::new(self.components.internal_deployment_key.clone(), caller)
@@ -1206,6 +1239,7 @@ impl DataPlaneGraph {
         let Self {
             storage,
             adapter,
+            checkpoint_barrier_wait: _,
             components,
         } = self;
         drop(components);
