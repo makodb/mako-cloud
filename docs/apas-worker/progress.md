@@ -1,6 +1,6 @@
 # APAS worker progress
 
-Last updated 2026-11-21, round 7, on Shuais-MacBook-Air-2.local.
+Last updated 2026-11-21, round 8, on Shuais-MacBook-Air-2.local.
 
 ## The three layers
 
@@ -17,9 +17,11 @@ Last updated 2026-11-21, round 7, on Shuais-MacBook-Air-2.local.
 - Round 5 (spec layer): `sync/rxdb-replication` said the client stops delivery whenever a session "cannot be refreshed", where the User Book keeps the session through a renewal that reached no verdict. The change `keep-session-on-transient-renewal-failure` rewrote "Session renewal and revocation", added the scenario "Renewal cannot reach the service" (RR-20; the next row became RR-21), cited the live-stream test beside RR-19, and was archived. No code changed. Also asked in the report whether a wait-list decision needs a reason (backlog lead 104).
 - Rounds 6 and 7 (spec, then code): `billing/invoicing-and-balance` defined the balance as credits minus finalized charges; the User Book includes the live month, and the team bill reported a different balance on a `?period=` read than on a live read. The change `one-team-balance` defined one balance and was archived after the control plane was fixed: `handle_organization_bill` gathers credits, closed charges and the live month into one `TeamLedger` whose `balance()` both responses use. Two unit tests in `services/mako-control-plane/src/management_http.rs` cover it (traceability row BI-11; BI-11 to BI-17 became BI-12 to BI-18).
 
+- Round 8 (spec layer): `operations/public-beta-environment` named none of the four admission modes and said a failed readiness dependency closes public admission, which the Dev Book denies for `approved_beta`. The change `name-public-admission-modes` added the requirement "Public admission has four explicit modes" (four scenarios), reworded the scenario "A critical readiness dependency fails", and was archived. No code changed: the playbook, the Caddy template and the guard already behave this way.
+
 ## What is left, in the order I would do it
 
-1. The other 9 "spec may contradict the whitepaper" leads in the backlog, one per round, each after reading the lines again. Next candidates: 21 (the console's navigation destinations; a spec-only change, the console already follows the User Book), 122 (a failed readiness dependency and `approved_beta`), then the low-severity ones.
+1. The other 8 "spec may contradict the whitepaper" leads in the backlog, one per round, each after reading the lines again. Next candidates: the low-severity ones (31, 60, 129, 159, 61, 111, 128), then 21 (the console's navigation destinations: the console already follows the User Book, but the step is about a graphical interface, so look at the running console first).
 2. Code that may not meet a spec requirement: 97 leads. The high-severity ones first (backlog ids 0, 1, 18, 19, 36, 37, 44, 45, 49, 50, 54, 59, 69, 70, 72, 90, 91, 92, 93, 134, 150), foundations before what builds on them.
 3. Missing specs: archive `resumable-streaming-exports` (its deltas are not in the main specs yet; it needs traceability rows CL-14 and CL-15 in the same commit or `npm run validate:traceability` fails), then the "whitepaper statement with no spec requirement" and "implemented behaviour with no spec requirement" leads.
 4. Missing code: the open change `observable-data-plane-and-restore-verification` (0 of 26 tasks). Its task list names `infra/local/prometheus.yml` (the file is `prometheus.yaml`) and `validate:alert-metric-producers` (the script is `validate:alert-metrics`); fix those in the change first. Start with task group 1 (receipt probe) and group 3 (data-plane `/metrics`). Backlog lead 169 belongs here: the backup-age alert reads a gauge that is rewritten only when a backup runs, so it cannot fire while the timers are stopped.
