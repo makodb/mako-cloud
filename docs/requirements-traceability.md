@@ -318,6 +318,7 @@ Run `npm run validate:traceability` whenever a scenario or row changes. The vali
 | SF-01 | A developer schedules a nightly function | `crates/mako-control-plane/src/function_schedule.rs::a_due_schedule_is_invoked_with_its_request_and_the_run_recorded` and `crates/mako-smoke/tests/edge_function.rs::deployed_function_is_served_through_the_edge_gateway` (end-to-end) | Automated |
 | SF-02 | A public caller claims to be a schedule | `crates/mako-edge-gateway/src/lib.rs::a_public_caller_cannot_claim_to_be_a_schedule` | Automated |
 | SF-03 | A run overlaps the next due time | `crates/mako-control-plane/src/function_schedule.rs::a_held_lease_skips_the_next_due_time_and_the_schedule_continues` | Automated |
+| SF-04 | Run history is pruned | `crates/mako-control-plane/src/function_schedule.rs::retention_prunes_old_and_excess_runs_but_never_a_queued_one` | Automated |
 
 ## Operations / custom domains
 
