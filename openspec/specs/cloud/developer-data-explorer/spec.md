@@ -3,9 +3,7 @@
 ## Purpose
 
 Provide authorized project members with a safe, bounded, and auditable way to inspect and operate application documents without exposing service credentials or weakening Mako Cloud's document-policy guarantees.
-
 ## Requirements
-
 ### Requirement: Project-scoped explorer authorization
 The system SHALL authorize every Data Explorer request against the current developer identity, team membership, project, environment, collection, requested access mode, and requested operation. Developer-account status, operator status, or membership in another team MUST NOT grant document access.
 
@@ -80,7 +78,7 @@ The explorer SHALL present the active JSON schema, primary-key definition, schem
 - **THEN** the explorer identifies the schema error and the server rejects any submitted invalid mutation without changing document, index, or change-log state
 
 ### Requirement: Conditional document mutations
-Administrative mode SHALL support create, update, and delete using a unique idempotency key and the expected current revision for update or delete. The console MUST display the proposed change before explicit submission. A stale revision MUST not overwrite the current document and MUST return a conflict suitable for explicit reload, comparison, and retry.
+Administrative mode SHALL support create, update, and delete using a unique idempotency key and the expected current revision for update or delete. The console MUST display the proposed change before explicit submission. A stale revision MUST not overwrite the current document and MUST return a conflict suitable for explicit reload, comparison, and retry. A create or an update MUST carry the document content. A delete MAY omit it: the delete is then validated against the stored document's body and the tombstone keeps that body, while a delete that does carry content is validated against what it carries. When the stored document no longer satisfies the active schema, a delete without content SHALL be refused with a diagnostic that says so and names none of the stored document's fields.
 
 #### Scenario: Developer updates the current revision
 - **WHEN** an authorized administrator confirms a schema-valid update against the current revision
@@ -93,6 +91,14 @@ Administrative mode SHALL support create, update, and delete using a unique idem
 #### Scenario: Delete is confirmed
 - **WHEN** an authorized administrator confirms deletion of the current revision
 - **THEN** the system commits a tombstone revision and makes its replication and retention consequences clear
+
+#### Scenario: Delete is requested without document content
+- **WHEN** a delete names an existing document and its current revision and carries no content
+- **THEN** the stored document's body is validated in its place, the delete proceeds as one that carried that body, and a document that does not exist is refused as an invalid request
+
+#### Scenario: Create or update is requested without document content
+- **WHEN** a create or an update carries no content
+- **THEN** the request is refused as invalid and nothing is written
 
 ### Requirement: Policy mutation simulation
 Policy-preview mode SHALL evaluate create, update, or delete drafts against the selected application user's verified policy context without committing storage changes. The result SHALL identify allow or deny, operation, policy version, and safe diagnostics without exposing inaccessible prior document content.
@@ -171,3 +177,4 @@ The explorer SHALL provide searchable collection navigation and a table containi
 #### Scenario: Change collection
 - **WHEN** a developer selects another collection
 - **THEN** the previous grant is revoked and its documents, query results, and editor selection are cleared
+

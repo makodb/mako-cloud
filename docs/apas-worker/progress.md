@@ -1,6 +1,6 @@
 # APAS worker progress
 
-Last updated 2026-11-22, round 23, on Shuais-MacBook-Air-2.local.
+Last updated 2026-11-22, round 24, on Shuais-MacBook-Air-2.local.
 
 ## The three layers
 
@@ -48,6 +48,8 @@ Last updated 2026-11-22, round 23, on Shuais-MacBook-Air-2.local.
 - Round 22 (code layer): fixed lead 93, the requirement "Browser origins allowed to call an environment" of `identity/project-auth`. The data plane answered listed origins only under `auth`, `collections` and `storage`, so a browser on a listed origin could not open the environment-wide live stream (`replication/stream`): its preflight got 405. `application_tenant` in `services/mako-data-plane/src/graph.rs` now names that one route as an application route; nothing else under `replication` is answered cross-origin.
 
 - Round 23 (code layer): fixed lead 37, the requirement "Conditional document mutations" of `cloud/developer-data-explorer` ("delete using a unique idempotency key and the expected current revision"). The data plane refused every explorer delete that carried no document content, and the console and the CLI send none, so a delete from the console could never succeed. `validate_simulation` in `services/mako-data-plane/src/explorer_http.rs` now judges such a delete on the stored document's body, which goes through the same validation; create and update still need content. Looked at the console's Data editor after a committed delete, with the API intercepted to answer as the fixed server does: it shows the deleted document and the audit reference.
+
+- Round 24 (spec layer): the change `state-explorer-delete-content-rule` wrote into "Conditional document mutations" of `cloud/developer-data-explorer` what content a delete, a create and an update carry, added two scenarios, and was archived.
 
 ## What is left, in the order I would do it
 
