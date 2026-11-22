@@ -1,6 +1,6 @@
 # APAS worker progress
 
-Last updated 2026-11-22, round 19, on Shuais-MacBook-Air-2.local.
+Last updated 2026-11-22, round 20, on Shuais-MacBook-Air-2.local.
 
 ## The three layers
 
@@ -41,13 +41,16 @@ Last updated 2026-11-22, round 19, on Shuais-MacBook-Air-2.local.
 
 - Round 19 (code layer): fixed lead 92, the requirement "External sign-in providers" of `identity/auth-providers`. A provider sign-in whose verified email matched a user still pending verification was recorded as verified and given a one-time code that the exchange then refused with 401, every time. The callback in `services/mako-data-plane/src/auth_provider_http.rs` now activates such a user (`IdentityStore::activate_pending_user`, new) before it issues the code, and refuses a disabled or deleted one as before. The smoke test `auth_providers.rs` has the case and fails against the old handler.
 
+- Round 20 (code layer): verified and fixed the lead found in round 19, against "Session and user revocation" and "Application-user administration" of `identity/project-auth`. `complete_email_verification` in `crates/mako-identity/src/store.rs` set the user to active whatever its status, so a user an administrator had disabled or deleted while a verification link was still live (links live 24 hours) became active again by opening it. It now activates a pending user only, leaves an active one active, and answers a disabled or deleted one like an unknown link, writing nothing.
+
 ## What is left, in the order I would do it
 
-1. Code that may not meet a spec requirement: 95 leads. First verify the new lead r19-a (email verification seems to re-activate a disabled user). Verified and ready, in this order: 93 (CORS on the environment-wide stream), 37 (explorer delete), 72 (denied writes are not audited), 69 (hosted functions cannot stream; needs a container engine to prove end to end). Then the high-severity ones not verified yet: 0, 1, 18, 19, 36, 44, 45, 49, 50, 54, 59, 134. Verify each against the current files before fixing it.
-2. Missing specs: archive `resumable-streaming-exports` (its deltas are not in the main specs yet; it needs traceability rows CL-14 and CL-15 in the same commit or `npm run validate:traceability` fails), then the "whitepaper statement with no spec requirement" and "implemented behaviour with no spec requirement" leads.
-3. Missing code: the open change `observable-data-plane-and-restore-verification` (0 of 26 tasks). Its task list names `infra/local/prometheus.yml` (the file is `prometheus.yaml`) and `validate:alert-metric-producers` (the script is `validate:alert-metrics`); fix those in the change first. Start with task group 1 (receipt probe) and group 3 (data-plane `/metrics`). Backlog lead 169 belongs here: the backup-age alert reads a gauge that is rewritten only when a backup runs, so it cannot fire while the timers are stopped.
-4. Housekeeping: archive `rational-sample-app`. `openspec archive` aborts because eight of its ADDED requirements already exist in the main spec in the longer form the archived `rational-monarch-parity` change gave them. The worker may not use `--skip-specs`, so its deltas must first be rewritten to match the main spec.
-5. Extend `scripts/validate-requirements-traceability.js` and the matrix to the eight capabilities it does not index (the Dev Book says the matrix maps every spec scenario).
+1. A small spec step that follows rounds 19 and 20: `identity/project-auth` and `identity/auth-providers` do not say which statuses a proof of address may change. Write the rule the code now follows on every path (email verification, magic link, password link, provider sign-in): a pending user becomes active, an active user stays active, a disabled or deleted user is refused and stays as the administrator left it. Add scenarios with traceability rows citing `store.rs::a_verification_link_does_not_reactivate_a_disabled_or_deleted_user` and `store.rs::a_pending_user_reached_through_a_provider_is_activated`.
+2. Code that may not meet a spec requirement: 95 leads. Verified and ready, in this order: 93 (CORS on the environment-wide stream), 37 (explorer delete), 72 (denied writes are not audited), 69 (hosted functions cannot stream; needs a container engine to prove end to end). Then the high-severity ones not verified yet: 0, 1, 18, 19, 36, 44, 45, 49, 50, 54, 59, 134. Verify each against the current files before fixing it.
+3. Missing specs: archive `resumable-streaming-exports` (its deltas are not in the main specs yet; it needs traceability rows CL-14 and CL-15 in the same commit or `npm run validate:traceability` fails), then the "whitepaper statement with no spec requirement" and "implemented behaviour with no spec requirement" leads.
+4. Missing code: the open change `observable-data-plane-and-restore-verification` (0 of 26 tasks). Its task list names `infra/local/prometheus.yml` (the file is `prometheus.yaml`) and `validate:alert-metric-producers` (the script is `validate:alert-metrics`); fix those in the change first. Start with task group 1 (receipt probe) and group 3 (data-plane `/metrics`). Backlog lead 169 belongs here: the backup-age alert reads a gauge that is rewritten only when a backup runs, so it cannot fire while the timers are stopped.
+5. Housekeeping: archive `rational-sample-app`. `openspec archive` aborts because eight of its ADDED requirements already exist in the main spec in the longer form the archived `rational-monarch-parity` change gave them. The worker may not use `--skip-specs`, so its deltas must first be rewritten to match the main spec.
+6. Extend `scripts/validate-requirements-traceability.js` and the matrix to the eight capabilities it does not index (the Dev Book says the matrix maps every spec scenario).
 
 ## Blocked
 

@@ -10,7 +10,6 @@ Each lead: `[id] area, severity/confidence` title. Where: the first evidence poi
 
 ## Code may not meet a spec requirement (95)
 
-- `[r19-a] identity, high (unverified)` Found in round 19 by reading: `complete_email_verification` in `crates/mako-identity/src/store.rs` sets the user to active without looking at the current status, so a user an administrator disabled while a verification link was still live appears to be made active again by redeeming it. The magic-link and provider paths refuse a disabled user. Check whether disabling invalidates the user's verification credentials; if not, this breaks "Session and user revocation" of `identity/project-auth`.
 
 - `[60] cloud-b, low/high` Operator freshness states: spec names five including 'degraded', the Dev Book fixes four Where: docs/dev-book.md:1153 "explicit observation times, and `current`, `stale`, `unknown`, or `unavailable` source state" Note from round 10: not a spec contradiction. The spec asks summaries to distinguish healthy, degraded, unavailable, stale and unknown data; the Dev Book fixes four source states. The open point is whether a degraded provider, which the code reports as `stale`, is distinguished as the spec asks.
 - `[0] billing-sync, high/high` Replication admission ignores the tenant's plan and uses one deployment-wide policy with undocumented daily hard caps Where: services/mako-data-plane/src/graph.rs:862-865 "let quotas = GatewayReplicationQuotaEnforcer::new(Arc::clone(&self.components.quotas), Arc::new(self.components.quota_poli…

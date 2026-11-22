@@ -233,7 +233,17 @@ impl IdentityStore {
         if user.scope() != &self.tenant || user.id() != credential.user_id() {
             return Err(IdentityStoreError::CorruptTokenOwner);
         }
-        let activated = user.with_status(AppUserStatus::Active, now_unix_seconds);
+        // The link proves the address; it does not undo an administrator's
+        // decision. A user disabled or deleted while the link was still live
+        // stays that way, and the answer is the one an unknown link gets.
+        let activated = match user.status() {
+            AppUserStatus::PendingVerification | AppUserStatus::Active => {
+                user.with_status(AppUserStatus::Active, now_unix_seconds)
+            }
+            AppUserStatus::Disabled | AppUserStatus::Deleted => {
+                return Ok(EmailVerificationOutcome::InvalidOrExpired);
+            }
+        };
         let invalidated = credential.invalidate(now_unix_seconds);
         let mut batch = WriteBatch::with_capacity(3);
         batch.put(&user_key, serde_json::to_vec(&activated)?);
@@ -1983,6 +1993,106 @@ mod tests {
                 MagicLinkOutcome::Redeemed {
                     user_id: user.id().clone()
                 }
+            );
+        });
+    }
+
+    #[test]
+    fn a_verification_link_does_not_reactivate_a_disabled_or_deleted_user() {
+        futures::executor::block_on(async {
+            let scope = tenant("prj_abcdefgh");
+            let store = store(Arc::new(MemoryAdapter::new()), &scope);
+            let sign_up = |user_id: &'static str, address: &'static str, digest: [u8; 32]| {
+                let store = &store;
+                let scope = &scope;
+                async move {
+                    let email = NormalizedEmail::parse(address).expect("email");
+                    let identity_id = user_id.replace("usr_", "idn_");
+                    let (user, identity) = records(scope, user_id, &identity_id, &email);
+                    let user = user.with_status(AppUserStatus::PendingVerification, 1);
+                    let password = credential(
+                        scope,
+                        &user_id.replace("usr_", "crd_password_"),
+                        user_id,
+                        UserCredentialKind::Password,
+                        None,
+                    );
+                    let verification = credential(
+                        scope,
+                        &user_id.replace("usr_", "crd_verify_"),
+                        user_id,
+                        UserCredentialKind::EmailVerification,
+                        Some(100),
+                    );
+                    store
+                        .create_email_signup(
+                            &user,
+                            &identity,
+                            &password,
+                            Some((&verification, &digest)),
+                            &email,
+                        )
+                        .await
+                        .expect("signup");
+                    user
+                }
+            };
+            let disabled = sign_up("usr_disabled", "disabled@example.com", [11_u8; 32]).await;
+            let deleted = sign_up("usr_deleted", "deleted@example.com", [12_u8; 32]).await;
+            let kept = sign_up("usr_kept", "kept@example.com", [13_u8; 32]).await;
+
+            // An administrator acts while the mailed links are still live.
+            store
+                .disable_user(disabled.id(), 10)
+                .await
+                .expect("disable");
+            store.delete_user(deleted.id(), 10).await.expect("delete");
+
+            for (user, digest, status) in [
+                (&disabled, [11_u8; 32], AppUserStatus::Disabled),
+                (&deleted, [12_u8; 32], AppUserStatus::Deleted),
+            ] {
+                assert_eq!(
+                    store
+                        .complete_email_verification(&digest, 50)
+                        .await
+                        .expect("verify"),
+                    EmailVerificationOutcome::InvalidOrExpired
+                );
+                assert_eq!(
+                    store
+                        .user_by_id(user.id())
+                        .await
+                        .expect("lookup")
+                        .expect("user")
+                        .status(),
+                    status
+                );
+            }
+
+            // A pending user's link still works, once.
+            assert_eq!(
+                store
+                    .complete_email_verification(&[13_u8; 32], 50)
+                    .await
+                    .expect("verify"),
+                EmailVerificationOutcome::Verified
+            );
+            assert_eq!(
+                store
+                    .user_by_id(kept.id())
+                    .await
+                    .expect("lookup")
+                    .expect("user")
+                    .status(),
+                AppUserStatus::Active
+            );
+            assert_eq!(
+                store
+                    .complete_email_verification(&[13_u8; 32], 51)
+                    .await
+                    .expect("verify again"),
+                EmailVerificationOutcome::InvalidOrExpired
             );
         });
     }
