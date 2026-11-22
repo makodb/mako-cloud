@@ -90,6 +90,7 @@ safeguards:
 - a passing recovery drill;
 - zero acknowledged-write loss and zero integrity failures for the exact
   release;
+- readiness of every service;
 - a tested emergency admission stop.
 
 An operator MAY accept named benchmark-latency and alert-delivery blockers only

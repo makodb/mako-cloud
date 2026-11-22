@@ -5,9 +5,7 @@
 Define secure self-service registration and operator-controlled activation for
 Mako Cloud developer accounts without granting wait-listed applicants access to
 tenant or product resources.
-
 ## Requirements
-
 ### Requirement: Public developer registration is bounded and enumeration-safe
 The hosted console and API SHALL accept a normalized email address, display
 name, and password for a Mako Cloud developer identity. Registration MUST apply
@@ -207,12 +205,10 @@ or any non-waivable safeguard becomes invalid. Deploying a different release
 MUST NOT by itself close admission; the approval records the release its
 safeguards were measured on as provenance rather than as a binding.
 
-For the explicitly approved test deployment, the scheduled-backup and
-freshness exception in `operations/public-beta-environment` SHALL also apply
-to registration admission. It SHALL waive only backup scheduling and the live
-backup-age check. Retained-backup verification, recorded recovery evidence,
-and every other required admission safeguard MUST remain valid, and the
-exception MUST NOT qualify the deployment for full beta.
+Backup age, backup schedule state and the outcome of an individual scheduled
+backup MUST NOT open or close registration admission. They are reported
+through operator alerts, as `operations/public-beta-environment` requires for
+every admission mode.
 
 #### Scenario: Public caller probes a private identity route
 - **WHEN** an internet client requests an identity route outside the published allowlist
@@ -231,5 +227,6 @@ exception MUST NOT qualify the deployment for full beta.
 - **THEN** public-preview admission atomically returns to source-restricted `pre_gate` without stopping private services or deleting wait-list state
 
 #### Scenario: Persistent preview safety binding drifts
-- **WHEN** the approval binding, TLS, readiness, retained-backup verification, recovery evidence, route-isolation, integrity, emergency-stop safeguard, or required backup freshness becomes invalid
+- **WHEN** the approval binding, TLS, readiness, recorded recovery-drill evidence, route-isolation, integrity, or emergency-stop safeguard becomes invalid
 - **THEN** the guard returns admission to `pre_gate` even though the operator has not manually paused it
+

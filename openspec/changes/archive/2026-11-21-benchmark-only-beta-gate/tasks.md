@@ -18,3 +18,9 @@
 ## 4. Validation
 
 - [x] 4.1 Run `openspec validate benchmark-only-beta-gate --strict`, the gate and preview tests, and the docs, release-gate, rollback and public-beta validators.
+
+## 5. Specifications that referred to the removed exception
+
+- [x] 5.1 Add a delta for `identity/developer-registration`: the requirement "Registration exposure is observable and deny-by-default" drops the paragraph that applied the removed test-preview backup exception to registration admission, and its scenario "Persistent preview safety binding drifts" no longer lists retained-backup verification or backup freshness.
+- [x] 5.2 Name service readiness among the non-waivable preview safeguards in the `operations/public-beta-environment` delta, as the Dev Book and the admission guard do.
+- [x] 5.3 Rewrite the `operations/public-beta-environment` delta of the open change `observable-data-plane-and-restore-verification` on top of this change's text, so both can be archived and strict validation of every change passes.

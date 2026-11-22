@@ -21,7 +21,7 @@ No alert is weakened, retargeted at a weaker series, or deleted to match the dat
 ### Modified Capabilities
 
 - `storage/production-rocksdb`: the existing requirement that storage health is observable gains scenarios that make it falsifiable. Today it lists the series production "SHALL expose" and nothing checks that any of them exist. It must also state that these are exposed by the service that owns the data, not only named in a rule file.
-- `operations/public-beta-environment`: restore verification becomes a recurring, published signal rather than a one-off operator drill. The current requirement demands verified restore to an empty offline target and makes verified backup and recovery a non-waivable public-preview safeguard, yet the only evidence is a single drill from 2026-08-13. Promotion stays operator-controlled and manual, which is unchanged.
+- `operations/public-beta-environment`: restore verification becomes a recurring, published signal rather than a one-off operator drill. The current requirement demands verified restore to an empty offline target and makes a passing recovery drill a non-waivable public-preview safeguard, yet the only evidence is a single drill from 2026-08-13. Promotion stays operator-controlled and manual, which is unchanged. The delta is written on top of the `benchmark-only-beta-gate` text of the same requirement: backup age and the verification outcome raise operator alerts and never open or close public admission.
 
 ## Impact
 

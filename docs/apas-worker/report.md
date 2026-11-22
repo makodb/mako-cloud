@@ -30,7 +30,7 @@ Please either make Verus available on this machine (so that `verus --version` ru
 
 Status: open
 
-The Dev Book's newer text (the release-gates section, the admission paragraph and the public-beta runbook) describes a benchmark-only beta gate in which backup state never affects admission. Several older sentences still say the opposite. The worker reads the newer text as the design, because it is dated, it is repeated in three places, and `docs/release-gates.json` and the admission guard agree with it. The next spec step (archiving the `benchmark-only-beta-gate` change so that `openspec/specs/operations/public-beta-environment` stops gating admission on backup age, cost and a 30-day window) depends on that reading. Answer if it is wrong.
+The Dev Book's newer text (the release-gates section, the admission paragraph and the public-beta runbook) describes a benchmark-only beta gate in which backup state never affects admission. Several older sentences still say the opposite. The worker reads the newer text as the design, because it is dated, it is repeated in three places, and `docs/release-gates.json` and the admission guard agree with it. On that reading the worker archived the `benchmark-only-beta-gate` change on 2026-11-21, so `openspec/specs/operations/public-beta-environment` and `openspec/specs/identity/developer-registration` no longer gate admission on backup age, cost or a 30-day window. Answer if the reading is wrong.
 
 Proposed corrections, all in `docs/dev-book.md`:
 

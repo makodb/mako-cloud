@@ -52,6 +52,10 @@ data-plane backups online; that part was withdrawn.
 - `operations/public-beta-environment`: the beta gate is decided by the hosted
   benchmark. Backup state never changes admission. The test-preview backup
   suspension exception is removed.
+- `identity/developer-registration`: registration admission no longer refers
+  to the removed test-preview backup exception. The preview guard's drift
+  scenario names the safeguards the guard still checks, without backup
+  freshness or retained-backup verification.
 
 ## Impact
 
