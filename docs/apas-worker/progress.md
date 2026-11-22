@@ -1,6 +1,6 @@
 # APAS worker progress
 
-Last updated 2026-11-22, round 21, on Shuais-MacBook-Air-2.local.
+Last updated 2026-11-22, round 22, on Shuais-MacBook-Air-2.local.
 
 ## The three layers
 
@@ -45,9 +45,11 @@ Last updated 2026-11-22, round 21, on Shuais-MacBook-Air-2.local.
 
 - Round 21 (spec layer): the change `state-proof-of-address-rule` added the requirement "Proof of an address activates only a pending user" to `identity/project-auth` (three scenarios, rows PA-21 to PA-23) and was archived. It states the rule rounds 19 and 20 made every path follow.
 
+- Round 22 (code layer): fixed lead 93, the requirement "Browser origins allowed to call an environment" of `identity/project-auth`. The data plane answered listed origins only under `auth`, `collections` and `storage`, so a browser on a listed origin could not open the environment-wide live stream (`replication/stream`): its preflight got 405. `application_tenant` in `services/mako-data-plane/src/graph.rs` now names that one route as an application route; nothing else under `replication` is answered cross-origin.
+
 ## What is left, in the order I would do it
 
-1. Code that may not meet a spec requirement: 95 leads. Verified and ready, in this order: 93 (CORS on the environment-wide stream), 37 (explorer delete), 72 (denied writes are not audited), 69 (hosted functions cannot stream; needs a container engine to prove end to end). Then the high-severity ones not verified yet: 0, 1, 18, 19, 36, 44, 45, 49, 50, 54, 59, 134. Verify each against the current files before fixing it.
+1. Code that may not meet a spec requirement: 94 leads. Verified and ready, in this order: 37 (explorer delete), 72 (denied writes are not audited), 69 (hosted functions cannot stream; needs a container engine to prove end to end). Then the high-severity ones not verified yet: 0, 1, 18, 19, 36, 44, 45, 49, 50, 54, 59, 134. Verify each against the current files before fixing it.
 2. Missing specs: archive `resumable-streaming-exports` (its deltas are not in the main specs yet; it needs traceability rows CL-14 and CL-15 in the same commit or `npm run validate:traceability` fails), then the "whitepaper statement with no spec requirement" and "implemented behaviour with no spec requirement" leads.
 3. Missing code: the open change `observable-data-plane-and-restore-verification` (0 of 26 tasks). Its task list names `infra/local/prometheus.yml` (the file is `prometheus.yaml`) and `validate:alert-metric-producers` (the script is `validate:alert-metrics`); fix those in the change first. Start with task group 1 (receipt probe) and group 3 (data-plane `/metrics`). Backlog lead 169 belongs here: the backup-age alert reads a gauge that is rewritten only when a backup runs, so it cannot fire while the timers are stopped.
 4. Housekeeping: archive `rational-sample-app`. `openspec archive` aborts because eight of its ADDED requirements already exist in the main spec in the longer form the archived `rational-monarch-parity` change gave them. The worker may not use `--skip-specs`, so its deltas must first be rewritten to match the main spec.

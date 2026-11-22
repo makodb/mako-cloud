@@ -459,10 +459,12 @@ impl CrossOriginPolicy for EnvironmentAllowedOrigins {
 /// The environment an application route addresses:
 /// `/v1/projects/{projectId}/environments/{environmentId}/{surface}/...`
 /// where the surface is one a browser application calls with its own
-/// session or public key. Every other path -- the service-credential
-/// routes, the developer workspace's explorer, the private internal
-/// protocol, anything unrecognized -- has no environment for this purpose,
-/// and so is never answered cross-origin.
+/// session or public key: authentication, collections (documents and
+/// per-collection replication), storage, and the environment-wide live
+/// stream at `replication/stream`. Every other path -- the
+/// service-credential routes, the developer workspace's explorer, the
+/// private internal protocol, anything unrecognized -- has no environment
+/// for this purpose, and so is never answered cross-origin.
 fn application_tenant(path: &str) -> Option<TenantScope> {
     let mut segments = path.strip_prefix("/v1/projects/")?.split('/');
     let project_id = segments.next()?;
@@ -470,7 +472,15 @@ fn application_tenant(path: &str) -> Option<TenantScope> {
         return None;
     }
     let environment_id = segments.next()?;
-    if !matches!(segments.next()?, "auth" | "collections" | "storage") {
+    let application_route = match segments.next()? {
+        "auth" | "collections" | "storage" => true,
+        // The one application route here is the stream that carries every
+        // collection of the environment. It is named exactly, so nothing
+        // else added under `replication` is answered cross-origin unnoticed.
+        "replication" => segments.next() == Some("stream") && segments.next().is_none(),
+        _ => false,
+    };
+    if !application_route {
         return None;
     }
     TenantScope::require(Some(project_id), Some(environment_id)).ok()
@@ -2079,9 +2089,103 @@ mod tests {
             assert_eq!(response.header_for_test("vary"), None, "{path}");
         }
 
+        // The live stream that carries every collection of the environment
+        // is an application route too, although it sits under neither `auth`,
+        // `collections` nor `storage`. A browser preflights it, because it is
+        // a POST with an authorization header.
+        let stream = format!("{scope}/replication/stream");
+        let preflight =
+            router.respond_for_test(request(HttpMethod::Options, stream.clone(), from(LISTED)));
+        assert_eq!(preflight.status_for_test(), 204);
+        assert_eq!(
+            preflight.header_for_test("access-control-allow-origin"),
+            Some(LISTED)
+        );
+        assert_eq!(
+            preflight.header_for_test("access-control-allow-headers"),
+            Some(mako_service_runtime::CORS_ALLOW_HEADERS)
+        );
+        let refused = router.respond_for_test(request(
+            HttpMethod::Options,
+            stream.clone(),
+            from("https://other.example"),
+        ));
+        assert_eq!(refused.status_for_test(), 405);
+        assert_eq!(refused.header_for_test("access-control-allow-origin"), None);
+        // The stream's own refusal of a request without a body is readable by
+        // the listed origin, on the platform hostname and on a custom domain.
+        for headers in [from(LISTED), {
+            let mut on_domain = from(LISTED);
+            on_domain.push((
+                "X-Mako-Custom-Domain".to_owned(),
+                "api.example.com".to_owned(),
+            ));
+            on_domain
+        }] {
+            let posted =
+                router.respond_for_test(request(HttpMethod::Post, stream.clone(), headers));
+            assert!((400..500).contains(&posted.status_for_test()));
+            assert_eq!(
+                posted.header_for_test("access-control-allow-origin"),
+                Some(LISTED)
+            );
+            assert_eq!(
+                posted.header_for_test("access-control-expose-headers"),
+                Some(mako_service_runtime::CORS_EXPOSE_HEADERS)
+            );
+        }
+        let unlisted = router.respond_for_test(request(
+            HttpMethod::Post,
+            stream,
+            from("https://other.example"),
+        ));
+        assert_eq!(
+            unlisted.header_for_test("access-control-allow-origin"),
+            None
+        );
+        assert_eq!(unlisted.header_for_test("vary"), None);
+
         drop(router);
         let graph = Arc::try_unwrap(graph).unwrap_or_else(|_| panic!("route owners dropped"));
         block_on(graph.shutdown()).expect("shutdown");
+    }
+
+    #[test]
+    fn application_routes_are_the_surfaces_a_browser_application_calls() {
+        const SCOPE: &str = "/v1/projects/prj_example00/environments/env_example00";
+        for surface in [
+            "auth/signin",
+            "auth/providers/google/callback",
+            "collections/notes/documents/query",
+            "collections/notes/replication/pull",
+            "collections/notes/replication/stream",
+            "replication/stream",
+            "storage/receipts/objects/a.txt",
+        ] {
+            assert_eq!(
+                application_tenant(&format!("{SCOPE}/{surface}")),
+                Some(tenant()),
+                "{surface}"
+            );
+        }
+        for path in [
+            format!("{SCOPE}/service/collections/notes/documents/query"),
+            format!("{SCOPE}/service/storage/receipts/objects/a.txt"),
+            format!("{SCOPE}/explorer/collections/notes/browse"),
+            format!("{SCOPE}/allowed-origins"),
+            // Under `replication` only the stream is an application route.
+            format!("{SCOPE}/replication"),
+            format!("{SCOPE}/replication/"),
+            format!("{SCOPE}/replication/pull"),
+            format!("{SCOPE}/replication/stream/extra"),
+            SCOPE.to_owned(),
+            "/v1/projects/prj_example00/other/env_example00/replication/stream".to_owned(),
+            "/v1/projects/not-a-project/environments/env_example00/replication/stream".to_owned(),
+            "/_internal/v1/data/identity/verify".to_owned(),
+            "/readyz".to_owned(),
+        ] {
+            assert_eq!(application_tenant(&path), None, "{path}");
+        }
     }
 
     #[test]

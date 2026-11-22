@@ -429,6 +429,24 @@ fn a_domain_is_served_only_while_its_dns_proof_stands() {
         Some(APP_ORIGIN)
     );
 
+    // The live stream that carries every collection of the environment is an
+    // application route too, and a browser preflights it: it is a POST with
+    // an authorization header. Both hostnames answer the listed origin.
+    let stream = format!("{scope}/replication/stream");
+    for on_domain in [false, true] {
+        let (status, headers, body) = cross_origin("OPTIONS", &stream, Some(APP_ORIGIN), on_domain);
+        assert_eq!(status, 204, "the stream's preflight is answered: {body}");
+        assert_eq!(
+            headers
+                .get("access-control-allow-origin")
+                .map(String::as_str),
+            Some(APP_ORIGIN)
+        );
+        let (status, headers, _) = cross_origin("OPTIONS", &stream, Some(OTHER_ORIGIN), on_domain);
+        assert_eq!(status, 405);
+        assert!(!labelled(&headers), "{headers:?}");
+    }
+
     // An origin the environment does not list learns nothing.
     for on_domain in [false, true] {
         let (status, headers, _) = cross_origin("OPTIONS", &signin, Some(OTHER_ORIGIN), on_domain);
