@@ -656,11 +656,7 @@ fn handle_simulate(
                         &ExplorerSimulationResult {
                             allowed: false,
                             schema_valid: false,
-                            diagnostics: schema_diagnostics(
-                                &metadata,
-                                body.content.as_ref(),
-                                &diagnostics,
-                            ),
+                            diagnostics: refusal_diagnostics(&metadata, &body, &diagnostics),
                             would_conflict: conflict,
                         },
                     );
@@ -802,7 +798,7 @@ fn handle_mutate(
                     mako_api::ErrorCode::InvalidRequest,
                     format!(
                         "document does not match the active schema: {}",
-                        schema_diagnostics(&metadata, body.content.as_ref(), &error).join("; ")
+                        refusal_diagnostics(&metadata, &body, &error).join("; ")
                     ),
                     request.request_id(),
                     mako_api::RetryAdvice::Never,
@@ -1848,12 +1844,25 @@ fn validate_simulation(
         (Some(expected), Some(current)) => expected == current.revision().as_str(),
         _ => false,
     };
-    let content = body.content.clone().ok_or_else(|| {
-        invalid(
-            request,
-            "document content is required for mutation simulation",
-        )
-    })?;
+    // A delete is asked for by revision alone: the console and the CLI send no
+    // content with it. The tombstone keeps the body the document had, and
+    // that body goes through the same validation as a supplied one, so
+    // nothing reaches a write that the schema refuses.
+    let content = match (&body.content, body.kind) {
+        (Some(content), _) => content.clone(),
+        (None, ExplorerMutationKind::Delete) => Value::Object(
+            current
+                .ok_or_else(|| invalid(request, "document does not exist"))?
+                .body()
+                .clone(),
+        ),
+        (None, ExplorerMutationKind::Create | ExplorerMutationKind::Update) => {
+            return Err(invalid(
+                request,
+                "document content is required to create or update a document",
+            ));
+        }
+    };
     let validated = match body.kind {
         ExplorerMutationKind::Create => validator.validate_create(content),
         ExplorerMutationKind::Update | ExplorerMutationKind::Delete => validator.validate_update(
@@ -1866,6 +1875,23 @@ fn validate_simulation(
         Err(error) => Simulated::SchemaRefused(error, !expected_matches),
     })
 }
+
+/// What to tell the caller about a refused mutation. When the caller sent
+/// the document, the diagnostics describe it. When a delete sent none, the
+/// document judged is the stored one, which a policy-preview caller may not
+/// be allowed to read: its fields are not described.
+fn refusal_diagnostics(
+    metadata: &mako_documents::CollectionMetadata,
+    body: &ExplorerMutationRequest,
+    error: &mako_documents::DocumentValidationError,
+) -> Vec<String> {
+    match &body.content {
+        Some(content) => schema_diagnostics(metadata, Some(content), error),
+        None => vec![STORED_DOCUMENT_REFUSED.to_owned()],
+    }
+}
+
+const STORED_DOCUMENT_REFUSED: &str = "the stored document does not match the active schema; send the document content with the delete";
 
 /// Says what a refused document breaks, in terms of the collection's own
 /// schema: which required fields are missing, and which rule fails where.
@@ -2093,6 +2119,204 @@ mod tests {
     use mako_api::{EnvironmentId, ProjectId};
 
     use super::*;
+
+    fn task_metadata() -> mako_documents::CollectionMetadata {
+        mako_documents::CollectionMetadata::new(
+            mako_api::CollectionId::parse("tasks").expect("collection"),
+            mako_documents::CollectionMetadataVersion::new(1).expect("version"),
+            mako_documents::SchemaVersion::new(1).expect("schema"),
+            serde_json::json!({
+                "type": "object",
+                "required": ["id", "ownerId", "title"],
+                "properties": {"id": {"type": "string"}, "ownerId": {"type": "string"}, "title": {"type": "string"}},
+            }),
+            mako_documents::PrimaryKeyDefinition::field("id").expect("primary key"),
+            mako_documents::SchemaCompatibility::Compatible,
+            mako_documents::CollectionLifecycle::Active,
+        )
+        .expect("metadata")
+    }
+
+    fn stored_task(body: Value) -> CanonicalDocument {
+        CanonicalDocument::new(
+            mako_documents::DocumentId::parse("task-1").expect("document id"),
+            mako_documents::SchemaVersion::new(1).expect("schema version"),
+            mako_documents::RevisionToken::parse("rev_current").expect("revision"),
+            mako_documents::CommitPosition::new(7).expect("commit position"),
+            false,
+            body,
+        )
+        .expect("stored document")
+    }
+
+    fn mutation(
+        kind: ExplorerMutationKind,
+        expected_revision: Option<&str>,
+        content: Option<Value>,
+    ) -> ExplorerMutationRequest {
+        ExplorerMutationRequest {
+            kind,
+            document_id: "task-1".to_owned(),
+            expected_revision: expected_revision.map(str::to_owned),
+            schema_version: 1,
+            idempotency_key: "explorer-mutation-0001".to_owned(),
+            content,
+        }
+    }
+
+    fn explorer_request() -> HttpRequest {
+        HttpRequest::for_test(
+            mako_service_runtime::HttpMethod::Post,
+            "/v1/projects/prj_abcdefgh/environments/env_abcdefgh/explorer/collections/tasks/mutate",
+            Vec::<(String, String)>::new(),
+            Vec::new(),
+            None,
+        )
+    }
+
+    /// The console and the CLI ask for a delete with the revision and no
+    /// content. The tombstone then carries the body the document had.
+    #[test]
+    fn a_delete_without_content_is_judged_on_the_stored_document() {
+        let metadata = task_metadata();
+        let validator = DocumentValidator::compile(&metadata).expect("validator");
+        let body = serde_json::json!({"id": "task-1", "ownerId": "usr_1", "title": "Buy milk"});
+        let current = stored_task(body.clone());
+        let request = explorer_request();
+
+        let delete = mutation(ExplorerMutationKind::Delete, Some("rev_current"), None);
+        match validate_simulation(&request, &validator, &delete, Some(&current))
+            .expect("simulation")
+        {
+            Simulated::Valid(validated, conflict) => {
+                assert!(!conflict);
+                assert_eq!(validated.primary_key(), current.primary_key());
+                assert_eq!(&Value::Object(validated.body().clone()), &body);
+            }
+            Simulated::SchemaRefused(error, _) => panic!("a valid stored document: {error:?}"),
+        }
+
+        // The expected revision still decides whether the delete conflicts.
+        let stale = mutation(ExplorerMutationKind::Delete, Some("rev_older"), None);
+        assert!(matches!(
+            validate_simulation(&request, &validator, &stale, Some(&current)),
+            Ok(Simulated::Valid(_, true))
+        ));
+
+        // Nothing to delete is the caller's mistake.
+        let refused = validate_simulation(&request, &validator, &delete, None)
+            .err()
+            .expect("no stored document");
+        assert_eq!(
+            refused.envelope().error.code,
+            mako_api::ErrorCode::InvalidRequest
+        );
+        assert_eq!(refused.envelope().error.message, "document does not exist");
+    }
+
+    #[test]
+    fn content_stays_required_to_create_or_update() {
+        let metadata = task_metadata();
+        let validator = DocumentValidator::compile(&metadata).expect("validator");
+        let current = stored_task(
+            serde_json::json!({"id": "task-1", "ownerId": "usr_1", "title": "Buy milk"}),
+        );
+        let request = explorer_request();
+        for (kind, expected, stored) in [
+            (ExplorerMutationKind::Create, None, None),
+            (
+                ExplorerMutationKind::Update,
+                Some("rev_current"),
+                Some(&current),
+            ),
+        ] {
+            let refused = validate_simulation(
+                &request,
+                &validator,
+                &mutation(kind, expected, None),
+                stored,
+            )
+            .err()
+            .expect("content is required");
+            assert_eq!(
+                refused.envelope().error.code,
+                mako_api::ErrorCode::InvalidRequest
+            );
+            assert_eq!(
+                refused.envelope().error.message,
+                "document content is required to create or update a document"
+            );
+        }
+    }
+
+    /// A delete that does send content is judged on what it sent, as before.
+    #[test]
+    fn a_delete_with_content_is_judged_on_the_supplied_document() {
+        let metadata = task_metadata();
+        let validator = DocumentValidator::compile(&metadata).expect("validator");
+        let current = stored_task(
+            serde_json::json!({"id": "task-1", "ownerId": "usr_1", "title": "Buy milk"}),
+        );
+        let request = explorer_request();
+        let supplied = serde_json::json!({"id": "task-1", "ownerId": "usr_1", "title": "Bought"});
+        let delete = mutation(
+            ExplorerMutationKind::Delete,
+            Some("rev_current"),
+            Some(supplied.clone()),
+        );
+        match validate_simulation(&request, &validator, &delete, Some(&current))
+            .expect("simulation")
+        {
+            Simulated::Valid(validated, false) => {
+                assert_eq!(&Value::Object(validated.body().clone()), &supplied);
+            }
+            _ => panic!("the supplied document is valid"),
+        }
+        let other_key = mutation(
+            ExplorerMutationKind::Delete,
+            Some("rev_current"),
+            Some(serde_json::json!({"id": "task-2", "ownerId": "usr_1", "title": "Other"})),
+        );
+        assert!(matches!(
+            validate_simulation(&request, &validator, &other_key, Some(&current)),
+            Ok(Simulated::SchemaRefused(_, false))
+        ));
+    }
+
+    /// When the stored document itself no longer fits the schema, the refusal
+    /// says so without describing fields the caller did not send.
+    #[test]
+    fn a_stored_document_the_schema_refuses_is_reported_without_its_fields() {
+        let metadata = task_metadata();
+        let validator = DocumentValidator::compile(&metadata).expect("validator");
+        let current = stored_task(serde_json::json!({"id": "task-1", "title": 5}));
+        let request = explorer_request();
+        let delete = mutation(ExplorerMutationKind::Delete, Some("rev_current"), None);
+        let Ok(Simulated::SchemaRefused(error, false)) =
+            validate_simulation(&request, &validator, &delete, Some(&current))
+        else {
+            panic!("the stored document is refused");
+        };
+        let diagnostics = refusal_diagnostics(&metadata, &delete, &error);
+        assert_eq!(diagnostics, vec![STORED_DOCUMENT_REFUSED.to_owned()]);
+        assert!(!diagnostics[0].contains("ownerId") && !diagnostics[0].contains("title"));
+
+        // A caller who sent the document is told what is wrong with it.
+        let supplied = mutation(
+            ExplorerMutationKind::Delete,
+            Some("rev_current"),
+            Some(serde_json::json!({"id": "task-1", "title": 5})),
+        );
+        let Ok(Simulated::SchemaRefused(error, false)) =
+            validate_simulation(&request, &validator, &supplied, Some(&current))
+        else {
+            panic!("the supplied document is refused");
+        };
+        assert!(
+            refusal_diagnostics(&metadata, &supplied, &error)
+                .contains(&"missing required field ownerId".to_owned())
+        );
+    }
 
     #[test]
     fn explorer_audit_attributes_fingerprint_sensitive_identifiers() {
