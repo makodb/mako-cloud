@@ -3,9 +3,7 @@
 ## Purpose
 
 Provide isolated application-user identity and session management for each Mako Cloud project so RxDB clients and edge functions can authenticate requests securely.
-
 ## Requirements
-
 ### Requirement: Project-scoped application users
 Application-user identities SHALL belong to one project environment and MUST NOT grant access to another project environment. Control-plane developer identities SHALL remain separate from application-user identities.
 
@@ -36,7 +34,7 @@ Successful authentication SHALL issue a short-lived signed JWT access token cont
 - **THEN** the request is rejected before document or function execution
 
 ### Requirement: Rotating refresh sessions
-Authentication SHALL issue opaque refresh credentials that rotate on successful use. Reuse of an invalidated predecessor MUST trigger replay protection for the affected session family.
+Authentication SHALL issue opaque refresh credentials that rotate on successful use, in a session family that lives at most thirty days. Reuse of an invalidated predecessor MUST trigger replay protection for the affected session family, however many rotations ago that credential was consumed. A concurrency grace window of five seconds SHALL apply to the credential consumed last and to no other: presented again inside the window it receives the family's current credential, so that a client racing its own rotation is not signed out. A credential that no session family issued MUST be refused without revoking anything.
 
 #### Scenario: Session refresh succeeds
 - **WHEN** a valid current refresh credential is exchanged
@@ -45,6 +43,18 @@ Authentication SHALL issue opaque refresh credentials that rotate on successful 
 #### Scenario: Rotated token is replayed
 - **WHEN** a previously consumed refresh credential is presented outside the allowed concurrency grace window
 - **THEN** the service revokes the session family and requires fresh authentication
+
+#### Scenario: Refresh races its own rotation
+- **WHEN** the credential consumed last is presented again within five seconds of its rotation
+- **THEN** the service answers with the family's current credential and revokes nothing
+
+#### Scenario: An older consumed credential is presented
+- **WHEN** a credential the family consumed more than one rotation ago is presented, even within five seconds of the latest rotation
+- **THEN** the service revokes the session family, and the family's current credential is refused from then on
+
+#### Scenario: An unknown credential is presented
+- **WHEN** a refresh request carries a value that no session family issued
+- **THEN** the service refuses it, and every session family stays as it was
 
 ### Requirement: Session and user revocation
 Users SHALL be able to sign out one session or all their sessions. Project administrators SHALL be able to disable or delete an application user and revoke all sessions, with revocation taking effect for new data and function requests without waiting for access-token expiry.
@@ -106,3 +116,4 @@ Each environment SHALL carry an allowlist of browser origins, matched exactly. A
 #### Scenario: An unlisted origin and a management route
 - **WHEN** the same request arrives from an origin the environment does not list, or a listed origin calls a management, operator, or service route
 - **THEN** no cross-origin headers are returned and the browser blocks the response
+

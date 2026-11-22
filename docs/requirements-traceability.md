@@ -166,16 +166,19 @@ Run `npm run validate:traceability` whenever a scenario or row changes. The vali
 | PA-05 | Token targets another project | `crates/mako-gateway/src/token_verifier.rs::verifies_every_boundary_and_rejects_cross_project_tokens` | Automated |
 | PA-06 | Session refresh succeeds | `crates/mako-identity/src/session_store.rs::refresh_state_persists_rotates_and_revokes_on_replay` | Automated |
 | PA-07 | Rotated token is replayed | `crates/mako-identity/src/session_store.rs::a_credential_consumed_two_rotations_ago_revokes_the_family` and `crates/mako-identity/src/session_store.rs::refresh_state_persists_rotates_and_revokes_on_replay` | Automated |
-| PA-08 | Administrator disables a user | `crates/mako-identity/src/lifecycle.rs::lifecycle_changes_revoke_sessions_and_publish_one_ordered_stream` | Automated |
-| PA-09 | User edits profile metadata | `crates/mako-identity/src/records.rs::records_retain_project_environment_scope_and_separate_metadata` | Automated |
-| PA-10 | A function sets app metadata under a service credential | `services/mako-data-plane/src/service_user_http.rs::a_read_composes_the_next_claim_and_the_epoch_it_read_guards_the_write` and `crates/mako-smoke/tests/rational.rs::rationals_own_model_serves_a_household_over_http` (end-to-end) | Automated |
-| PA-11 | Public credential is used without a user session | `crates/mako-gateway/src/replication.rs::authorizes_public_user_context_and_returns_retryable_quota_errors` | Automated |
-| PA-12 | Service credential is rotated | `crates/mako-identity/src/project_credentials.rs::credentials_are_one_time_scoped_rotatable_and_public_keys_never_bypass` | Automated |
-| PA-13 | Developer without user-admin permission attempts deletion | `crates/mako-identity/src/admin.rs::admin_surface_checks_permissions_audits_and_exposes_no_credentials` | Automated |
-| PA-14 | Repeated failed sign-ins occur | `crates/mako-identity/src/rate_limit.rs::limiter_reserves_admission_fails_closed_and_reports_retry_window` | Automated |
-| PA-15 | Authentication fails | `crates/mako-identity/src/signin.rs::wrong_absent_and_unverified_accounts_share_one_failure_response` | Automated |
-| PA-16 | An application on a listed origin calls its project | `crates/mako-smoke/tests/custom_domains.rs::a_domain_is_served_only_while_its_dns_proof_stands` (end-to-end) | Automated |
-| PA-17 | An unlisted origin and a management route | `crates/mako-smoke/tests/custom_domains.rs::a_domain_is_served_only_while_its_dns_proof_stands` (end-to-end) | Automated |
+| PA-08 | Refresh races its own rotation | `crates/mako-identity/src/session_store.rs::refresh_state_persists_rotates_and_revokes_on_replay` | Automated |
+| PA-09 | An older consumed credential is presented | `crates/mako-identity/src/session_store.rs::an_older_consumed_credential_is_a_replay_even_inside_the_grace_window` and `crates/mako-identity/src/session_store.rs::a_credential_consumed_two_rotations_ago_revokes_the_family` | Automated |
+| PA-10 | An unknown credential is presented | `crates/mako-identity/src/session_store.rs::a_credential_no_family_issued_is_invalid_and_revokes_nothing` | Automated |
+| PA-11 | Administrator disables a user | `crates/mako-identity/src/lifecycle.rs::lifecycle_changes_revoke_sessions_and_publish_one_ordered_stream` | Automated |
+| PA-12 | User edits profile metadata | `crates/mako-identity/src/records.rs::records_retain_project_environment_scope_and_separate_metadata` | Automated |
+| PA-13 | A function sets app metadata under a service credential | `services/mako-data-plane/src/service_user_http.rs::a_read_composes_the_next_claim_and_the_epoch_it_read_guards_the_write` and `crates/mako-smoke/tests/rational.rs::rationals_own_model_serves_a_household_over_http` (end-to-end) | Automated |
+| PA-14 | Public credential is used without a user session | `crates/mako-gateway/src/replication.rs::authorizes_public_user_context_and_returns_retryable_quota_errors` | Automated |
+| PA-15 | Service credential is rotated | `crates/mako-identity/src/project_credentials.rs::credentials_are_one_time_scoped_rotatable_and_public_keys_never_bypass` | Automated |
+| PA-16 | Developer without user-admin permission attempts deletion | `crates/mako-identity/src/admin.rs::admin_surface_checks_permissions_audits_and_exposes_no_credentials` | Automated |
+| PA-17 | Repeated failed sign-ins occur | `crates/mako-identity/src/rate_limit.rs::limiter_reserves_admission_fails_closed_and_reports_retry_window` | Automated |
+| PA-18 | Authentication fails | `crates/mako-identity/src/signin.rs::wrong_absent_and_unverified_accounts_share_one_failure_response` | Automated |
+| PA-19 | An application on a listed origin calls its project | `crates/mako-smoke/tests/custom_domains.rs::a_domain_is_served_only_while_its_dns_proof_stands` (end-to-end) | Automated |
+| PA-20 | An unlisted origin and a management route | `crates/mako-smoke/tests/custom_domains.rs::a_domain_is_served_only_while_its_dns_proof_stands` (end-to-end) | Automated |
 
 ## Security / document policies
 
