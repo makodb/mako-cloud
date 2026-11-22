@@ -1,6 +1,6 @@
 # APAS worker progress
 
-Last updated 2026-11-21, round 11, on Shuais-MacBook-Air-2.local.
+Last updated 2026-11-21, round 12, on Shuais-MacBook-Air-2.local.
 
 ## The three layers
 
@@ -25,14 +25,15 @@ Last updated 2026-11-21, round 11, on Shuais-MacBook-Air-2.local.
 
 - Round 11 (spec layer, housekeeping): archived three finished changes whose deltas were already in the main specs (`function-egress-allowlist`, `rename-cli-to-mako-cloud`, `redesign-developer-database-console`). Each archive changed no spec file. The last one had to go first because it holds a MODIFIED delta for the "Navigation shell" requirement that lead 21 rewrites. Also looked at the running console's environment navigation (see below for how): it shows the four groups and twenty destinations of the User Book. The notes for this round were committed separately, after the archive commit, because the first notes update failed.
 
+- Round 12 (spec layer): the "Navigation shell" requirement of `cloud/developer-console` listed eleven destinations; the User Book and the console have four groups (Database, Application, Observe, Configure) and twenty destinations. The change `name-console-navigation-groups` rewrote it and aligned the group names in `cloud/developer-database-workspace`, and was archived. With it, every lead of the kind "spec may contradict the whitepaper" from the first sweep is handled, except the wait-list reason question that waits in the report.
+
 ## What is left, in the order I would do it
 
-1. The last "spec may contradict the whitepaper" lead, 21: rewrite the "Navigation shell" requirement of `cloud/developer-console`, which lists eleven destinations, to the four groups (Database, Application, Observe, Configure) and twenty destinations the User Book describes at lines 287 to 310 and the console shows. Spec-only: the console already matches.
-2. Code that may not meet a spec requirement: 98 leads. The high-severity ones first (backlog ids 0, 1, 18, 19, 36, 37, 44, 45, 49, 50, 54, 59, 69, 70, 72, 90, 91, 92, 93, 134, 150), foundations before what builds on them.
-3. Missing specs: archive `resumable-streaming-exports` (its deltas are not in the main specs yet; it needs traceability rows CL-14 and CL-15 in the same commit or `npm run validate:traceability` fails), then the "whitepaper statement with no spec requirement" and "implemented behaviour with no spec requirement" leads.
-4. Missing code: the open change `observable-data-plane-and-restore-verification` (0 of 26 tasks). Its task list names `infra/local/prometheus.yml` (the file is `prometheus.yaml`) and `validate:alert-metric-producers` (the script is `validate:alert-metrics`); fix those in the change first. Start with task group 1 (receipt probe) and group 3 (data-plane `/metrics`). Backlog lead 169 belongs here: the backup-age alert reads a gauge that is rewritten only when a backup runs, so it cannot fire while the timers are stopped.
-5. Housekeeping: archive `rational-sample-app`. `openspec archive` aborts because eight of its ADDED requirements already exist in the main spec in the longer form the archived `rational-monarch-parity` change gave them. The worker may not use `--skip-specs`, so its deltas must first be rewritten to match the main spec.
-6. Extend `scripts/validate-requirements-traceability.js` and the matrix to the eight capabilities it does not index (the Dev Book says the matrix maps every spec scenario).
+1. Code that may not meet a spec requirement: 98 leads. The high-severity ones first (backlog ids 0, 1, 18, 19, 36, 37, 44, 45, 49, 50, 54, 59, 69, 70, 72, 90, 91, 92, 93, 134, 150), foundations before what builds on them.
+2. Missing specs: archive `resumable-streaming-exports` (its deltas are not in the main specs yet; it needs traceability rows CL-14 and CL-15 in the same commit or `npm run validate:traceability` fails), then the "whitepaper statement with no spec requirement" and "implemented behaviour with no spec requirement" leads.
+3. Missing code: the open change `observable-data-plane-and-restore-verification` (0 of 26 tasks). Its task list names `infra/local/prometheus.yml` (the file is `prometheus.yaml`) and `validate:alert-metric-producers` (the script is `validate:alert-metrics`); fix those in the change first. Start with task group 1 (receipt probe) and group 3 (data-plane `/metrics`). Backlog lead 169 belongs here: the backup-age alert reads a gauge that is rewritten only when a backup runs, so it cannot fire while the timers are stopped.
+4. Housekeeping: archive `rational-sample-app`. `openspec archive` aborts because eight of its ADDED requirements already exist in the main spec in the longer form the archived `rational-monarch-parity` change gave them. The worker may not use `--skip-specs`, so its deltas must first be rewritten to match the main spec.
+5. Extend `scripts/validate-requirements-traceability.js` and the matrix to the eight capabilities it does not index (the Dev Book says the matrix maps every spec scenario).
 
 ## Blocked
 

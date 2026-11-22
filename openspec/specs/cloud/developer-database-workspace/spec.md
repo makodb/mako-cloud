@@ -119,7 +119,7 @@ The environment overview SHALL display named database metrics, a collection inve
 - **THEN** it cannot replace the new environment's values or observation times
 
 ### Requirement: Grouped navigation and isolated environment state
-The console SHALL group database, application, operations, and configuration destinations, retaining the current destination and environment context. Switching project or environment MUST clear previous document data, grants, query cursors, and editor drafts before displaying the destination.
+The console SHALL group environment destinations under Database, Application, Observe, and Configure, retaining the current destination and environment context. Switching project or environment MUST clear previous document data, grants, query cursors, and editor drafts before displaying the destination.
 
 #### Scenario: Environment changes during a request
 - **WHEN** a developer switches environment while an old read is pending

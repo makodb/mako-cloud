@@ -5,9 +5,8 @@ These are leads from the read-only comparison sweep of 2026-11-21 (ten agents, o
 Each lead: `[id] area, severity/confidence` title. Where: the first evidence pointer the sweep gave.
 
 
-## Spec may contradict the whitepaper (1)
+## Spec may contradict the whitepaper (0)
 
-- `[21] cloud-a, medium/high` The spec's navigation-shell destination list is not the one the User Book describes Where: docs/user-book.md:287 "Inside an environment the sidebar groups destinations under **Database**, **Application**, **Observe**, and **Configure**." and the destination ta…
 
 ## Code may not meet a spec requirement (98)
 

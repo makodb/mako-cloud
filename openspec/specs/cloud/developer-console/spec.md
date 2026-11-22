@@ -3,9 +3,7 @@
 ## Purpose
 
 What a developer sees from sign-in onward: the home dashboard, project home, the navigation shell every product area lives in, first-run onboarding, and the settings, usage, billing, and activity that belong where the developer is working.
-
 ## Requirements
-
 ### Requirement: Home dashboard after sign-in
 After sign-in the console SHALL show reachable projects in lists, with personal projects in a root-level section and team projects grouped separately under Teams. Each project row SHALL carry its name, owner, lifecycle state, region, shared plan, and headline usage for the current period. The dashboard MUST show only projects and activity the current memberships allow, distinguish unavailable summaries from healthy ones, and show personal projects without requiring a team selection. The internal personal space MUST NOT appear as a team in navigation or team-management lists.
 
@@ -36,7 +34,14 @@ A project SHALL have a home page summarizing its environments and their lifecycl
 - **THEN** the project home shows that environment's readiness, keys, usage, health, and activity, and each product area is reachable from it
 
 ### Requirement: Navigation shell
-Every environment-level screen SHALL be mounted in a persistent navigation shell whose destinations are Database (collections, schemas, indexes), Explorer, Auth (application users, providers), Storage, Functions (deployments, secrets, schedules), Sync (replication diagnostics, webhooks), Logs, Observability, API & Keys, Backups, and Settings. The active personal or team ownership, project, environment, and developer identity MUST remain visible; destinations the deployment does not provide MUST be shown as unavailable rather than hidden; and an existing deep link MUST open inside the shell with its context intact. The shell and every destination SHALL render through the shared design system, and the shell SHALL honour the developer's light or dark theme preference, kept per device, defaulting to the device's own preference. Signed-in console sidebars MUST NOT include a Documentation destination.
+Every environment-level screen SHALL be mounted in a persistent navigation shell whose destinations are grouped under four headings:
+
+- Database: Overview, Data (the data explorer), Collections, Policies, Sync, and Backups;
+- Application: Users, Auth providers, Email templates, Storage, Functions (deployments, secrets, logs, and each function's schedules), and Webhooks;
+- Observe: Observability, Logs, Usage, and Activity;
+- Configure: API & Connect, API keys, API docs, and Settings.
+
+The active personal or team ownership, project, environment, and developer identity MUST remain visible, and navigation SHALL follow the permissions the platform returns for the developer. Destinations the deployment does not provide MUST be shown as unavailable rather than hidden; and an existing deep link MUST open inside the shell with its context intact. On a narrow screen a "Go to" control SHALL select a destination without the wide sidebar. The shell and every destination SHALL render through the shared design system, and the shell SHALL honour the developer's light or dark theme preference, kept per device, defaulting to the device's own preference. Signed-in console sidebars MUST NOT include a Documentation destination.
 
 #### Scenario: Every destination is one click away
 - **WHEN** an authorized developer is anywhere inside an environment
@@ -118,3 +123,4 @@ A project's settings SHALL offer renaming, transfer between the personal space a
 #### Scenario: A developer deletes a project
 - **WHEN** a project owner confirms deletion in settings
 - **THEN** the project enters its grace period, the deadline is shown, and restoration remains offered until then
+
