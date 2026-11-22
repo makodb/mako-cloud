@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -136,6 +136,8 @@ test("an allowed host must be a DNS name a hosted deployment would accept", asyn
     "--environment-id",
     "env_abcdefgh",
     "--no-verify-jwt",
+    "--container-engine",
+    "docker",
   ];
   for (const host of ["127.0.0.1", "localhost", "metadata.google.internal", "Bad.Example"]) {
     assert.throws(
@@ -172,6 +174,8 @@ test("reserved, duplicate, and partially configured environment inputs fail clos
     "--environment-id",
     "env_abcdefgh",
     "--no-verify-jwt",
+    "--container-engine",
+    "docker",
   ];
   const reserved = parseServeArguments([...base, "--env-file", reservedFile], fixture.root);
   assert.throws(() => createRuntimeLaunchPlan(reserved), /reserved name/u);
@@ -186,6 +190,53 @@ test("reserved, duplicate, and partially configured environment inputs fail clos
     () => parseServeArguments([...base, "--jwks-file", fixture.jwksFile], fixture.root),
     /requires --jwks-file, --jwt-issuer, and --jwt-audience together/u,
   );
+});
+
+test("an unnamed container engine is found on PATH and a host without one is refused", async (t) => {
+  const fixture = await createFixture(t);
+  const base = [
+    "functions",
+    "serve",
+    fixture.functionDirectory,
+    "--project-id",
+    "prj_abcdefgh",
+    "--environment-id",
+    "env_abcdefgh",
+    "--no-verify-jwt",
+  ];
+  const unnamed = parseServeArguments(base, fixture.root);
+  const named = parseServeArguments([...base, "--container-engine", "podman"], fixture.root);
+
+  // Discovery reads PATH when the plan is made, so the test owns PATH for its
+  // duration and no assertion depends on what this host happens to install.
+  const originalPath = process.env.PATH;
+  t.after(() => {
+    if (originalPath === undefined) {
+      delete process.env.PATH;
+    } else {
+      process.env.PATH = originalPath;
+    }
+  });
+  const emptyDirectory = join(fixture.root, "no-engine");
+  const engineDirectory = join(fixture.root, "engines");
+  await mkdir(emptyDirectory);
+  await mkdir(engineDirectory);
+
+  process.env.PATH = emptyDirectory;
+  assert.throws(
+    () => createRuntimeLaunchPlan(unnamed),
+    (error) =>
+      error instanceof LocalServeConfigurationError &&
+      error.message === "docker or podman is required for local function serve",
+  );
+  // A named engine is taken as given: nothing is looked up for it.
+  assert.equal(createRuntimeLaunchPlan(named).command, "podman");
+
+  process.env.PATH = engineDirectory;
+  await installExecutable(join(engineDirectory, "podman"));
+  assert.equal(createRuntimeLaunchPlan(unnamed).command, "podman");
+  await installExecutable(join(engineDirectory, "docker"));
+  assert.equal(createRuntimeLaunchPlan(unnamed).command, "docker");
 });
 
 test("the packaged pin and main worker preserve the hosted request boundary", async () => {
@@ -250,6 +301,11 @@ test("runtime output redaction covers every exact active secret", () => {
     "before [REDACTED] middle [REDACTED] after",
   );
 });
+
+async function installExecutable(path) {
+  await writeFile(path, "#!/bin/sh\nexit 0\n", "utf8");
+  await chmod(path, 0o755);
+}
 
 async function createFixture(t) {
   const root = await mkdtemp(join(tmpdir(), "mako-cli-test-"));
