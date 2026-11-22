@@ -246,8 +246,9 @@ Run `npm run validate:traceability` whenever a scenario or row changes. The vali
 | RR-16 | User membership is revoked | `packages/rxdb-client/test/security-reset.test.mjs::pauses, securely clears, notifies, and restarts under a new identifier` | Automated |
 | RR-17 | Client schema is outdated | `packages/rxdb-client/test/recovery.test.mjs::surfaces migration and full-resync states through application hooks` | Automated |
 | RR-18 | Access token expires during live sync | `packages/rxdb-client/test/refresh.test.mjs::automatically rotates an expiring access token once for concurrent callers` | Automated |
-| RR-19 | Refresh session is revoked | `packages/rxdb-client/test/refresh.test.mjs::clears revoked or unavailable refresh state and requires authentication` | Automated |
-| RR-20 | Client exceeds a transient rate limit | `crates/mako-gateway/src/replication.rs::authorizes_public_user_context_and_returns_retryable_quota_errors` | Automated |
+| RR-19 | Refresh session is revoked | `packages/rxdb-client/test/refresh.test.mjs::clears revoked or unavailable refresh state and requires authentication` and `packages/rxdb-client/test/live.test.mjs::renews once on a refused stream and ends it rather than reconnecting forever` | Automated |
+| RR-20 | Renewal cannot reach the service | `packages/rxdb-client/test/refresh.test.mjs::keeps the persisted session when a refresh cannot reach the service` and `packages/rxdb-client/test/pull.test.mjs::retries rather than signing out when the session refresh is unavailable` | Automated |
+| RR-21 | Client exceeds a transient rate limit | `crates/mako-gateway/src/replication.rs::authorizes_public_user_context_and_returns_retryable_quota_errors` | Automated |
 
 ## Operations / local bootstrap and smoke verification
 

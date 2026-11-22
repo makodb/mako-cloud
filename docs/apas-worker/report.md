@@ -52,3 +52,22 @@ Status: open
 Status: open
 
 `docs/user-book.md` line 1611 lists `GET /v1/projects/{p}/environments/{e}/replication/stream` for the many-collection live stream. `api/openapi/mako-cloud-v1.yaml` line 3451 defines that path with `post` only (the one-collection stream at line 3494 is `get`). The User Book says at line 9 that the OpenAPI document wins where they disagree, so the worker leaves the code and the contract as they are. Proposed: change the method in line 1611 to `POST` and say that the body names the collections and their cursors.
+
+## 2026-11-21: Does a wait-list decision need a reason?
+
+Status: open
+
+Two specs disagree, and the Dev Book sides with one of them while the code follows the other.
+
+- `docs/dev-book.md` line 1218: "Every decision requires recent password verification, an explicit private reason, idempotency, and confirmation." Line 880 says an operator can "atomically approve or reject one with a private reason and idempotency key".
+- `openspec/specs/identity/developer-registration/spec.md` lines 98 to 100: "Approval and rejection MUST require an operator-visible reason, request identifier, and idempotency key".
+- `openspec/specs/identity/account-role-lifecycle/spec.md` line 89: "The system SHALL accept individual approval and rejection decisions when the private review reason is omitted, null, empty, or whitespace-only."
+- `crates/mako-control-plane/src/developer_workflow.rs` line 1114 validates a reason only when it is not empty, so a decision without a reason is accepted.
+
+Which rule do you want?
+
+1. A reason is required. Then the worker changes the `account-role-lifecycle` requirement and makes the control plane refuse a decision with no reason. The operator console's review form changes with it.
+2. A reason is optional. Then the worker changes the `developer-registration` requirement, and you change the two Dev Book sentences to say "an optional private reason".
+
+Until this is answered the worker leaves both specs and the code as they are.
+

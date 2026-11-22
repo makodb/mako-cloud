@@ -3,9 +3,7 @@
 ## Purpose
 
 Expose the document platform as a first-class RxDB replication backend with resumable pull, conflict-aware push, live updates, and secure handling of changing document visibility.
-
 ## Requirements
-
 ### Requirement: Supported RxDB client integration
 The platform SHALL publish a versioned client integration that connects an RxDB collection to Mako Cloud using RxDB's pull handler, push handler, and live pull stream contracts. The integration SHALL be the supported application data interface for the MVP. The integration SHALL support durable local storage: replication checkpoints and security state SHALL be persisted alongside the application's data so that a restarted application resumes from where it stopped instead of pulling everything again, and a security reset SHALL clear that persisted state. The integration SHALL also cover every application sign-in method the platform offers — password, external provider, and magic link — and object storage access under the same session, so an application does not hand-build those requests.
 
@@ -99,7 +97,11 @@ Every replication session SHALL bind to a collection schema version. The server 
 - **THEN** replication does not start and the integration reports that migration is required
 
 ### Requirement: Session renewal and revocation
-The client integration SHALL renew expiring access tokens through the auth service and SHALL stop data delivery promptly when a session is revoked or cannot be refreshed.
+The client integration SHALL renew expiring access tokens through the auth service, with at most one renewal in flight, shared by every caller that needs it. It SHALL decide whether a session has ended only from what the service answered.
+
+A definitive refusal of the refresh credential SHALL clear the stored session and surface an authentication-required state. The live stream SHALL close on it instead of reconnecting, and the integration SHALL report the state so that the application stops pull and push replication, which RxDB otherwise repeats.
+
+A renewal that reached no verdict (a network fault, a timeout, throttling, or a server error) MUST NOT end the session. The stored session SHALL be kept, pulls, pushes and object requests SHALL report a retryable unavailable error, and the live stream SHALL keep reconnecting, until a later renewal succeeds or the service refuses the credential.
 
 #### Scenario: Access token expires during live sync
 - **WHEN** the refresh session remains valid
@@ -107,7 +109,11 @@ The client integration SHALL renew expiring access tokens through the auth servi
 
 #### Scenario: Refresh session is revoked
 - **WHEN** token renewal reports a revoked session
-- **THEN** replication stops, closes the live stream, and surfaces an authentication-required state
+- **THEN** the stored session is cleared, the live stream closes instead of reconnecting, and the integration surfaces an authentication-required state on which the application stops replication
+
+#### Scenario: Renewal cannot reach the service
+- **WHEN** token renewal fails without a verdict from the service
+- **THEN** the stored session is kept, the request reports a retryable unavailable error instead of an authentication failure, and renewal succeeds again once the service answers
 
 ### Requirement: Bounded requests and backpressure
 The service SHALL enforce configurable batch, payload, connection, and rate limits and SHALL return retry guidance for transient throttling. The client integration SHALL apply bounded buffering and reconnect backoff.
@@ -115,3 +121,4 @@ The service SHALL enforce configurable batch, payload, connection, and rate limi
 #### Scenario: Client exceeds a transient rate limit
 - **WHEN** an otherwise valid replication request exceeds its project quota
 - **THEN** the server returns a retryable throttling response with a retry delay and the client backs off
+
