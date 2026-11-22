@@ -28,6 +28,12 @@ use crate::{
 const DEFAULT_MAXIMUM_BATCH_OPERATIONS: usize = 10_000;
 const DEFAULT_MAXIMUM_SCAN_ITEMS: usize = 10_000;
 
+/// What the adapter reports from the moment RocksDB signals corruption until
+/// the process is restarted. It names the recovery procedure because nothing
+/// the service can do by itself is safe: the volume has to be preserved and
+/// judged by an operator.
+pub const ROCKSDB_CORRUPTION_DIAGNOSTIC: &str = "storage_corruption_detected:mutations_refused:see=docs/dev-book.md#runbook-production-rocksdb-incidents";
+
 /// Local RocksDB settings. A configured minimum upgrades weaker call-site requests.
 #[derive(Clone, Debug)]
 pub struct RocksDbConfig {
@@ -83,6 +89,27 @@ pub struct RocksDbAdapter {
 struct RocksErrorCounters {
     io: AtomicU64,
     corruption: AtomicU64,
+}
+
+impl RocksErrorCounters {
+    fn record(&self, kind: StorageErrorKind) {
+        match kind {
+            StorageErrorKind::Io => {
+                self.io.fetch_add(1, Ordering::Relaxed);
+            }
+            StorageErrorKind::Corruption => {
+                self.corruption.fetch_add(1, Ordering::Relaxed);
+            }
+            _ => {}
+        }
+    }
+
+    /// One corruption signal is enough, and nothing but a restart clears it:
+    /// the counters live as long as the open database does. An I/O error does
+    /// not latch; it may pass, and the caller is told it may retry.
+    fn corruption_latched(&self) -> bool {
+        self.corruption.load(Ordering::Relaxed) != 0
+    }
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -181,6 +208,22 @@ impl RocksDbAdapter {
         map_rocks_error(operation, error, Some(self.error_counters.as_ref()))
     }
 
+    /// Refuses a mutation once corruption has been signalled. Reads stay
+    /// open: the recovery procedure inspects and preserves the volume, and a
+    /// read cannot make the damage worse. The refusal is not a new signal, so
+    /// it is not counted.
+    fn refuse_mutation_after_corruption(&self, operation: &'static str) -> StorageResult<()> {
+        if self.error_counters.corruption_latched() {
+            return Err(StorageError::new(
+                StorageErrorKind::Corruption,
+                operation,
+                false,
+                ROCKSDB_CORRUPTION_DIAGNOSTIC,
+            ));
+        }
+        Ok(())
+    }
+
     fn effective_durability(&self, requested: Durability) -> Durability {
         requested.max(self.config.minimum_durability)
     }
@@ -276,6 +319,7 @@ impl KvAdapter for RocksDbAdapter {
     }
 
     async fn write(&self, batch: WriteBatch, durability: Durability) -> StorageResult<()> {
+        self.refuse_mutation_after_corruption("write")?;
         let _operation = self.operation_lock.read().map_err(|_| {
             StorageError::new(
                 StorageErrorKind::Internal,
@@ -296,6 +340,7 @@ impl KvAdapter for RocksDbAdapter {
         &self,
         request: AtomicWrite,
     ) -> StorageResult<CompareAndWriteResult> {
+        self.refuse_mutation_after_corruption("compare_and_write")?;
         let _operation = self.operation_lock.read().map_err(|_| {
             StorageError::new(
                 StorageErrorKind::Internal,
@@ -394,7 +439,10 @@ impl KvAdapter for RocksDbAdapter {
             }
             iterator.next();
         }
-        iterator.status().map_err(|_| {
+        iterator.status().map_err(|error| {
+            // The caller only learns that the size is unknown, but a
+            // corruption or I/O signal met on the way is still recorded.
+            let _signal = self.map_error("stored_bytes", error);
             StorageError::new(
                 StorageErrorKind::Unavailable,
                 "stored_bytes",
@@ -416,7 +464,8 @@ impl KvAdapter for RocksDbAdapter {
             total = total.saturating_add(1);
             iterator.next();
         }
-        iterator.status().map_err(|_| {
+        iterator.status().map_err(|error| {
+            let _signal = self.map_error("count_keys", error);
             StorageError::new(
                 StorageErrorKind::Unavailable,
                 "count_keys",
@@ -429,9 +478,24 @@ impl KvAdapter for RocksDbAdapter {
 
     async fn health(&self) -> StorageResult<HealthReport> {
         let started = Instant::now();
-        self.db
+        let probe = self
+            .db
             .get(b"\x01\x10mako-health\x00\x00")
-            .map_err(|error| self.map_error("health", error))?;
+            .map_err(|error| self.map_error("health", error));
+        // The probe reads one key and can pass over a damaged block for ever.
+        // What decides is whether any operation, the probe included, has met
+        // corruption since the database was opened. This is a report, not an
+        // error: shutdown asks for health too and must still be able to close
+        // the database.
+        if self.error_counters.corruption_latched() {
+            return Ok(HealthReport {
+                status: HealthStatus::Unavailable,
+                latency: started.elapsed(),
+                durability_verified: true,
+                safe_diagnostic: Some(ROCKSDB_CORRUPTION_DIAGNOSTIC.to_owned()),
+            });
+        }
+        probe?;
         Ok(HealthReport {
             status: HealthStatus::Healthy,
             latency: started.elapsed(),
@@ -681,7 +745,15 @@ fn map_rocks_error(
     error: RocksError,
     counters: Option<&RocksErrorCounters>,
 ) -> StorageError {
-    let (kind, retryable, message) = match error.kind() {
+    let (kind, retryable, message) = classify_rocks_error(error.kind());
+    if let Some(counters) = counters {
+        counters.record(kind);
+    }
+    StorageError::new(kind, operation, retryable, message)
+}
+
+fn classify_rocks_error(kind: RocksErrorKind) -> (StorageErrorKind, bool, &'static str) {
+    match kind {
         RocksErrorKind::Corruption => (
             StorageErrorKind::Corruption,
             false,
@@ -723,19 +795,7 @@ fn map_rocks_error(
             false,
             "RocksDB reported an internal failure",
         ),
-    };
-    if let Some(counters) = counters {
-        match kind {
-            StorageErrorKind::Io => {
-                counters.io.fetch_add(1, Ordering::Relaxed);
-            }
-            StorageErrorKind::Corruption => {
-                counters.corruption.fetch_add(1, Ordering::Relaxed);
-            }
-            _ => {}
-        }
     }
-    StorageError::new(kind, operation, retryable, message)
 }
 
 #[cfg(test)]
@@ -754,6 +814,198 @@ mod tests {
         let mut batch = WriteBatch::new();
         batch.put(key, value);
         batch
+    }
+
+    fn conditional_put(key: &[u8], value: &[u8]) -> AtomicWrite {
+        AtomicWrite {
+            conditions: vec![KeyCondition::Missing { key: key.to_vec() }],
+            batch: put(key, value),
+            durability: Durability::Sync,
+        }
+    }
+
+    #[test]
+    fn a_corruption_signal_fails_health_and_readiness_until_restart() {
+        let directory = TempDir::new().expect("temporary directory");
+        let path = directory.path().join("rocksdb");
+        let adapter = open(&path);
+        let clone = adapter.clone();
+        let ready = block_on(crate::check_storage_readiness(&adapter, Durability::Sync));
+        assert!(ready.is_ready(), "{ready}");
+        assert_eq!(ready.operator_diagnostic(), None);
+
+        adapter.error_counters.record(StorageErrorKind::Corruption);
+
+        // Every handle on the open database reports it, not only the one that
+        // met the signal.
+        for handle in [&adapter, &clone] {
+            let health = block_on(handle.health()).expect("health stays a report");
+            assert_eq!(health.status, HealthStatus::Unavailable);
+            assert_eq!(
+                health.safe_diagnostic.as_deref(),
+                Some(ROCKSDB_CORRUPTION_DIAGNOSTIC)
+            );
+            let readiness = block_on(crate::check_storage_readiness(handle, Durability::Sync));
+            assert!(!readiness.is_ready());
+            assert_eq!(
+                readiness.failures,
+                vec![crate::ReadinessFailure::HealthNotHealthy(
+                    HealthStatus::Unavailable
+                )]
+            );
+            assert_eq!(
+                readiness.operator_diagnostic(),
+                Some(ROCKSDB_CORRUPTION_DIAGNOSTIC)
+            );
+            assert!(
+                readiness
+                    .to_string()
+                    .ends_with("#runbook-production-rocksdb-incidents"),
+                "{readiness}"
+            );
+        }
+        // It stays that way however often it is asked.
+        assert!(!block_on(crate::check_storage_readiness(&adapter, Durability::Sync)).is_ready());
+
+        // Restarting on the same volume is the runbook's next step, and a
+        // freshly opened database has met no corruption yet.
+        drop(adapter);
+        drop(clone);
+        let reopened = open(&path);
+        assert!(block_on(crate::check_storage_readiness(&reopened, Durability::Sync)).is_ready());
+    }
+
+    #[test]
+    fn a_corruption_signal_refuses_every_mutation_and_keeps_reads() {
+        let directory = TempDir::new().expect("temporary directory");
+        let adapter = open(&directory.path().join("rocksdb"));
+        block_on(adapter.write(put(b"kept", b"before"), Durability::Sync)).expect("seed");
+
+        adapter.error_counters.record(StorageErrorKind::Corruption);
+
+        let write = block_on(adapter.write(put(b"kept", b"after"), Durability::Sync))
+            .expect_err("write is refused");
+        assert_eq!(write.kind, StorageErrorKind::Corruption);
+        assert!(!write.retryable);
+        let conditional = block_on(adapter.compare_and_write(conditional_put(b"new", b"value")))
+            .expect_err("conditional write is refused");
+        assert_eq!(conditional.kind, StorageErrorKind::Corruption);
+        assert!(!conditional.retryable);
+        let mut delete = WriteBatch::new();
+        delete.delete(b"kept");
+        assert_eq!(
+            block_on(adapter.write(delete, Durability::Sync))
+                .expect_err("delete is refused")
+                .kind,
+            StorageErrorKind::Corruption
+        );
+
+        // Nothing was written, and what was there can still be read.
+        assert_eq!(
+            block_on(adapter.get(b"kept")).expect("read"),
+            Some(b"before".to_vec())
+        );
+        assert_eq!(block_on(adapter.get(b"new")).expect("read"), None);
+        let snapshot = block_on(adapter.snapshot()).expect("snapshot");
+        assert_eq!(
+            block_on(snapshot.get(b"kept")).expect("snapshot read"),
+            Some(b"before".to_vec())
+        );
+        // A refused mutation is not another corruption signal.
+        assert_eq!(
+            adapter
+                .health_signals()
+                .expect("signals")
+                .corruption_signals,
+            1
+        );
+    }
+
+    #[test]
+    fn an_io_signal_alone_neither_fails_readiness_nor_refuses_writes() {
+        let directory = TempDir::new().expect("temporary directory");
+        let adapter = open(&directory.path().join("rocksdb"));
+        adapter.error_counters.record(StorageErrorKind::Io);
+        adapter.error_counters.record(StorageErrorKind::Timeout);
+
+        assert_eq!(adapter.health_signals().expect("signals").io_errors, 1);
+        assert!(block_on(crate::check_storage_readiness(&adapter, Durability::Sync)).is_ready());
+        block_on(adapter.write(put(b"key", b"value"), Durability::Sync)).expect("write");
+        assert_eq!(
+            block_on(adapter.compare_and_write(conditional_put(b"other", b"value")))
+                .expect("conditional write"),
+            CompareAndWriteResult::Applied
+        );
+    }
+
+    #[test]
+    fn rocksdb_error_kinds_map_to_corruption_and_io() {
+        assert_eq!(
+            classify_rocks_error(RocksErrorKind::Corruption),
+            (
+                StorageErrorKind::Corruption,
+                false,
+                "RocksDB reported corruption"
+            )
+        );
+        let (io, retryable, _) = classify_rocks_error(RocksErrorKind::IOError);
+        assert_eq!((io, retryable), (StorageErrorKind::Io, true));
+        let (busy, retryable, _) = classify_rocks_error(RocksErrorKind::Busy);
+        assert_eq!((busy, retryable), (StorageErrorKind::Conflict, true));
+        // The text an operator reads fits the readiness detail a service may
+        // publish: bounded and without control characters.
+        assert!(ROCKSDB_CORRUPTION_DIAGNOSTIC.len() < 256);
+        assert!(!ROCKSDB_CORRUPTION_DIAGNOSTIC.chars().any(char::is_control));
+        assert!(!ROCKSDB_CORRUPTION_DIAGNOSTIC.contains([';', ',', ' ']));
+    }
+
+    #[test]
+    fn a_read_that_meets_a_damaged_block_stops_mutations_and_readiness() {
+        let directory = TempDir::new().expect("temporary directory");
+        let path = directory.path().join("rocksdb");
+        let adapter = open(&path);
+        // Values RocksDB cannot shrink, so the table file holds them as they
+        // are and damage anywhere in its first half lands in a data block.
+        let mut batch = WriteBatch::new();
+        for index in 0..64_u32 {
+            let value = blake3::hash(&index.to_be_bytes()).as_bytes().repeat(16);
+            batch.put(format!("damaged/{index:04}").into_bytes(), value);
+        }
+        block_on(adapter.write(batch, Durability::Sync)).expect("seed");
+        adapter.db.flush().expect("flush to a table file");
+        drop(adapter);
+
+        let table = std::fs::read_dir(&path)
+            .expect("database directory")
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .find(|file| file.extension().is_some_and(|extension| extension == "sst"))
+            .expect("one table file");
+        let mut bytes = std::fs::read(&table).expect("read table file");
+        let damaged_until = bytes.len() / 2;
+        for byte in &mut bytes[..damaged_until] {
+            *byte ^= 0xA5;
+        }
+        std::fs::write(&table, bytes).expect("damage the table file");
+
+        // The footer and index are intact, so the database still opens.
+        let adapter = open(&path);
+        let read = block_on(adapter.get(b"damaged/0000")).expect_err("read meets the damage");
+        assert_eq!(read.kind, StorageErrorKind::Corruption);
+        assert!(!read.retryable);
+
+        let readiness = block_on(crate::check_storage_readiness(&adapter, Durability::Sync));
+        assert!(!readiness.is_ready());
+        assert_eq!(
+            readiness.operator_diagnostic(),
+            Some(ROCKSDB_CORRUPTION_DIAGNOSTIC)
+        );
+        assert_eq!(
+            block_on(adapter.write(put(b"elsewhere", b"value"), Durability::Sync))
+                .expect_err("write is refused")
+                .kind,
+            StorageErrorKind::Corruption
+        );
     }
 
     #[test]

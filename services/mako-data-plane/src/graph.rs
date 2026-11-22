@@ -1282,7 +1282,12 @@ impl DataPlaneReadiness {
         if failed.is_empty() {
             ReadinessSnapshot::ready("storage_identity_documents_policy_gateway_quota_audit_ready")
         } else {
-            ReadinessSnapshot::not_ready(format!("dependencies_not_ready:{}", failed.join(",")))
+            ReadinessSnapshot::not_ready(
+                self.storage.with_operator_diagnostic(format!(
+                    "dependencies_not_ready:{}",
+                    failed.join(",")
+                )),
+            )
         }
     }
 }
@@ -2342,6 +2347,46 @@ mod tests {
         assert!(!readiness.is_ready());
         assert_eq!(readiness.to_string(), "dependencies_not_ready:object_store");
         block_on(graph.shutdown()).expect("shutdown");
+    }
+
+    #[test]
+    fn a_storage_corruption_signal_names_the_runbook_in_the_readiness_detail() {
+        let directory = local_tempdir("data-plane-corruption-readiness");
+        let config = config_for(directory.path(), DeploymentEnvironment::Local);
+        let graph = DataPlaneGraph::open(&config).expect("graph");
+        let mut readiness = graph.readiness();
+        assert!(readiness.storage.is_ready());
+        block_on(graph.shutdown()).expect("shutdown");
+
+        // What storage reports once RocksDB has signalled corruption.
+        readiness.storage.status = mako_storage::ReadinessStatus::NotReady;
+        readiness.storage.failures = vec![mako_storage::ReadinessFailure::HealthNotHealthy(
+            mako_storage::HealthStatus::Unavailable,
+        )];
+        readiness
+            .storage
+            .health
+            .as_mut()
+            .expect("health report")
+            .safe_diagnostic = Some(mako_storage::ROCKSDB_CORRUPTION_DIAGNOSTIC.to_owned());
+        readiness.object_store = true;
+
+        assert!(!readiness.is_ready());
+        let snapshot = readiness.snapshot();
+        assert!(!snapshot.ready);
+        assert_eq!(
+            snapshot.detail,
+            format!(
+                "dependencies_not_ready:storage;{}",
+                mako_storage::ROCKSDB_CORRUPTION_DIAGNOSTIC
+            )
+        );
+        assert!(
+            snapshot
+                .detail
+                .ends_with("docs/dev-book.md#runbook-production-rocksdb-incidents")
+        );
+        assert!(snapshot.detail.len() <= 512);
     }
 
     struct NoEmail;

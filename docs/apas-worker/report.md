@@ -95,3 +95,14 @@ Until this is answered the worker leaves the gateway and local serve as they are
 Status: open
 
 `docs/user-book.md` line 2243 defines application routes as "the ones an application calls with its own session or public key" and then lists "`…/auth/…`, `…/collections/…` (documents and replication), and `…/storage/…`". The many-collection live stream is `…/environments/{e}/replication/stream` (line 1611), which is under none of the three. The definition covers it and `@mako-cloud/rxdb` opens it from the browser, so the worker reads the list as incomplete and will make the data plane answer listed origins on that route (the requirement "Browser origins allowed to call an environment" already asks for replication). Proposed: add "`…/replication/stream` (the many-collection live stream)" to the list in line 2243.
+
+## 2026-11-22: After a RocksDB corruption signal the service now stops itself; should repeated I/O errors do the same?
+
+Status: open
+
+`openspec/specs/storage/production-rocksdb/spec.md` says that when "an integrity check or database operation reports corruption", "the service fails readiness, stops accepting mutations, and directs operators to the documented recovery procedure". The code only counted the error. Since 2026-11-22 the RocksDB adapter does what the scenario says: after the first corruption error from any operation, storage health is unavailable, every write is refused, reads stay open, and `/readyz` of the data plane, the edge gateway and the telemetry service carries `storage_corruption_detected:mutations_refused:see=docs/dev-book.md#runbook-production-rocksdb-incidents`. The state lasts until the process is restarted, which is step 6 of that runbook.
+
+Two things for you:
+
+1. Proposed addition to `docs/dev-book.md` line 1061 ("On a corruption or repeated I/O signal, stop routing and mutations, fence the owner, ..."), which reads as if the operator has to stop mutations by hand. Add after it: "The service does the first part by itself on a corruption signal: storage readiness turns false with a detail that names the RocksDB runbook, every write is refused, and reads stay open, until the process is restarted. Most authenticated requests then answer 503, because they write quota counters and replay guards." The same sentence fits the runbook at line 1351.
+2. A question. Line 1061 also names a "repeated I/O signal". The spec scenario names corruption only, and an I/O error can pass (a full disk, a slow device), so the worker left I/O errors as they were: counted, reported to the caller as retryable, and not a reason to fail readiness. Do you want repeated I/O errors to fail readiness and stop writes too? If yes, say how many within what time, and whether the state clears by itself when writes succeed again.

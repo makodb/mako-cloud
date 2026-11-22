@@ -1,6 +1,6 @@
 # APAS worker progress
 
-Last updated 2026-11-22, round 14, on Shuais-MacBook-Air-2.local.
+Last updated 2026-11-22, round 15, on Shuais-MacBook-Air-2.local.
 
 ## The three layers
 
@@ -31,13 +31,16 @@ Last updated 2026-11-22, round 14, on Shuais-MacBook-Air-2.local.
 
 - Round 14 (spec layer): the change `state-refresh-replay-rules` wrote the rules round 13 implemented into "Rotating refresh sessions" of `identity/project-auth` (five-second window for the last consumed credential only, thirty-day family, every earlier credential is a replay, an unknown credential revokes nothing), added three scenarios with rows PA-08 to PA-10 (the former PA-08 to PA-17 are now PA-11 to PA-20), and was archived.
 
+- Round 15 (code layer): fixed lead 150, the scenario "RocksDB reports possible corruption" of `storage/production-rocksdb`. A corruption error was only counted. Now the RocksDB adapter latches on the first corruption signal from any operation (the health probe, reads, scans, snapshots, size and count walks included): `health()` reports unavailable with a diagnostic that names the Dev Book runbook, `write` and `compare_and_write` are refused, reads stay open, and the latch lasts until the process restarts. The data plane, edge gateway and telemetry service put the diagnostic into their `/readyz` detail. An I/O error does not latch. A test damages a real table file and reads through it.
+
 ## What is left, in the order I would do it
 
-1. Code that may not meet a spec requirement: 97 leads. Verified and ready, in this order: 150 (RocksDB corruption must fail readiness and stop writes; storage is what the rest builds on), 91 (registration reveals a known address through the password policy), 92 (a provider sign-in for a pending user can never be exchanged), 93 (CORS on the environment-wide stream), 37 (explorer delete), 72 (denied writes are not audited), 69 (hosted functions cannot stream; needs a container engine to prove end to end). Then the high-severity ones not verified yet: 0, 1, 18, 19, 36, 44, 45, 49, 50, 54, 59, 134. Verify each against the current files before fixing it.
-2. Missing specs: archive `resumable-streaming-exports` (its deltas are not in the main specs yet; it needs traceability rows CL-14 and CL-15 in the same commit or `npm run validate:traceability` fails), then the "whitepaper statement with no spec requirement" and "implemented behaviour with no spec requirement" leads.
-3. Missing code: the open change `observable-data-plane-and-restore-verification` (0 of 26 tasks). Its task list names `infra/local/prometheus.yml` (the file is `prometheus.yaml`) and `validate:alert-metric-producers` (the script is `validate:alert-metrics`); fix those in the change first. Start with task group 1 (receipt probe) and group 3 (data-plane `/metrics`). Backlog lead 169 belongs here: the backup-age alert reads a gauge that is rewritten only when a backup runs, so it cannot fire while the timers are stopped.
-4. Housekeeping: archive `rational-sample-app`. `openspec archive` aborts because eight of its ADDED requirements already exist in the main spec in the longer form the archived `rational-monarch-parity` change gave them. The worker may not use `--skip-specs`, so its deltas must first be rewritten to match the main spec.
-5. Extend `scripts/validate-requirements-traceability.js` and the matrix to the eight capabilities it does not index (the Dev Book says the matrix maps every spec scenario).
+1. A small spec step that follows round 15: `storage/production-rocksdb`, "Local storage health and capacity are observable", says a corruption report fails readiness and stops mutations, but not that the state lasts until restart, that reads stay open, that the readiness detail names the runbook, or that an I/O error alone does not do this. Write those into the requirement with scenarios (the capability is not in the traceability matrix, so no rows).
+2. Code that may not meet a spec requirement: 96 leads. Verified and ready, in this order: 91 (registration reveals a known address through the password policy), 92 (a provider sign-in for a pending user can never be exchanged), 93 (CORS on the environment-wide stream), 37 (explorer delete), 72 (denied writes are not audited), 69 (hosted functions cannot stream; needs a container engine to prove end to end). Then the high-severity ones not verified yet: 0, 1, 18, 19, 36, 44, 45, 49, 50, 54, 59, 134. Verify each against the current files before fixing it.
+3. Missing specs: archive `resumable-streaming-exports` (its deltas are not in the main specs yet; it needs traceability rows CL-14 and CL-15 in the same commit or `npm run validate:traceability` fails), then the "whitepaper statement with no spec requirement" and "implemented behaviour with no spec requirement" leads.
+4. Missing code: the open change `observable-data-plane-and-restore-verification` (0 of 26 tasks). Its task list names `infra/local/prometheus.yml` (the file is `prometheus.yaml`) and `validate:alert-metric-producers` (the script is `validate:alert-metrics`); fix those in the change first. Start with task group 1 (receipt probe) and group 3 (data-plane `/metrics`). Backlog lead 169 belongs here: the backup-age alert reads a gauge that is rewritten only when a backup runs, so it cannot fire while the timers are stopped.
+5. Housekeeping: archive `rational-sample-app`. `openspec archive` aborts because eight of its ADDED requirements already exist in the main spec in the longer form the archived `rational-monarch-parity` change gave them. The worker may not use `--skip-specs`, so its deltas must first be rewritten to match the main spec.
+6. Extend `scripts/validate-requirements-traceability.js` and the matrix to the eight capabilities it does not index (the Dev Book says the matrix maps every spec scenario).
 
 ## Blocked
 

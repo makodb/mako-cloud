@@ -26,9 +26,9 @@ use mako_service_runtime::{
     ReadinessSnapshot, serve_http_transport_with_readiness,
 };
 use mako_storage::{
-    AtomicWrite, CompareAndWriteResult, Durability, HealthStatus, KeyCondition, KeyRange,
-    KvAdapter, ProductionRocksDb, ProductionRocksDbConfig, ProductionVolumeIdentity, ScanDirection,
-    ScanRequest, WriteBatch,
+    AtomicWrite, CompareAndWriteResult, Durability, HealthReport, HealthStatus, KeyCondition,
+    KeyRange, KvAdapter, ProductionRocksDb, ProductionRocksDbConfig, ProductionVolumeIdentity,
+    ScanDirection, ScanRequest, WriteBatch,
 };
 use rand_core::{OsRng, RngCore};
 use serde::{Deserialize, Serialize};
@@ -544,13 +544,25 @@ struct TelemetryReadiness {
 
 impl ReadinessProbe for TelemetryReadiness {
     fn snapshot(&self) -> ReadinessSnapshot {
-        if block_on(self.storage.health()).is_ok_and(|health| {
-            health.status != HealthStatus::Unavailable && health.durability_verified
-        }) {
+        telemetry_readiness(block_on(self.storage.health()).ok().as_ref())
+    }
+}
+
+/// The store is ready while its health answers, is not unavailable, and its
+/// durability is verified. An unavailable store may say what an operator
+/// should do, as it does after a corruption signal; that is passed on.
+fn telemetry_readiness(health: Option<&HealthReport>) -> ReadinessSnapshot {
+    match health {
+        Some(health)
+            if health.status != HealthStatus::Unavailable && health.durability_verified =>
+        {
             ReadinessSnapshot::ready("telemetry_store_ready")
-        } else {
-            ReadinessSnapshot::not_ready("telemetry_store_unavailable")
         }
+        Some(HealthReport {
+            safe_diagnostic: Some(diagnostic),
+            ..
+        }) => ReadinessSnapshot::not_ready(format!("telemetry_store_unavailable;{diagnostic}")),
+        _ => ReadinessSnapshot::not_ready("telemetry_store_unavailable"),
     }
 }
 
@@ -1026,6 +1038,44 @@ mod tests {
     use mako_api::{EnvironmentId, ProjectId};
     use mako_control_plane::ObservabilityQuery;
     use mako_storage::MemoryAdapter;
+
+    #[test]
+    fn readiness_passes_on_what_an_unavailable_store_tells_the_operator() {
+        let health = |status, durability_verified, diagnostic: Option<&str>| HealthReport {
+            status,
+            latency: Duration::ZERO,
+            durability_verified,
+            safe_diagnostic: diagnostic.map(str::to_owned),
+        };
+        assert_eq!(
+            telemetry_readiness(Some(&health(HealthStatus::Healthy, true, None))),
+            ReadinessSnapshot::ready("telemetry_store_ready")
+        );
+        // A store that RocksDB has signalled corruption on.
+        let corrupted = telemetry_readiness(Some(&health(
+            HealthStatus::Unavailable,
+            true,
+            Some(mako_storage::ROCKSDB_CORRUPTION_DIAGNOSTIC),
+        )));
+        assert!(!corrupted.ready);
+        assert_eq!(
+            corrupted.detail,
+            format!(
+                "telemetry_store_unavailable;{}",
+                mako_storage::ROCKSDB_CORRUPTION_DIAGNOSTIC
+            )
+        );
+        for silent in [
+            Some(health(HealthStatus::Unavailable, true, None)),
+            Some(health(HealthStatus::Healthy, false, None)),
+            None,
+        ] {
+            assert_eq!(
+                telemetry_readiness(silent.as_ref()),
+                ReadinessSnapshot::not_ready("telemetry_store_unavailable")
+            );
+        }
+    }
 
     fn tenant(suffix: &str) -> TenantScope {
         TenantScope::new(

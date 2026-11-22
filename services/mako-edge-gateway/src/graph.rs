@@ -42,7 +42,7 @@ use mako_internal_rpc::{
 use mako_service_runtime::{ReadinessProbe, ReadinessSnapshot};
 use mako_storage::{
     Durability, KvAdapter, ProductionRocksDb, ProductionRocksDbConfig, ProductionVolumeIdentity,
-    RocksDbAdapter, RocksDbConfig, StorageError, check_storage_readiness,
+    RocksDbAdapter, RocksDbConfig, StorageError, StorageReadiness, check_storage_readiness,
 };
 use mako_telemetry_client::TelemetryEmitter;
 use rand_core::{OsRng, RngCore};
@@ -764,19 +764,29 @@ impl ReadinessProbe for EdgeGatewayGraph {
         let storage = block_on(check_storage_readiness(
             self.adapter.as_ref(),
             Durability::Sync,
-        ))
-        .is_ready();
+        ));
         let data = self.data_client.dependency_ready().unwrap_or(false);
         let control = self.control_client.dependency_ready().unwrap_or(false);
         let runtime = self.runtime.dependency_ready();
         let audit = self.audit.healthy();
-        if storage && data && control && runtime && audit {
-            ReadinessSnapshot::ready("storage_identity_control_runtime_audit_ready")
-        } else {
-            ReadinessSnapshot::not_ready(format!(
-                "dependencies_not_ready:storage={storage},data={data},control={control},runtime={runtime},audit={audit}"
-            ))
-        }
+        readiness_snapshot(&storage, data, control, runtime, audit)
+    }
+}
+
+fn readiness_snapshot(
+    storage_readiness: &StorageReadiness,
+    data: bool,
+    control: bool,
+    runtime: bool,
+    audit: bool,
+) -> ReadinessSnapshot {
+    let storage = storage_readiness.is_ready();
+    if storage && data && control && runtime && audit {
+        ReadinessSnapshot::ready("storage_identity_control_runtime_audit_ready")
+    } else {
+        ReadinessSnapshot::not_ready(storage_readiness.with_operator_diagnostic(format!(
+            "dependencies_not_ready:storage={storage},data={data},control={control},runtime={runtime},audit={audit}"
+        )))
     }
 }
 
@@ -879,6 +889,44 @@ mod tests {
     use tempfile::{Builder, TempDir};
 
     use super::*;
+
+    #[test]
+    fn a_storage_corruption_signal_names_the_runbook_in_the_readiness_detail() {
+        let directory = local_tempdir("edge-gateway-corruption-readiness");
+        let adapter = RocksDbAdapter::open(RocksDbConfig::new(directory.path().join("rocksdb")))
+            .expect("open RocksDB");
+        let mut storage = block_on(check_storage_readiness(&adapter, Durability::Sync));
+        assert_eq!(
+            readiness_snapshot(&storage, true, true, true, true),
+            ReadinessSnapshot::ready("storage_identity_control_runtime_audit_ready")
+        );
+        // Another dependency failing says nothing about storage.
+        assert_eq!(
+            readiness_snapshot(&storage, true, false, true, true).detail,
+            "dependencies_not_ready:storage=true,data=true,control=false,runtime=true,audit=true"
+        );
+
+        // What storage reports once RocksDB has signalled corruption.
+        storage.status = mako_storage::ReadinessStatus::NotReady;
+        storage.failures = vec![mako_storage::ReadinessFailure::HealthNotHealthy(
+            mako_storage::HealthStatus::Unavailable,
+        )];
+        storage
+            .health
+            .as_mut()
+            .expect("health report")
+            .safe_diagnostic = Some(mako_storage::ROCKSDB_CORRUPTION_DIAGNOSTIC.to_owned());
+        let snapshot = readiness_snapshot(&storage, true, true, true, true);
+        assert!(!snapshot.ready);
+        assert_eq!(
+            snapshot.detail,
+            format!(
+                "dependencies_not_ready:storage=false,data=true,control=true,runtime=true,audit=true;{}",
+                mako_storage::ROCKSDB_CORRUPTION_DIAGNOSTIC
+            )
+        );
+        assert!(snapshot.detail.len() <= 512);
+    }
 
     /// Resolution ran on every invocation and the internal-RPC client opens a
     /// connection per call, so sustained function traffic exhausted the

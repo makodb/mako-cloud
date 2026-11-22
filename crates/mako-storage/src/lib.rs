@@ -57,7 +57,9 @@ pub use production::{
     provision_production_volume, read_volume_marker,
 };
 pub use readiness::{ReadinessFailure, ReadinessStatus, StorageReadiness, check_storage_readiness};
-pub use rocks::{RocksDbAdapter, RocksDbConfig, RocksDbHealthSignals};
+pub use rocks::{
+    ROCKSDB_CORRUPTION_DIAGNOSTIC, RocksDbAdapter, RocksDbConfig, RocksDbHealthSignals,
+};
 pub use sqlite::{CONTROL_SQLITE_FORMAT_VERSION, SqliteAdapter, SqliteConfig, SqliteHealthSignals};
 
 /// Identifies this workspace component in diagnostics.
