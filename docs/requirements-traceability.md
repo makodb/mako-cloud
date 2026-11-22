@@ -81,13 +81,14 @@ Run `npm run validate:traceability` whenever a scenario or row changes. The vali
 | BI-08 | Use accrues beyond any credit | `apps/console/test-e2e/management-workflows.spec.ts` (mocked backend) -- asserts the negative balance is shown and marked, never clamped | Automated |
 | BI-09 | A balance is explained | `crates/mako-smoke/tests/telemetry_pipeline.rs::observed_events_and_usage_reach_the_management_api` (end-to-end; live bill and period queries) | Automated |
 | BI-10 | An operator grants credit | `crates/mako-control-plane/src/operator.rs::a_credit_is_granted_exactly_once_and_totals_are_the_sum_of_grants` | Automated |
-| BI-11 | A bill is displayed | `crates/mako-smoke/tests/telemetry_pipeline.rs::observed_events_and_usage_reach_the_management_api` (end-to-end) and `apps/console/test-e2e/management-workflows.spec.ts` (mocked backend) | Automated |
-| BI-12 | A tenant's balance is deeply negative | `scripts/validate-no-collection.js` (proves no enforcement path reads the balance) | Automated |
-| BI-13 | A component attempts collection | `scripts/validate-no-collection.js` | Automated |
-| BI-14 | The beta ends | `scripts/validate-no-collection.js` (no conversion mechanism exists to find) | Automated |
-| BI-15 | Usage exceeds sixteen thousand records | `crates/mako-smoke/tests/telemetry_pipeline.rs::observed_events_and_usage_reach_the_management_api` (end-to-end) and `services/mako-control-plane/src/management_http.rs::billing_pages_large_histories_with_exact_segment_totals_and_averages` | Automated |
-| BI-16 | A later usage page fails | `services/mako-control-plane/src/management_http.rs::billing_never_returns_partial_totals_after_a_late_page_failure` | Automated |
-| BI-17 | A billing period has expired from retention | `services/mako-control-plane/src/management_http.rs::billing_reports_partial_retention_and_skips_fully_expired_periods` | Automated |
+| BI-11 | A closed period is read during a month with use | `services/mako-control-plane/src/management_http.rs::a_closed_period_and_the_live_bill_report_the_same_balance` and `services/mako-control-plane/src/management_http.rs::the_balance_is_credits_minus_closed_and_live_charges_unclamped` | Automated |
+| BI-12 | A bill is displayed | `crates/mako-smoke/tests/telemetry_pipeline.rs::observed_events_and_usage_reach_the_management_api` (end-to-end) and `apps/console/test-e2e/management-workflows.spec.ts` (mocked backend) | Automated |
+| BI-13 | A tenant's balance is deeply negative | `scripts/validate-no-collection.js` (proves no enforcement path reads the balance) | Automated |
+| BI-14 | A component attempts collection | `scripts/validate-no-collection.js` | Automated |
+| BI-15 | The beta ends | `scripts/validate-no-collection.js` (no conversion mechanism exists to find) | Automated |
+| BI-16 | Usage exceeds sixteen thousand records | `crates/mako-smoke/tests/telemetry_pipeline.rs::observed_events_and_usage_reach_the_management_api` (end-to-end) and `services/mako-control-plane/src/management_http.rs::billing_pages_large_histories_with_exact_segment_totals_and_averages` | Automated |
+| BI-17 | A later usage page fails | `services/mako-control-plane/src/management_http.rs::billing_never_returns_partial_totals_after_a_late_page_failure` | Automated |
+| BI-18 | A billing period has expired from retention | `services/mako-control-plane/src/management_http.rs::billing_reports_partial_retention_and_skips_fully_expired_periods` | Automated |
 
 
 ## Developer registration and wait list

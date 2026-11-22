@@ -3,9 +3,7 @@
 ## Purpose
 
 Turn a closed period's measured use into a bill a team can read, and keep a running account balance that shows what that use would have cost — without collecting it.
-
 ## Requirements
-
 ### Requirement: A bill is derived from retained evidence
 Closing a billing period SHALL rate the period's ledger into invoice line items, each identifying the resource, quantity, included allowance, overage, and amount, with the plan and rate-card versions the period was rated under. Rating MUST be deterministic -- the same evidence and versions always produce the same total -- and a finalized invoice MUST be stored exactly once and never rewritten. A period that spanned a plan change MUST rate each plan's stretch under its own terms, prorated by time.
 
@@ -43,10 +41,10 @@ The response SHALL identify the project, owner, shared plan, period, earliest re
 - **THEN** the request is denied without disclosing project usage, costs, or the owner's billing information
 
 ### Requirement: A team has a running balance that may be negative
-Each team SHALL have an account balance equal to its credits minus its finalized charges. A balance MUST be permitted to go negative, meaning the team has accrued more use than credit, and MUST be derivable from the retained invoices and credit entries that produced it.
+Each team SHALL have one account balance: its credits minus all of its charges, which are the finalized charges of every closed period plus the charges the live month has accrued so far. The balance MUST NOT be clamped: it MUST be permitted to go negative, meaning the team has accrued more use than credit. It MUST be derivable from the retained invoices, the live month's retained usage, and the credit entries that produced it. Every bill response for a team SHALL report that same balance, whether the response shows the live month or a closed period.
 
 #### Scenario: Use accrues beyond any credit
-- **WHEN** finalized charges exceed the credits a team holds
+- **WHEN** a team's charges exceed the credits it holds
 - **THEN** the balance is reported as negative and the invoices and credits that produced it remain available
 
 #### Scenario: A balance is explained
@@ -56,6 +54,10 @@ Each team SHALL have an account balance equal to its credits minus its finalized
 #### Scenario: An operator grants credit
 - **WHEN** an operator applies a credit with a reason and an unused idempotency key
 - **THEN** the credit is applied exactly once, the balance moves by that amount, and the action is audited
+
+#### Scenario: A closed period is read during a month with use
+- **WHEN** an authorized member reads a closed period's invoice while the live month has accrued charges
+- **THEN** the response shows the closed period's charges, and its balance equals the balance the live bill reports
 
 ### Requirement: Nothing is collected and the display says so
 The platform MUST NOT attempt to collect a balance, request payment details, or contact a payment provider. Any surface that shows a bill or a balance MUST state that it is not payable and that no charge will be made. A negative balance MUST NOT restrict, throttle, suspend, or degrade any tenant's service.
@@ -93,3 +95,4 @@ Overall and project billing SHALL aggregate all retained usage in the requested 
 #### Scenario: A billing period has expired from retention
 - **WHEN** the entire billing period predates retained telemetry
 - **THEN** billing reports the empty evidence window without querying an invalid telemetry range or inventing usage
+

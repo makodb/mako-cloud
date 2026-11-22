@@ -1074,43 +1074,11 @@ fn handle_organization_bill(
             .await
             .map_err(|_| unavailable(request, "credits are unavailable"))?;
 
-        match requested_period {
-            // The live view: the current month so far, never finalized. The
-            // window's exclusive end reaches one second past now so a usage
-            // record stamped in the second the bill is read still counts --
-            // timestamps carry whole seconds, and a sample that observability
-            // already serves must not be missing from the bill read alongside.
-            None => {
-                let DerivedBill {
-                    rated,
-                    retained_from: derived_from,
-                    ..
-                } = derive_rated_period(
-                    graph,
-                    &actor,
-                    request,
-                    &organization,
-                    &exceptions,
-                    current_start,
-                    now_milliseconds.saturating_add(1_000),
-                    now,
-                )
-                .await?;
-                let balance = credits
-                    .saturating_sub(closed_total)
-                    .saturating_sub(rated.total_micro_dollars);
-                bill_response(
-                    request,
-                    &organization_id,
-                    &rated,
-                    derived_from,
-                    now_milliseconds,
-                    now,
-                    credits,
-                    balance,
-                    None,
-                )
-            }
+        // A closed period is checked and found before the live month is
+        // derived: a period that has not started, the current month, and a
+        // month nobody closed are refusals that need no ledger.
+        let closed_invoice = match requested_period {
+            None => None,
             Some((year, month)) => {
                 let period_start = month_start_milliseconds(year, month);
                 if period_start >= now_milliseconds {
@@ -1125,27 +1093,68 @@ fn handle_organization_bill(
                 // Past months answer from what was closed. One that was never
                 // closed while its evidence existed cannot be reconstructed,
                 // and saying so beats inventing a number.
-                let invoice = graph
-                    .organization_store()
-                    .get_invoice(&organization_id, period_start)
-                    .await
-                    .map_err(|_| unavailable(request, "closed periods are unavailable"))?
-                    .ok_or_else(|| {
-                        not_found(request, "no invoice was closed for the requested period")
-                    })?;
-                let balance = credits.saturating_sub(closed_total);
-                bill_response(
-                    request,
-                    &organization_id,
-                    &invoice.rated,
-                    invoice.derived_from_unix_milliseconds,
-                    invoice.period_end_unix_milliseconds,
-                    now,
-                    credits,
-                    balance,
-                    Some(invoice.closed_at_unix_seconds),
+                Some(
+                    graph
+                        .organization_store()
+                        .get_invoice(&organization_id, period_start)
+                        .await
+                        .map_err(|_| unavailable(request, "closed periods are unavailable"))?
+                        .ok_or_else(|| {
+                            not_found(request, "no invoice was closed for the requested period")
+                        })?,
                 )
             }
+        };
+
+        // The live month so far, never finalized. Both views need it: the
+        // live view shows it, and a closed period's view still owes the
+        // reader the team's one balance, which counts it. The window's
+        // exclusive end reaches one second past now so a usage record
+        // stamped in the second the bill is read still counts -- timestamps
+        // carry whole seconds, and a sample that observability already
+        // serves must not be missing from the bill read alongside.
+        let DerivedBill {
+            rated: live,
+            retained_from: live_derived_from,
+            ..
+        } = derive_rated_period(
+            graph,
+            &actor,
+            request,
+            &organization,
+            &exceptions,
+            current_start,
+            now_milliseconds.saturating_add(1_000),
+            now,
+        )
+        .await?;
+        let ledger = TeamLedger {
+            credits,
+            closed_total,
+            live_total: live.total_micro_dollars,
+        };
+
+        match closed_invoice {
+            None => bill_response(
+                request,
+                &organization_id,
+                &live,
+                live_derived_from,
+                now_milliseconds,
+                now,
+                &ledger,
+                None,
+            ),
+            Some(invoice) => bill_response(
+                request,
+                &organization_id,
+                &invoice.rated,
+                invoice.derived_from_unix_milliseconds,
+                invoice.period_end_unix_milliseconds,
+                now,
+                &ledger,
+                Some(invoice.closed_at_unix_seconds),
+            ),
         }
     })
 }
@@ -1462,6 +1471,30 @@ where
     ))
 }
 
+/// What a team's one balance is made of, gathered once per bill read.
+///
+/// Every team bill response -- the live month or a closed period -- takes its
+/// balance from here, so the two views cannot disagree about it.
+struct TeamLedger {
+    /// Operator-granted credits.
+    credits: i64,
+    /// The finalized charges of every closed period.
+    closed_total: i64,
+    /// What the live month has accrued so far.
+    live_total: i64,
+}
+
+impl TeamLedger {
+    /// Credits minus all charges: every closed period plus the live month.
+    /// Never clamped; a team that has used more than its credit reads
+    /// negative.
+    fn balance(&self) -> i64 {
+        self.credits
+            .saturating_sub(self.closed_total)
+            .saturating_sub(self.live_total)
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn bill_response(
     request: &HttpRequest,
@@ -1470,8 +1503,7 @@ fn bill_response(
     period_start: u64,
     period_end: u64,
     now: u64,
-    credits: i64,
-    balance: i64,
+    ledger: &TeamLedger,
     closed_at_unix_seconds: Option<u64>,
 ) -> Result<HttpResponse, HttpApiError> {
     json(
@@ -1490,11 +1522,11 @@ fn bill_response(
             "baseMicroDollars": rated.base_micro_dollars,
             "lineItems": rated.line_items,
             "totalMicroDollars": rated.total_micro_dollars,
-            "creditsMicroDollars": credits,
+            "creditsMicroDollars": ledger.credits,
             // Credits minus charges; accrued use beyond credit reads
             // negative, and nothing clamps it at zero -- hiding the number
             // is the one thing this surface must not do.
-            "balanceMicroDollars": balance,
+            "balanceMicroDollars": ledger.balance(),
             "collectable": false,
             "notice": "This bill is informational. Nothing is payable and no charge will be made during the beta.",
         }),
@@ -2566,6 +2598,99 @@ mod tests {
             ));
             assert!(result.is_err(), "{invalid_page}");
         }
+    }
+
+    fn rated(plan_id: &str, total: i64) -> mako_billing::rating::RatedPeriod {
+        mako_billing::rating::RatedPeriod {
+            plan_id: plan_id.into(),
+            plan_version: 1,
+            rate_card_version: 1,
+            base_micro_dollars: total,
+            line_items: Vec::new(),
+            total_micro_dollars: total,
+        }
+    }
+
+    fn bill_json(response: &HttpResponse) -> serde_json::Value {
+        serde_json::from_slice(response.body_for_test().expect("a fixed response body"))
+            .expect("bill json")
+    }
+
+    /// A team has one balance. The live bill and a closed period's invoice
+    /// are two views of different charges, and the balance beside either is
+    /// credits minus every closed period and the live month so far -- a
+    /// closed period read during a month with use must not report a balance
+    /// that leaves the live month out.
+    #[test]
+    fn a_closed_period_and_the_live_bill_report_the_same_balance() {
+        let request = billing_request();
+        let team = OrganizationId::parse("org_billingtest").expect("team");
+        // Two closed months of 25 and 15 dollars, 30 dollars of credit, and
+        // 7 dollars accrued so far this month.
+        let ledger = TeamLedger {
+            credits: 30_000_000,
+            closed_total: 40_000_000,
+            live_total: 7_000_000,
+        };
+        assert_eq!(ledger.balance(), -17_000_000);
+
+        let live = bill_response(
+            &request,
+            &team,
+            &rated("pro", 7_000_000),
+            1_782_864_000_000,
+            1_784_000_000_000,
+            1_784_000_000,
+            &ledger,
+            None,
+        )
+        .expect("live bill");
+        let closed = bill_response(
+            &request,
+            &team,
+            &rated("pro", 25_000_000),
+            1_780_272_000_000,
+            1_782_864_000_000,
+            1_784_000_000,
+            &ledger,
+            Some(1_782_900_000),
+        )
+        .expect("closed period");
+        let (live, closed) = (bill_json(&live), bill_json(&closed));
+
+        // Each view keeps its own charges...
+        assert_eq!(live["totalMicroDollars"], 7_000_000);
+        assert_eq!(live["finalized"], false);
+        assert_eq!(live["closedAt"], serde_json::Value::Null);
+        assert_eq!(closed["totalMicroDollars"], 25_000_000);
+        assert_eq!(closed["finalized"], true);
+        // ...and both report the team's one balance, unclamped.
+        for bill in [&live, &closed] {
+            assert_eq!(bill["creditsMicroDollars"], 30_000_000);
+            assert_eq!(bill["balanceMicroDollars"], -17_000_000);
+            assert_eq!(bill["collectable"], false);
+        }
+    }
+
+    /// The balance counts the live month even when nothing has been closed
+    /// yet, and saturates instead of wrapping on absurd inputs.
+    #[test]
+    fn the_balance_is_credits_minus_closed_and_live_charges_unclamped() {
+        let balance = |credits, closed_total, live_total| {
+            TeamLedger {
+                credits,
+                closed_total,
+                live_total,
+            }
+            .balance()
+        };
+        assert_eq!(balance(0, 0, 0), 0);
+        assert_eq!(balance(5_000_000, 0, 0), 5_000_000);
+        assert_eq!(balance(5_000_000, 0, 2_000_000), 3_000_000);
+        assert_eq!(balance(5_000_000, 4_000_000, 2_000_000), -1_000_000);
+        assert_eq!(balance(0, 0, 9_000_000), -9_000_000);
+        assert_eq!(balance(i64::MIN, 1, 1), i64::MIN);
+        assert_eq!(balance(0, i64::MAX, i64::MAX), i64::MIN);
     }
 
     /// Calendar arithmetic the biller stands on: a month's start must invert
