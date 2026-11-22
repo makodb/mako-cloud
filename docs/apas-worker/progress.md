@@ -1,6 +1,6 @@
 # APAS worker progress
 
-Last updated 2026-11-21, round 8, on Shuais-MacBook-Air-2.local.
+Last updated 2026-11-21, round 9, on Shuais-MacBook-Air-2.local.
 
 ## The three layers
 
@@ -19,9 +19,11 @@ Last updated 2026-11-21, round 8, on Shuais-MacBook-Air-2.local.
 
 - Round 8 (spec layer): `operations/public-beta-environment` named none of the four admission modes and said a failed readiness dependency closes public admission, which the Dev Book denies for `approved_beta`. The change `name-public-admission-modes` added the requirement "Public admission has four explicit modes" (four scenarios), reworded the scenario "A critical readiness dependency fails", and was archived. No code changed: the playbook, the Caddy template and the guard already behave this way.
 
+- Round 9 (spec layer): the change `align-four-requirements-with-the-books` reworded four requirements the books contradicted while the code already followed the books, and was archived: CLI confirmation types back the resource's identifier and covers the User Book's full command list; the operator cookie is `Path=/v1`; an incomplete migration target is refused, not resumed; connection guidance shows the public key id and a placeholder, never the value. No scenario was added or renamed.
+
 ## What is left, in the order I would do it
 
-1. The other 8 "spec may contradict the whitepaper" leads in the backlog, one per round, each after reading the lines again. Next candidates: the low-severity ones (31, 60, 129, 159, 61, 111, 128), then 21 (the console's navigation destinations: the console already follows the User Book, but the step is about a graphical interface, so look at the running console first).
+1. The other 4 "spec may contradict the whitepaper" leads in the backlog, each after reading the lines again: 60 (operator freshness states: the spec names five, the Dev Book four), 129 (what the local bootstrap promises on a repeated run), 128 (the public-beta spec calls `cloud-test.makodb.com` the only public origin although custom domains are served), then 21 (the console's navigation destinations: the console already follows the User Book, but the step is about a graphical interface, so look at the running console first).
 2. Code that may not meet a spec requirement: 97 leads. The high-severity ones first (backlog ids 0, 1, 18, 19, 36, 37, 44, 45, 49, 50, 54, 59, 69, 70, 72, 90, 91, 92, 93, 134, 150), foundations before what builds on them.
 3. Missing specs: archive `resumable-streaming-exports` (its deltas are not in the main specs yet; it needs traceability rows CL-14 and CL-15 in the same commit or `npm run validate:traceability` fails), then the "whitepaper statement with no spec requirement" and "implemented behaviour with no spec requirement" leads.
 4. Missing code: the open change `observable-data-plane-and-restore-verification` (0 of 26 tasks). Its task list names `infra/local/prometheus.yml` (the file is `prometheus.yaml`) and `validate:alert-metric-producers` (the script is `validate:alert-metrics`); fix those in the change first. Start with task group 1 (receipt probe) and group 3 (data-plane `/metrics`). Backlog lead 169 belongs here: the backup-age alert reads a gauge that is rewritten only when a backup runs, so it cannot fire while the timers are stopped.

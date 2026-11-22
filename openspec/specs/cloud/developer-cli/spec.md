@@ -3,9 +3,7 @@
 ## Purpose
 
 Let a developer do from a terminal, a script, or CI everything the developer console lets them do in a browser, with the same authorization, the same audit trail, and output a program can rely on.
-
 ## Requirements
-
 ### Requirement: Canonical Mako Cloud executable
 The CLI package SHALL install `mako-cloud` as its sole executable name and MUST NOT install a `mako` compatibility alias. Generated help, usage errors, recovery instructions, repository documentation, and executable examples SHALL identify the command as `mako-cloud`.
 
@@ -62,7 +60,7 @@ When a command issues a secret, the CLI SHALL print it exactly once — as a del
 - **THEN** the secret appears once in the chosen output and in no other output or file
 
 ### Requirement: Destructive commands are confirmed
-Commands that delete, suspend, retire, revoke, activate a policy over an active one, or promote a deployment SHALL require either `--yes` or an interactive confirmation typed as the resource's name before sending the API's confirmation, and SHALL refuse without either.
+Commands that delete, suspend, retire, revoke, rotate a credential or secret, activate a policy, promote or roll back a deployment, restore a backup, cancel a data job, or mutate a document SHALL require either `--yes` or, on a terminal, the resource's identifier typed back, before anything is sent to the API, and SHALL refuse with the usage exit code without either.
 
 #### Scenario: Deletion without confirmation
 - **WHEN** a developer runs a delete command without `--yes` and without a terminal
@@ -78,3 +76,4 @@ The CLI SHALL provide `mako-cloud functions deploy` (bundle, upload, create depl
 #### Scenario: A lifecycle wait times out
 - **WHEN** a developer runs a create command with `--wait` and the resource does not reach a terminal state by the deadline
 - **THEN** the command exits with the wait-timeout code after printing the resource identifier and its last observed state
+

@@ -5,15 +5,11 @@ These are leads from the read-only comparison sweep of 2026-11-21 (ten agents, o
 Each lead: `[id] area, severity/confidence` title. Where: the first evidence pointer the sweep gave.
 
 
-## Spec may contradict the whitepaper (8)
+## Spec may contradict the whitepaper (4)
 
 - `[21] cloud-a, medium/high` The spec's navigation-shell destination list is not the one the User Book describes Where: docs/user-book.md:287 "Inside an environment the sidebar groups destinations under **Database**, **Application**, **Observe**, and **Configure**." and the destination ta…
-- `[31] cloud-a, low/high` Destructive-command confirmation: the spec says type the resource's name and lists fewer commands than the User Book Where: docs/user-book.md:391 "Commands that delete, suspend, retire, revoke, activate a policy, promote or roll back a deployment, restore a backup, or mutate a document requir…
 - `[60] cloud-b, low/high` Operator freshness states: spec names five including 'degraded', the Dev Book fixes four Where: docs/dev-book.md:1153 "explicit observation times, and `current`, `stale`, `unknown`, or `unavailable` source state"
 - `[129] operations, low/high` Local-bootstrap spec promises same identifiers on re-run and writes only to exclusively owned stores; the whitepaper says it rotates the key and deploys to a running supervisor Where: docs/dev-book.md:414 'the key's secret is shown only at creation, and a repeated run rotates the credential and reports the new one' / :419 'With a runtime supervisor re…
-- `[159] storage, low/high` Interrupted migration: spec says a later run resumes or recreates the temporary target, Dev Book says an incomplete target is refused Where: docs/dev-book.md:347 "An existing live target, an unfenced or empty source, an incomplete target, or a mismatched result is refused."
-- `[61] cloud-b, low/medium` Connect guidance: spec shows the public key in the example, the User Book says the value is never readable again Where: docs/user-book.md:2401 "shows the public endpoint, active public credential id ... Public credential values are one-time material and cannot be recovered later."; docs/u…
-- `[111] identity, low/medium` Operator cookie scope: spec says scoped to operator authentication and API paths, whitepaper and code say Path=/v1 Where: docs/dev-book.md:890 "The browser receives only a `Secure`, `HttpOnly`, `SameSite=Strict`, `Path=/v1` cookie"
 - `[128] operations, low/medium` Public-beta spec says cloud-test.makodb.com is the only supported public origin, but custom domains are served on the beta Where: docs/user-book.md:2315 'Certificates are obtained by the reverse proxy **on demand** ... On the public beta the staging certificate authority is in use, so browsers do n…
 
 ## Code may not meet a spec requirement (97)

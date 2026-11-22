@@ -3,9 +3,7 @@
 ## Purpose
 
 Provide developers with a coherent project and environment workspace for understanding database readiness, connecting RxDB applications, diagnosing synchronization, and initiating tenant-safe recovery.
-
 ## Requirements
-
 ### Requirement: Persistent project workspace
 The developer console SHALL provide persistent, responsive navigation for project overview, Data Explorer, collections and indexes, synchronization, application users, policies, functions, logs and metrics, backups, API & Connect, and settings. The active personal or team ownership, project, environment, and developer identity MUST remain visible, and navigation MUST show only resources allowed by the current membership.
 
@@ -37,11 +35,11 @@ The overview SHALL also present the selected environment's API URL and public ke
 - **THEN** the project overview shows each environment's state and readiness and the selected environment's keys and quickstart
 
 ### Requirement: API and RxDB connection guidance
-The workspace SHALL show the selected environment's public API endpoint, public project key, collection identifier, active schema version, supported RxDB client package and version range, and generated setup examples matching the published client API. The page MUST NOT reveal service keys, signing material, function secrets, or other privileged credentials.
+The workspace SHALL show the selected environment's public API endpoint, the identifier of its active public project key, collection identifier, active schema version, supported RxDB client package and version range, and generated setup examples matching the published client API. A public key's value is shown once, when the key is issued, and MUST NOT be shown, stored or reconstructed by this page; examples SHALL carry a placeholder where the value goes. The page MUST NOT reveal service keys, signing material, function secrets, or other privileged credentials.
 
 #### Scenario: Developer copies an RxDB setup example
 - **WHEN** a developer selects a collection and supported client version
-- **THEN** the workspace generates a copyable example containing the correct endpoint, public key, collection, schema version, authentication placeholder, and required replication configuration
+- **THEN** the workspace generates a copyable example containing the correct endpoint, a placeholder for the public key value, collection, schema version, authentication placeholder, and required replication configuration
 
 #### Scenario: No public key is active
 - **WHEN** the selected environment has no usable public client key
@@ -126,3 +124,4 @@ The console SHALL group database, application, operations, and configuration des
 #### Scenario: Environment changes during a request
 - **WHEN** a developer switches environment while an old read is pending
 - **THEN** the old response cannot populate the new environment's screen
+

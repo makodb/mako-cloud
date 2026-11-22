@@ -3,9 +3,7 @@
 ## Purpose
 
 Define the independent server-side SQLite authority that preserves control-plane identity and metadata while tenant RocksDB services are degraded or unavailable.
-
 ## Requirements
-
 ### Requirement: SQLite is the sole control-plane storage authority
 The production control plane SHALL store all control-plane-owned durable state in one exclusively owned server-side SQLite database. This state SHALL include developer identities and credentials, verification and recovery records, wait-list decisions, operator entitlements and sessions, teams, projects, environments, provisioning state, control-plane audit records, idempotency outcomes, mail outbox state, function metadata, and other control metadata. Browser storage and tenant RocksDB databases MUST NOT become alternate authorities for that state.
 
@@ -52,7 +50,7 @@ The control database SHALL carry an explicit format and migration version. Start
 - **THEN** startup remains unready instead of initializing a blank control authority
 
 ### Requirement: RocksDB-to-SQLite migration is verified and restart safe
-Cutover SHALL run offline from a consistent, fenced control-plane RocksDB checkpoint into a new temporary SQLite target. Migration MUST preserve every key and value byte-for-byte, record source and target identities, versions, counts, and deterministic checksums, validate control-domain inventories and the complete storage semantic contract, durably publish the target atomically, and be safe to inspect or resume after interruption. The source checkpoint MUST remain immutable and retained until the migration retention decision is explicitly completed.
+Cutover SHALL run offline from a consistent, fenced control-plane RocksDB checkpoint into a new temporary SQLite target. Migration MUST preserve every key and value byte-for-byte, record source and target identities, versions, counts, and deterministic checksums, validate control-domain inventories and the complete storage semantic contract, durably publish the target atomically, and be safe to inspect after interruption. A run that finds an incomplete temporary target MUST refuse until the target has been inspected and removed; a run that finds a completed migration SHALL answer from its protected receipt without copying again. The source checkpoint MUST remain immutable and retained until the migration retention decision is explicitly completed.
 
 #### Scenario: Migration succeeds
 - **WHEN** the fenced source checkpoint is complete and every copied record, checksum, domain inventory, and semantic check matches
@@ -60,7 +58,7 @@ Cutover SHALL run offline from a consistent, fenced control-plane RocksDB checkp
 
 #### Scenario: Migration is interrupted
 - **WHEN** the migration process stops before durable publication
-- **THEN** the incomplete target is never selected, the source remains unchanged, and a later run safely resumes or recreates only the temporary target
+- **THEN** the incomplete target is never selected, the source remains unchanged, and a later run refuses until the incomplete temporary target has been inspected and removed
 
 #### Scenario: Verification differs
 - **WHEN** any record count, checksum, domain invariant, schema check, or semantic qualification differs between source and target
@@ -91,3 +89,4 @@ The SQLite database, journals, temporary migration targets, backups, and receipt
 #### Scenario: Unauthorized process reads the database
 - **WHEN** a process outside the configured control or backup identity attempts to open a live, temporary, or backup SQLite file
 - **THEN** filesystem and service isolation deny access and no control data is disclosed
+

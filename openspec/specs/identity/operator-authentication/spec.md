@@ -8,9 +8,7 @@ This capability is amended by `identity/account-role-lifecycle`: references belo
 developer eligibility and combined bootstrap activation are superseded. Historical scenarios remain
 as implementation evidence; current authorization uses verified, security-active authentication
 identity state plus an independent operator entitlement.
-
 ## Requirements
-
 ### Requirement: Operator eligibility is explicit and separate from ordinary developer access
 The system SHALL allow operator authentication only for a verified, security-active authentication identity that has a separately stored, non-empty set of operator permissions. Developer registration, wait-list approval, project membership, and developer authentication MUST NOT grant operator permissions implicitly, and developer role state MUST NOT deny an otherwise eligible operator. No email address or permission set SHALL be hard-coded in application code.
 
@@ -46,7 +44,7 @@ The system SHALL expose a bounded same-origin operator sign-in operation that ac
 - **THEN** the system rejects it before credential verification and creates no session
 
 ### Requirement: Operator sessions are isolated, cookie-backed, and revocable
-Successful password verification SHALL create an opaque operator session whose credential is stored only in a `Secure`, `HttpOnly`, `SameSite=Strict` cookie scoped to operator authentication and API paths. The server SHALL store only a protected digest of the credential, bind the session to the operator identity, permissions, authorization epoch, issuance time, last verification time, and absolute expiry, and limit the absolute lifetime to at most one hour. Developer, wait-list, application-user, expired, revoked, malformed, and wrong-audience credentials MUST NOT authorize operator routes.
+Successful password verification SHALL create an opaque operator session whose credential is stored only in a `Secure`, `HttpOnly`, `SameSite=Strict` cookie with `Path=/v1`, the common prefix of the operator authentication and operator API routes. The server SHALL store only a protected digest of the credential, bind the session to the operator identity, permissions, authorization epoch, issuance time, last verification time, and absolute expiry, and limit the absolute lifetime to at most one hour. Developer, wait-list, application-user, expired, revoked, malformed, and wrong-audience credentials MUST NOT authorize operator routes.
 
 #### Scenario: Operator route accepts a current operator session
 - **WHEN** a request carries a current operator cookie with the required permission and current authorization epoch
@@ -58,7 +56,7 @@ Successful password verification SHALL create an opaque operator session whose c
 
 #### Scenario: Script cannot read the operator credential
 - **WHEN** the console signs in and runs ordinary client-side code
-- **THEN** the raw operator credential is unavailable to JavaScript and is sent only by the browser to its scoped same-origin paths
+- **THEN** the raw operator credential is unavailable to JavaScript and is sent only by the browser to same-origin paths under `/v1`
 
 #### Scenario: Expired or revoked session fails closed
 - **WHEN** an operator session is expired, revoked, has a stale authorization epoch, or refers to removed permissions
@@ -164,3 +162,4 @@ Operator entitlements, authorization epochs, revocations, password-verification 
 #### Scenario: Operator signs in while tenant storage is down
 - **WHEN** the control database is healthy and one or more tenant RocksDB services are unavailable
 - **THEN** an eligible operator can establish and step up a cookie-backed operator session without bypassing normal password, entitlement, throttling, or audit controls
+
