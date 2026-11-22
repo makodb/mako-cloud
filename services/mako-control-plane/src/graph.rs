@@ -2639,6 +2639,36 @@ mod tests {
             ),
         );
 
+        // --- A password the policy refuses is refused the same way for an
+        // address that is registered and for one that is not, so the answer
+        // cannot be used to find out who has an account. --------------------
+
+        for (email, remote) in [
+            ("applicant@example.test", "127.0.1.3:1000"),
+            ("stranger@example.test", "127.0.1.4:1000"),
+        ] {
+            let body = format!(
+                r#"{{"email":"{email}","displayName":"Applicant","password":"short-pass1"}}"#
+            );
+            let refused = dispatch(
+                &router,
+                request(
+                    HttpMethod::Post,
+                    "/v1/developer-auth/registrations",
+                    Some(ORIGIN),
+                    None,
+                    body.as_bytes(),
+                    remote,
+                ),
+            )
+            .expect_err("a weak password is refused");
+            assert_eq!(
+                refused.envelope().error.code,
+                mako_api::ErrorCode::InvalidRequest,
+                "{email}"
+            );
+        }
+
         // --- Verification uses the token the queued mail carries. ----------
 
         let approved_token = verification_token(&graph, "applicant@example.test");

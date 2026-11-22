@@ -191,6 +191,13 @@ impl PasswordService {
         Self { policy, parameters }
     }
 
+    /// Whether `password` satisfies the policy `hash` applies, without doing
+    /// any hashing work. A caller whose answer must not depend on what it
+    /// finds stored asks this before it looks anything up.
+    pub fn check_policy(&self, password: &str) -> Result<(), PasswordPolicyViolation> {
+        self.policy.validate(password)
+    }
+
     pub fn hash(&self, password: &str) -> Result<StoredPasswordHash, PasswordError> {
         self.policy
             .validate(password)
@@ -281,6 +288,16 @@ mod tests {
             service.hash("too-short"),
             Err(PasswordError::PolicyViolation(_))
         ));
+        // The cheap check and the hash agree on what the policy accepts.
+        assert_eq!(
+            service.check_policy("too-short"),
+            Err(PasswordPolicyViolation::TooShort)
+        );
+        assert_eq!(
+            service.check_policy("correct-horse-7!"),
+            Err(PasswordPolicyViolation::UppercaseRequired)
+        );
+        assert_eq!(service.check_policy("Correct-Horse-7!"), Ok(()));
         let hash = service.hash("Correct-Horse-7!").expect("hash");
         assert_eq!(format!("{hash:?}"), "StoredPasswordHash([REDACTED])");
         assert_eq!(

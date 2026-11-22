@@ -445,7 +445,12 @@ impl PasswordWorkLimiter {
             }
         }
         let _guard = Guard(&self.active);
-        operation().map_err(DeveloperWorkflowError::Password)
+        // A password the policy refuses is the caller's mistake, not an outage
+        // of the password service, wherever it is found.
+        operation().map_err(|error| match error {
+            PasswordError::PolicyViolation(_) => DeveloperWorkflowError::InvalidRequest,
+            other => DeveloperWorkflowError::Password(other),
+        })
     }
 }
 
@@ -513,7 +518,12 @@ impl DeveloperRegistrationService {
         self.require_registration_ready()?;
         validate_public_text(source, 1, MAXIMUM_SOURCE_BYTES)?;
         validate_public_text(display_name, 1, 200)?;
-        if password.len() > MAXIMUM_PASSWORD_BYTES {
+        // The policy is checked here, with the rest of the payload and before
+        // anything is looked up. Checked only where a new identity is hashed,
+        // a weak password was accepted for a known address and refused for an
+        // unknown one, which told a stranger which addresses are registered.
+        if password.len() > MAXIMUM_PASSWORD_BYTES || self.passwords.check_policy(password).is_err()
+        {
             return Err(DeveloperWorkflowError::InvalidRequest);
         }
         let email =
@@ -1010,7 +1020,11 @@ impl DeveloperRegistrationService {
     ) -> Result<DeveloperRecoveryOutcome, DeveloperWorkflowError> {
         self.require_enabled()?;
         validate_public_text(source, 1, MAXIMUM_SOURCE_BYTES)?;
-        if new_password.len() > MAXIMUM_PASSWORD_BYTES {
+        // Refused before the token is looked at, so the answer says nothing
+        // about the token and a valid one is left for a second attempt.
+        if new_password.len() > MAXIMUM_PASSWORD_BYTES
+            || self.passwords.check_policy(new_password).is_err()
+        {
             return Err(DeveloperWorkflowError::InvalidRequest);
         }
         self.enforce_token_limit("recovery-token", source, now_unix_seconds)
@@ -2373,6 +2387,122 @@ mod tests {
             assert_eq!(second.delivered, 0);
             assert_eq!(transport.0.lock().expect("capture lock").len(), 1);
         });
+    }
+
+    #[test]
+    fn a_weak_password_is_refused_alike_for_known_and_unknown_addresses() {
+        block_on(async {
+            let (service, _) = test_service();
+            service
+                .register("known@example.test", "Known", PASSWORD, "source-a", NOW)
+                .await
+                .expect("registration");
+            let unknown = NormalizedEmail::parse("unknown@example.test").expect("email");
+
+            // Eleven characters, one short of the policy; and nothing at all.
+            for weak in ["short-pass1", ""] {
+                for email in ["known@example.test", "unknown@example.test"] {
+                    assert!(
+                        matches!(
+                            service
+                                .register(email, "Applicant", weak, "source-b", NOW + 1)
+                                .await,
+                            Err(DeveloperWorkflowError::InvalidRequest)
+                        ),
+                        "{email} with {weak:?}"
+                    );
+                }
+            }
+            assert!(
+                service
+                    .store()
+                    .get_account_by_email(&unknown)
+                    .await
+                    .expect("account read")
+                    .is_none(),
+                "a refused registration creates nothing"
+            );
+
+            // Twelve characters satisfy the policy, and both addresses get the
+            // generic answer.
+            for email in ["known@example.test", "unknown@example.test"] {
+                assert_eq!(
+                    service
+                        .register(email, "Applicant", "twelve-chars", "source-c", NOW + 2)
+                        .await
+                        .expect("registration"),
+                    DeveloperGenericOutcome::Accepted
+                );
+            }
+        });
+    }
+
+    #[test]
+    fn recovery_refuses_a_weak_password_without_spending_the_token() {
+        block_on(async {
+            let (service, cipher) = test_service();
+            service
+                .register("person@example.test", "Person", PASSWORD, "source-a", NOW)
+                .await
+                .expect("registration");
+            let verification =
+                token_from_pending_mail(&service, &cipher, DeveloperMailKind::VerifyEmail, NOW + 1)
+                    .await;
+            service
+                .verify_email(&verification, "source-a", NOW + 1)
+                .await
+                .expect("verification");
+            service
+                .request_password_recovery("person@example.test", "source-a", NOW + 2)
+                .await
+                .expect("recovery request");
+            let recovery = token_from_pending_mail(
+                &service,
+                &cipher,
+                DeveloperMailKind::PasswordRecovery,
+                NOW + 2,
+            )
+            .await;
+
+            // The same refusal whether the token is good or made up.
+            for token in [recovery.as_str(), "not-a-token"] {
+                assert!(matches!(
+                    service
+                        .complete_password_recovery(token, "short-pass1", "source-a", NOW + 3)
+                        .await,
+                    Err(DeveloperWorkflowError::InvalidRequest)
+                ));
+            }
+            assert!(matches!(
+                service
+                    .complete_password_recovery(
+                        &recovery,
+                        "a newly recovered developer password",
+                        "source-a",
+                        NOW + 4,
+                    )
+                    .await
+                    .expect("recovery completion"),
+                DeveloperRecoveryOutcome::Completed { .. }
+            ));
+        });
+    }
+
+    #[test]
+    fn password_work_reports_a_policy_violation_as_an_invalid_request() {
+        let (service, _) = test_service();
+        assert!(matches!(
+            service
+                .password_work
+                .run(|| service.passwords.hash("short-pass1")),
+            Err(DeveloperWorkflowError::InvalidRequest)
+        ));
+        assert!(
+            service
+                .password_work
+                .run(|| service.passwords.hash(PASSWORD))
+                .is_ok()
+        );
     }
 
     #[test]
