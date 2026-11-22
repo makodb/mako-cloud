@@ -5,9 +5,8 @@ These are leads from the read-only comparison sweep of 2026-11-21 (ten agents, o
 Each lead: `[id] area, severity/confidence` title. Where: the first evidence pointer the sweep gave.
 
 
-## Spec may contradict the whitepaper (10)
+## Spec may contradict the whitepaper (9)
 
-- `[8] billing-sync, medium/high` Balance definition differs: spec says finalized charges only, User Book includes the live month, code does both Where: docs/user-book.md:2501 "the balance is credits minus all charges — every closed period plus the live month — unclamped"
 - `[21] cloud-a, medium/high` The spec's navigation-shell destination list is not the one the User Book describes Where: docs/user-book.md:287 "Inside an environment the sidebar groups destinations under **Database**, **Application**, **Observe**, and **Configure**." and the destination ta…
 - `[122] operations, medium/medium` Spec says a failed readiness dependency closes public admission; the whitepaper says approved_beta has no guard and stays open (and the four admission modes are not in any spec) Where: docs/dev-book.md:960 '**Admission** has four explicit values: `disabled`, `pre_gate`, `risk_accepted_preview`, and `approved_beta`. ... That mode has no preview guard, s…
 - `[31] cloud-a, low/high` Destructive-command confirmation: the spec says type the resource's name and lists fewer commands than the User Book Where: docs/user-book.md:391 "Commands that delete, suspend, retire, revoke, activate a policy, promote or roll back a deployment, restore a backup, or mutate a document requir…
