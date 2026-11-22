@@ -1,6 +1,6 @@
 # APAS worker progress
 
-Last updated 2026-11-21, round 2, on Shuais-MacBook-Air-2.local.
+Last updated 2026-11-21, round 3, on Shuais-MacBook-Air-2.local.
 
 ## The three layers
 
@@ -12,10 +12,11 @@ Last updated 2026-11-21, round 2, on Shuais-MacBook-Air-2.local.
 
 - Round 1 (code layer): made the two host-dependent CLI unit tests in `packages/cli/test/serve.test.mjs` independent of the host's container engine and added an engine-discovery test. Started the report, these notes, `verus.md` and the backlog of 208 unverified leads.
 - Round 2 (spec layer): `openspec/specs/operations/public-beta-environment/spec.md` contradicted the Dev Book by gating admission on backup age, cost and a 30-day window. Archived the finished change `benchmark-only-beta-gate`, after adding a delta for `identity/developer-registration` (its requirement "Registration exposure is observable and deny-by-default" referred to the removed test-preview backup exception) and naming service readiness among the non-waivable preview safeguards. Rewrote the `public-beta-environment` delta of `observable-data-plane-and-restore-verification` on top of the new text: it keeps "Backups fall behind", and a failed restore verification alerts operators without changing admission. `openspec validate --all --strict --no-interactive` passes (35 items).
+- Round 3 (spec layer): two specs said a secret is "stored as a reference" where the User Book says it is a sealed value. The change `seal-provider-and-webhook-secrets` rewrote "External sign-in providers" in `identity/auth-providers` (client secrets are sealed values, never returned, kept when omitted) and "Webhook endpoints on collection changes" in `sync/database-webhooks` (platform-generated, sealed, rotated signing secret; deliveries never carry document fields), added three scenarios with their traceability rows (AP-03, AP-04, DW-02; later rows renumbered), and was archived. No code changed: existing tests already cover the scenarios.
 
 ## What is left, in the order I would do it
 
-1. The other 16 "spec may contradict the whitepaper" leads in the backlog, one per round, each after reading the lines again.
+1. The other 13 "spec may contradict the whitepaper" leads in the backlog, one per round, each after reading the lines again. Next candidates: 75 (schedule run history is retained seven days and 1 000 runs, not "like function metrics"), 14 (a session that cannot be refreshed for a transient reason is kept), 104 (a wait-list decision needs a reason; the code may accept none), 8, 21, 122.
 2. Code that may not meet a spec requirement: 97 leads. The high-severity ones first (backlog ids 0, 1, 18, 19, 36, 37, 44, 45, 49, 50, 54, 59, 69, 70, 72, 90, 91, 92, 93, 134, 150), foundations before what builds on them.
 3. Missing specs: archive `resumable-streaming-exports` (its deltas are not in the main specs yet; it needs traceability rows CL-14 and CL-15 in the same commit or `npm run validate:traceability` fails), then the "whitepaper statement with no spec requirement" and "implemented behaviour with no spec requirement" leads.
 4. Missing code: the open change `observable-data-plane-and-restore-verification` (0 of 26 tasks). Its task list names `infra/local/prometheus.yml` (the file is `prometheus.yaml`) and `validate:alert-metric-producers` (the script is `validate:alert-metrics`); fix those in the change first. Start with task group 1 (receipt probe) and group 3 (data-plane `/metrics`). Backlog lead 169 belongs here: the backup-age alert reads a gauge that is rewritten only when a backup runs, so it cannot fire while the timers are stopped.

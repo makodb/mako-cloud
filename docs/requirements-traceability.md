@@ -297,16 +297,19 @@ Run `npm run validate:traceability` whenever a scenario or row changes. The vali
 | --- | --- | --- | --- |
 | AP-01 | An application user signs in with a provider | `crates/mako-smoke/tests/auth_providers.rs::applications_sign_users_in_through_providers_and_magic_links` (end-to-end) | Automated |
 | AP-02 | A disabled provider is used | `crates/mako-smoke/tests/auth_providers.rs::applications_sign_users_in_through_providers_and_magic_links` (end-to-end) | Automated |
-| AP-03 | A user signs in by magic link | `crates/mako-smoke/tests/auth_providers.rs::applications_sign_users_in_through_providers_and_magic_links` (end-to-end) | Automated |
-| AP-04 | A developer customizes the verification email | `crates/mako-control-plane/src/email_template.rs::rendering_substitutes_only_allowlisted_values_and_sanitizes_them` and `crates/mako-control-plane/src/email_template.rs::preview_renders_placeholder_data_with_the_real_names` | Automated |
+| AP-03 | A client secret is saved and never returned | `services/mako-control-plane/src/auth_settings_http.rs::a_supplied_secret_is_sealed_for_the_tenant_and_the_version_follows_the_installed_one` and `services/mako-control-plane/src/auth_settings_http.rs::the_data_plane_view_renders_on_the_management_wire_without_secrets` | Automated |
+| AP-04 | A provider is saved without its client secret | `services/mako-control-plane/src/auth_settings_http.rs::an_omitted_secret_keeps_the_installed_one_as_an_empty_seal` and `services/mako-control-plane/src/auth_settings_http.rs::a_provider_without_an_installed_secret_needs_one` | Automated |
+| AP-05 | A user signs in by magic link | `crates/mako-smoke/tests/auth_providers.rs::applications_sign_users_in_through_providers_and_magic_links` (end-to-end) | Automated |
+| AP-06 | A developer customizes the verification email | `crates/mako-control-plane/src/email_template.rs::rendering_substitutes_only_allowlisted_values_and_sanitizes_them` and `crates/mako-control-plane/src/email_template.rs::preview_renders_placeholder_data_with_the_real_names` | Automated |
 
 ## Sync / database webhooks
 
 | ID | Scenario | Primary automated evidence | Status |
 | --- | --- | --- | --- |
 | DW-01 | A document change is delivered | `crates/mako-smoke/tests/webhooks.rs::document_changes_reach_a_registered_endpoint_signed_and_durably` (end-to-end) | Automated |
-| DW-02 | An endpoint is temporarily down | `crates/mako-control-plane/src/webhook.rs::an_endpoint_down_for_a_while_receives_every_change_after_recovery_in_order` and `crates/mako-smoke/tests/webhooks.rs::document_changes_reach_a_registered_endpoint_signed_and_durably` (end-to-end) | Automated |
-| DW-03 | A developer redelivers a failed event | `crates/mako-control-plane/src/webhook.rs::redelivery_logs_a_new_delivery_and_lists_newest_first` and `crates/mako-smoke/tests/webhooks.rs::document_changes_reach_a_registered_endpoint_signed_and_durably` (end-to-end) | Automated |
+| DW-02 | The signing secret is rotated | `crates/mako-control-plane/src/webhook.rs::subscriptions_change_cursors_and_rotation_changes_the_signing_key` and `crates/mako-control-plane/src/webhook.rs::secrets_never_appear_in_debug_output_and_ids_follow_the_public_pattern` | Automated |
+| DW-03 | An endpoint is temporarily down | `crates/mako-control-plane/src/webhook.rs::an_endpoint_down_for_a_while_receives_every_change_after_recovery_in_order` and `crates/mako-smoke/tests/webhooks.rs::document_changes_reach_a_registered_endpoint_signed_and_durably` (end-to-end) | Automated |
+| DW-04 | A developer redelivers a failed event | `crates/mako-control-plane/src/webhook.rs::redelivery_logs_a_new_delivery_and_lists_newest_first` and `crates/mako-smoke/tests/webhooks.rs::document_changes_reach_a_registered_endpoint_signed_and_durably` (end-to-end) | Automated |
 
 ## Functions / scheduled functions
 
