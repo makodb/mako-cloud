@@ -399,6 +399,59 @@ impl IdentityStore {
         }
     }
 
+    /// Makes a user who is pending verification active, and answers with the
+    /// user as it then is. An active user is returned unchanged; a disabled
+    /// or deleted one is refused.
+    ///
+    /// The caller must hold proof that the person signing in owns the user's
+    /// address: a provider-verified email matched to this user, or a provider
+    /// identity linked to it, which is only ever written after such a match.
+    /// Sessions are not revoked and the session epoch does not move, as with
+    /// every other activation.
+    pub async fn activate_pending_user(
+        &self,
+        user_id: &AppUserId,
+        now_unix_seconds: u64,
+    ) -> Result<AppUserRecord, IdentityStoreError> {
+        let user_key = self.keyspace.application_user_key(user_id.as_str())?;
+        let user_bytes = self
+            .adapter
+            .get(&user_key)
+            .await?
+            .ok_or(IdentityStoreError::UserNotFound)?;
+        let user: AppUserRecord = serde_json::from_slice(&user_bytes)?;
+        if user.scope() != &self.tenant || user.id() != user_id {
+            return Err(IdentityStoreError::CorruptCredentialOwner);
+        }
+        match user.status() {
+            AppUserStatus::Active => return Ok(user),
+            AppUserStatus::PendingVerification => {}
+            AppUserStatus::Disabled | AppUserStatus::Deleted => {
+                return Err(IdentityStoreError::InvalidUserStatusTransition);
+            }
+        }
+        let activated = user.with_status(AppUserStatus::Active, now_unix_seconds);
+        let mut batch = WriteBatch::with_capacity(1);
+        batch.put(&user_key, serde_json::to_vec(&activated)?);
+        match self
+            .adapter
+            .compare_and_write(AtomicWrite {
+                conditions: vec![KeyCondition::ValueEquals {
+                    key: user_key,
+                    value: user_bytes,
+                }],
+                batch,
+                durability: self.durability,
+            })
+            .await?
+        {
+            CompareAndWriteResult::Applied => Ok(activated),
+            CompareAndWriteResult::Conflict { .. } => {
+                Err(IdentityStoreError::ConcurrentIdentityChange)
+            }
+        }
+    }
+
     pub async fn user_by_provider(
         &self,
         provider: &str,
@@ -1690,6 +1743,95 @@ mod tests {
                     .await
                     .expect("lookup")
                     .is_none()
+            );
+        });
+    }
+
+    #[test]
+    fn a_pending_user_reached_through_a_provider_is_activated() {
+        futures::executor::block_on(async {
+            let adapter = Arc::new(MemoryAdapter::new());
+            let scope = tenant("prj_abcdefgh");
+            let other_scope = tenant("prj_ijklmnop");
+            let store_for = |scope| store(adapter.clone(), scope);
+            let store = store_for(&scope);
+            let email = NormalizedEmail::parse("person@example.com").expect("email");
+            let (user, identity) = records(&scope, "usr_first", "idn_first", &email);
+            let user = user.with_status(AppUserStatus::PendingVerification, 1);
+            store
+                .create_email_user(&user, &identity, &email)
+                .await
+                .expect("create pending user");
+            let link = provider_identity(&scope, "idn_google", "usr_first", "google", "subject-1");
+            store
+                .link_provider_identity(user.id(), &link)
+                .await
+                .expect("link");
+            // Linking alone leaves the user pending, and a pending user cannot
+            // hold a session.
+            let linked = store
+                .user_by_provider("google", "subject-1")
+                .await
+                .expect("lookup")
+                .expect("linked user");
+            assert_eq!(linked.status(), AppUserStatus::PendingVerification);
+
+            let activated = store
+                .activate_pending_user(user.id(), 9)
+                .await
+                .expect("activate");
+            assert_eq!(activated.status(), AppUserStatus::Active);
+            assert_eq!(activated.session_epoch(), linked.session_epoch());
+            for found in [
+                store
+                    .user_by_provider("google", "subject-1")
+                    .await
+                    .expect("lookup"),
+                store.user_by_email(&email).await.expect("lookup"),
+            ] {
+                assert_eq!(found.as_ref(), Some(&activated));
+            }
+
+            // Asked again, nothing is written.
+            let before = adapter.dump().expect("dump");
+            assert_eq!(
+                store
+                    .activate_pending_user(user.id(), 10)
+                    .await
+                    .expect("activate again"),
+                activated
+            );
+            assert_eq!(adapter.dump().expect("dump"), before);
+
+            // Another tenant's store does not see the user, and an unknown
+            // user is not created.
+            for (other, id) in [
+                (store_for(&other_scope), user.id().clone()),
+                (
+                    store_for(&scope),
+                    AppUserId::parse("usr_nobody").expect("user id"),
+                ),
+            ] {
+                assert!(matches!(
+                    other.activate_pending_user(&id, 11).await,
+                    Err(IdentityStoreError::UserNotFound)
+                ));
+            }
+
+            // A disabled user stays disabled.
+            store.disable_user(user.id(), 12).await.expect("disable");
+            assert!(matches!(
+                store.activate_pending_user(user.id(), 13).await,
+                Err(IdentityStoreError::InvalidUserStatusTransition)
+            ));
+            assert_eq!(
+                store
+                    .user_by_id(user.id())
+                    .await
+                    .expect("lookup")
+                    .expect("user")
+                    .status(),
+                AppUserStatus::Disabled
             );
         });
     }

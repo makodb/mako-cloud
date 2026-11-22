@@ -106,3 +106,23 @@ Two things for you:
 
 1. Proposed addition to `docs/dev-book.md` line 1061 ("On a corruption or repeated I/O signal, stop routing and mutations, fence the owner, ..."), which reads as if the operator has to stop mutations by hand. Add after it: "The service does the first part by itself on a corruption signal: storage readiness turns false with a detail that names the RocksDB runbook, every write is refused, and reads stay open, until the process is restarted. Most authenticated requests then answer 503, because they write quota counters and replay guards." The same sentence fits the runbook at line 1351.
 2. A question. Line 1061 also names a "repeated I/O signal". The spec scenario names corruption only, and an I/O error can pass (a full disk, a slow device), so the worker left I/O errors as they were: counted, reported to the caller as retryable, and not a reason to fail readiness. Do you want repeated I/O errors to fail readiness and stop writes too? If yes, say how many within what time, and whether the state clears by itself when writes succeed again.
+
+## 2026-11-22: Should proving an address discard a password set before the address was proven?
+
+Status: open
+
+A password sign-up that awaits email verification stores the password its author chose. If somebody else signs up with your address first, their password is on the pending account. When you then prove the address, by a magic link (`docs/user-book.md` line 1196: "A magic link to the same address also proves it and activates the account") or, since 2026-11-22, by a provider sign-in with that verified email, the account becomes active and the earlier password is still valid for it. The person who signed up first can sign in to your account with it.
+
+The books do not say what happens to that password. The worker kept the existing behaviour of magic links for the provider path, so both leave the password in place.
+
+Which do you want?
+
+1. Activation by a magic link or a provider discards a password that was set while the account was pending; the owner sets one through password recovery if they want one. The worker would then change both paths and write the rule into `identity/auth-providers` and `identity/project-auth`.
+2. Keep the password. Then please say so in the User Book, since an application that requires email verification probably relies on the opposite.
+
+## 2026-11-22: Two sentences in the User Book about provider sign-in
+
+Status: open
+
+1. `docs/user-book.md` line 1176 says the application user "is matched by provider and subject first, then by verified email, and created when neither matches", and line 1177 lists the refusals. Neither says what happens when the matched user is still pending verification (a password sign-up that has not opened its mail, an invitation, or a magic link nobody redeemed). Since 2026-11-22 the provider's verified email activates such a user, as a magic link does. Proposed addition to line 1176: "A matched user who is still pending verification becomes active: the provider's verified email proves the address."
+2. Line 1312 gives `email_not_verified` as an example of the reason a provider refusal carries. The data plane sends `email_unverified` (`services/mako-data-plane/src/auth_provider_http.rs`). Proposed: change the example to `email_unverified`.

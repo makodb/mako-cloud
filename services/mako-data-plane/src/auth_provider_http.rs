@@ -616,23 +616,44 @@ async fn complete_callback(
             }
         }
     };
-    if !matches!(
-        user.status(),
-        AppUserStatus::Active | AppUserStatus::PendingVerification
-    ) {
-        audit_provider(
-            graph,
-            tenant,
-            provider_name,
-            Some(user.id()),
-            AuditOutcome::Denied,
-            "user_disabled",
-            request,
-            now,
-        )
-        .await;
-        return Err(CallbackFailure::Denied("user_disabled"));
-    }
+    // Only an active user can hold a session, so only an active user gets an
+    // exchange code. A user still pending verification is activated here: the
+    // provider's verified email matched its address, either in this request
+    // or when the identity found by subject was linked, and proof of the
+    // address is what activates a pending user everywhere else.
+    let activation = match user.status() {
+        AppUserStatus::Active => Ok(user),
+        AppUserStatus::PendingVerification => {
+            match store.activate_pending_user(user.id(), now).await {
+                Ok(activated) => Ok(activated),
+                Err(mako_identity::IdentityStoreError::InvalidUserStatusTransition) => Err(user),
+                Err(mako_identity::IdentityStoreError::ConcurrentIdentityChange) => {
+                    // Changed underneath by another request; the next attempt
+                    // sees the settled state.
+                    return Err(CallbackFailure::Denied("retry"));
+                }
+                Err(_) => return Err(unavailable()),
+            }
+        }
+        AppUserStatus::Disabled | AppUserStatus::Deleted => Err(user),
+    };
+    let user = match activation {
+        Ok(user) => user,
+        Err(user) => {
+            audit_provider(
+                graph,
+                tenant,
+                provider_name,
+                Some(user.id()),
+                AuditOutcome::Denied,
+                "user_disabled",
+                request,
+                now,
+            )
+            .await;
+            return Err(CallbackFailure::Denied("user_disabled"));
+        }
+    };
     let code = issue_exchange_code(graph, request, tenant, user.id(), now).await?;
     audit_provider(
         graph,

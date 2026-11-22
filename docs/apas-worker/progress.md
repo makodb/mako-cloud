@@ -1,6 +1,6 @@
 # APAS worker progress
 
-Last updated 2026-11-22, round 18, on Shuais-MacBook-Air-2.local.
+Last updated 2026-11-22, round 19, on Shuais-MacBook-Air-2.local.
 
 ## The three layers
 
@@ -39,9 +39,11 @@ Last updated 2026-11-22, round 18, on Shuais-MacBook-Air-2.local.
 
 - Round 18 (spec layer): the change `state-weak-password-refusals` wrote into `identity/developer-registration` when the password policy is checked at registration and at recovery, added the scenarios "Password does not satisfy the policy" (DR-04) and "Recovery password does not satisfy the policy" (DR-14), renumbered the later DR rows (now up to DR-34), and was archived.
 
+- Round 19 (code layer): fixed lead 92, the requirement "External sign-in providers" of `identity/auth-providers`. A provider sign-in whose verified email matched a user still pending verification was recorded as verified and given a one-time code that the exchange then refused with 401, every time. The callback in `services/mako-data-plane/src/auth_provider_http.rs` now activates such a user (`IdentityStore::activate_pending_user`, new) before it issues the code, and refuses a disabled or deleted one as before. The smoke test `auth_providers.rs` has the case and fails against the old handler.
+
 ## What is left, in the order I would do it
 
-1. Code that may not meet a spec requirement: 95 leads. Verified and ready, in this order: 92 (a provider sign-in for a pending user can never be exchanged), 93 (CORS on the environment-wide stream), 37 (explorer delete), 72 (denied writes are not audited), 69 (hosted functions cannot stream; needs a container engine to prove end to end). Then the high-severity ones not verified yet: 0, 1, 18, 19, 36, 44, 45, 49, 50, 54, 59, 134. Verify each against the current files before fixing it.
+1. Code that may not meet a spec requirement: 95 leads. First verify the new lead r19-a (email verification seems to re-activate a disabled user). Verified and ready, in this order: 93 (CORS on the environment-wide stream), 37 (explorer delete), 72 (denied writes are not audited), 69 (hosted functions cannot stream; needs a container engine to prove end to end). Then the high-severity ones not verified yet: 0, 1, 18, 19, 36, 44, 45, 49, 50, 54, 59, 134. Verify each against the current files before fixing it.
 2. Missing specs: archive `resumable-streaming-exports` (its deltas are not in the main specs yet; it needs traceability rows CL-14 and CL-15 in the same commit or `npm run validate:traceability` fails), then the "whitepaper statement with no spec requirement" and "implemented behaviour with no spec requirement" leads.
 3. Missing code: the open change `observable-data-plane-and-restore-verification` (0 of 26 tasks). Its task list names `infra/local/prometheus.yml` (the file is `prometheus.yaml`) and `validate:alert-metric-producers` (the script is `validate:alert-metrics`); fix those in the change first. Start with task group 1 (receipt probe) and group 3 (data-plane `/metrics`). Backlog lead 169 belongs here: the backup-age alert reads a gauge that is rewritten only when a backup runs, so it cannot fire while the timers are stopped.
 4. Housekeeping: archive `rational-sample-app`. `openspec archive` aborts because eight of its ADDED requirements already exist in the main spec in the longer form the archived `rational-monarch-parity` change gave them. The worker may not use `--skip-specs`, so its deltas must first be rewritten to match the main spec.

@@ -330,6 +330,7 @@ fn applications_sign_users_in_through_providers_and_magic_links() {
                 .is_some_and(|t| !t.is_empty())
         );
         assert_eq!(session["user"]["email"], provider.email);
+        assert_eq!(session["user"]["status"], "active");
         // The code was one-time.
         let (status, _) = request(
             data_port,
@@ -344,6 +345,19 @@ fn applications_sign_users_in_through_providers_and_magic_links() {
         );
         session
     };
+    // Somebody asked for a magic link to this address first and never opened
+    // it, so a user for the address exists and is still pending verification.
+    // The provider's verified email proves the address as the link would
+    // have: the sign-in below activates that user instead of handing out a
+    // code no session can be had for.
+    let (status, body) = request(
+        data_port,
+        "POST",
+        &format!("{scope}/auth/magic-link"),
+        &keyed,
+        Some(&json!({ "email": provider.email, "redirectUrl": APP_REDIRECT })),
+    );
+    assert_eq!(status, 202, "magic link request failed: {body}");
     let first = sign_in_through_provider();
     let second = sign_in_through_provider();
     assert_eq!(
