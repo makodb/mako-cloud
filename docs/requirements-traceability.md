@@ -164,8 +164,8 @@ Run `npm run validate:traceability` whenever a scenario or row changes. The vali
 | PA-03 | Password recovery is requested | `crates/mako-identity/src/recovery.rs::recovery_is_enumeration_safe_single_use_and_revokes_sessions` | Automated |
 | PA-04 | Valid access token is presented | `crates/mako-identity/src/access_token.rs::issued_token_contains_every_required_scoped_claim_and_valid_signature` | Automated |
 | PA-05 | Token targets another project | `crates/mako-gateway/src/token_verifier.rs::verifies_every_boundary_and_rejects_cross_project_tokens` | Automated |
-| PA-06 | Session refresh succeeds | `crates/mako-identity/src/refresh.rs::rotates_hashes_allows_bounded_concurrency_and_revokes_on_replay` | Automated |
-| PA-07 | Rotated token is replayed | `crates/mako-identity/src/refresh.rs::rotates_hashes_allows_bounded_concurrency_and_revokes_on_replay` | Automated |
+| PA-06 | Session refresh succeeds | `crates/mako-identity/src/session_store.rs::refresh_state_persists_rotates_and_revokes_on_replay` | Automated |
+| PA-07 | Rotated token is replayed | `crates/mako-identity/src/session_store.rs::a_credential_consumed_two_rotations_ago_revokes_the_family` and `crates/mako-identity/src/session_store.rs::refresh_state_persists_rotates_and_revokes_on_replay` | Automated |
 | PA-08 | Administrator disables a user | `crates/mako-identity/src/lifecycle.rs::lifecycle_changes_revoke_sessions_and_publish_one_ordered_stream` | Automated |
 | PA-09 | User edits profile metadata | `crates/mako-identity/src/records.rs::records_retain_project_environment_scope_and_separate_metadata` | Automated |
 | PA-10 | A function sets app metadata under a service credential | `services/mako-data-plane/src/service_user_http.rs::a_read_composes_the_next_claim_and_the_epoch_it_read_guards_the_write` and `crates/mako-smoke/tests/rational.rs::rationals_own_model_serves_a_household_over_http` (end-to-end) | Automated |

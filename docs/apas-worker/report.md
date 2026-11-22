@@ -71,3 +71,27 @@ Which rule do you want?
 
 Until this is answered the worker leaves both specs and the code as they are.
 
+## 2026-11-22: Which request headers does a hosted function receive?
+
+Status: open
+
+Local serve and hosted invocation disagree, and the books do not settle it.
+
+- Hosted: the edge gateway forwards nine request headers and drops the rest (`forwarded_request_headers` in `services/mako-edge-gateway/src/http.rs`): `authorization` (replaced by the verified caller), `accept`, `content-type`, `idempotency-key`, `if-match`, `if-none-match`, `user-agent`, `traceparent`, `tracestate`. A third-party webhook's signature header, a custom header, or a cookie never reaches the function.
+- Local: `mako-cloud functions serve` passes every header through except `authorization` and those under `x-mako-` (`packages/cli/runtime/main/index.ts`).
+- `docs/user-book.md` line 1714 says "Functions receive the Fetch `Request`/`Response` contract", and line 1876 says a locally served function receives the "headers" and lists regional routing, hosted quotas and production egress as the differences from hosted. `openspec/specs/functions/edge-runtime/spec.md` asks local serve to run "the same request contract" as hosted execution.
+
+Which do you want?
+
+1. Hosted functions receive every caller header except a reserved set (hop-by-hop headers, `host`, `content-length`, `expect`, `authorization`, and everything under `x-mako-`). The worker would then change the gateway and write the reserved set into the spec, and you would list it in the User Book.
+2. Hosted functions receive only a fixed list. The worker would then narrow local serve to the same list and write the list into the spec, and you would list it in the User Book.
+
+In either case: should `cookie` reach a function? Every tenant's functions share the platform hostname, and line 2241 says cookies are not part of the exchange, so the worker would withhold it unless you say otherwise.
+
+Until this is answered the worker leaves the gateway and local serve as they are.
+
+## 2026-11-22: The User Book's list of application routes omits the many-collection stream
+
+Status: open
+
+`docs/user-book.md` line 2243 defines application routes as "the ones an application calls with its own session or public key" and then lists "`…/auth/…`, `…/collections/…` (documents and replication), and `…/storage/…`". The many-collection live stream is `…/environments/{e}/replication/stream` (line 1611), which is under none of the three. The definition covers it and `@mako-cloud/rxdb` opens it from the browser, so the worker reads the list as incomplete and will make the data plane answer listed origins on that route (the requirement "Browser origins allowed to call an environment" already asks for replication). Proposed: add "`…/replication/stream` (the many-collection live stream)" to the list in line 2243.

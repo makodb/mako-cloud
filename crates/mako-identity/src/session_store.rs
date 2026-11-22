@@ -10,11 +10,16 @@ use crate::{
     AppUserId, AppUserRecord, AppUserStatus, IdentityRecordError, IdentityStore,
     IdentityStoreError, KeyEncryptionKey, NormalizedEmail, RefreshCredential, SessionId,
     SessionRecord, SigningKeyError, TokenFamilyId, TokenFamilyStatus,
+    refresh::{family_tag, generate_family_tag},
 };
 
 const SESSION_LIFETIME_SECONDS: u64 = 30 * 24 * 60 * 60;
 const REFRESH_CONCURRENCY_GRACE_SECONDS: u64 = 5;
 const MAX_CONFLICT_RETRIES: usize = 8;
+/// Separates the index of family tags from the index of credential digests,
+/// which shares its keyspace: a tag's entry is keyed by a digest derived under
+/// this context, which no credential or mailed token hashes to.
+const FAMILY_TAG_INDEX_CONTEXT: &str = "mako-cloud identity refresh family tag index v1";
 
 #[derive(Clone, Debug)]
 pub struct ApplicationSessionGrant {
@@ -173,8 +178,22 @@ impl<'a> ApplicationSessionStore<'a> {
             .identity
             .keyspace
             .identity_token_digest_owner_key(presented_digest)?;
-        let Some(family_id_bytes) = self.identity.adapter.get(&digest_key).await? else {
-            return Ok(RefreshSessionOutcome::Invalid);
+        let family_id_bytes = match self.identity.adapter.get(&digest_key).await? {
+            Some(owner) => owner,
+            None => {
+                // The digest index remembers a family's current credential and
+                // the one consumed before it. Anything older is found by the
+                // tag every credential of the family carries; a credential no
+                // family issued carries no known tag.
+                let Some(tag) = family_tag(presented) else {
+                    return Ok(RefreshSessionOutcome::Invalid);
+                };
+                let tag_key = self.family_tag_key(tag)?;
+                let Some(owner) = self.identity.adapter.get(&tag_key).await? else {
+                    return Ok(RefreshSessionOutcome::Invalid);
+                };
+                owner
+            }
         };
         let family_id = std::str::from_utf8(&family_id_bytes)
             .map_err(|_| ApplicationSessionStoreError::CorruptFamily)
@@ -213,6 +232,7 @@ impl<'a> ApplicationSessionStore<'a> {
                         family,
                         family_key.clone(),
                         family_bytes,
+                        presented,
                         digest_key.clone(),
                         now_unix_seconds,
                     )
@@ -236,35 +256,73 @@ impl<'a> ApplicationSessionStore<'a> {
                         .map(Box::new)
                         .map(RefreshSessionOutcome::Rotated);
                 }
-                self.identity
-                    .sign_out_session(&family.user_id, &family.session_id, now_unix_seconds)
-                    .await?;
-                let replayed = StoredRefreshFamily {
-                    status: TokenFamilyStatus::ReplayDetected,
-                    ..family
-                };
-                let mut batch = WriteBatch::new();
-                batch.put(&family_key, serde_json::to_vec(&replayed)?);
-                let result = self
-                    .identity
-                    .adapter
-                    .compare_and_write(AtomicWrite {
-                        conditions: vec![KeyCondition::ValueEquals {
-                            key: family_key.clone(),
-                            value: family_bytes,
-                        }],
-                        batch,
-                        durability: self.identity.durability,
-                    })
-                    .await?;
-                if result == CompareAndWriteResult::Applied {
+                if self
+                    .revoke_replayed_family(family, &family_key, family_bytes, now_unix_seconds)
+                    .await?
+                {
                     return Ok(RefreshSessionOutcome::ReplayDetected);
                 }
                 continue;
             }
-            return Ok(RefreshSessionOutcome::Invalid);
+            // The credential names this active family and is neither its
+            // current one nor the one consumed before it: the family issued
+            // and consumed it more than one rotation ago, or somebody who held
+            // one of its credentials made this one up. Either is a replay,
+            // whatever the time since. Only the last consumed credential has a
+            // grace window, because only it can lose a race with its own
+            // rotation.
+            if self
+                .revoke_replayed_family(family, &family_key, family_bytes, now_unix_seconds)
+                .await?
+            {
+                return Ok(RefreshSessionOutcome::ReplayDetected);
+            }
         }
         Err(ApplicationSessionStoreError::ConcurrentChange)
+    }
+
+    /// Ends the session of a family whose consumed credential was presented
+    /// again and marks the family. Answers whether the mark was written; when
+    /// the family changed underneath, the caller reads it again.
+    async fn revoke_replayed_family(
+        &self,
+        family: StoredRefreshFamily,
+        family_key: &[u8],
+        family_bytes: Vec<u8>,
+        now_unix_seconds: u64,
+    ) -> Result<bool, ApplicationSessionStoreError> {
+        self.identity
+            .sign_out_session(&family.user_id, &family.session_id, now_unix_seconds)
+            .await?;
+        let replayed = StoredRefreshFamily {
+            status: TokenFamilyStatus::ReplayDetected,
+            ..family
+        };
+        let mut batch = WriteBatch::new();
+        batch.put(family_key, serde_json::to_vec(&replayed)?);
+        let result = self
+            .identity
+            .adapter
+            .compare_and_write(AtomicWrite {
+                conditions: vec![KeyCondition::ValueEquals {
+                    key: family_key.to_vec(),
+                    value: family_bytes,
+                }],
+                batch,
+                durability: self.identity.durability,
+            })
+            .await?;
+        Ok(result == CompareAndWriteResult::Applied)
+    }
+
+    fn family_tag_key(&self, tag: &str) -> Result<Vec<u8>, ApplicationSessionStoreError> {
+        Ok(self
+            .identity
+            .keyspace
+            .identity_token_digest_owner_key(blake3::derive_key(
+                FAMILY_TAG_INDEX_CONTEXT,
+                tag.as_bytes(),
+            ))?)
     }
 
     async fn rotate(
@@ -272,10 +330,34 @@ impl<'a> ApplicationSessionStore<'a> {
         family: StoredRefreshFamily,
         family_key: Vec<u8>,
         family_bytes: Vec<u8>,
+        presented: &str,
         presented_digest_key: Vec<u8>,
         now_unix_seconds: u64,
     ) -> Result<Option<ApplicationSessionGrant>, ApplicationSessionStoreError> {
-        let replacement = RefreshCredential::generate();
+        // The replacement keeps the tag of the credential it replaces, and the
+        // tag is recorded for the family no later than the moment that
+        // credential is consumed. The digest of a consumed credential is
+        // forgotten one rotation later, below; its tag is what still names the
+        // family when it is presented again.
+        let family_owner = family.family_id.as_str().as_bytes();
+        let presented_tag =
+            family_tag(presented).ok_or(ApplicationSessionStoreError::CorruptFamily)?;
+        let presented_tag_key = self.family_tag_key(presented_tag)?;
+        let (tag, tag_key, tag_recorded) =
+            match self.identity.adapter.get(&presented_tag_key).await? {
+                Some(owner) if owner == family_owner => {
+                    (presented_tag.to_owned(), presented_tag_key, true)
+                }
+                None => (presented_tag.to_owned(), presented_tag_key, false),
+                // Another family holds this tag: sixteen random bytes that
+                // collided. This family continues under a tag of its own.
+                Some(_) => {
+                    let tag = generate_family_tag();
+                    let tag_key = self.family_tag_key(&tag)?;
+                    (tag, tag_key, false)
+                }
+            };
+        let replacement = RefreshCredential::in_family(&tag);
         let replacement_digest = credential_digest(&replacement);
         let replacement_digest_key = self
             .identity
@@ -312,10 +394,23 @@ impl<'a> ApplicationSessionStore<'a> {
             KeyCondition::Missing {
                 key: replacement_digest_key.clone(),
             },
+            if tag_recorded {
+                KeyCondition::ValueEquals {
+                    key: tag_key.clone(),
+                    value: family_owner.to_vec(),
+                }
+            } else {
+                KeyCondition::Missing {
+                    key: tag_key.clone(),
+                }
+            },
         ];
-        let mut batch = WriteBatch::with_capacity(3);
+        let mut batch = WriteBatch::with_capacity(4);
         batch.put(&family_key, serde_json::to_vec(&updated)?);
         batch.put(&replacement_digest_key, family.family_id.as_str());
+        if !tag_recorded {
+            batch.put(&tag_key, family.family_id.as_str());
+        }
         if let Some(previous) = family.previous {
             let previous_key = self
                 .identity
@@ -528,7 +623,7 @@ mod tests {
 
     use futures::executor::block_on;
     use mako_api::{EnvironmentId, ProjectId, TenantScope};
-    use mako_storage::{Durability, MemoryAdapter};
+    use mako_storage::{Durability, KvAdapter, MemoryAdapter};
     use serde_json::json;
 
     use super::*;
@@ -614,6 +709,268 @@ mod tests {
             );
         });
     }
+    struct Seeded {
+        adapter: Arc<MemoryAdapter>,
+        store: IdentityStore,
+        user_id: AppUserId,
+        key: KeyEncryptionKey,
+    }
+
+    async fn seeded() -> Seeded {
+        let tenant = TenantScope::new(
+            ProjectId::parse("prj_abcdefgh").expect("project"),
+            EnvironmentId::parse("env_abcdefgh").expect("environment"),
+        );
+        let adapter = Arc::new(MemoryAdapter::new());
+        let store = IdentityStore::new(adapter.clone(), &tenant, &tenant, Durability::Memory)
+            .expect("store");
+        let email = NormalizedEmail::parse("person@example.com").expect("email");
+        let user_id = AppUserId::parse("usr_abcdefgh").expect("user");
+        let user = AppUserRecord::new(
+            tenant.clone(),
+            user_id.clone(),
+            AppUserStatus::Active,
+            TrustedAppMetadata::new(json!({})).expect("trusted metadata"),
+            UserProfileMetadata::new(json!({})).expect("profile metadata"),
+            1,
+        );
+        let identity = UserIdentityRecord::new(
+            tenant,
+            UserIdentityId::parse("idn_abcdefgh").expect("identity"),
+            user_id.clone(),
+            IdentityProvider::Email,
+            email.as_str(),
+            1,
+        )
+        .expect("identity record");
+        store
+            .create_email_user(&user, &identity, &email)
+            .await
+            .expect("create user");
+        Seeded {
+            adapter,
+            store,
+            user_id,
+            key: KeyEncryptionKey::generate(),
+        }
+    }
+
+    async fn rotated(sessions: &ApplicationSessionStore<'_>, credential: &str, now: u64) -> String {
+        match sessions.refresh(credential, now).await.expect("refresh") {
+            RefreshSessionOutcome::Rotated(grant) => grant
+                .refresh_credential
+                .expose_for_token_response()
+                .to_owned(),
+            other => panic!("refresh must rotate, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_credential_consumed_two_rotations_ago_revokes_the_family() {
+        block_on(async {
+            let seeded = seeded().await;
+            let sessions = ApplicationSessionStore::new(&seeded.store, &seeded.key);
+            let issued = sessions.create(&seeded.user_id, 10).await.expect("session");
+            let first = issued
+                .refresh_credential
+                .expose_for_token_response()
+                .to_owned();
+            let second = rotated(&sessions, &first, 11).await;
+            let third = rotated(&sessions, &second, 400).await;
+
+            // The thief, or the person the credential was stolen from, comes
+            // back with the first credential long after two rotations.
+            assert!(matches!(
+                sessions.refresh(&first, 800).await.expect("replay"),
+                RefreshSessionOutcome::ReplayDetected
+            ));
+            assert!(
+                !seeded
+                    .store
+                    .session_is_active(&seeded.user_id, issued.session.id(), 801)
+                    .await
+                    .expect("session state")
+            );
+            // The family is over for whoever holds its newest credential too.
+            for credential in [&third, &second, &first] {
+                assert!(matches!(
+                    sessions
+                        .refresh(credential, 802)
+                        .await
+                        .expect("after replay"),
+                    RefreshSessionOutcome::Invalid
+                ));
+            }
+        });
+    }
+
+    #[test]
+    fn every_earlier_credential_stays_a_replay_however_often_the_family_rotates() {
+        block_on(async {
+            let seeded = seeded().await;
+            let sessions = ApplicationSessionStore::new(&seeded.store, &seeded.key);
+            let issued = sessions.create(&seeded.user_id, 10).await.expect("session");
+            let mut credentials = vec![
+                issued
+                    .refresh_credential
+                    .expose_for_token_response()
+                    .to_owned(),
+            ];
+            let mut keys_after_second_rotation = 0;
+            for rotation in 1..=40_u64 {
+                let current = credentials.last().expect("current").clone();
+                credentials.push(rotated(&sessions, &current, 10 + rotation * 300).await);
+                if rotation == 2 {
+                    keys_after_second_rotation = seeded.adapter.dump().expect("dump").len();
+                }
+            }
+            // Remembering every consumed credential costs nothing per rotation.
+            assert_eq!(
+                seeded.adapter.dump().expect("dump").len(),
+                keys_after_second_rotation
+            );
+            // One of the oldest, from the middle of the family's life.
+            assert!(matches!(
+                sessions
+                    .refresh(&credentials[17], 20_000)
+                    .await
+                    .expect("replay"),
+                RefreshSessionOutcome::ReplayDetected
+            ));
+            assert!(
+                !seeded
+                    .store
+                    .session_is_active(&seeded.user_id, issued.session.id(), 20_001)
+                    .await
+                    .expect("session state")
+            );
+        });
+    }
+
+    #[test]
+    fn an_older_consumed_credential_is_a_replay_even_inside_the_grace_window() {
+        block_on(async {
+            let seeded = seeded().await;
+            let sessions = ApplicationSessionStore::new(&seeded.store, &seeded.key);
+            let issued = sessions.create(&seeded.user_id, 10).await.expect("session");
+            let first = issued
+                .refresh_credential
+                .expose_for_token_response()
+                .to_owned();
+            let second = rotated(&sessions, &first, 11).await;
+            rotated(&sessions, &second, 12).await;
+            // The grace window belongs to the last consumed credential alone.
+            assert!(matches!(
+                sessions.refresh(&first, 13).await.expect("replay"),
+                RefreshSessionOutcome::ReplayDetected
+            ));
+        });
+    }
+
+    #[test]
+    fn a_credential_no_family_issued_is_invalid_and_revokes_nothing() {
+        block_on(async {
+            let seeded = seeded().await;
+            let sessions = ApplicationSessionStore::new(&seeded.store, &seeded.key);
+            let issued = sessions.create(&seeded.user_id, 10).await.expect("session");
+            let first = issued
+                .refresh_credential
+                .expose_for_token_response()
+                .to_owned();
+            let second = rotated(&sessions, &first, 11).await;
+            let third = rotated(&sessions, &second, 400).await;
+
+            let stranger = RefreshCredential::generate();
+            // A consumed credential in another letter case is not that credential.
+            let shouted = first.to_ascii_uppercase();
+            for presented in [stranger.expose_for_token_response(), "", "zz", &shouted] {
+                if presented == first {
+                    continue;
+                }
+                assert!(matches!(
+                    sessions.refresh(presented, 800).await.expect("unknown"),
+                    RefreshSessionOutcome::Invalid
+                ));
+            }
+            assert!(
+                seeded
+                    .store
+                    .session_is_active(&seeded.user_id, issued.session.id(), 801)
+                    .await
+                    .expect("session state")
+            );
+            rotated(&sessions, &third, 802).await;
+        });
+    }
+
+    #[test]
+    fn a_made_up_credential_under_a_family_tag_revokes_that_family() {
+        block_on(async {
+            let seeded = seeded().await;
+            let sessions = ApplicationSessionStore::new(&seeded.store, &seeded.key);
+            let issued = sessions.create(&seeded.user_id, 10).await.expect("session");
+            let first = issued
+                .refresh_credential
+                .expose_for_token_response()
+                .to_owned();
+            let second = rotated(&sessions, &first, 11).await;
+            // Only somebody who held one of the family's credentials knows its
+            // tag, and what they present under it is not the current credential.
+            let forged = format!("{}{}", &second[..32], "0".repeat(32));
+            assert_ne!(forged, second);
+            assert!(matches!(
+                sessions.refresh(&forged, 400).await.expect("forged"),
+                RefreshSessionOutcome::ReplayDetected
+            ));
+            assert!(matches!(
+                sessions.refresh(&second, 401).await.expect("current"),
+                RefreshSessionOutcome::Invalid
+            ));
+        });
+    }
+
+    #[test]
+    fn a_family_rotated_before_tags_existed_is_protected_from_its_next_rotation() {
+        block_on(async {
+            let seeded = seeded().await;
+            let sessions = ApplicationSessionStore::new(&seeded.store, &seeded.key);
+            let issued = sessions.create(&seeded.user_id, 10).await.expect("session");
+            let first = issued
+                .refresh_credential
+                .expose_for_token_response()
+                .to_owned();
+            let second = rotated(&sessions, &first, 11).await;
+            // Put the family into the state an earlier release left behind: no
+            // tag recorded for it.
+            let tag_key = sessions.family_tag_key(&first[..32]).expect("tag key");
+            let mut batch = WriteBatch::new();
+            batch.delete(tag_key.clone());
+            seeded
+                .adapter
+                .write(batch, Durability::Memory)
+                .await
+                .expect("forget the tag");
+
+            let third = rotated(&sessions, &second, 400).await;
+            assert!(
+                seeded
+                    .adapter
+                    .get(&tag_key)
+                    .await
+                    .expect("tag entry")
+                    .is_some(),
+                "consuming a credential records its tag"
+            );
+            let fourth = rotated(&sessions, &third, 800).await;
+            assert_ne!(fourth, third);
+            // `second` was consumed after tags existed and is two rotations old.
+            assert!(matches!(
+                sessions.refresh(&second, 1_200).await.expect("replay"),
+                RefreshSessionOutcome::ReplayDetected
+            ));
+        });
+    }
+
     #[test]
     fn a_signed_out_session_refuses_its_refresh_credential() {
         block_on(async {
