@@ -3,9 +3,7 @@
 ## Purpose
 
 Provide a deterministic local tenant bootstrap and an automated end-to-end verification that Mako Cloud's application happy path — application-user sign-up, sign-in, document push, and document pull — actually succeeds against the real service binaries rather than against mocks.
-
 ## Requirements
-
 ### Requirement: Documented local quickstart starts the services
 The documented local development quickstart SHALL bring the control plane and data plane to a ready state using only the files and commands the documentation names. Every configuration value a service requires in order to pass readiness MUST be present in the shipped example configuration, or the documentation MUST state how to produce it. A service that refuses to start because a documented example omitted required configuration is a defect in that example.
 
@@ -18,7 +16,7 @@ The documented local development quickstart SHALL bring the control plane and da
 - **THEN** the service refuses to start with an addressed configuration error naming the field path, and the documentation names the value that must be supplied
 
 ### Requirement: Local tenant bootstrap
-A bootstrap capability SHALL create a complete, usable local tenant — a developer identity, team, project, environment, public project key, and collection — without requiring outbound mail, authenticated TLS SMTP, or an operator wait-list decision. The bootstrap SHALL be deterministic, so that repeated runs against clean state produce the same identifiers, and idempotent, so that a repeated run against existing state neither duplicates nor corrupts records. It MUST write only to stores it exclusively owns at the time it runs.
+A bootstrap capability SHALL create a complete, usable local tenant — a developer identity, team, project, environment, public project key, signing key, collection, and a permissive development document policy — without requiring outbound mail, authenticated TLS SMTP, or an operator wait-list decision. The bootstrap SHALL be deterministic, so that repeated runs against clean state produce the same developer, team, project, environment and collection identifiers, and idempotent, so that a repeated run against existing state neither duplicates nor corrupts records. A public project key's secret is shown only when the key is created, so a repeated run SHALL rotate the existing public project key and report the new one instead of the original. It MUST write only to stores it exclusively owns at the time it runs. When a local runtime supervisor is reachable it SHALL also deploy its sample functions through the administrative path; without one it SHALL skip that step and say so.
 
 #### Scenario: Bootstrap produces a usable tenant
 - **WHEN** the bootstrap runs against prepared local state
@@ -26,7 +24,7 @@ A bootstrap capability SHALL create a complete, usable local tenant — a develo
 
 #### Scenario: Bootstrap runs a second time
 - **WHEN** the bootstrap runs again against state it already created
-- **THEN** it completes without duplicating records and reports the same identifiers
+- **THEN** it completes without duplicating records, reports the same developer, team, project, environment and collection identifiers, and reports a newly rotated public project key that authenticates
 
 ### Requirement: Bootstrap is refused outside local environments
 The bootstrap capability SHALL fail closed unless the resolved deployment environment is local. It MUST NOT be usable as a provisioning path for a hosted or production environment, and it MUST NOT weaken any authentication, wait-list, or entitlement control that a non-local environment enforces.
@@ -60,3 +58,4 @@ The end-to-end smoke verification SHALL run as a gating check in continuous inte
 #### Scenario: Coverage is claimed for a mocked test
 - **WHEN** a traceability entry cites a test whose backend is mocked
 - **THEN** the entry states that the coverage is mocked rather than end-to-end
+
