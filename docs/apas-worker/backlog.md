@@ -10,6 +10,7 @@ Each lead: `[id] area, severity/confidence` title. Where: the first evidence poi
 
 ## Code may not meet a spec requirement (95)
 
+- `[r21-a] identity, low` Found in round 21 by reading: `IdentityStore::reset_password_with_token` in `crates/mako-identity/src/store.rs` (called only by `PasswordRecoveryService::reset`, which no service uses) replaces the password of a disabled or deleted user who holds a live recovery link; the path the data plane uses checks the status first. The user stays disabled and gets no session, but "Proof of an address activates only a pending user" says the proof is refused. Either add the status check or remove the unused service.
 
 - `[60] cloud-b, low/high` Operator freshness states: spec names five including 'degraded', the Dev Book fixes four Where: docs/dev-book.md:1153 "explicit observation times, and `current`, `stale`, `unknown`, or `unavailable` source state" Note from round 10: not a spec contradiction. The spec asks summaries to distinguish healthy, degraded, unavailable, stale and unknown data; the Dev Book fixes four source states. The open point is whether a degraded provider, which the code reports as `stale`, is distinguished as the spec asks.
 - `[0] billing-sync, high/high` Replication admission ignores the tenant's plan and uses one deployment-wide policy with undocumented daily hard caps Where: services/mako-data-plane/src/graph.rs:862-865 "let quotas = GatewayReplicationQuotaEnforcer::new(Arc::clone(&self.components.quotas), Arc::new(self.components.quota_poli…

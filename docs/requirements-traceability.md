@@ -181,6 +181,9 @@ Run `npm run validate:traceability` whenever a scenario or row changes. The vali
 | PA-18 | Authentication fails | `crates/mako-identity/src/signin.rs::wrong_absent_and_unverified_accounts_share_one_failure_response` | Automated |
 | PA-19 | An application on a listed origin calls its project | `crates/mako-smoke/tests/custom_domains.rs::a_domain_is_served_only_while_its_dns_proof_stands` (end-to-end) | Automated |
 | PA-20 | An unlisted origin and a management route | `crates/mako-smoke/tests/custom_domains.rs::a_domain_is_served_only_while_its_dns_proof_stands` (end-to-end) | Automated |
+| PA-21 | A pending user proves the address | `crates/mako-identity/src/store.rs::magic_links_are_single_use_and_activate_pending_users` and `crates/mako-identity/src/store.rs::a_verification_link_does_not_reactivate_a_disabled_or_deleted_user` | Automated |
+| PA-22 | A provider sign-in matches a pending user | `crates/mako-smoke/tests/auth_providers.rs::applications_sign_users_in_through_providers_and_magic_links` (end-to-end) and `crates/mako-identity/src/store.rs::a_pending_user_reached_through_a_provider_is_activated` | Automated |
+| PA-23 | A disabled or deleted user presents a proof | `crates/mako-identity/src/store.rs::a_verification_link_does_not_reactivate_a_disabled_or_deleted_user` and `crates/mako-identity/src/store.rs::a_pending_user_reached_through_a_provider_is_activated` | Automated |
 
 ## Security / document policies
 
